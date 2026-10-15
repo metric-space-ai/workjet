@@ -33,7 +33,8 @@ describe("inline file and content search in the sidebar", () => {
     expect(commandPaletteSource).not.toContain("ProjectFilePicker");
     expect(commandPaletteSource).not.toContain("ProjectContentSearchDialog");
     expect(sidebarSource).toContain("<SidebarProjectSearchResults");
-    expect(sidebarSource).toContain("onSidebarSearchMode(setSearchMode)");
+    expect(sidebarSource).toContain("onSidebarSearchMode((mode) => {");
+    expect(sidebarSource).toContain("setSearchOpen(true);");
   });
 });
 

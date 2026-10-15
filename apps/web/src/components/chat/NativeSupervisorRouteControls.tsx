@@ -54,6 +54,42 @@ const readInstanceConfiguration = createEnvironmentRpcCommand(connectionAtomRunt
   tag: WS_METHODS.workjetLumaRead,
 });
 
+/**
+ * Was die Leiste über die Preset-Wahl wissen muss: der Rohfehler (nur für
+ * „Details“), eine deutsche Ersatzzeile und genau ein Wiederholungsweg.
+ * Laden und Speichern melden sich nicht.
+ */
+export interface SupervisorRouteStatus {
+  readonly error: unknown;
+  readonly fallback: string;
+  readonly retry: () => void;
+}
+
+const SUPERVISOR_ROUTE_UNREACHABLE = "Instanz nicht erreichbar";
+const SUPERVISOR_ROUTE_SAVE_FAILED = "Preset nicht übernommen";
+
+/** Zuletzt bekannte Presets je Instanz: ein gescheitertes Neuladen leert die Auswahl nie. */
+const LAST_KNOWN_SUPERVISOR_PRESETS = new Map<string, readonly WorkjetWorkerProfile[]>();
+
+/**
+ * Live gelesene Presets gewinnen und werden gemerkt. Scheitert das Laden, gelten
+ * die zuletzt bekannten. Leer ist die Liste nur, wenn eine Antwort keine enthielt.
+ */
+export function supervisorPresetChoices(input: {
+  readonly instanceId: string | null;
+  readonly live: readonly WorkjetWorkerProfile[] | null;
+  readonly cached: readonly WorkjetWorkerProfile[];
+  readonly lastKnown?: Map<string, readonly WorkjetWorkerProfile[]>;
+}): readonly WorkjetWorkerProfile[] {
+  const lastKnown = input.lastKnown ?? LAST_KNOWN_SUPERVISOR_PRESETS;
+  if (input.live !== null) {
+    if (input.instanceId !== null) lastKnown.set(input.instanceId, input.live);
+    return input.live;
+  }
+  const remembered = input.instanceId === null ? undefined : lastKnown.get(input.instanceId);
+  return input.cached.length > 0 || remembered === undefined ? input.cached : remembered;
+}
+
 export function NativeSupervisorRouteControls(props: {
   readonly scope: NativeSupervisorScope | null;
   readonly workerSourceBinding?:
@@ -62,7 +98,7 @@ export function NativeSupervisorRouteControls(props: {
   readonly disabled: boolean;
 
   readonly onSavingChange: (saving: boolean) => void;
-  readonly onStatusChange?: (status: string | null) => void;
+  readonly onStatusChange?: (status: SupervisorRouteStatus | null) => void;
 }) {
   const registry = useWorkjetProjectRegistry(props.scope?.instanceId ?? null);
   const lumas = useProjectSupervisorLumas(props.workerSourceBinding);
@@ -127,10 +163,18 @@ export function NativeSupervisorRouteControls(props: {
     snapshot?.configuration ??
     lumas.configuration ??
     (snapshot?.revision === 0 ? extractLumaInstanceDocument(local) : null);
-  const profiles = configuration?.workerProfiles ?? lumas.profiles;
+  const profiles = supervisorPresetChoices({
+    instanceId: props.scope?.instanceId ?? null,
+    live: configuration?.workerProfiles ?? null,
+    cached: lumas.profiles,
+  });
   const selected = profiles.find((profile) => profile.id === selectedId) ?? null;
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{
+    readonly error: unknown;
+    readonly retry: (() => void) | null;
+  } | null>(null);
+  const reportError = (failure: unknown) => setError({ error: failure, retry: null });
   const operation = useRef<AbortController | null>(null);
   const scopeKey = JSON.stringify(props.scope);
   const currentKey = useRef(scopeKey);
@@ -143,20 +187,47 @@ export function NativeSupervisorRouteControls(props: {
     lumas.phase === "ready" &&
     configuration !== null &&
     project !== undefined;
-  const status =
-    error ??
-    (saving
-      ? "Wird gespeichert …"
-      : !ready
-        ? lumas.phase === "loading"
-          ? "Wird geladen …"
-          : "Instanz-Konfiguration nicht verfügbar"
-        : selectedId !== null && selected === null
-          ? "Gespeicherte Supervisor-Luma nicht verfügbar"
-          : null);
+  const refreshRoute = () => {
+    instance.refresh();
+    catalog.refresh();
+    if (props.scope) refreshWorkjetProjectRegistry(props.scope.instanceId);
+  };
+  const refreshRouteRef = useRef(refreshRoute);
+  refreshRouteRef.current = refreshRoute;
+  // Laden und Speichern laufen still; nur ein echtes Hindernis wird zur Zeile.
+  const unavailableReason =
+    !ready && lumas.phase !== "loading" ? SUPERVISOR_ROUTE_UNREACHABLE : null;
+  const status: SupervisorRouteStatus | null =
+    error !== null
+      ? {
+          error: error.error,
+          fallback: SUPERVISOR_ROUTE_SAVE_FAILED,
+          retry: error.retry ?? (() => refreshRouteRef.current()),
+        }
+      : saving
+        ? null
+        : unavailableReason !== null
+          ? {
+              error: unavailableReason,
+              fallback: unavailableReason,
+              retry: () => refreshRouteRef.current(),
+            }
+          : ready && selectedId !== null && selected === null
+            ? {
+                error: "Gespeichertes Preset nicht verfügbar",
+                fallback: "Gespeichertes Preset nicht verfügbar",
+                retry: () => refreshRouteRef.current(),
+              }
+            : null;
+  const statusKey =
+    status === null
+      ? null
+      : JSON.stringify([String(status.error), status.fallback, error?.retry !== null]);
+  const statusRef = useRef(status);
+  statusRef.current = status;
   useEffect(() => {
-    props.onStatusChange?.(status);
-  }, [status, props.onStatusChange]);
+    props.onStatusChange?.(statusRef.current);
+  }, [statusKey, props.onStatusChange]);
   useEffect(() => {
     setError(null);
     return () => {
@@ -177,7 +248,7 @@ export function NativeSupervisorRouteControls(props: {
       !snapshot ||
       !configuration
     ) {
-      setError("Instanz-Konfiguration nicht verfügbar");
+      reportError(SUPERVISOR_ROUTE_UNREACHABLE);
       return;
     }
     const controller = new AbortController();
@@ -186,7 +257,8 @@ export function NativeSupervisorRouteControls(props: {
     const scope = props.scope;
     setSaving(true);
     props.onSavingChange(true);
-    setError(null);
+    // Ein bestehender Fehler bleibt bis zum Erfolg stehen, damit das stille
+    // Wiederholen seine Dauer nicht bei jedem Versuch neu beginnt.
     const isCurrent = () =>
       currentKey.current === scopeKey &&
       readActiveWorkjetScope().selectedInstanceId === scope.instanceId &&
@@ -207,7 +279,7 @@ export function NativeSupervisorRouteControls(props: {
               computers,
               models: catalog.data?.models ?? [],
             });
-      if (!prepared) throw new Error("Luma nicht verfügbar");
+      if (!prepared) throw new Error("Preset nicht verfügbar");
       const profile = "profile" in prepared ? prepared.profile : prepared;
       const selectedConfiguration =
         "configuration" in prepared ? prepared.configuration : configuration;
@@ -235,12 +307,14 @@ export function NativeSupervisorRouteControls(props: {
         },
       });
       if (!isCurrent() || controller.signal.aborted) return;
+      setError(null);
       recordWorkjetProjectProjection(scope.instanceId, persisted);
       refreshWorkjetProjectRegistry(scope.instanceId);
       instance.refresh();
     } catch (failure) {
       if (isCurrent() && !controller.signal.aborted) {
-        setError(failure instanceof Error ? failure.message : "Speichern fehlgeschlagen");
+        // Dieselbe Wahl bleibt wiederholbar: still durch die Leiste oder per „Erneut“.
+        setError({ error: failure, retry: () => void chooseRef.current(value) });
         instance.refresh();
         refreshWorkjetProjectRegistry(scope.instanceId);
       }
@@ -252,6 +326,8 @@ export function NativeSupervisorRouteControls(props: {
       }
     }
   }
+  const chooseRef = useRef(choose);
+  chooseRef.current = choose;
   const activeComputer =
     selected?.computerId ??
     (route?.phase === "ready"
@@ -281,7 +357,7 @@ export function NativeSupervisorRouteControls(props: {
         environmentId={environment?.environmentId ?? null}
         selectedComputerId={activeComputer}
         disabled={props.disabled || saving}
-        unavailableReason={!ready ? status : null}
+        unavailableReason={!ready ? (unavailableReason ?? "Presets werden geladen") : null}
         computerAvailability={Object.fromEntries(
           computers.map((computer) => {
             const connection = environments.find(
@@ -299,7 +375,7 @@ export function NativeSupervisorRouteControls(props: {
                 reason:
                   !profiles.some((entry) => entry.computerId === computer.id) &&
                   connection?.phase !== "connected"
-                    ? (connection?.error ?? "Rechner offline")
+                    ? "Rechner offline"
                     : null,
               },
             ];
@@ -307,7 +383,7 @@ export function NativeSupervisorRouteControls(props: {
         )}
         onSelectWorker={(id) => void choose(id)}
         onSelectManual={(next) => void choose(next)}
-        onError={setError}
+        onError={reportError}
         onConfigureWorkers={() => void navigate({ to: "/settings/workjet" })}
         onAddComputer={() => setAddComputerOpen(true)}
         onSetupHarness={() => void navigate({ to: "/settings/harnesses" })}

@@ -5,6 +5,7 @@ import routeTreeSource from "../../routeTree.gen.ts?raw";
 import settingsRouteSource from "../../routes/settings.tsx?raw";
 import appearanceRouteSource from "../../routes/settings.appearance.tsx?raw";
 import projectRouteSource from "../../routes/settings.projects.$projectKey.tsx?raw";
+import projectsRouteSource from "../../routes/settings.projects.tsx?raw";
 import sidebarChromeSource from "../sidebar/SidebarChrome.tsx?raw";
 import {
   DEVELOPER_SETTINGS_NAV_ITEMS,
@@ -13,20 +14,19 @@ import {
 } from "./settingsNavigation";
 
 describe("Workjet settings information architecture (#568)", () => {
-  it("has exactly eight pages, thirteen in developer mode", () => {
+  it("has exactly seven pages, twelve in developer mode (Projekte live in the project)", () => {
     expect(SETTINGS_NAV_ITEMS.map((item) => item.label)).toEqual([
       "Allgemein",
       "Instanz",
       "Rechner",
       "Modelle",
-      "Lumas",
-      "Projekte",
+      "Presets",
       "Sprachausgabe",
       "Archiv",
     ]);
-    expect(settingsNavItems(false)).toHaveLength(8);
-    expect(settingsNavItems(true)).toHaveLength(13);
-    expect(DEVELOPER_SETTINGS_NAV_ITEMS.slice(8).map((item) => item.label)).toEqual([
+    expect(settingsNavItems(false)).toHaveLength(7);
+    expect(settingsNavItems(true)).toHaveLength(12);
+    expect(DEVELOPER_SETTINGS_NAV_ITEMS.slice(7).map((item) => item.label)).toEqual([
       "Diagnose",
       "Harnesses",
       "Schnittstellen",
@@ -43,12 +43,14 @@ describe("Workjet settings information architecture (#568)", () => {
       "/settings/business-os",
       "/settings/harnesses",
       "/settings/keybindings",
+      "/settings/projects",
       "/settings/projects/$projectKey",
     ]) {
       expect(routeTreeSource).toContain(`fullPath: '${path}'`);
     }
     expect(appearanceRouteSource).toContain('redirect({ to: "/settings/general"');
     expect(projectRouteSource).toContain("ProjectCardRedirect");
+    expect(projectsRouteSource).toContain("ProjectsSettingsRedirect");
     expect(settingsRouteSource).toContain('redirect({ to: "/settings/general"');
     expect(routeTreeSource).not.toContain("fullPath: '/settings/connections'");
   });

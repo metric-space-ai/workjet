@@ -8,6 +8,7 @@ import {
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { randomUUID } from "../../lib/utils";
+import { classifyComposerError } from "./composerErrorLineLogic";
 import {
   createWorkjetPrivateChat,
   privateChatIntentRequest,
@@ -89,8 +90,11 @@ export function NativePrivateChatControl(props: {
       if (live.current)
         toastManager.add({
           type: "error",
-          title: "Luma-Chat nicht geöffnet",
-          description: error instanceof Error ? error.message : "Keine Bestätigung von CTOX",
+          // Kein Rohtext im Toast: 401 heißt abgelaufener Instanz-Zugang, sonst nur die Zeile.
+          title:
+            classifyComposerError(error) === "authentication"
+              ? "Anmeldung der Instanz abgelaufen"
+              : "Preset-Chat nicht geöffnet",
         });
     } finally {
       pending.current = false;
@@ -118,7 +122,7 @@ export function NativePrivateChatControl(props: {
         disabled={busy || props.connectionId === null}
         onClick={() => void open(false)}
       >
-        {busy ? "Wird geöffnet …" : "Luma-Chat öffnen"}
+        {busy ? "Wird geöffnet …" : "Preset-Chat öffnen"}
       </Button>
       <Button
         type="button"

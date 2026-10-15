@@ -7,8 +7,8 @@ export type ProjectTeamSection = "supervisor" | "parents" | "workers";
 /** Sidebar order for an opened project: its supervisor, the long-lived parents, then one-time PR workers. */
 export const PROJECT_TEAM_SECTIONS = [
   { section: "supervisor", label: "Supervisor", empty: "Noch kein Supervisor" },
-  { section: "parents", label: "Feste Lumas", empty: "Noch keine festen Lumas" },
-  { section: "workers", label: "Einmal-Lumas", empty: "Noch keine Einmal-Lumas" },
+  { section: "parents", label: "Feste Presets", empty: "Noch keine festen Presets" },
+  { section: "workers", label: "Einmal-Presets", empty: "Noch keine Einmal-Presets" },
 ] as const satisfies ReadonlyArray<{
   readonly section: ProjectTeamSection;
   readonly label: string;

@@ -27,7 +27,7 @@ Ziel: Die Oberfläche ist aus einem Guss, einfach und verständlich. Sie zeigt I
      - Advanced-Aufklapper.
 2. **Zeile** (`ui/row`, neu)
    - Aufbau: Statuspunkt, Name (darunter höchstens eine kurze Meta-Zeile wie Adresse), Chips, Aktiv-Schalter, Papierkorb mit Bestätigung, ⋯-Menü für Seltenes (Bearbeiten, Reparieren, Neu prüfen).
-   - Ein Objekt hat genau eine Zeile. Listen aller Art nutzen diese Zeile: Instanzen, Rechner, Lumas, Projekte, PRs, Konten, Modelle.
+   - Ein Objekt hat genau eine Zeile. Listen aller Art nutzen diese Zeile: Instanzen, Rechner, Presets, Projekte, PRs, Konten, Modelle.
 3. **Leerzustand** (`ui/empty`)
    - Titel (höchstens 4 Wörter) und ein Primär-Button.
    - Kein Absatz, keine Illustration.
@@ -75,15 +75,15 @@ Michael: „wenn eine GPU da ist, kann sie benutzt werden, wenn Build, dann halt
 - Englisch bleibt nur bei Eigennamen und Modellnamen.
 - Feste Begriffe:
 
-  | Begriff            | Bedeutung          | Statt                                             |
-  | ------------------ | ------------------ | ------------------------------------------------- |
-  | Instanz            | CTOX-Instanz       | Instance, Business OS (als Ortsname), CTOX-Master |
-  | Rechner            | Computer, Maschine | Computer, Machine                                 |
-  | Luma, Plural Lumas | KI-Worker          | Agent, Worker (sichtbar)                          |
-  | Projekt            | –                  | Project                                           |
-  | Regeltermin        | –                  | Jour fixe (sichtbar)                              |
-  | Einstellungen      | –                  | Settings                                          |
-  | Modell, Harness    | –                  | –                                                 |
+  | Begriff                | Bedeutung          | Statt                                             |
+  | ---------------------- | ------------------ | ------------------------------------------------- |
+  | Instanz                | CTOX-Instanz       | Instance, Business OS (als Ortsname), CTOX-Master |
+  | Rechner                | Computer, Maschine | Computer, Machine                                 |
+  | Preset, Plural Presets | KI-Worker          | Luma, Agent, Worker (sichtbar)                    |
+  | Projekt                | –                  | Project                                           |
+  | Regeltermin            | –                  | Jour fixe (sichtbar)                              |
+  | Einstellungen          | –                  | Settings                                          |
+  | Modell, Harness        | –                  | –                                                 |
 
 ## 5. Icons (lucide, eine Strichstärke, `size-4` in Zeilen, `size-3.5` in Leisten)
 
@@ -91,7 +91,7 @@ Michael: „wenn eine GPU da ist, kann sie benutzt werden, wenn Build, dann halt
 | -------- | ------------------------------------------------------ | ------------------ |
 | Instanz  | Server bzw. Knoten (`server`)                          | –                  |
 | Rechner  | Monitor (`monitor`)                                    | –                  |
-| Luma     | Person (`user-round` bzw. `bot` nur für Systemakteure) | Schraubenschlüssel |
+| Preset   | Person (`user-round` bzw. `bot` nur für Systemakteure) | Schraubenschlüssel |
 | Modell   | Anbieterzeichen bzw. `cpu`                             | Glitzerstern, ✨   |
 | Harness  | Terminal (`terminal`)                                  | –                  |
 | Werkzeug | Schraubenschlüssel (`wrench`), NUR echte Werkzeuge     | –                  |

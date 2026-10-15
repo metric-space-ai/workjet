@@ -25,6 +25,8 @@ import { ComposerDictationButton } from "./ComposerDictationButton";
 import { ComposerControl } from "./ComposerControl";
 import { shouldSubmitComposerOnEnter } from "../../composer-logic";
 import { createPortal } from "react-dom";
+import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
+import { SecretRequestCards } from "./SecretRequestCard";
 import {
   appendSupervisorExecutionEvents,
   reconstructSupervisorPublicReplies,
@@ -64,10 +66,25 @@ import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
-import { NativeSupervisorRouteControls } from "./NativeSupervisorRouteControls";
+import {
+  NativeSupervisorRouteControls,
+  type SupervisorRouteStatus,
+} from "./NativeSupervisorRouteControls";
 import { NativeSupervisorActualRoute } from "./NativeSupervisorActualRoute";
 import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
-import { NativeSupervisorConnectionStatus } from "./NativeSupervisorConnectionStatus";
+import { WorkerSourceConnectionPicker } from "./WorkerSourceConnectionPicker";
+import { ComposerErrorLine } from "./ComposerErrorLine";
+import {
+  COMPOSER_AUTHENTICATION_LINE,
+  COMPOSER_RECONNECT_LABEL,
+  classifyComposerError,
+  composerErrorLine,
+  composerRawErrorText,
+  type ComposerErrorLine as ComposerErrorLineValue,
+} from "./composerErrorLineLogic";
+import { useComposerSilentRetry } from "./useComposerSilentRetry";
+import { usePrimaryEnvironment } from "../../state/environments";
+import { workerSourceProvisionRequest } from "../../workjetWorkerSourceConnection";
 import type {
   NativeWorkerSourceControl,
   WorkerSourceConnectionStatus,
@@ -83,6 +100,7 @@ export function NativeSupervisorComposer(props: {
   readonly conversationTarget?: HTMLElement | null;
   readonly workerSourceControl?: ReactElement<ComponentProps<typeof NativeWorkerSourceControl>>;
 }) {
+  const secretLanguage = useProjectOverviewLanguage();
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
@@ -96,7 +114,8 @@ export function NativeSupervisorComposer(props: {
       routeSaving,
     ]),
   );
-  const [routeStatus, setRouteStatus] = useState<string | null>(null);
+  const [routeStatus, setRouteStatus] = useState<SupervisorRouteStatus | null>(null);
+  const environment = usePrimaryEnvironment();
   const [workerStatus, setWorkerStatus] = useState<WorkerSourceConnectionStatus | null>(null);
   const [prompt, setPrompt] = useState("");
   const [turnKind, setTurnKind] = useState<WorkjetSupervisorTurnKind>("work");
@@ -376,7 +395,7 @@ export function NativeSupervisorComposer(props: {
             setExecutionError(
               observed.code === "unsupported"
                 ? "Kein Ausführungsverlauf in dieser CTOX-Version"
-                : `Ausführungsverlauf nicht verfügbar: ${observed.code}`,
+                : "Ausführungsverlauf nicht verfügbar",
             );
           }
         } catch {
@@ -466,15 +485,74 @@ export function NativeSupervisorComposer(props: {
       props.blockReason?.startsWith("Sign in to ctox.dev") ||
       props.blockReason?.startsWith("Bei ctox.dev anmelden")),
   );
-  const connectionStatus = authenticationRequired
-    ? "Bei ctox.dev anmelden"
-    : ((workerStatus?.choice ? workerStatus.message : null) ??
-      (disabled
-        ? (props.blockReason ?? (props.instanceId ? "Projektverbindung nicht verfügbar" : null))
-        : null) ??
-      workerStatus?.message ??
-      connectionError ??
-      routeStatus);
+  // Genau eine Zeile über dem Eingabefeld; Rohtext nur hinter „Details“.
+  const retryProjectConnection = () => {
+    refreshWorkjetProjectRegistry(latestProps.current.instanceId);
+    requestLocalProjectRegistrationRetry();
+    setBindingRetry((value) => value + 1);
+  };
+  const composerIssue: {
+    readonly error: unknown;
+    readonly fallback: string;
+    readonly retry: (() => void) | null;
+  } | null = authenticationRequired
+    ? null
+    : disabled && !workerStatus?.choice
+      ? {
+          error:
+            props.blockReason ?? (props.instanceId ? "Projektverbindung nicht verfügbar" : null),
+          fallback: "Projektverbindung nicht verfügbar",
+          retry: props.instanceId !== null ? retryProjectConnection : null,
+        }
+      : workerStatus && !workerStatus.choice
+        ? {
+            error: workerStatus.message,
+            fallback: "Presets nicht verbunden",
+            retry: workerStatus.retry,
+          }
+        : error && !connectionError
+          ? {
+              error,
+              fallback: "Anfrage nicht gesendet",
+              retry: journal !== null ? () => void runRef.current("resume") : null,
+            }
+          : routeStatus;
+  const composerIssueUnreachable =
+    composerIssue !== null &&
+    composerRawErrorText(composerIssue.error) !== null &&
+    classifyComposerError(composerIssue.error) === "unreachable";
+  const unreachableForMs = useComposerSilentRetry(
+    composerIssueUnreachable,
+    composerIssue?.retry ?? null,
+  );
+  const composerLine: ComposerErrorLineValue | null = authenticationRequired
+    ? {
+        kind: "authentication",
+        text: COMPOSER_AUTHENTICATION_LINE,
+        action: "reconnect",
+        actionLabel: COMPOSER_RECONNECT_LABEL,
+        details:
+          composerRawErrorText(
+            props.blockReason?.startsWith("Sign in to ctox.dev") ||
+              props.blockReason?.startsWith("Bei ctox.dev anmelden")
+              ? props.blockReason
+              : (connectionError ?? bindingError),
+          ) ?? null,
+      }
+    : workerStatus?.choice
+      ? {
+          kind: "failed",
+          text: workerStatus.message,
+          action: "retry",
+          actionLabel: "",
+          details: null,
+        }
+      : composerIssue === null
+        ? null
+        : composerErrorLine(composerIssue.error, {
+            fallback: composerIssue.fallback,
+            unreachableForMs,
+          });
   // Binding- und Capability-Prüfungen wiederholen sich still, bis sie klappen.
   useEffect(() => {
     if (disabled || !bindingMatches || bindingPending || bindingError === null) return;
@@ -596,6 +674,38 @@ export function NativeSupervisorComposer(props: {
     return () => clearTimeout(timer);
   }, [disabled, busy, drafting, execution]);
 
+  // Derselbe Erneuerungsweg wie die Presets-Seite: Zugang neu ausstellen; nur ein
+  // abgemeldetes Konto führt zuerst durch die ctox.dev-Anmeldung.
+  const reconnectInstance = async () => {
+    const bridge = window.desktopBridge?.ctox;
+    if (!bridge || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    try {
+      const request =
+        environment === null
+          ? null
+          : workerSourceProvisionRequest(environment.environmentId, latestProps.current.instanceId);
+      const provision = bridge.provisionDecisionHub;
+      let result = request && provision ? await provision(request) : null;
+      if (result === null || (result._tag === "failed" && result.code === "signed_out")) {
+        const login = await bridge.login();
+        if (login._tag === "completed" && request && provision) result = await provision(request);
+      }
+      refreshWorkjetProjectRegistry(latestProps.current.instanceId);
+      requestLocalProjectRegistrationRetry();
+      setError(null);
+      setFailureCode(null);
+      setBindingRetry((value) => value + 1);
+      workerStatus?.retry?.();
+    } catch {
+      // Still: die Zeile bleibt mit derselben Aktion stehen.
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
   const followReply = useRef(true);
   useEffect(() => {
     const target = props.conversationTarget;
@@ -668,6 +778,11 @@ export function NativeSupervisorComposer(props: {
 
   return (
     <section className="mx-auto w-full max-w-5xl p-3" aria-label="Supervisor-Aufgabe">
+      <SecretRequestCards
+        instanceId={props.instanceId}
+        threadKey={props.scope?.threadId ?? null}
+        language={secretLanguage}
+      />
       {props.conversationTarget && conversation
         ? createPortal(conversation, props.conversationTarget)
         : null}
@@ -714,11 +829,14 @@ export function NativeSupervisorComposer(props: {
               </button>
             </p>
           )}
-          {journal.turn?.errorMessage && (
-            <p role="alert" className="text-destructive">
-              {journal.turn.errorMessage}
-            </p>
-          )}
+          {journal.turn?.errorMessage &&
+            (() => {
+              const failed = composerErrorLine(journal.turn.errorMessage, {
+                fallback: "Aufgabe fehlgeschlagen",
+                unreachableForMs: Number.POSITIVE_INFINITY,
+              });
+              return failed ? <ComposerErrorLine line={failed} onAction={null} /> : null;
+            })()}
         </div>
       )}
       {props.workerSourceControl &&
@@ -731,68 +849,27 @@ export function NativeSupervisorComposer(props: {
           {notice}
         </p>
       )}
-      {error && !connectionError && !authenticationRequired && (
-        <p role="alert" className="mb-2 text-xs text-destructive">
-          {error}
-        </p>
-      )}
-      {(connectionStatus || authenticationRequired) && (
-        <NativeSupervisorConnectionStatus
-          message={connectionStatus ?? "Anmeldung erforderlich"}
-          workerStatus={authenticationRequired ? null : workerStatus}
-          recoveryAction={
-            authenticationRequired ? (
-              <button
-                type="button"
-                className="underline underline-offset-2"
-                disabled={busy}
-                onClick={async () => {
-                  const bridge = window.desktopBridge?.ctox;
-                  if (!bridge || inFlight.current) return;
-                  inFlight.current = true;
-                  setBusy(true);
-                  try {
-                    const result = await bridge.login();
-                    if (result._tag === "completed") {
-                      refreshWorkjetProjectRegistry(latestProps.current.instanceId);
-                      requestLocalProjectRegistrationRetry();
-                      setError(null);
-                      setFailureCode(null);
-                      setBindingRetry((value) => value + 1);
-                    }
-                  } catch {
-                    setError("CTOX-Anmeldung nicht geöffnet");
-                  } finally {
-                    inFlight.current = false;
-                    setBusy(false);
-                  }
-                }}
-              >
-                Bei ctox.dev anmelden
-              </button>
-            ) : workerStatus?.retry ? (
-              <button
-                type="button"
-                className="underline underline-offset-2"
+      {composerLine && (
+        <ComposerErrorLine
+          line={composerLine}
+          disabled={
+            authenticationRequired
+              ? busy
+              : workerStatus?.retry && composerIssue?.retry === workerStatus.retry
+                ? workerStatus.disabled
+                : busy || bindingPending
+          }
+          busyLabel={authenticationRequired && busy ? "Verbindet …" : null}
+          control={
+            workerStatus?.choice && !authenticationRequired ? (
+              <WorkerSourceConnectionPicker
+                choice={workerStatus.choice}
                 disabled={workerStatus.disabled}
-                onClick={workerStatus.retry}
-              >
-                Neu verbinden
-              </button>
-            ) : props.instanceId !== null && disabled ? (
-              <button
-                type="button"
-                className="underline underline-offset-2"
-                disabled={busy || bindingPending}
-                onClick={() => {
-                  refreshWorkjetProjectRegistry(props.instanceId);
-                  requestLocalProjectRegistrationRetry();
-                  setBindingRetry((value) => value + 1);
-                }}
-              >
-                Erneut versuchen
-              </button>
-            ) : null
+              />
+            ) : undefined
+          }
+          onAction={
+            authenticationRequired ? () => void reconnectInstance() : (composerIssue?.retry ?? null)
           }
         />
       )}

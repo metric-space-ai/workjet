@@ -33,10 +33,7 @@ import {
   type WorkjetBusinessOsObjectKind,
 } from "@workjet/contracts";
 import { SessionRequestCards } from "./chat/SessionRequestCards";
-import {
-  connectionStatusTitle,
-  type EnvironmentConnectionPresentation,
-} from "@workjet/client-runtime/connection";
+import { type EnvironmentConnectionPresentation } from "@workjet/client-runtime/connection";
 import {
   changeRequestAutoSettles,
   effectiveSettled,
@@ -174,13 +171,7 @@ import {
   isCodingToolCommand,
   visibleDeveloperRightPanelState,
 } from "../developerModeVisibility";
-import {
-  AlarmClockIcon,
-  CheckCircle2Icon,
-  ChevronDownIcon,
-  GitBranchIcon,
-  WifiOffIcon,
-} from "lucide-react";
+import { AlarmClockIcon, CheckCircle2Icon, ChevronDownIcon, GitBranchIcon } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
@@ -339,6 +330,13 @@ import { WorkjetHandoffInbox } from "./workjetSurfaces";
 import { publishCrossModeResultSubmitted } from "../crossMode/crossModeNotificationProducer";
 import { CrossModeNotificationCenter } from "../crossMode/CrossModeNotifications";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import {
+  classifyComposerError,
+  composerErrorLine,
+  composerToastDescription,
+} from "./chat/composerErrorLineLogic";
+import { useComposerSilentRetry } from "./chat/useComposerSilentRetry";
+import { environmentUnavailableBannerItem } from "./chat/environmentUnavailableBanner";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -2370,7 +2368,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Neu verbinden fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Verbindung fehlgeschlagen.",
+            description: composerToastDescription(error),
           }),
         );
       }
@@ -2568,6 +2566,36 @@ function ChatViewContent(props: ChatViewProps) {
   const serverUpdateState = useAtomValue(
     serverEnvironment.updateStateAtom(serverUpdateEnvironmentId),
   );
+  // Nicht erreichbar heißt: still alle 15 s neu verbinden und erst nach 2 min
+  // eine deutsche Zeile zeigen; der Rohtext bleibt hinter „Details“.
+  const environmentIssueRaw =
+    activeEnvironmentUnavailableState === null
+      ? null
+      : (activeEnvironmentUnavailableState.connection.error ?? "offline");
+  const environmentIssueUnreachable =
+    environmentIssueRaw !== null && classifyComposerError(environmentIssueRaw) === "unreachable";
+  const silentEnvironmentRetryId =
+    activeEnvironmentUnavailableState !== null &&
+    activeEnvironmentUnavailableState.connection.phase !== "connecting" &&
+    activeEnvironmentUnavailableState.connection.phase !== "reconnecting"
+      ? activeEnvironmentUnavailableState.environmentId
+      : null;
+  const environmentUnreachableForMs = useComposerSilentRetry(
+    environmentIssueUnreachable,
+    silentEnvironmentRetryId === null
+      ? null
+      : () => void retryEnvironment(silentEnvironmentRetryId),
+  );
+  const environmentIssueLine = useMemo(
+    () =>
+      environmentIssueRaw === null
+        ? null
+        : composerErrorLine(environmentIssueRaw, {
+            fallback: "Instanz nicht erreichbar",
+            unreachableForMs: environmentUnreachableForMs,
+          }),
+    [environmentIssueRaw, environmentUnreachableForMs],
+  );
   const systemComposerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const items: ComposerBannerStackItem[] = [];
     const updateRunning = serverUpdateState.status === "running";
@@ -2605,36 +2633,18 @@ function ChatViewContent(props: ChatViewProps) {
           ),
           title: `${unavailableConnection.phase === "connecting" ? "Verbinde mit" : "Verbinde erneut mit"} ${activeEnvironmentUnavailableState.label} …`,
         });
-      } else {
-        items.push({
-          id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
-          variant: unavailableConnection.phase === "error" ? "error" : "warning",
-          icon: <WifiOffIcon />,
-          title: `${activeEnvironmentUnavailableState.label}: ${connectionStatusTitle(unavailableConnection)}`,
-          description: unavailableConnection.error ?? undefined,
-          actions: (
-            <>
-              <Button
-                size="xs"
-                disabled={environmentReconnecting}
-                onClick={() =>
-                  void handleReconnectActiveEnvironment(
-                    activeEnvironmentUnavailableState.environmentId,
-                  )
-                }
-              >
-                {environmentReconnecting ? "Verbinde …" : "Neu verbinden"}
-              </Button>
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => void navigate({ to: "/settings/computers" })}
-              >
-                Rechner
-              </Button>
-            </>
-          ),
-        });
+      } else if (environmentIssueLine !== null) {
+        items.push(
+          environmentUnavailableBannerItem({
+            environmentId: activeEnvironmentUnavailableState.environmentId,
+            line: environmentIssueLine,
+            reconnecting: environmentReconnecting,
+            onReconnect: () =>
+              void handleReconnectActiveEnvironment(
+                activeEnvironmentUnavailableState.environmentId,
+              ),
+          }),
+        );
       }
     }
     if (
@@ -2714,9 +2724,9 @@ function ChatViewContent(props: ChatViewProps) {
     return items;
   }, [
     activeEnvironmentUnavailableState,
+    environmentIssueLine,
     reconnectWarningGraceElapsed,
     handleReconnectActiveEnvironment,
-    navigate,
     setDismissedVersionMismatchKey,
     showVersionMismatchBanner,
     serverUpdateState,
@@ -5288,7 +5298,7 @@ function ChatViewContent(props: ChatViewProps) {
       ),
       title: working
         ? liveCount > 0
-          ? `${liveCount} ${liveCount === 1 ? "Luma arbeitet" : "Lumas arbeiten"} im Hintergrund`
+          ? `${liveCount} ${liveCount === 1 ? "Preset arbeitet" : "Presets arbeiten"} im Hintergrund`
           : "Hintergrundarbeit läuft"
         : "Überwacht im Hintergrund",
       actions: (
@@ -7413,7 +7423,7 @@ function ChatViewContent(props: ChatViewProps) {
                                           _tag: "failed",
                                           error: {
                                             _tag: "OrchestrationCommandInvariantError",
-                                            detail: "Keine freigegebene Luma-Verbindung.",
+                                            detail: "Keine freigegebene Preset-Verbindung.",
                                           },
                                         };
                                       const result = await setThreadWorkjetConfig({

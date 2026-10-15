@@ -223,6 +223,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.DEEP_LINK_PENDING_CHANNEL, wrappedListener);
     };
   },
+  getLoginItemState: () => ipcRenderer.invoke(IpcChannels.GET_LOGIN_ITEM_STATE_CHANNEL),
+  setOpenAtLogin: (enabled) => ipcRenderer.invoke(IpcChannels.SET_OPEN_AT_LOGIN_CHANNEL, enabled),
+  setTrayProjects: (projects) =>
+    ipcRenderer.invoke(IpcChannels.SET_TRAY_PROJECTS_CHANNEL, projects),
   getWslState: () => ipcRenderer.invoke(IpcChannels.GET_WSL_STATE_CHANNEL),
   setWslBackendEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_WSL_BACKEND_ENABLED_CHANNEL, enabled),
@@ -529,3 +533,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     },
   },
 } satisfies DesktopBridge);
+
+// „Rechner hinzufügen“ mit Passwort: Schlüssel einmalig eintragen. Eigener,
+// schmaler Kanal neben desktopBridge (Rechner-Setup-Pfad, ctox sync v4 §16.41).
+contextBridge.exposeInMainWorld("workjetComputerKeys", {
+  install: (target: {
+    alias: string;
+    hostname: string;
+    username: string | null;
+    port: number | null;
+  }): Promise<{ ok: boolean; message: string }> =>
+    ipcRenderer.invoke(IpcChannels.INSTALL_COMPUTER_SSH_KEY_CHANNEL, target),
+});

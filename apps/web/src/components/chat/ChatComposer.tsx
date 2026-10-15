@@ -1107,7 +1107,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (draftWorkjetConfig.ctoxCrewChat !== undefined && workerId !== selectedWorkjetWorkerId) {
         toastManager.add({
           type: "info",
-          title: "Andere Luma nur in neuer Unterhaltung",
+          title: "Anderes Preset nur in neuer Unterhaltung",
         });
         return;
       }
@@ -1273,7 +1273,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : selectedWorkjetWorker === null
       ? null
       : workerBoundComputer === null
-        ? "Rechner der Luma nicht mehr verfügbar"
+        ? "Rechner des Presets nicht mehr verfügbar"
         : workerBoundComputer.environmentId !== environmentId
           ? `Projekt fehlt auf ${workerBoundComputer.label}`
           : null;
@@ -1651,7 +1651,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         (nativeDraftIntent.projectId !== nativeProject.id ||
           nativeDraftIntent.workerProfileId !== selectedWorkjetWorker.id)) ||
       (privateChatBinding !== undefined && nativeDraftIntent === undefined))
-      ? "Projekt und Luma wählen"
+      ? "Projekt und Preset wählen"
       : null;
   const privateChatSendDisabledReason =
     !composerTargetIsThread &&
@@ -1672,7 +1672,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedWorkjetWorker !== null &&
     nativeProject !== undefined &&
     draftWorkjetConfig.ctoxCrewChat === undefined
-      ? "Privaten Luma-Chat öffnen"
+      ? "Privaten Preset-Chat öffnen"
       : null);
   const isSendDisabled = effectiveSendDisabledReason !== null;
   // Live per-provider model discovery — the same source the settings pools
@@ -1715,10 +1715,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [workjetGatewayCatalogQuery.data, workjetGatewayModelsQuery.data]);
   const manualModelsUnavailableReason = workjetGatewayCatalogQuery.isPending
     ? "Modellkatalog wird geladen …"
-    : (workjetGatewayCatalogQuery.error ??
-      (workjetGatewayCatalogQuery.data === null
-        ? "Modellkatalog nicht verfügbar"
-        : "Keine Modelle im Katalog"));
+    : // Rohfehler des Katalogs (HTTP-Status, englischer Text) stehen nie im Menü.
+      workjetGatewayCatalogQuery.error !== null || workjetGatewayCatalogQuery.data === null
+      ? "Modellkatalog nicht verfügbar"
+      : "Keine Modelle im Katalog";
   const greppyManualModels = useMemo(
     () =>
       getGreppyManualModelCatalog(
@@ -4162,7 +4162,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               )
                                 ? "In dieser Instanz nicht freigegeben"
                                 : connection?.phase !== "connected"
-                                  ? (connection?.error ?? status)
+                                  ? "Rechner getrennt"
                                   : !selectableEnvironmentIds.includes(computer.environmentId) &&
                                       computer.environmentId !== environmentId
                                     ? `Kein Checkout auf ${computer.label}`

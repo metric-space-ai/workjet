@@ -793,6 +793,7 @@ export const resolveCtoxAuthTokenFromCli = (options: {
         args: [
           "secret",
           "get",
+          "--reveal",
           "--scope",
           CTOX_MCP_TOKEN_SECRET_SCOPE,
           "--name",

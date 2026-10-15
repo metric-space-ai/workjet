@@ -1015,7 +1015,7 @@ export function WorkjetSendToWorkerMenuItem(props: {
   return (
     <MenuItem disabled={props.disabled} onClick={props.onOpen}>
       <SendHorizonalIcon aria-hidden="true" />
-      An Luma senden
+      An Preset senden
     </MenuItem>
   );
 }

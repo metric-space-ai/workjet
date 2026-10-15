@@ -24,6 +24,19 @@ export const URL_HANDLER_DESKTOP_ENTRY_NAME = "workjet-url-handler.desktop";
 
 const { logInfo, logWarning } = makeComponentLogger("desktop-linux-url-handler");
 
+// Linux packages rename the Electron binary to "<executable>-bin" and start it
+// through the "<executable>" launcher script (apps/desktop/scripts/
+// linux-launcher.sh), which keeps PRoot installs without user namespaces
+// startable. A deep link must enter through that launcher too; process.execPath
+// names the renamed binary.
+export const LINUX_ELECTRON_BINARY_SUFFIX = "-bin";
+
+export function linuxLauncherCandidate(execPath: string): string | null {
+  return execPath.endsWith(LINUX_ELECTRON_BINARY_SUFFIX)
+    ? execPath.slice(0, -LINUX_ELECTRON_BINARY_SUFFIX.length)
+    : null;
+}
+
 export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedErrorClass<DesktopLinuxUrlHandlerRegistrationError>()(
   "DesktopLinuxUrlHandlerRegistrationError",
   {
@@ -109,7 +122,13 @@ export const make = Effect.gen(function* () {
   const writeDesktopEntry = Effect.gen(function* () {
     // Inside the mounted AppImage, process.execPath points at a transient
     // /tmp/.mount_* path — the handler must launch the AppImage itself.
-    const execTarget = Option.getOrElse(environment.appImagePath, () => process.execPath);
+    const launcherCandidate = linuxLauncherCandidate(process.execPath);
+    const launcherPath =
+      launcherCandidate !== null &&
+      (yield* fileSystem.exists(launcherCandidate).pipe(Effect.orElseSucceed(() => false)))
+        ? launcherCandidate
+        : process.execPath;
+    const execTarget = Option.getOrElse(environment.appImagePath, () => launcherPath);
     yield* fileSystem.makeDirectory(environment.linuxApplicationsDir, { recursive: true });
     yield* fileSystem.writeFileString(
       desktopEntryPath,

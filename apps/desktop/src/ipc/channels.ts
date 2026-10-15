@@ -37,6 +37,7 @@ export const CONNECTION_CATALOG_WARNING_CHANNEL = "desktop:connection-catalog-wa
 export const DISCOVER_SSH_HOSTS_CHANNEL = "desktop:discover-ssh-hosts";
 export const DISCOVER_TAILSCALE_PEERS_CHANNEL = "desktop:discover-tailscale-peers";
 export const ENSURE_SSH_ENVIRONMENT_CHANNEL = "desktop:ensure-ssh-environment";
+export const INSTALL_COMPUTER_SSH_KEY_CHANNEL = "desktop:install-computer-ssh-key";
 export const DISCONNECT_SSH_ENVIRONMENT_CHANNEL = "desktop:disconnect-ssh-environment";
 export const FETCH_SSH_ENVIRONMENT_DESCRIPTOR_CHANNEL = "desktop:fetch-ssh-environment-descriptor";
 export const BOOTSTRAP_SSH_BEARER_SESSION_CHANNEL = "desktop:bootstrap-ssh-bearer-session";
@@ -142,6 +143,9 @@ export const CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT = "desktop:ctox-shell-fleet-r
 /** Main → renderer push: per-instance guest lifecycle ("none"|"loading"|"warm"). */
 export const CTOX_GUEST_STATE_CHANNEL = "desktop:ctox-guest-state";
 export const GET_SYSTEM_LANGUAGES_CHANNEL = "desktop:get-system-languages";
+export const GET_LOGIN_ITEM_STATE_CHANNEL = "desktop:get-login-item-state";
+export const SET_OPEN_AT_LOGIN_CHANNEL = "desktop:set-open-at-login";
+export const SET_TRAY_PROJECTS_CHANNEL = "desktop:set-tray-projects";
 
 export const TOOLHUB_REQUEST_CHANNEL = "desktop:toolhub-request";
 export const TOOLHUB_AUTHORIZE_CHANNEL = "desktop:toolhub-authorize";

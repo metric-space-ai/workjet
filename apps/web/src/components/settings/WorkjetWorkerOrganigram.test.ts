@@ -89,8 +89,8 @@ describe("WorkjetWorkerOrganigram", () => {
       }),
     );
     expect(markup).toContain("Anordnen");
-    expect(markup).toContain('aria-label="Luma-Organigramm"');
-    expect(markup).toContain('aria-label="Unter-Luma für lead"');
+    expect(markup).toContain('aria-label="Preset-Organigramm"');
+    expect(markup).toContain('aria-label="Unter-Preset für lead"');
     expect(markup).not.toContain("Arrange");
     expect(markup).not.toContain('role="dialog"');
   });

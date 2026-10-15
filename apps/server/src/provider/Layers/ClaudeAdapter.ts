@@ -4623,7 +4623,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         includePartialMessages: true,
         canUseTool,
         onElicitation,
-        env: workjetTeamEnvironment(input.threadId, sessionEnvironment),
+        env: withClaudeCodePrivacyDefaults(
+          workjetTeamEnvironment(input.threadId, sessionEnvironment),
+        ),
         additionalDirectories: namespaceCapture
           ? [input.cwd!]
           : (oneShotPolicy?.additionalDirectories ?? additionalDirectories),
@@ -5149,3 +5151,25 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     },
   } satisfies ClaudeAdapterShape;
 });
+
+/**
+ * Owner rule (2026-10-15): Workjet transmits no data anywhere. Claude Code
+ * workers therefore start without telemetry, error reporting and other
+ * non-essential traffic, unless the user set these variables themselves.
+ */
+const CLAUDE_CODE_PRIVACY_DEFAULTS = [
+  "DISABLE_TELEMETRY",
+  "DISABLE_ERROR_REPORTING",
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+] as const;
+
+export function withClaudeCodePrivacyDefaults(
+  env: NodeJS.ProcessEnv,
+  userEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const next: NodeJS.ProcessEnv = { ...env };
+  for (const key of CLAUDE_CODE_PRIVACY_DEFAULTS) {
+    next[key] = env[key] ?? userEnv[key] ?? "1";
+  }
+  return next;
+}

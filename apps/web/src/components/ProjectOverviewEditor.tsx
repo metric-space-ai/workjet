@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { createContext, useContext, useId, useState, type ReactNode } from "react";
 import { Checkbox } from "./ui/checkbox";
 import { OptionSelect } from "./ui/option-select";
 import {
@@ -35,6 +35,45 @@ export type ProjectCardConfigurationValues = {
   readonly repositoryUrl: string | null;
   readonly jourFixe: { weekday: number; time: string; timezone: string } | null;
 };
+
+/**
+ * What a card save sends to `project.configure`: the name (the contract
+ * requires it) plus only the fields that differ from the saved state. An
+ * explicit null clears a field on the instance, so it appears only when the
+ * user emptied a field that had a value.
+ */
+export type ProjectCardConfigurationPatch = {
+  readonly title: string;
+  readonly repoUrl?: string | null;
+  readonly publicUrl?: string | null;
+  readonly jourFixe?: { weekday: number; time: string; timezone: string } | null;
+};
+
+export function projectCardConfigurationPatch(
+  saved: ProjectCardConfigurationValues,
+  next: ProjectCardConfigurationValues,
+): ProjectCardConfigurationPatch {
+  const before = normalizedCardValues(saved);
+  const after = normalizedCardValues(next);
+  return {
+    title: after.title,
+    ...(after.repositoryUrl !== before.repositoryUrl ? { repoUrl: after.repositoryUrl } : {}),
+    ...(after.websiteUrl !== before.websiteUrl ? { publicUrl: after.websiteUrl } : {}),
+    ...(JSON.stringify(after.jourFixe) !== JSON.stringify(before.jourFixe)
+      ? { jourFixe: after.jourFixe }
+      : {}),
+  };
+}
+
+/**
+ * Per-card context from the gallery: the instance save that takes a patch,
+ * and a repository address read from the project's folder (`origin`) that is
+ * only proposed, never written without the user's click.
+ */
+export const ProjectCardConfigContext = createContext<{
+  readonly savePatch?: ((patch: ProjectCardConfigurationPatch) => Promise<boolean>) | undefined;
+  readonly repositorySuggestion?: string | null | undefined;
+}>({});
 
 const WEEKDAY_LABELS = [
   "Montag",
@@ -93,6 +132,11 @@ function normalizedCardValues(
     repositoryUrl: values.repositoryUrl?.trim() ? values.repositoryUrl.trim() : null,
     jourFixe: values.jourFixe,
   };
+}
+
+/** A URL field changed when its trimmed text differs from what the form opened with. */
+function changedUrl(value: string | null | undefined, initial: string | null | undefined) {
+  return (value?.trim() || null) !== (initial?.trim() || null);
 }
 
 function sameCardValues(a: ProjectCardConfigurationValues, b: ProjectCardConfigurationValues) {
@@ -158,6 +202,7 @@ export function ProjectCardConfigEditor({
   readonly onCancel: () => void;
 }) {
   const id = useId();
+  const { savePatch, repositorySuggestion } = useContext(ProjectCardConfigContext);
   const [draft, setDraft] = useState<ProjectCardConfigurationValues>(() => ({
     title,
     websiteUrl,
@@ -196,7 +241,9 @@ export function ProjectCardConfigEditor({
     setError(null);
     setPending(true);
     try {
-      const ok = await onSave(normalizedCardValues(next));
+      const ok = savePatch
+        ? await savePatch(projectCardConfigurationPatch(saved, next))
+        : await onSave(normalizedCardValues(next));
       if (ok) {
         setPrevious(undo ? null : saved);
         setSaved(next);
@@ -272,6 +319,25 @@ export function ProjectCardConfigEditor({
             onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value || null })}
             onBlur={() => void commit(draft)}
           />
+          {repositorySuggestion && !draft.repositoryUrl?.trim() ? (
+            <button
+              type="button"
+              className="flex min-w-0 items-center gap-1.5 self-start rounded-full border border-border px-2 py-0.5 text-[11px] hover:bg-accent disabled:opacity-60"
+              data-workjet-action="project.card.config.repo-suggestion"
+              title={repositorySuggestion}
+              disabled={pending}
+              onClick={() => {
+                const updated = { ...draft, repositoryUrl: repositorySuggestion };
+                setDraft(updated);
+                void commit(updated);
+              }}
+            >
+              <span className="font-medium">{editorText("Repo übernehmen", "Use repository")}</span>
+              <span className="min-w-0 truncate text-muted-foreground">
+                {repositorySuggestion.replace(/^https:\/\//, "")}
+              </span>
+            </button>
+          ) : null}
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-1.5">
           <div className="flex min-w-0 flex-col gap-0.5">
@@ -415,6 +481,8 @@ export function ProjectOverviewEditor({
 }) {
   const id = useId();
   const [draft, setDraft] = useState(() => overviewDraft(overview));
+  // What the form showed when it opened: only fields that differ from it are sent.
+  const [initialDraft] = useState(() => overviewDraft(overview));
   const [budget, setBudget] = useState(() =>
     overview?.tokenBudget?.limitBillions == null
       ? ""
@@ -432,6 +500,7 @@ export function ProjectOverviewEditor({
     phase: configuration?.info?.phase ?? "",
     status: configuration?.info?.status ?? "",
   }));
+  const [initialInfo] = useState(() => info);
   const [meeting, setMeeting] = useState(() => ({
     enabled: configuration?.jourFixe != null,
     weekday: configuration?.jourFixe?.weekday ?? 1,
@@ -528,6 +597,9 @@ export function ProjectOverviewEditor({
             },
           };
           if (configuration && onSaveConfiguration) {
+            const jourFixe = meeting.enabled
+              ? { weekday: meeting.weekday, time: meeting.time, timezone: meeting.timezone.trim() }
+              : null;
             const validated = decodeProjectConfiguration({
               action: "project.configure",
               commandId: "validate-project-configuration",
@@ -536,29 +608,30 @@ export function ProjectOverviewEditor({
               ...(supervisorLumaId !== (configuration.supervisorLumaId ?? null)
                 ? { supervisorLumaId }
                 : {}),
-              repoUrl: next.repositoryUrl ?? null,
-              publicUrl: next.websiteUrl,
-              info,
-              jourFixe: meeting.enabled
-                ? {
-                    weekday: meeting.weekday,
-                    time: meeting.time,
-                    timezone: meeting.timezone.trim(),
-                  }
-                : null,
+              ...(changedUrl(draft.repositoryUrl, initialDraft.repositoryUrl)
+                ? { repoUrl: next.repositoryUrl ?? null }
+                : {}),
+              ...(changedUrl(draft.websiteUrl, initialDraft.websiteUrl)
+                ? { publicUrl: next.websiteUrl }
+                : {}),
+              ...(JSON.stringify(info) !== JSON.stringify(initialInfo) ? { info } : {}),
+              ...(JSON.stringify(jourFixe) !== JSON.stringify(configuration.jourFixe ?? null)
+                ? { jourFixe }
+                : {}),
             });
             if (validated.action !== "project.configure")
               throw new Error("Ungültige Einstellungen");
+            // Only changed fields: an explicit null would clear the stored value.
             metadata = {
               ...(validated.supervisorLumaId !== undefined
                 ? { supervisorLumaId: validated.supervisorLumaId }
                 : {}),
-              repoUrl: validated.repoUrl ?? null,
-              publicUrl: validated.publicUrl ?? null,
-              info: validated.info ?? null,
-              jourFixe: validated.jourFixe ?? null,
+              ...(validated.repoUrl !== undefined ? { repoUrl: validated.repoUrl } : {}),
+              ...(validated.publicUrl !== undefined ? { publicUrl: validated.publicUrl } : {}),
+              ...(validated.info !== undefined ? { info: validated.info } : {}),
+              ...(validated.jourFixe !== undefined ? { jourFixe: validated.jourFixe } : {}),
             };
-            next = { ...next, regularMeeting: metadata.jourFixe ?? null };
+            next = { ...next, regularMeeting: jourFixe };
           }
         } catch {
           setState({
@@ -570,7 +643,12 @@ export function ProjectOverviewEditor({
         setState({ pending: true, message: "" });
         const resumeCalendarSource = deferTokenBudgetCalendarSource(configuration?.id);
         try {
-          if (metadata && onSaveConfiguration && !(await onSaveConfiguration(metadata))) {
+          if (
+            metadata &&
+            Object.keys(metadata).length > 0 &&
+            onSaveConfiguration &&
+            !(await onSaveConfiguration(metadata))
+          ) {
             setState({
               pending: false,
               message: "Projekteinstellungen nicht gespeichert",
@@ -723,7 +801,7 @@ export function ProjectOverviewEditor({
         {configuration && onSaveConfiguration && (
           <>
             <label className="text-xs text-muted-foreground" htmlFor={`${id}-supervisor-luma`}>
-              Supervisor Luma
+              Supervisor-Preset
             </label>
             {renderLumaField ? (
               renderLumaField({

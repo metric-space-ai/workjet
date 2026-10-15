@@ -6,6 +6,7 @@ import projectOverviewCardSource from "./ProjectOverviewCard.tsx?raw";
 import projectScriptEditorSource from "./projectScriptEditor.tsx?raw";
 import projectScriptsControlSource from "./ProjectScriptsControl.tsx?raw";
 import projectWorkspaceSource from "./ProjectWorkspace.tsx?raw";
+import sidebarAddWorkerSource from "./sidebar/SidebarAddPersistentWorker.tsx?raw";
 import sidebarSource from "./Sidebar.tsx?raw";
 import projectFaviconPickerSource from "./settings/ProjectFaviconPicker.tsx?raw";
 import projectSettingsPanelSource from "./settings/ProjectSettingsPanel.tsx?raw";
@@ -40,14 +41,18 @@ describe("project places are inline", () => {
     expect(sidebarSource).toContain('"next-week": "Nächste Woche"');
   });
 
-  it("keeps the new-thread button usable without projects", () => {
-    expect(sidebarSource).not.toContain("isSidebarNewThreadDisabled(");
-    expect(sidebarSource).toContain("if (sidebarAvailableProjectCount === 0) {");
+  it("has no „Neue Unterhaltung“; new workers come from the plus (15.10.)", () => {
+    expect(sidebarSource).not.toContain('data-workjet-action="thread.new"');
+    expect(sidebarSource).not.toContain("overviewText.newThread");
+    expect(sidebarSource).toContain("<SidebarAddPersistentWorker");
   });
 
-  it("lives in Einstellungen › Projekte; the old project route opens the card (#569)", () => {
+  it("lives in the project, not in Einstellungen; old routes redirect (#569, 15.10.)", () => {
     expect(settingsProjectsSource).toContain('createFileRoute("/settings/projects")');
-    expect(settingsProjectsSource).toContain("ProjectsSettingsList");
+    expect(settingsProjectsSource).toContain("ProjectsSettingsRedirect");
+    expect(projectWorkspaceSource).toContain(
+      '<ProjectSettingsPanel projectKey={settingsGroup.projectKey} part="project"',
+    );
     expect(settingsProjectSource).toContain('createFileRoute("/settings/projects/$projectKey")');
     expect(sidebarSource).toContain('to: "/settings/projects/$projectKey"');
     expect(settingsProjectSource).toContain("ProjectCardRedirect");
@@ -71,6 +76,8 @@ describe("project places are inline", () => {
     // „Projekt konfigurieren“ speichert über project.configure statt zu navigieren.
     expect(chatIndexSource).toContain("configureWorkjetProject(activeCtoxInstanceId");
     expect(chatIndexSource).not.toContain('to: "/settings/projects/$projectKey"');
-    expect(projectWorkspaceSource).toContain("<InlinePanel");
+    // „Worker hinzufügen“ lebt nur noch als Plus in der Seitenleiste (15.10.).
+    expect(projectWorkspaceSource).not.toContain("<InlinePanel");
+    expect(sidebarAddWorkerSource).toContain("<InlinePanel");
   });
 });

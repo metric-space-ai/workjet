@@ -836,7 +836,7 @@ export function ComposerWorkjetCompactMenuContent(
     <>
       {props.hideWorkerSelection ? null : (
         <MenuGroup>
-          <MenuGroupLabel>Luma</MenuGroupLabel>
+          <MenuGroupLabel>Preset</MenuGroupLabel>
           <MenuRadioGroup
             value={props.selectedWorkerId ?? MANUAL_WORKER_VALUE}
             onValueChange={(value) => {

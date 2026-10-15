@@ -172,7 +172,7 @@ describe("WorkjetWorkerOverview", () => {
       />,
     );
 
-    expect(markup).toContain("Lumas (2)");
+    expect(markup).toContain("Presets (2)");
     expect(markup).toContain("Build the login form");
     expect(markup).toContain("Audit the payment flow");
     // Provider binding shown when present; model always shown.

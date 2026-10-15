@@ -509,7 +509,7 @@ describe("whole card opens the project (WP-K2)", () => {
       }) as unknown as EnvironmentThreadShell;
     const threads = [
       thread("supervisor", "supervisor", "ready"),
-      // Running with a fresh sign of life; without one it counts as stuck (disrupted).
+      // A running worker counts as running only with a fresh sign of life (#758).
       thread("busy", "worker", "running", { updatedAt: new Date().toISOString() }),
       thread("broken", "worker", "error"),
       thread("done", "worker", "ready"),

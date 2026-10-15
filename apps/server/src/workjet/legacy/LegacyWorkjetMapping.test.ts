@@ -124,7 +124,7 @@ describe("mapLegacyWorkjetConfig without bindings", () => {
     const result = mapGolden(EMPTY_LEGACY_WORKJET_BINDINGS);
     assert.strictEqual(result.configuration.schemaVersion, 4);
     assert.deepEqual(result.configuration.telemetry, {
-      claudeCodeEvents: true,
+      claudeCodeEvents: false,
       sidecarEvents: false,
       retentionDays: 14,
     });

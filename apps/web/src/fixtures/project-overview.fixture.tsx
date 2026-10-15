@@ -160,15 +160,6 @@ function OverviewFixture() {
       </div>
       <ProjectOverviewView
         data={data}
-        actions={
-          <button
-            type="button"
-            className="rounded-full border border-border px-2.5 py-1 text-xs hover:bg-muted"
-            onClick={() => setAction("add-parent")}
-          >
-            + {text.addParent}
-          </button>
-        }
         onOpenChat={(ref) => setAction("chat:" + ref.threadId)}
         onOpenJourFixe={() => setAction("meeting")}
         connectionError={query.get("disconnected") === "1"}

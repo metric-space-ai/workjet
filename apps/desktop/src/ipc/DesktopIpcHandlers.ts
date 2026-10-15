@@ -21,6 +21,7 @@ import {
   disconnectSshEnvironment,
   discoverSshHosts,
   ensureSshEnvironment,
+  installComputerSshKey,
   fetchSshEnvironmentDescriptor,
   fetchSshSessionState,
   issueSshWebSocketTicket,
@@ -56,6 +57,7 @@ import * as CtoxIpc from "./methods/ctox.ts";
 import * as PreviewIpc from "./methods/preview.ts";
 import * as ProvisioningIpc from "./methods/provisioning.ts";
 import * as ComputersIpc from "./methods/computers.ts";
+import * as TrayIpc from "./methods/tray.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
@@ -88,6 +90,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(discoverSshHosts);
   yield* ipc.handle(discoverTailscalePeers);
   yield* ipc.handle(ensureSshEnvironment);
+  yield* ipc.handle(installComputerSshKey);
   yield* ipc.handle(disconnectSshEnvironment);
   yield* ipc.handle(fetchSshEnvironmentDescriptor);
   yield* ipc.handle(bootstrapSshBearerSession);
@@ -116,6 +119,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(installUpdate);
   yield* ipc.handle(checkForUpdate);
   for (const method of ComputersIpc.methods) yield* ipc.handle(method);
+  for (const method of TrayIpc.methods) yield* ipc.handle(method);
   for (const provisioningMethod of ProvisioningIpc.methods) {
     yield* ipc.handle(provisioningMethod);
   }

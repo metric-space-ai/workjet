@@ -12,7 +12,32 @@ import {
   NativeWorkerSourceControl,
   type WorkerSourceConnectionStatus,
 } from "./NativeWorkerSourceControl";
-import { NativeSupervisorConnectionStatus } from "./NativeSupervisorConnectionStatus";
+import { ComposerErrorLine } from "./ComposerErrorLine";
+import { WorkerSourceConnectionPicker } from "./WorkerSourceConnectionPicker";
+
+/** Wie der Supervisor-Composer eine Preset-Zugangswahl zeigt: Zeile plus Auswahl. */
+function ChoiceLine(props: { readonly status: WorkerSourceConnectionStatus }) {
+  return (
+    <ComposerErrorLine
+      line={{
+        kind: "failed",
+        text: props.status.message,
+        action: "retry",
+        actionLabel: "",
+        details: null,
+      }}
+      onAction={null}
+      control={
+        props.status.choice ? (
+          <WorkerSourceConnectionPicker
+            choice={props.status.choice}
+            disabled={props.status.disabled}
+          />
+        ) : undefined
+      }
+    />
+  );
+}
 
 const state = vi.hoisted(() => ({
   data: { connections: [] as WorkjetConnectionSummary[] },
@@ -93,14 +118,9 @@ describe("automatic supervisor worker connection", () => {
     state.effects.forEach((effect) => effect());
     const choiceStatus = status as WorkerSourceConnectionStatus | null;
     expect(choiceStatus?.choice?.connections).toEqual([connection, replacement]);
-    const html = renderToStaticMarkup(
-      <NativeSupervisorConnectionStatus
-        message={choiceStatus?.message ?? null}
-        workerStatus={choiceStatus}
-      />,
-    );
+    const html = renderToStaticMarkup(<ChoiceLine status={choiceStatus!} />);
     expect(html.match(/data-supervisor-connection-status=/g)).toHaveLength(1);
-    expect(html).toContain('aria-label="Luma-Zugang wählen"');
+    expect(html).toContain('aria-label="Preset-Zugang wählen"');
     expect(html).not.toContain("Multiple authorized");
     expect(html).not.toContain("Reconnect");
     expect(bindConnection).not.toHaveBeenCalled();
@@ -138,10 +158,8 @@ describe("automatic supervisor worker connection", () => {
       onStatusChange,
     });
     state.effects.forEach((effect) => effect());
+    // Ohne Status rendert der Composer keine Zeile.
     expect(onStatusChange).toHaveBeenCalledWith(null);
-    expect(
-      renderToStaticMarkup(<NativeSupervisorConnectionStatus message={null} workerStatus={null} />),
-    ).toBe("");
   });
 
   it("excludes foreign and expired access from the headless choice and refuses their IDs", () => {
@@ -173,9 +191,7 @@ describe("automatic supervisor worker connection", () => {
     state.effects.forEach((effect) => effect());
     const status = onStatusChange.mock.calls.at(-1)![0] as WorkerSourceConnectionStatus;
     expect(status.choice?.connections).toEqual([connection, replacement]);
-    const html = renderToStaticMarkup(
-      <NativeSupervisorConnectionStatus message={status.message} workerStatus={status} />,
-    );
+    const html = renderToStaticMarkup(<ChoiceLine status={status} />);
     expect(html).not.toContain("Foreign workers");
     expect(html).not.toContain("Expired workers");
     status.choice!.select(foreign.connectionId);
@@ -274,7 +290,7 @@ describe("automatic supervisor worker connection", () => {
     const html = render({ config: boundConfig });
     expect(html).toContain(`data-workjet-worker-source-connection-id="${connection.connectionId}"`);
     expect(html).not.toContain("Erneut verbinden");
-    expect(html).not.toContain('aria-label="Luma-Zugang wählen"');
+    expect(html).not.toContain('aria-label="Preset-Zugang wählen"');
   });
 
   it("offers an explicit same-instance choice for an expired binding without issuing another grant", async () => {
@@ -296,7 +312,7 @@ describe("automatic supervisor worker connection", () => {
       ],
     };
     const html = render({ config: boundConfig });
-    expect(html).toContain('aria-label="Luma-Zugang wählen"');
+    expect(html).toContain('aria-label="Preset-Zugang wählen"');
     expect(html).toContain("cccccccc");
     expect(html).toContain("dddddddd");
     expect(html).not.toContain("Erneut verbinden");
@@ -318,7 +334,7 @@ describe("automatic supervisor worker connection", () => {
     };
     state.data = { connections: [connection, replacement] };
     const html = render();
-    expect(html).toContain('aria-label="Luma-Zugang wählen"');
+    expect(html).toContain('aria-label="Preset-Zugang wählen"');
     state.effects.forEach((effect) => effect());
     expect(props.bindConnection).not.toHaveBeenCalled();
     expect(provision).not.toHaveBeenCalled();
@@ -362,7 +378,7 @@ describe("automatic supervisor worker connection", () => {
       ),
     };
     state.data = { connections: [connection, replacement] };
-    expect(render({ unavailable: true })).toContain('aria-label="Luma-Zugang wählen"');
+    expect(render({ unavailable: true })).toContain('aria-label="Preset-Zugang wählen"');
     await state.connect!.current(false, replacement.connectionId);
     expect(props.bindConnection).not.toHaveBeenCalled();
     expect(provision).not.toHaveBeenCalled();
@@ -435,8 +451,8 @@ describe("automatic supervisor worker connection", () => {
       ],
     };
     const html = render({ config: boundConfig });
-    expect(html).toContain('aria-label="Lumas neu verbinden"');
-    expect(html).toContain("Neue Luma-Verbindung bereit");
+    expect(html).toContain('aria-label="Presets neu verbinden"');
+    expect(html).toContain("Neue Preset-Verbindung bereit");
     expect(html).not.toContain("data-workjet-worker-source-connection-id=");
     state.effects.forEach((effect) => effect());
     expect(props.bindConnection).toHaveBeenCalledExactlyOnceWith(replacement);
@@ -449,8 +465,8 @@ it("shows reconnect for a previously bound source whose authorization was reject
     connections: [{ ...connection, status: "needs_auth", reason: "authentication-required" }],
   };
   const html = render({ config: boundConfig });
-  expect(html).toContain('aria-label="Lumas neu verbinden"');
-  expect(html).toContain("Luma-Verbindung braucht Freigabe");
+  expect(html).toContain('aria-label="Presets neu verbinden"');
+  expect(html).toContain("Preset-Verbindung braucht Freigabe");
   expect(html).not.toContain("data-workjet-worker-source-connection-id=");
   expect(html).not.toContain("data-workjet-worker-source-instance-id=");
 });

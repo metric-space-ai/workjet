@@ -91,7 +91,7 @@ describe("ProjectTeamPanel directory", () => {
     expect(markup).toContain('data-workjet-team-group="specialist"');
     expect(markup).toContain('data-workjet-team-group="worker"');
     expect(markup).toContain("Worker hinzufügen");
-    expect(markup).toContain("Einmal-Luma");
+    expect(markup).toContain("Einmal-Preset");
     expect(markup).toContain("Interface specialist");
     expect(markup).toContain("Fix gallery navigation");
     expect(markup).toContain("Eltern: Interface specialist");
@@ -121,8 +121,8 @@ describe("ProjectTeamPanel directory", () => {
       "Fach-Lumas title is not a role",
     ])
       expect(markup).not.toContain(title);
-    expect(markup).toContain("Noch keine festen Lumas");
-    expect(markup).toContain("Noch keine Einmal-Lumas");
+    expect(markup).toContain("Noch keine festen Presets");
+    expect(markup).toContain("Noch keine Einmal-Presets");
   });
 
   it("retains team navigation from an unclassified legacy conversation without inventing membership", () => {

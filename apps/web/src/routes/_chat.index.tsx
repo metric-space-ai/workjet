@@ -18,6 +18,8 @@ import {
 } from "@workjet/contracts";
 import {
   buildProjectGallery,
+  findProjectWithSameName,
+  projectRepositorySuggestion,
   resolveGalleryProjectHistory,
   resolveGalleryProjectStatistics,
   visibleGalleryProjects,
@@ -29,7 +31,12 @@ import {
   projectCardCrew,
   type ProjectCardCrew,
 } from "../components/ProjectOverviewCard";
-import type { ProjectCardConfigurationValues } from "../components/ProjectOverviewEditor";
+import {
+  ProjectCardConfigContext,
+  projectCardConfigurationPatch,
+  type ProjectCardConfigurationPatch,
+  type ProjectCardConfigurationValues,
+} from "../components/ProjectOverviewEditor";
 import { ProjectTokenBudget } from "../components/ProjectTokenBudget";
 import { ConnectedProjectCalendar } from "../components/ConnectedProjectCalendar";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
@@ -103,7 +110,7 @@ import {
 import { NoInstanceHero } from "../components/NoInstanceHero";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
-import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
+import { usePrimarySettings } from "../hooks/useSettings";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
@@ -123,7 +130,6 @@ import {
   resolveDefaultProviderModelSelection,
   resolveProjectTeamModelSelection,
 } from "../providerInstances";
-import { createPersistentWorkerConfig } from "./-projectWorkerConfig";
 import {
   ProjectCloneFields,
   ProjectComputerSelect,
@@ -177,8 +183,6 @@ function ChatIndexRouteView() {
 function IndexDraftLanding() {
   const projects = useProjects();
   const computers = usePrimarySettings((settings) => settings.workjet.computers);
-  // The pull request page is a coding tool: developer mode only (#557).
-  const developerMode = useClientSettings((settings) => settings.developerMode);
   const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
   const registry = useWorkjetProjectRegistry(activeCtoxInstanceId);
   const projectStore = useContext(RegistryContext);
@@ -437,62 +441,6 @@ function IndexDraftLanding() {
           openMeeting={meetingProjectKey === project.key}
           threads={threads}
           {...(modelAccountMissing ? { notice: <ModelAccountMissingNotice /> } : {})}
-          {...(developerMode
-            ? {
-                onOpenPullRequests: () =>
-                  void navigate({
-                    to: "/pull-requests",
-                    search: {
-                      involvement: "all",
-                      state: "open",
-                      projectId: landingProject.id,
-                      environmentId: landingProject.environmentId,
-                    },
-                  }),
-              }
-            : {})}
-          onAddParent={async (domain, goal) => {
-            if (
-              !supervisor ||
-              supervisor.workjetConfig.schemaVersion !== 2 ||
-              supervisor.workjetConfig.team?.role !== "supervisor" ||
-              readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
-            )
-              return false;
-            const modelSelection = resolveProjectTeamModelSelection(
-              environments.find(
-                (environment) => environment.environmentId === supervisor.environmentId,
-              )?.serverConfig?.providers ?? [],
-              supervisor.modelSelection,
-            );
-            if (!modelSelection) return false;
-            const threadId = newThreadId();
-            const createdAt = new Date().toISOString();
-            const result = await createThread({
-              environmentId: supervisor.environmentId,
-              input: {
-                threadId,
-                projectId: supervisor.projectId,
-                title: domain,
-                modelSelection,
-                runtimeMode: supervisor.runtimeMode,
-                interactionMode: "default",
-                workjetConfig: createPersistentWorkerConfig({
-                  supervisorConfig: supervisor.workjetConfig,
-                  projectId: supervisor.projectId,
-                  supervisorThreadId: supervisor.id,
-                  threadId,
-                  domain,
-                  goal,
-                  createdAt,
-                }),
-                branch: null,
-                worktreePath: null,
-                createdAt,
-              },
-            });
-            return result._tag === "Success";
-          }}
           onOpenChat={(thread) =>
             void navigate({
               to: "/$environmentId/$threadId",
@@ -535,35 +483,8 @@ function IndexDraftLanding() {
               environment.connection.phase === "connected" &&
               environment.serverConfig?.projectArchive === true,
           ),
-          // „Projekt konfigurieren“ bleibt in der Karte: derselbe Speicherpfad
-          // (project.configure) wie Einstellungen › Projekt, keine Navigation.
-          onSaveConfiguration:
-            project.configuration !== undefined && activeCtoxInstanceId !== null
-              ? async (values) => {
-                  const configuration = project.configuration;
-                  if (configuration === undefined || activeCtoxInstanceId === null) return false;
-                  if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId)
-                    return false;
-                  const result = await configureWorkjetProject(activeCtoxInstanceId, {
-                    action: "project.configure",
-                    commandId: newCommandId(),
-                    projectId: configuration.id,
-                    title: values.title,
-                    repoUrl: values.repositoryUrl,
-                    publicUrl: values.websiteUrl,
-                    info: configuration.info ?? null,
-                    jourFixe: values.jourFixe,
-                  });
-                  if (
-                    result._tag !== "completed" ||
-                    result.response.action !== "project.configure" ||
-                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
-                  )
-                    return false;
-                  refreshWorkjetProjectRegistry(activeCtoxInstanceId);
-                  return true;
-                }
-              : undefined,
+          repositorySuggestion: projectRepositorySuggestion(project),
+          ...galleryConfigurationSave(project, activeCtoxInstanceId),
           onOpenJourFixe: project.native
             ? () => {
                 if (
@@ -719,6 +640,8 @@ export function ProjectGallery({
     readonly onSaveConfiguration?:
       | ((values: ProjectCardConfigurationValues) => Promise<boolean>)
       | undefined;
+    readonly savePatch?: ((patch: ProjectCardConfigurationPatch) => Promise<boolean>) | undefined;
+    readonly repositorySuggestion?: string | null | undefined;
     readonly canArchive: boolean;
     readonly statistics: GalleryProjectStatistics;
     /** Team state for cards without a preview (WP-K2); missing = unknown. */
@@ -1143,30 +1066,39 @@ export function ProjectGallery({
                       disabled={!project.native || !orderLoaded || savingOrder || showArchived}
                     >
                       {(reorderHandle) => (
-                        <ProjectOverviewCard
-                          project={project}
-                          tokenBudget={<ProjectTokenBudget project={project} />}
-                          ctoxInstanceId={instanceId}
-                          onOpen={project.onOpen}
-                          onSave={project.onSave}
-                          onSaveConfiguration={project.onSaveConfiguration}
-                          canArchive={project.canArchive}
-                          statistics={project.statistics}
-                          crew={project.crew}
-                          kpis={
-                            kpiProjection.instanceId === instanceId
-                              ? kpiProjection.records[project.id]
-                              : undefined
-                          }
-                          kpisUnavailable={kpiFailures.has(project.id)}
-                          onSaveKpis={
-                            project.native
-                              ? (prompts, revision) => saveKpis(project.id, prompts, revision)
-                              : undefined
-                          }
-                          onRefreshKpis={project.native ? () => refreshKpis(project.id) : undefined}
-                          reorderHandle={reorderHandle}
-                        />
+                        <ProjectCardConfigContext.Provider
+                          value={{
+                            savePatch: project.savePatch,
+                            repositorySuggestion: project.repositorySuggestion,
+                          }}
+                        >
+                          <ProjectOverviewCard
+                            project={project}
+                            tokenBudget={<ProjectTokenBudget project={project} />}
+                            ctoxInstanceId={instanceId}
+                            onOpen={project.onOpen}
+                            onSave={project.onSave}
+                            onSaveConfiguration={project.onSaveConfiguration}
+                            canArchive={project.canArchive}
+                            statistics={project.statistics}
+                            crew={project.crew}
+                            kpis={
+                              kpiProjection.instanceId === instanceId
+                                ? kpiProjection.records[project.id]
+                                : undefined
+                            }
+                            kpisUnavailable={kpiFailures.has(project.id)}
+                            onSaveKpis={
+                              project.native
+                                ? (prompts, revision) => saveKpis(project.id, prompts, revision)
+                                : undefined
+                            }
+                            onRefreshKpis={
+                              project.native ? () => refreshKpis(project.id) : undefined
+                            }
+                            reorderHandle={reorderHandle}
+                          />
+                        </ProjectCardConfigContext.Provider>
                       )}
                     </SortableProjectTile>
                   ))}
@@ -1340,6 +1272,55 @@ function resolveProjectInstanceOptions(
   return options;
 }
 
+/**
+ * „Projekt konfigurieren“ bleibt in der Karte: derselbe Speicherpfad
+ * (project.configure) wie Einstellungen › Projekt, keine Navigation. Gesendet
+ * werden nur geänderte Felder; ein ausdrückliches null löscht auf der Instanz,
+ * deshalb nie Beschreibung oder unberührte Adressen mitschicken.
+ */
+function galleryConfigurationSave(
+  project: GalleryProject,
+  activeCtoxInstanceId: string | null,
+): {
+  readonly savePatch?: (patch: ProjectCardConfigurationPatch) => Promise<boolean>;
+  readonly onSaveConfiguration?: (values: ProjectCardConfigurationValues) => Promise<boolean>;
+} {
+  const configuration = project.configuration;
+  if (configuration === undefined || activeCtoxInstanceId === null) return {};
+  const savePatch = async (patch: ProjectCardConfigurationPatch) => {
+    if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return false;
+    const result = await configureWorkjetProject(activeCtoxInstanceId, {
+      action: "project.configure",
+      commandId: newCommandId(),
+      projectId: configuration.id,
+      ...patch,
+    });
+    if (
+      result._tag !== "completed" ||
+      result.response.action !== "project.configure" ||
+      readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
+    )
+      return false;
+    refreshWorkjetProjectRegistry(activeCtoxInstanceId);
+    return true;
+  };
+  return {
+    savePatch,
+    onSaveConfiguration: (values) =>
+      savePatch(
+        projectCardConfigurationPatch(
+          {
+            title: configuration.title,
+            websiteUrl: configuration.publicUrl ?? null,
+            repositoryUrl: configuration.repoUrl ?? null,
+            jourFixe: configuration.jourFixe ?? null,
+          },
+          values,
+        ),
+      ),
+  };
+}
+
 /** Preselect when exactly one instance is connected, else the active one. */
 function resolvePreselectedProjectInstance(
   options: readonly ProjectInstanceOption[],
@@ -1430,6 +1411,20 @@ function InlineProjectCreate({
       : resolvePreselectedProjectInstance(options, activeCtoxInstanceId);
   const instanceLabel = options.find((option) => option.id === instanceId)?.label ?? null;
   const effectiveTitle = source === "new" || titleEdited ? title : sources.derivedTitle;
+  // A project with the same name (case-insensitive) is opened, never created twice.
+  const instanceRegistry = useWorkjetProjectRegistry(instanceId);
+  const sameName =
+    instanceId !== null && instanceRegistry.presentationInstanceId === instanceId
+      ? findProjectWithSameName(instanceRegistry.projects, effectiveTitle)
+      : null;
+  const openSameName = () => {
+    if (sameName === null || instanceId === null) return;
+    if (readActiveWorkjetScope().selectedInstanceId !== instanceId) return;
+    setOpen(false);
+    setTitle("");
+    setTitleEdited(false);
+    if (selectWorkjetProject(instanceId, sameName.id)) selectProjectOverviewRef(instanceId, null);
+  };
 
   const activateInstance = async (targetInstanceId: string) => {
     if (targetInstanceId === readActiveWorkjetScope().selectedInstanceId) return;
@@ -1443,7 +1438,7 @@ function InlineProjectCreate({
 
   const submit = async () => {
     const trimmed = title.trim();
-    if (!trimmed || pending || instanceId === null) return;
+    if (!trimmed || pending || instanceId === null || sameName !== null) return;
     setPending(true);
     setError(null);
     try {
@@ -1496,7 +1491,7 @@ function InlineProjectCreate({
   /** „Aus Ordner“ and „Repository klonen“: working copy first, then the project. */
   const submitFromSource = async () => {
     const trimmed = effectiveTitle.trim();
-    if (!trimmed || pending || instanceId === null || !sources.ready) return;
+    if (!trimmed || pending || instanceId === null || !sources.ready || sameName !== null) return;
     setPending(true);
     setError(null);
     try {
@@ -1623,8 +1618,17 @@ function InlineProjectCreate({
     ) : (
       progress
     );
-  const status = error ?? progressNode ?? requirement ?? undefined;
+  const sameNameLine =
+    sameName !== null && !pending ? (
+      <ProjectCreateRequirementLine
+        text={`„${sameName.title}“`}
+        actionLabel={workjetUiLanguage() === "en" ? "Open" : "Öffnen"}
+        onAction={openSameName}
+      />
+    ) : null;
+  const status = error ?? progressNode ?? sameNameLine ?? requirement ?? undefined;
   const submitDisabled =
+    sameName !== null ||
     effectiveTitle.trim().length === 0 ||
     instanceId === null ||
     (source !== "new" && !sources.ready);

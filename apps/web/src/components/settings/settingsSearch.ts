@@ -1,5 +1,5 @@
 /**
- * Einstellungen in acht Seiten (#568). Im Entwicklermodus kommen fünf Seiten
+ * Einstellungen in sieben Seiten (#568, Projekte seit 15.10. im Projekt). Im Entwicklermodus kommen fünf Seiten
  * dazu. Jede frühere Seite ist einer dieser Seiten zugeordnet; Unterseiten
  * (System-Prompts, Verbrauch) tragen ihre Elternseite in der Navigation.
  */
@@ -9,7 +9,6 @@ export type SettingsPagePath =
   | "/settings/computers"
   | "/settings/models"
   | "/settings/workjet"
-  | "/settings/projects"
   | "/settings/speech"
   | "/settings/archived"
   | "/settings/diagnostics"
@@ -32,14 +31,13 @@ export interface SettingsSearchItem {
   readonly developerOnly?: boolean;
 }
 
-/** Die acht Seiten in Navigationsreihenfolge. */
+/** Die sieben Seiten in Navigationsreihenfolge. */
 export const SETTINGS_PAGE_PATHS: readonly SettingsPagePath[] = [
   "/settings/general",
   "/settings/business-os",
   "/settings/computers",
   "/settings/models",
   "/settings/workjet",
-  "/settings/projects",
   "/settings/speech",
   "/settings/archived",
 ];
@@ -69,8 +67,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/business-os": "Instanz",
   "/settings/computers": "Rechner",
   "/settings/models": "Modelle",
-  "/settings/workjet": "Lumas",
-  "/settings/projects": "Projekte",
+  "/settings/workjet": "Presets",
   "/settings/speech": "Sprachausgabe",
   "/settings/archived": "Archiv",
   "/settings/diagnostics": "Diagnose",
@@ -103,8 +100,7 @@ const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly str
   "/settings/business-os": ["Instance", "Instances", "Instanzen", "CTOX"],
   "/settings/computers": ["Computers"],
   "/settings/models": ["Models"],
-  "/settings/workjet": ["Worker", "Worker-Presets", "Agents"],
-  "/settings/projects": ["Projects"],
+  "/settings/workjet": ["Lumas", "Luma", "Worker", "Worker-Presets", "Agents"],
   "/settings/speech": ["Speech", "Diktat"],
   "/settings/archived": ["Archive", "Archived conversations", "Unterhaltungen"],
   "/settings/diagnostics": ["Diagnostics"],
@@ -136,12 +132,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Schriftgröße",
     to: "/settings/general",
     searchAliases: ["Schrift", "Font"],
-  },
-  {
-    id: "posthog-consent",
-    title: "Nutzungsdaten senden",
-    to: "/settings/general",
-    searchAliases: ["telemetry", "privacy", "consent"],
   },
   {
     id: "developer-mode",
@@ -217,6 +207,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/business-os",
     searchAliases: ["Geräte", "Workjet-Apps", "Trennen", "Koppeln"],
   },
+  {
+    id: "instance-secrets",
+    title: "Zugangsdaten",
+    to: "/settings/business-os",
+    searchAliases: ["Secrets", "API-Schlüssel", "Passwort", "Token"],
+  },
   // ----- Rechner -----
   {
     id: "workjet-computers",
@@ -228,6 +224,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "add-project-starts-in",
     title: "Projektordner",
     to: "/settings/computers",
+  },
+  {
+    id: "project-working-copies",
+    title: "Arbeitskopien",
+    to: "/settings/computers",
+    searchAliases: ["Arbeitskopie", "Worktree", "Skripte", "Projekt-Skripte", "Projekte"],
+    developerOnly: true,
   },
   // ----- Modelle -----
   {
@@ -248,33 +251,31 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchAliases: ["Modell-Routing"],
   },
   {
-    id: "text-generation-model",
-    title: "Textmodell",
-    to: "/settings/models",
-  },
-  {
     id: "usage",
     title: "Verbrauch",
     to: "/settings/usage",
     searchAliases: ["Usage", "Kosten", "Tokens"],
   },
-  // ----- Lumas -----
+  // ----- Presets -----
   {
     id: "workjet-workers",
-    title: "Lumas",
-    searchAliases: ["worker", "workers", "presets", "agent", "agents", "Denkstufe", "Werkzeuge"],
+    title: "Presets",
+    searchAliases: [
+      "lumas",
+      "luma",
+      "worker",
+      "workers",
+      "agent",
+      "agents",
+      "Denkstufe",
+      "Werkzeuge",
+    ],
     to: "/settings/workjet",
   },
   {
     id: "workjet-prompt",
     title: "System-Prompts",
     to: "/settings/prompts",
-    developerOnly: true,
-  },
-  {
-    id: "workjet-telemetry",
-    title: "Protokoll",
-    to: "/settings/workjet",
     developerOnly: true,
   },
   {
@@ -296,19 +297,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/workjet",
     searchAliases: ["greppy", "greppy-laufzeit"],
     developerOnly: true,
-  },
-  // ----- Projekte -----
-  {
-    id: "project-model",
-    title: "Projekt-Modell",
-    to: "/settings/projects",
-    searchAliases: ["Modell", "Arbeitsbereich"],
-  },
-  {
-    id: "project-working-copies",
-    title: "Arbeitskopien",
-    to: "/settings/projects",
-    searchAliases: ["Arbeitskopie", "Worktree"],
   },
   // ----- Sprachausgabe -----
   {

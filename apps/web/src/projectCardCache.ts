@@ -17,8 +17,8 @@ export const PROJECT_CARD_CACHE_ENABLED = true;
 const KEY_PREFIX = "workjet.projectCard.v1:";
 
 type CachedProjectCard = {
-  readonly kpis?: PromptedProjectKpis;
-  readonly exitModel?: WorkjetExitModelAssessment | null;
+  readonly kpis?: PromptedProjectKpis | undefined;
+  readonly exitModel?: WorkjetExitModelAssessment | null | undefined;
 };
 
 export function projectCardCacheKey(instanceId: string, projectId: string): string {

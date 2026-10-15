@@ -3,7 +3,10 @@
  * Galeriekarten, Projekt-Editor (Einstellungen › Projekte), Instanz-Ruhezustände
  * nach 10 s, Instanzauswahl als Zeilen und „Repository klonen“ mit Zielordner.
  * Kein Backend, keine Verbindungen. Ansicht per
- * `?view=kein|karten|editor|laden|verbinden|auswahl|klonen|kpi`.
+ * `?view=kein|karten|editor|laden|verbinden|auswahl|klonen|kpi|kacheln`.
+ *
+ * `kacheln` (WP-K1): sechs Kacheln in den Zuständen vorhanden ×2, leer, definiert
+ * aber nicht berechnet, Lesen gescheitert ohne und mit gespeichertem Stand.
  */
 import type { CtoxManagedInstance } from "@workjet/contracts";
 import { EnvironmentId, ProjectId } from "@workjet/contracts";
@@ -28,6 +31,7 @@ import { ProjectOverviewEditor } from "../components/ProjectOverviewEditor";
 import { SidebarProvider } from "../components/ui/sidebar";
 import { ProjectGallery } from "../routes/_chat.index";
 import type { GalleryProject } from "../projectOverview";
+import type { PromptedProjectKpis } from "../projectKpis";
 import { exitModelFixture } from "../test/exitModelFixture";
 import "../index.css";
 
@@ -98,6 +102,154 @@ const galleryProjects: GalleryProject[] = [
     native: false,
   },
 ];
+
+/** WP-K1: KPI-Datensätze der Kachel-Ansicht (synthetisch). */
+const readyKpi = (projectId: string, id: string, label: string, value: string) => ({
+  prompt: { kpi_id: id, prompt: `${label} der letzten Woche`, revision: 1 },
+  result: {
+    status: "ready" as const,
+    snapshot: {
+      project_id: projectId,
+      kpi_id: id,
+      prompt_revision: 1,
+      label,
+      display_value: value,
+      unit: "",
+      sources: [
+        {
+          kind: "native_metric" as const,
+          project_id: projectId,
+          connection_id: "fixture",
+          metric_key: id,
+        },
+      ],
+      freshness: { calculated_at_ms: 1, refresh_at_ms: 2, fresh_until_ms: 3 },
+    },
+  },
+});
+const tileKpis = (projectId: string, values: [string, string][]): PromptedProjectKpis => ({
+  project_id: projectId,
+  revision: 1,
+  items: values.map(([label, value], index) =>
+    readyKpi(projectId, `kpi-${index + 1}`, label, value),
+  ),
+});
+const tileExit = (projectId: string) => ({
+  ...exitModelFixture,
+  project_id: ProjectId.make(projectId),
+});
+const tileConfig = (projectId: string, exit: boolean) => ({
+  id: ProjectId.make(projectId),
+  title: projectId,
+  exitModel: exit ? tileExit(projectId) : null,
+});
+const tileProjects: {
+  project: GalleryProject;
+  kpis: PromptedProjectKpis | undefined;
+  failed: boolean;
+}[] = [
+  {
+    project: {
+      key: "instance:greppy",
+      id: "greppy",
+      title: "greppy.xyz",
+      local: null,
+      native: true,
+      configuration: { ...tileConfig("greppy", true), publicUrl: "https://greppy.xyz" },
+    },
+    kpis: tileKpis("greppy", [
+      ["Nutzer", "1.284"],
+      ["Abfragen", "38.112"],
+      ["Latenz", "41 ms"],
+    ]),
+    failed: false,
+  },
+  {
+    project: {
+      key: "instance:ctox",
+      id: "ctox",
+      title: "ctox.dev",
+      local: null,
+      native: true,
+      configuration: { ...tileConfig("ctox", true), publicUrl: "https://ctox.dev" },
+    },
+    kpis: tileKpis("ctox", [
+      ["Läufe", "212"],
+      ["Erfolg", "94 %"],
+      ["Warteschlange", "7"],
+    ]),
+    failed: false,
+  },
+  {
+    // Erfolgreich gelesen, keine Kennzahl festgelegt, keine Bewertung.
+    project: {
+      key: "instance:nordlicht",
+      id: "nordlicht",
+      title: "Nordlicht",
+      local: null,
+      native: true,
+      configuration: tileConfig("nordlicht", false),
+    },
+    kpis: { project_id: "nordlicht", revision: 1, items: [] },
+    failed: false,
+  },
+  {
+    // Kennzahlen festgelegt, aber noch nicht berechnet.
+    project: {
+      key: "instance:hafen",
+      id: "hafen",
+      title: "Hafenplan",
+      local: null,
+      native: true,
+      configuration: tileConfig("hafen", false),
+    },
+    kpis: {
+      project_id: "hafen",
+      revision: 1,
+      items: [
+        {
+          prompt: { kpi_id: "kpi-1", prompt: "Buchungen pro Woche", revision: 1 },
+          result: { status: "resolving" },
+        },
+        {
+          prompt: { kpi_id: "kpi-2", prompt: "Umsatz im Monat", revision: 1 },
+          result: { status: "missing_source", reason_code: "no_source" },
+        },
+      ],
+    },
+    failed: false,
+  },
+  {
+    // Lesen gescheitert (Zeitüberschreitung), nie zuvor gelesen.
+    project: { key: "instance:kontor", id: "kontor", title: "Kontor", local: null, native: true },
+    kpis: undefined,
+    failed: true,
+  },
+  {
+    // Lesen gescheitert, aber ein gespeicherter Stand liegt vor (localStorage).
+    project: { key: "instance:werft", id: "werft", title: "Werft", local: null, native: true },
+    kpis: undefined,
+    failed: true,
+  },
+];
+if (view === "kacheln") {
+  try {
+    localStorage.setItem(
+      "workjet.projectCard.v1:welsch:werft",
+      JSON.stringify({
+        kpis: tileKpis("werft", [
+          ["Aufträge", "56"],
+          ["Marge", "18 %"],
+          ["Offen", "3"],
+        ]),
+        exitModel: tileExit("werft"),
+      }),
+    );
+    localStorage.removeItem("workjet.projectCard.v1:welsch:kontor");
+  } catch {
+    // Fixture ohne Speicher: die Kachel zeigt dann „—“.
+  }
+}
 
 const computers = buildProjectComputerOptions([
   {
@@ -197,6 +349,32 @@ function Fixture() {
           }))}
         />
       </div>
+    );
+  if (view === "kacheln")
+    return (
+      <main className="mx-auto max-w-6xl px-5 py-6">
+        <h1 className="mb-4 text-[22px] font-semibold">Alle Projekte</h1>
+        <div
+          className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1"
+          data-workjet-project-gallery-grid=""
+        >
+          {tileProjects.map(({ project, kpis, failed }) => (
+            <div key={project.key} className="min-w-0" data-workjet-project-tile="">
+              <ProjectOverviewCard
+                project={project}
+                ctoxInstanceId="welsch"
+                kpis={kpis}
+                kpisUnavailable={failed}
+                onOpen={() => {}}
+                onSave={async () => true}
+                onSaveKpis={async () => true}
+                onRefreshKpis={async () => true}
+                canArchive
+              />
+            </div>
+          ))}
+        </div>
+      </main>
     );
   return (
     <main className="mx-auto max-w-6xl px-5 py-6">

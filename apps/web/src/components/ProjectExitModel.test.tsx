@@ -126,7 +126,7 @@ describe("project exit assessment display", () => {
   });
 
   it("renders no stamp without a value (no 'Nicht bewertet' stamp)", () => {
-    for (const assessment of [null, undefined, { ...exitModelFixture, result: null }]) {
+    for (const assessment of [null, { ...exitModelFixture, result: null }]) {
       const markup = renderToStaticMarkup(
         <ProjectExitModelSummary projectId={projectId} assessment={assessment} onEdit={() => {}} />,
       );

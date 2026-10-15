@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Bounded install transport process boundary (ssh, local installer).
 // @effect-diagnostics globalDate:off -- Step timestamps for the enrollment document, not scheduling.
+// @effect-diagnostics globalTimers:off -- Kill deadline of the bounded install child; outside any Effect runtime.
 /**
  * Rechner-Beitritt, Installationsweg (ctox sync v4, Architektur §16.41).
  *

@@ -450,7 +450,9 @@ describe("whole card opens the project (WP-K2)", () => {
     expect(markup).not.toContain("Worker");
     expect(markup).not.toMatch(/>—</);
     expect(markup).not.toContain("data-workjet-project-card-slots");
-    expect(markup).toMatch(/data-workjet-project-card-monogram=""[\s\S]*?aria-hidden="true"[^>]*>KN</);
+    expect(markup).toMatch(
+      /data-workjet-project-card-monogram=""[\s\S]*?aria-hidden="true"[^>]*>KN</,
+    );
   });
 
   it("keeps a known value and drops only the unknown one", () => {

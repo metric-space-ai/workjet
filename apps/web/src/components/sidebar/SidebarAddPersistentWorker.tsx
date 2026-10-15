@@ -17,6 +17,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { InlinePanel } from "../ui/inline-panel";
 import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface SidebarAddPersistentWorkerText {
@@ -157,12 +158,12 @@ export function SidebarAddPersistentWorker(props: {
         </label>
         <label className="grid gap-1 text-[13.5px]">
           {props.text.goal}
-          <textarea
+          <Textarea
             required
             maxLength={4096}
             value={goal}
             onChange={(event) => setGoal(event.target.value)}
-            className="min-h-20 rounded-md border border-input bg-transparent p-2"
+            className="min-h-20"
           />
         </label>
       </InlinePanel>

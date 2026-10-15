@@ -30,13 +30,13 @@ export const SIDEBAR_SEARCH_MODES: ReadonlyArray<{
   readonly label: string;
   readonly placeholder: string;
 }> = [
-  { value: "threads", label: "Chats", placeholder: "Suchen" },
+  { value: "threads", label: "Worker", placeholder: "Suchen" },
   { value: "files", label: "Dateien", placeholder: "Datei suchen" },
   { value: "content", label: "Inhalt", placeholder: "Im Projekt suchen" },
 ];
 
 const SEARCH_MODE_LABELS_EN: Record<SidebarSearchMode, string> = {
-  threads: "Chats",
+  threads: "Workers",
   files: "Files",
   content: "Content",
 };
@@ -188,7 +188,7 @@ function FileResults(props: {
   };
   const [activeIndex, setActiveIndex] = useResultKeyboard(props.inputRef, matches.length, open);
 
-  if (result.error) return <StatusLine tone="error">{result.error}</StatusLine>;
+  if (result.error) return <StatusLine tone="error">Suche fehlgeschlagen</StatusLine>;
   if (matches.length === 0)
     return <StatusLine>{result.isPending ? "Suche läuft …" : "Keine Dateien"}</StatusLine>;
   return (
@@ -267,7 +267,7 @@ function ContentResults(props: {
   const [activeIndex, setActiveIndex] = useResultKeyboard(props.inputRef, matches.length, open);
 
   if (!search.hasQuery) return null;
-  if (search.error) return <StatusLine tone="error">{search.error}</StatusLine>;
+  if (search.error) return <StatusLine tone="error">Suche fehlgeschlagen</StatusLine>;
   if (matches.length === 0)
     return <StatusLine>{search.isPending ? "Suche läuft …" : "Keine Treffer"}</StatusLine>;
   return (

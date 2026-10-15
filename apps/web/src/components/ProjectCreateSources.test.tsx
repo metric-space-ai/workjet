@@ -212,7 +212,9 @@ describe("Repository klonen", () => {
     expect(html).toContain('aria-label="Repository"');
     expect(html).toContain('aria-label="Anbieter"');
     // One destination line with one button; the folder controls stay closed (#507).
-    expect(html).toContain("Wird geklont nach ~/projekte/…");
+    expect(html).toContain("Zielordner</span>");
+    expect(html).toContain("~/projekte/…");
+    expect(html).not.toContain("Wird geklont");
     expect(html).toContain('data-workjet-action="project.add.clone.change-target"');
     expect(html).not.toContain('aria-label="Zielordner"');
     const urlOnly = renderToStaticMarkup(

@@ -3,7 +3,7 @@
  * Heroe…“, ein reines Auswahlmenü mit eindeutigen Einträgen (gleichnamige
  * Projekte tragen eine Meta-Zeile) und ab acht Projekten ein Suchfeld.
  */
-import { CheckIcon, ChevronDownIcon, LayoutGridIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, HomeIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
@@ -88,7 +88,7 @@ export function SidebarProjectSwitcher(props: {
           aria-hidden
           className="flex size-7 shrink-0 items-center justify-center self-start rounded-md bg-sidebar-accent text-[13.5px] font-semibold uppercase text-sidebar-accent-foreground"
         >
-          {currentTitle.trim().charAt(0) || <LayoutGridIcon className="size-4" />}
+          {currentTitle.trim().charAt(0) || <HomeIcon className="size-4" />}
         </span>
         <span className="flex min-w-0 flex-1 flex-col" data-project-switcher-current="">
           <span className="whitespace-normal break-words leading-snug" data-sensitive="">
@@ -127,7 +127,7 @@ export function SidebarProjectSwitcher(props: {
             props.onSelectAll();
           }}
         >
-          <LayoutGridIcon aria-hidden className="mt-0.5 size-4" />
+          <HomeIcon aria-hidden className="mt-0.5 size-4" />
           <span>{props.text.allProjects}</span>
         </MenuItem>
         <MenuSeparator />

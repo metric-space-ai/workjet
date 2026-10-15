@@ -18,6 +18,7 @@ export type ThreadActionMenuId =
   | "rename"
   | "regenerate-title"
   | "mark-unread"
+  | "diagnostics"
   | "copy-path"
   | "copy-branch"
   | "copy-deep-link"
@@ -53,7 +54,7 @@ export function buildThreadActionMenuItems(
       ? [
           {
             id: "new-thread-on-branch" as const,
-            label: `Neue Unterhaltung auf ${state.branch}`,
+            label: `Neuer Worker auf ${state.branch}`,
           },
         ]
       : []),
@@ -100,12 +101,19 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: "Als ungelesen markieren" },
-    { id: "copy-path", label: "Pfad kopieren", icon: "copy" },
-    ...(state.branch
-      ? [{ id: "copy-branch" as const, label: "Branch kopieren", icon: "copy" }]
-      : []),
-    { id: "copy-deep-link", label: "Workjet-Link kopieren", icon: "copy" },
-    { id: "copy-thread-id", label: "ID kopieren", icon: "copy" },
+    // Raw data (path, branch, link, id) only behind "Diagnose" (UI contract §2).
+    {
+      id: "diagnostics",
+      label: "Diagnose",
+      children: [
+        { id: "copy-path" as const, label: "Pfad kopieren", icon: "copy" },
+        ...(state.branch
+          ? [{ id: "copy-branch" as const, label: "Branch kopieren", icon: "copy" }]
+          : []),
+        { id: "copy-deep-link" as const, label: "Workjet-Link kopieren", icon: "copy" },
+        { id: "copy-thread-id" as const, label: "ID kopieren", icon: "copy" },
+      ],
+    },
     { id: "delete", label: "Löschen", destructive: true, icon: "trash" },
   ];
 }

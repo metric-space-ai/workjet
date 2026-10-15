@@ -1520,15 +1520,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       />
                     ) : null}
                     {props.settlementSupported ? (
-                      <button
+                      <Button
                         type="button"
+                        size="icon-xs"
+                        variant="ghost"
                         aria-label="Erledigen"
+                        title="Erledigen"
                         onClick={handleSettleClick}
-                        className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                        className="-mr-1"
                       >
-                        <CheckIcon className="size-3.5" />
-                        Erledigen
-                      </button>
+                        <CheckIcon aria-hidden className="size-3.5" />
+                      </Button>
                     ) : null}
                   </span>
                 ) : null}
@@ -3186,12 +3188,12 @@ export default function Sidebar() {
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
-            { id: "settle", label: `Erledigen (${count})` },
+            { id: "settle", label: "Erledigen" },
             ...(canSnoozeSelection
               ? [
                   {
                     id: "snooze",
-                    label: `Zurückstellen (${count})`,
+                    label: "Zurückstellen",
                     children: snoozePresets.map((preset) => ({
                       id: `snooze:${preset.id}`,
                       label: `${preset.label} (${preset.whenLabel})`,
@@ -3200,8 +3202,8 @@ export default function Sidebar() {
                 ]
               : []),
             ...(titleRegenerationMenuItem ? [titleRegenerationMenuItem] : []),
-            { id: "mark-unread", label: `Ungelesen (${count})` },
-            { id: "delete", label: `Löschen (${count})`, destructive: true },
+            { id: "mark-unread", label: "Ungelesen" },
+            { id: "delete", label: "Löschen", destructive: true },
           ],
           position,
         ),
@@ -3415,12 +3417,11 @@ export default function Sidebar() {
               }),
             );
             if (result._tag === "Failure") {
-              const error = squashAtomCommandFailure(result);
+              // One line, no raw error text (UI contract §1 Toast).
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Unterhaltung konnte nicht erstellt werden",
-                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
+                  title: "Worker nicht angelegt",
                 }),
               );
             }
@@ -4112,7 +4113,7 @@ export default function Sidebar() {
                     const teamLabel = {
                       supervisor: t("Supervisor", "Supervisor"),
                       parents: t("Persistente Worker", "Persistent workers"),
-                      workers: t("One-shot-Worker", "One-shot workers"),
+                      workers: t("Einmal-Worker", "One-shot workers"),
                     } as const;
                     items.push(
                       <li
@@ -4124,6 +4125,14 @@ export default function Sidebar() {
                     for (const { section } of PROJECT_TEAM_SECTIONS) {
                       const archived = section === "supervisor" ? [] : archivedTeam[section];
                       const showDraft = section === "workers";
+                      // A group header appears only above something: rows, archived rows,
+                      // a draft or the plus to add a persistent worker (Audit A-56).
+                      const hasContent =
+                        team[section].length > 0 ||
+                        archived.length > 0 ||
+                        (showDraft && visibleDraftSessionCount > 0) ||
+                        (section === "parents" && addPersistentWorker !== null);
+                      if (!hasContent) continue;
                       items.push(
                         <li
                           key={`team-${section}-header`}
@@ -4157,7 +4166,7 @@ export default function Sidebar() {
                         );
                       }
                       // Neue Worker entstehen nur hier: ein Plus unter den persistenten
-                      // Workern (Michael, 15.10.); One-shot-Worker spawnt ein Parent.
+                      // Workern (Michael, 15.10.); Einmal-Worker spawnt ein Parent.
                       if (section === "parents" && addPersistentWorker !== null) {
                         items.push(
                           <li key="team-parents-add" className="list-none">

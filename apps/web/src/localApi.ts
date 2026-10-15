@@ -36,9 +36,7 @@ function createBrowserLocalApi(): LocalApi {
         items: readonly ContextMenuItem<T>[],
         position?: { x: number; y: number },
       ): Promise<T | null> => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.showContextMenu(items, position) as Promise<T | null>;
-        }
+        // Always the in-app menu, also on the desktop: nothing opens outside the app.
         return showContextMenuFallback(items, position);
       },
     },

@@ -78,8 +78,8 @@ describe("Plus unter „Persistente Worker“", () => {
         <SidebarAddPersistentWorker text={text} onCreate={async () => true} />
       </SidebarProvider>,
     );
-    // Nur der verborgene Zuklappen-Pfeil des geschlossenen Panels, kein Text, keine Felder.
-    expect(visibleText(html)).toEqual(["Zuklappen"]);
+    // Kein sichtbarer Text: der Zuklappen-Pfeil ist ein Icon-Button (A-06), kein Text, keine Felder.
+    expect(visibleText(html)).toEqual([]);
     expect(html).toContain('data-state="closed"');
     expect(html).not.toContain(text.goal);
     expect(html).toContain(`aria-label="${text.addPersistentWorker}"`);

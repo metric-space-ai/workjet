@@ -36,17 +36,18 @@ describe("ProviderStatusBanner", () => {
 
   it("renders an accessible dismiss control for provider warnings", () => {
     const markup = renderToStaticMarkup(
-      <ProviderStatusBanner status={warningProvider()} onDismiss={() => {}} />,
+      <ProviderStatusBanner status={warningProvider()} onDismiss={() => {}}
+        onAction={() => {}} />,
     );
 
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('aria-label="Codex-Warnung schließen"');
-    expect(markup).toContain("absolute top-2 right-2");
   });
 
   it("renders on a glass surface so the timeline never reads through the banner", () => {
     const markup = renderToStaticMarkup(
-      <ProviderStatusBanner status={warningProvider()} onDismiss={() => {}} />,
+      <ProviderStatusBanner status={warningProvider()} onDismiss={() => {}}
+        onAction={() => {}} />,
     );
 
     expect(markup).toContain("alert-glass");
@@ -58,6 +59,7 @@ describe("ProviderStatusBanner", () => {
       <ProviderStatusBanner
         status={{ ...warningProvider(), status: "error" }}
         onDismiss={() => {}}
+        onAction={() => {}}
       />,
     );
 
@@ -74,14 +76,17 @@ describe("ProviderStatusBanner", () => {
           message: "Codex CLI (`codex`) is not installed or not on PATH.",
         }}
         onDismiss={() => {}}
+        onAction={() => {}}
       />,
     );
 
-    expect(markup).toContain("Harness fehlt: Codex");
+    expect(markup).toContain("Codex nicht installiert");
+    expect(markup).toContain("Einrichten");
     expect(markup).not.toContain("not on PATH");
+    expect(markup).not.toContain("CLI");
   });
 
-  it("keeps raw English provider text and HTTP status behind Details", () => {
+  it("keeps raw English provider text and HTTP status out of the banner", () => {
     const markup = renderToStaticMarkup(
       <ProviderStatusBanner
         status={{
@@ -90,12 +95,23 @@ describe("ProviderStatusBanner", () => {
           message: "Failed to connect to the configured OpenCode server (HTTP 503).",
         }}
         onDismiss={() => {}}
+        onAction={() => {}}
       />,
     );
-    expect(markup).toContain("Codex nicht verfügbar</div>");
-    expect(markup).toContain("<summary");
-    expect(markup).toMatch(
-      /<pre[^>]*>Failed to connect to the configured OpenCode server \(HTTP 503\)\.<\/pre>/,
+    expect(markup).toContain("Codex nicht verfügbar</span>");
+    expect(markup).not.toContain("<summary");
+    expect(markup).not.toContain("HTTP 503");
+  });
+  it("offers sign-in in-app instead of the CLI for an unauthenticated harness", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderStatusBanner
+        status={{ ...warningProvider(), status: "error", auth: { status: "unauthenticated" } }}
+        onDismiss={() => {}}
+        onAction={() => {}}
+      />,
     );
+    expect(markup).toContain("Codex nicht angemeldet");
+    expect(markup).toContain("Anmelden");
+    expect(markup).not.toContain("CLI");
   });
 });

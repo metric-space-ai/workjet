@@ -135,10 +135,10 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    // 401/abgelaufener Zugang: eine deutsche Zeile, eine Aktion, Rohtext nur hinter „Details“.
+    // 401/abgelaufener Zugang: eine deutsche Zeile, eine Aktion, nie der Rohtext.
     expect(html).toContain("Anmeldung der Instanz abgelaufen");
     expect(html.match(/Neu verbinden<\/button>/g)).toHaveLength(1);
-    expect(html).toContain("<summary");
+    expect(html).not.toContain("<summary");
     expect(html).toContain('aria-label="An Supervisor senden" disabled=""');
   });
 
@@ -262,10 +262,10 @@ describe("native supervisor receipt display", () => {
     );
     expect(html).not.toContain("Actual native result");
     expect(html).not.toContain("Real requested change");
-    // Englischer Rohtext steht nur noch hinter „Details“.
+    // Englischer Rohtext erscheint nie im Chat.
     expect(html).toContain("Projektverbindung nicht verfügbar</span>");
-    expect(html).toMatch(/<pre[^>]*>This project has no confirmed CTOX binding/);
-    expect(html.match(/Erneut<\/button>/g)).toHaveLength(1);
+    expect(html).not.toContain("This project has no confirmed CTOX binding");
+    expect(html.match(/Erneut versuchen<\/button>/g)).toHaveLength(1);
   });
   it("shows a definitive pre-submit refusal and lets the user edit a new prompt", () => {
     const rejectedConfig: WorkjetThreadConfig = {
@@ -323,7 +323,7 @@ describe("native supervisor receipt display", () => {
     );
     expect(html).not.toContain("Confirm the project and CTOX connection to send.");
     expect(html).toContain("Projektverbindung nicht verfügbar</span>");
-    expect(html).toMatch(/<pre[^>]*>Could not read the CTOX project list\.<\/pre>/);
-    expect(html.match(/Erneut<\/button>/g)).toHaveLength(1);
+    expect(html).not.toContain("Could not read the CTOX project list.");
+    expect(html.match(/Erneut versuchen<\/button>/g)).toHaveLength(1);
   });
 });

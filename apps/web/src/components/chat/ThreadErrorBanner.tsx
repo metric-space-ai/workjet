@@ -1,29 +1,25 @@
-import { memo, useState } from "react";
-import { workjetUiLanguage } from "../../workjetProjectControl";
+import { memo } from "react";
+import { isComposerPlainLine } from "./composerErrorLineLogic";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { CircleAlertIcon, XIcon } from "lucide-react";
 
-const RAW_ERROR_PATTERN =
-  /\b[A-Z][A-Za-z]+(?:Error|Exception)\b|file:\/\/|\bat\s+\S+\s+\(|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/;
+const START_FAILURE_PATTERN = /ProviderAdapter|spawn|ENOENT|process/i;
 
 /**
- * Raw adapter errors (class names, file URLs, thread ids) never stand in the
- * chat as the message (#586): one plain sentence, the raw text under „Details“.
+ * Adapter errors never stand in the chat as the message (#586, UI-Vertrag §2):
+ * a short German line of at most 12 words; the raw text stays in `details`
+ * for logs only and is never rendered.
  */
 export function threadErrorPresentation(error: string): {
   readonly summary: string;
   readonly details: string | null;
 } {
-  if (!RAW_ERROR_PATTERN.test(error)) return { summary: error, details: null };
-  const en = workjetUiLanguage() === "en";
-  const summary = /ProviderAdapter|spawn|ENOENT|process/i.test(error)
-    ? en
-      ? "The worker could not be started."
-      : "Der Worker konnte nicht gestartet werden."
-    : en
-      ? "This step failed."
-      : "Dieser Schritt ist fehlgeschlagen.";
+  const plain = error.trim().replace(/[.!]+$/, "");
+  if (isComposerPlainLine(plain)) return { summary: plain, details: null };
+  const summary = START_FAILURE_PATTERN.test(error)
+    ? "Worker nicht gestartet"
+    : "Schritt fehlgeschlagen";
   return { summary, details: error };
 }
 
@@ -59,50 +55,42 @@ export function isThreadErrorBannerDismissedForSession(bannerKey: string | null)
 export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   error,
   onDismiss,
+  onRetry,
 }: {
   error: string | null;
   onDismiss?: () => void;
+  /** Die eine Aktion des Banners; ohne Wiederholungsweg bleibt nur Schließen. */
+  onRetry?: () => void;
 }) {
-  const [detailsOpen, setDetailsOpen] = useState(false);
   if (!error) return null;
-  const { summary, details } = threadErrorPresentation(error);
-  const en = workjetUiLanguage() === "en";
+  const { summary } = threadErrorPresentation(error);
   return (
     <div className="mx-auto w-fit max-w-[min(48rem,calc(100%-2rem))] pt-3">
       <Alert variant="error" controlAlignment="first-line">
         <CircleAlertIcon />
         <AlertDescription>
-          <div className="line-clamp-3">{summary}</div>
-          {details !== null ? (
-            <>
-              <button
-                type="button"
-                className="mt-1 text-xs font-medium"
-                aria-expanded={detailsOpen}
-                onClick={() => setDetailsOpen((open) => !open)}
-              >
-                {detailsOpen ? (en ? "Hide details" : "Details ausblenden") : "Details"}
-              </button>
-              {detailsOpen ? (
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px]">
-                  {details}
-                </pre>
-              ) : null}
-            </>
-          ) : null}
+          <div className="truncate">{summary}</div>
         </AlertDescription>
-        {onDismiss && (
+        {onRetry || onDismiss ? (
           <AlertAction>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={en ? "Dismiss error" : "Fehler schließen"}
-              onClick={onDismiss}
-            >
-              <XIcon className="text-destructive" />
-            </Button>
+            {onRetry ? (
+              <Button size="xs" variant="outline" onClick={onRetry}>
+                Erneut versuchen
+              </Button>
+            ) : null}
+            {onDismiss ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Fehler schließen"
+                title="Fehler schließen"
+                onClick={onDismiss}
+              >
+                <XIcon className="text-destructive" />
+              </Button>
+            ) : null}
           </AlertAction>
-        )}
+        ) : null}
       </Alert>
     </div>
   );

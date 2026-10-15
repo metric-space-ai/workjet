@@ -19,9 +19,10 @@ import {
   type ReactElement,
   type ComponentProps,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpIcon, PlusIcon } from "lucide-react";
 import { ComposerBar } from "./ComposerBar";
-import { ComposerDictationButton } from "./ComposerDictationButton";
+import { ComposerDictationButton, DICTATION_SETTINGS_ROUTE } from "./ComposerDictationButton";
 import { ComposerControl } from "./ComposerControl";
 import { shouldSubmitComposerOnEnter } from "../../composer-logic";
 import { createPortal } from "react-dom";
@@ -118,6 +119,8 @@ export function NativeSupervisorComposer(props: {
   const environment = usePrimaryEnvironment();
   const [workerStatus, setWorkerStatus] = useState<WorkerSourceConnectionStatus | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [dictationError, setDictationError] = useState<ComposerErrorLineValue | null>(null);
+  const navigate = useNavigate();
   const [turnKind, setTurnKind] = useState<WorkjetSupervisorTurnKind>("work");
   const [capabilityRetry, setCapabilityRetry] = useState(0);
   const [capability, setCapability] = useState<ScopedSupervisorTurnCapabilities | null>(null);
@@ -849,6 +852,12 @@ export function NativeSupervisorComposer(props: {
           {notice}
         </p>
       )}
+      {dictationError && (
+        <ComposerErrorLine
+          line={dictationError}
+          onAction={() => void navigate({ to: DICTATION_SETTINGS_ROUTE })}
+        />
+      )}
       {composerLine && (
         <ComposerErrorLine
           line={composerLine}
@@ -1052,6 +1061,7 @@ export function NativeSupervisorComposer(props: {
               onTranscript={(text) =>
                 setPrompt((current) => (current ? `${current} ${text}` : text))
               }
+              onErrorLine={setDictationError}
             />
           }
           actions={

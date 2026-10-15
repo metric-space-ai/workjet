@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import type {
   ApprovalRequestId,
   EnvironmentId,
@@ -120,7 +121,9 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerBar } from "./ComposerBar";
-import { ComposerDictationButton } from "./ComposerDictationButton";
+import { ComposerDictationButton, DICTATION_SETTINGS_ROUTE } from "./ComposerDictationButton";
+import { ComposerErrorLine } from "./ComposerErrorLine";
+import type { ComposerErrorLine as ComposerErrorLineValue } from "./composerErrorLineLogic";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import {
   ComposerComputerControl,
@@ -1025,6 +1028,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * threads. `null` means never edited.
    */
   const [draftManagedInstructions, setDraftManagedInstructions] = useState<string | null>(null);
+  /** Diktat-Fehler als Composer-Fehlerzeile (nie als schwebendes Popover). */
+  const [dictationError, setDictationError] = useState<ComposerErrorLineValue | null>(null);
+  const navigateFromComposer = useNavigate();
   /**
    * Apply the selected worker's EXTRAS and TASK TEXT when the draft becomes a
    * server thread or its Luma choice changes — one dispatch, because the caller drops
@@ -3663,6 +3669,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       >
         <WorkjetComputersSettings setupOnly onCompleted={() => setIsAddComputerOpen(false)} />
       </InlineExpand>
+      {dictationError ? (
+        <ComposerErrorLine
+          line={dictationError}
+          onAction={() => void navigateFromComposer({ to: DICTATION_SETTINGS_ROUTE })}
+        />
+      ) : null}
       <div
         className={cn(
           "group rounded-[22px] p-px transition-colors duration-200",
@@ -4293,6 +4305,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       onTranscript={(text) =>
                         insertComposerTextAtEnd(text, { ensureLeadingBoundary: true })
                       }
+                      onErrorLine={setDictationError}
                     />
                   }
                 />

@@ -71,7 +71,8 @@ function render(instanceId: string | null = "selected-instance", disabled = fals
   return ComposerDictationButton({ instanceId, disabled, onTranscript });
 }
 function button(instanceId?: string | null, disabled = false) {
-  return render(instanceId, disabled).props.children[0];
+  const children = render(instanceId, disabled).props.children;
+  return Array.isArray(children) ? children[0] : children;
 }
 beforeEach(() => {
   hooks.values = [];

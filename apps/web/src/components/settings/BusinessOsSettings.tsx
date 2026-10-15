@@ -42,6 +42,7 @@ import { encodeBusinessOsManualCredential } from "./businessOsManualCredential";
 import { formatMobileInviteExpiry } from "./businessOsPairing";
 import { dedupeCtoxInstances, InstancesTable } from "./InstancesTable";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { SecretsSettingsSection } from "./SecretsSettingsSection";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
 const EMPTY_DEVICES: readonly WorkjetDeviceBindingSummary[] = [];
@@ -629,6 +630,7 @@ export function BusinessOsSettingsView({
           <div className="flex flex-col px-3 pt-2 sm:px-4">{addPanel}</div>
         )}
       </SettingsSection>
+      <SecretsSettingsSection instanceId={activeInstanceId ?? null} />
     </SettingsPageContainer>
   );
 }

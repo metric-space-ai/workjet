@@ -1,4 +1,8 @@
-import { WORKJET_SECRET_VALUE_MAX, type WorkjetSecretRequestRecord } from "@workjet/contracts";
+import {
+  WORKJET_SECRET_VALUE_MAX,
+  type WorkjetCredentialRecord,
+  type WorkjetSecretRequestRecord,
+} from "@workjet/contracts";
 import { requestWorkjetProjectControl } from "./workjetProjectControl";
 import { newCommandId } from "./lib/utils";
 
@@ -85,4 +89,40 @@ export function secretRequestText(language: "de" | "en") {
       : "The value goes straight into the encrypted CTOX store. It never appears in the chat, and the agent only sees the reference.",
     failed: de ? "Nicht gespeichert. Erneut versuchen" : "Not stored. Try again",
   };
+}
+
+/** Write-only credential listing: names and status, never values. */
+export async function listCredentials(
+  instanceId: string,
+): Promise<readonly WorkjetCredentialRecord[] | null> {
+  const result = await requestWorkjetProjectControl(instanceId, {
+    action: "secret.list",
+    commandId: newCommandId(),
+  });
+  if (result._tag !== "completed" || result.response.action !== "secret.list") return null;
+  return result.response.secrets;
+}
+
+export async function putCredential(
+  instanceId: string,
+  name: string,
+  value: string,
+): Promise<boolean> {
+  if (value.length === 0 || value.length > WORKJET_SECRET_VALUE_MAX) return false;
+  const result = await requestWorkjetProjectControl(instanceId, {
+    action: "secret.put",
+    commandId: newCommandId(),
+    name,
+    value,
+  });
+  return result._tag === "completed" && result.response.action === "secret.put";
+}
+
+export async function deleteCredential(instanceId: string, name: string): Promise<boolean> {
+  const result = await requestWorkjetProjectControl(instanceId, {
+    action: "secret.delete",
+    commandId: newCommandId(),
+    name,
+  });
+  return result._tag === "completed" && result.response.action === "secret.delete";
 }

@@ -205,6 +205,8 @@ describe("native project session calendar", () => {
     expect(events[0]?.endMs).toBe(session.createdAtMs);
     expect(events[0]?.minutes).toBe(600);
     expect(events[0]?.title).toContain("ctox.dev");
+    // Run status is shown in the UI language, never as the raw contract value.
+    expect(events[0]?.title).toBe("ctox.dev · Sitzung (läuft)");
     expect(buildSessionEvents([project("foreign-project")], [session], "Europe/Berlin")).toEqual(
       [],
     );

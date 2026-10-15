@@ -205,7 +205,7 @@ export function buildSessionEvents(
   projects: readonly CalendarProject[],
   sessions: readonly CtoxWorkjetSessionProjection[],
   displayZone: string,
-  sessionLabel: string = CALENDAR_TEXT.de.session,
+  text: CalendarText = CALENDAR_TEXT.de,
 ): readonly CalendarEvent[] {
   const byId = new Map(projects.map((project) => [project.id, project]));
   return sessions.flatMap((session): CalendarEvent[] => {
@@ -218,7 +218,7 @@ export function buildSessionEvents(
       {
         id: `session:${session.id}`,
         calendarId: SESSION_CALENDAR_ID,
-        title: `${project.title} · ${sessionLabel} (${session.runStatus})`,
+        title: `${project.title} · ${text.session} (${text.sessionStatus[session.runStatus]})`,
         startMs: session.createdAtMs,
         endMs: session.createdAtMs,
         point: true,
@@ -664,7 +664,7 @@ export function ProjectCalendar({
   const allEvents = useMemo(
     () => [
       ...buildEvents(projects, windowFrom, windowTo, displayZone),
-      ...buildSessionEvents(projects, sessions, displayZone, text.session).filter(
+      ...buildSessionEvents(projects, sessions, displayZone, text).filter(
         (event) => event.date >= windowFrom && event.date <= windowTo,
       ),
       ...buildAccountEvents(
@@ -676,7 +676,7 @@ export function ProjectCalendar({
         projects,
       ),
     ],
-    [projects, sessions, accountEvents, windowFrom, windowTo, displayZone, text.session],
+    [projects, sessions, accountEvents, windowFrom, windowTo, displayZone, text],
   );
   const visibleEvents = useMemo(
     () =>

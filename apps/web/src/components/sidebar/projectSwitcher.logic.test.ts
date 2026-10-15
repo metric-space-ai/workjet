@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildProjectSwitcherEntries,
@@ -49,9 +49,7 @@ describe("filterProjectSwitcherEntries", () => {
       "a",
       "b",
     ]);
-    expect(filterProjectSwitcherEntries(entries, "thesen").map((entry) => entry.id)).toEqual([
-      "b",
-    ]);
+    expect(filterProjectSwitcherEntries(entries, "thesen").map((entry) => entry.id)).toEqual(["b"]);
     expect(filterProjectSwitcherEntries(entries, " ")).toHaveLength(3);
   });
 });

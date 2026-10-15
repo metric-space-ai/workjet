@@ -53,7 +53,6 @@ import {
   MessageSquareIcon,
   PinIcon,
   LayoutDashboardIcon,
-  LayoutGridIcon,
   PlusIcon,
   SearchIcon,
   ServerIcon,
@@ -114,6 +113,8 @@ import {
   type SidebarSearchMode,
 } from "../commandPaletteBus";
 import { buildNewThreadMenuEntries, NewThreadInMenu } from "./NewThreadInMenu";
+import { SidebarProjectSwitcher } from "./sidebar/SidebarProjectSwitcher";
+import { buildProjectSwitcherEntries, projectFolderName } from "./sidebar/projectSwitcher.logic";
 import {
   SidebarProjectSearchResults,
   SidebarSearchModeSegment,
@@ -190,15 +191,7 @@ import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuSeparator,
-  MenuTrigger,
-} from "./ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 import { useUiText } from "../hooks/useUiText";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -2043,6 +2036,40 @@ export default function Sidebar() {
       .filter((project) => !workjetProjects.some((native) => native.id === project.id))
       .map(({ id, title }) => ({ id, title })),
   ];
+  const projectSwitcherEntries = buildProjectSwitcherEntries(
+    selectableWorkjetProjects.length > 0
+      ? [
+          ...workjetProjects.map((project) => ({
+            id: project.id,
+            title: project.title,
+            metaCandidates: [
+              projectFolderName(
+                project.workingCopies.find((copy) => copy.status === "active")?.path ??
+                  project.workingCopies[0]?.path,
+              ),
+              projectFolderName(project.repoUrl),
+            ],
+          })),
+          ...localLogicalProjects
+            .filter((project) => !workjetProjects.some((native) => native.id === project.id))
+            .map((project) => ({
+              id: project.id,
+              title: project.title,
+              metaCandidates: [
+                projectFolderName(project.workspaceRoot),
+                environmentLabelById.get(project.environmentId),
+              ],
+            })),
+        ]
+      : projectGroups.map((project) => ({
+          id: project.projectKey,
+          title: project.displayName,
+          metaCandidates: [
+            projectFolderName(project.workspaceRoot),
+            environmentLabelById.get(project.environmentId),
+          ],
+        })),
+  );
   const selectedLocalLogicalProject =
     localLogicalProjects.find(
       (project) =>
@@ -3666,7 +3693,14 @@ export default function Sidebar() {
             {projectGroups.length > 0 || workjetProjects.length > 0 ? (
               <div className="space-y-1">
                 <div className="flex items-center gap-1">
-                  <Menu
+                  <SidebarProjectSwitcher
+                    entries={projectSwitcherEntries}
+                    selectedId={
+                      selectableWorkjetProjects.length > 0
+                        ? (selectedWorkjetProject?.id ?? selectedLocalLogicalProject?.id ?? null)
+                        : projectScopeKey
+                    }
+                    busy={isSwitchingProject}
                     open={projectScopeMenuOpen}
                     onOpenChange={(open) => {
                       setProjectScopeMenuOpen(open);
@@ -3675,144 +3709,125 @@ export default function Sidebar() {
                           workjetProjectRegistry.presentationInstanceId,
                         );
                     }}
-                  >
-                    <MenuTrigger
-                      render={
-                        <SidebarMenuButton
-                          aria-label={t("Projekt wählen", "Choose project")}
-                          aria-busy={isSwitchingProject}
-                          disabled={isSwitchingProject}
-                          data-workjet-action="project.switcher"
-                          className="h-11 min-w-0 flex-1 gap-2.5 text-[15px] font-semibold text-sidebar-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                        />
+                    text={overviewText}
+                    onSelectAll={() => {
+                      const instanceId = workjetProjectRegistry.presentationInstanceId;
+                      if (instanceId !== null && !selectWorkjetProject(instanceId, null)) return;
+                      selectProjectOverviewRef(instanceId, null);
+                      setProjectScopeKey(null);
+                      setProjectScopeMenuOpen(false);
+                      if (isMobile) setOpenMobile(false);
+                      void router.navigate({ to: "/" }).catch((error) => {
+                        toastManager.add({
+                          type: "error",
+                          title: "Übersicht konnte nicht geöffnet werden",
+                          description:
+                            error instanceof Error ? error.message : "Unbekannter Fehler",
+                        });
+                      });
+                    }}
+                    onSelect={(value) => {
+                      if (selectableWorkjetProjects.length > 0) {
+                        void handleWorkjetProjectSelection(value);
+                      } else {
+                        void handleProjectScopeChange(value);
                       }
-                    >
-                      <span
-                        aria-hidden
-                        className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-[13px] font-semibold uppercase text-sidebar-accent-foreground"
-                      >
-                        {(
-                          selectedWorkjetProject?.title ??
-                          selectedLocalLogicalProject?.title ??
-                          scopedProjectGroup?.displayName ??
-                          ""
-                        )
-                          .trim()
-                          .charAt(0) || <LayoutGridIcon className="size-4" />}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">
-                        {selectedWorkjetProject?.title ??
-                          selectedLocalLogicalProject?.title ??
-                          scopedProjectGroup?.displayName ??
-                          overviewText.allProjects}
-                      </span>
-                      <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
-                    </MenuTrigger>
-                    <MenuPopup align="start" className="min-w-64 max-w-80">
-                      <MenuItem
-                        data-workjet-action="project.overview"
-                        onClick={() => {
-                          const instanceId = workjetProjectRegistry.presentationInstanceId;
-                          if (instanceId !== null && !selectWorkjetProject(instanceId, null))
-                            return;
-                          selectProjectOverviewRef(instanceId, null);
-                          setProjectScopeKey(null);
-                          setProjectScopeMenuOpen(false);
-                          if (isMobile) setOpenMobile(false);
-                          void router.navigate({ to: "/" }).catch((error) => {
-                            toastManager.add({
-                              type: "error",
-                              title: "Übersicht konnte nicht geöffnet werden",
-                              description:
-                                error instanceof Error ? error.message : "Unbekannter Fehler",
-                            });
-                          });
-                        }}
-                      >
-                        <LayoutGridIcon aria-hidden className="size-4" />
-                        <span>{overviewText.allProjects}</span>
-                      </MenuItem>
-                      <MenuSeparator />
-                      <MenuRadioGroup
-                        value={
-                          selectableWorkjetProjects.length > 0
-                            ? (selectedWorkjetProject?.id ?? selectedLocalLogicalProject?.id ?? "")
-                            : (projectScopeKey ?? "")
-                        }
-                        onValueChange={(value) => {
-                          if (typeof value !== "string" || value.length === 0) return;
-                          if (selectableWorkjetProjects.length > 0) {
-                            void handleWorkjetProjectSelection(value);
-                          } else {
-                            void handleProjectScopeChange(value);
-                          }
-                        }}
-                      >
-                        {selectableWorkjetProjects.length > 0
-                          ? selectableWorkjetProjects.map((project) => (
-                              <MenuRadioItem
-                                key={project.id}
-                                value={project.id}
-                                closeOnClick
-                                data-workjet-action={`project.select:${project.id}`}
-                              >
-                                <span className="min-w-0 truncate" data-sensitive="">
-                                  {project.title}
-                                </span>
-                                <span className="ml-auto">
-                                  <ProjectTokenBudget
-                                    project={{
-                                      key: project.id,
-                                      id: project.id,
-                                      title: project.title,
-                                      native: true,
-                                      local:
-                                        sidebarProjects.find((local) => local.id === project.id) ??
-                                        null,
-                                    }}
-                                  />
-                                </span>
-                              </MenuRadioItem>
-                            ))
-                          : projectGroups.map((project) => (
-                              <MenuRadioItem
-                                key={project.projectKey}
-                                value={project.projectKey}
-                                closeOnClick
-                              >
-                                <span className="min-w-0 truncate">{project.displayName}</span>
-                                <span className="ml-auto">
-                                  <ProjectTokenBudget
-                                    project={{
-                                      key: project.projectKey,
-                                      id: project.id,
-                                      title: project.displayName,
-                                      native: false,
-                                      local:
-                                        projects.find(
-                                          (local) =>
-                                            local.id === project.id &&
-                                            local.environmentId === project.environmentId,
-                                        ) ?? null,
-                                    }}
-                                  />
-                                </span>
-                              </MenuRadioItem>
-                            ))}
-                      </MenuRadioGroup>
-                      <MenuSeparator />
-                      <MenuItem
-                        data-workjet-action="project.add.sidebar.persistent"
-                        onClick={openAddProjectCommandPalette}
-                      >
-                        <PlusIcon aria-hidden className="size-4" />
-                        <span>{overviewText.newProject}</span>
-                      </MenuItem>
-                    </MenuPopup>
-                  </Menu>
+                    }}
+                    onCreateProject={openAddProjectCommandPalette}
+                    renderTrailing={(entry) => {
+                      if (selectableWorkjetProjects.length > 0) {
+                        return (
+                          <ProjectTokenBudget
+                            project={{
+                              key: entry.id,
+                              id: entry.id,
+                              title: entry.title,
+                              native: true,
+                              local: sidebarProjects.find((local) => local.id === entry.id) ?? null,
+                            }}
+                          />
+                        );
+                      }
+                      const group = projectGroups.find(
+                        (project) => project.projectKey === entry.id,
+                      );
+                      if (!group) return null;
+                      return (
+                        <ProjectTokenBudget
+                          project={{
+                            key: group.projectKey,
+                            id: group.id,
+                            title: group.displayName,
+                            native: false,
+                            local:
+                              projects.find(
+                                (local) =>
+                                  local.id === group.id &&
+                                  local.environmentId === group.environmentId,
+                              ) ?? null,
+                          }}
+                        />
+                      );
+                    }}
+                  />
                 </div>
               </div>
             ) : null}
+            {/* Ein Knopf „Neue Unterhaltung“ für das aktuelle Projekt (#579). */}
+            <div className="relative">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <SidebarMenuButton
+                      type="button"
+                      data-workjet-action="thread.new"
+                      className="text-sidebar-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                      onClick={handleNewThreadClick}
+                    />
+                  }
+                >
+                  <PlusIcon aria-hidden className="size-4 shrink-0" />
+                  <span>{overviewText.newThread}</span>
+                </TooltipTrigger>
+                <TooltipPopup side="right">
+                  {sidebarAvailableProjectCount > 1 ? (
+                    <span className="flex flex-col gap-0.5">
+                      <span>
+                        {newThreadShortcutLabel
+                          ? `${overviewText.newThread} (${newThreadShortcutLabel})`
+                          : overviewText.newThread}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {overviewText.newThreadInProject}
+                        {newThreadInProjectShortcutLabel
+                          ? ` (${newThreadInProjectShortcutLabel})`
+                          : ""}
+                      </span>
+                    </span>
+                  ) : newThreadShortcutLabel ? (
+                    `${overviewText.newThread} (${newThreadShortcutLabel})`
+                  ) : (
+                    overviewText.newThread
+                  )}
+                </TooltipPopup>
+              </Tooltip>
+              {sidebarAvailableProjectCount > 1 ? (
+                // Opened by „Neue Unterhaltung“; no trigger of its own (#629).
+                <NewThreadInMenu
+                  hideTrigger
+                  title={overviewText.newThreadIn}
+                  entries={newThreadMenuEntries}
+                  open={newThreadMenuOpen}
+                  onOpenChange={setNewThreadMenuOpen}
+                  onCreateProject={openAddProjectCommandPalette}
+                  onSelect={(project) => {
+                    setNewThreadMenuOpen(false);
+                    if (isMobile) setOpenMobile(false);
+                    void newThreadContext.handleNewThread(project);
+                  }}
+                />
+              ) : null}
+            </div>
             {/* Navigation: Übersicht, Suche (#629). */}
             {selectedWorkjetProject || selectedLocalLogicalProject ? (
               <SidebarMenuButton
@@ -3908,59 +3923,6 @@ export default function Sidebar() {
                   </Button>
                 ) : null}
               </div>
-              <div className="shrink-0">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <SidebarMenuButton
-                        type="button"
-                        className="h-8 w-auto gap-1 px-2 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                        onClick={handleNewThreadClick}
-                        aria-label={overviewText.newThread}
-                      />
-                    }
-                  >
-                    <PlusIcon aria-hidden />
-                    <span className="text-xs">{overviewText.newThreadShort}</span>
-                  </TooltipTrigger>
-                  <TooltipPopup side="right">
-                    {sidebarAvailableProjectCount > 1 ? (
-                      <span className="flex flex-col gap-0.5">
-                        <span>
-                          {newThreadShortcutLabel
-                            ? `${overviewText.newThread} (${newThreadShortcutLabel})`
-                            : overviewText.newThread}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {overviewText.newThreadInProject}
-                          {newThreadInProjectShortcutLabel
-                            ? ` (${newThreadInProjectShortcutLabel})`
-                            : ""}
-                        </span>
-                      </span>
-                    ) : newThreadShortcutLabel ? (
-                      `${overviewText.newThread} (${newThreadShortcutLabel})`
-                    ) : (
-                      overviewText.newThread
-                    )}
-                  </TooltipPopup>
-                </Tooltip>
-              </div>
-              {sidebarAvailableProjectCount > 1 ? (
-                // Opened by „+“; the menu has no trigger of its own (#629).
-                <NewThreadInMenu
-                  hideTrigger
-                  entries={newThreadMenuEntries}
-                  open={newThreadMenuOpen}
-                  onOpenChange={setNewThreadMenuOpen}
-                  onCreateProject={openAddProjectCommandPalette}
-                  onSelect={(project) => {
-                    setNewThreadMenuOpen(false);
-                    if (isMobile) setOpenMobile(false);
-                    void newThreadContext.handleNewThread(project);
-                  }}
-                />
-              ) : null}
             </div>
             {isSearchActive ? (
               <SidebarSearchModeSegment

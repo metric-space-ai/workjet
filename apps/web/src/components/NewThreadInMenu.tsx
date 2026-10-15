@@ -6,14 +6,17 @@
 import { ChevronDownIcon, FolderIcon, FolderPlusIcon } from "lucide-react";
 
 import type { AvailableProject } from "../availableProjects";
+import { buildProjectSwitcherEntries, projectFolderName } from "./sidebar/projectSwitcher.logic";
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 import { SidebarMenuButton } from "./ui/sidebar";
 
-export const NEW_THREAD_IN_LABEL = "Neue Unterhaltung in …";
+export const NEW_THREAD_IN_LABEL = "Neue Unterhaltung in";
 
 export interface NewThreadMenuEntry {
   readonly key: string;
   readonly title: string;
+  /** Ordner, nur wenn ein gleichnamiges Projekt existiert („metric“/„Metric“). */
+  readonly meta: string | null;
   readonly project: AvailableProject;
 }
 
@@ -24,14 +27,28 @@ export function buildNewThreadMenuEntries(
 ): NewThreadMenuEntry[] {
   const source = projects.length > 0 ? projects : fallback === null ? [] : [fallback];
   const seen = new Set<string>();
-  const entries: NewThreadMenuEntry[] = [];
+  const unique: Array<{ key: string; project: AvailableProject }> = [];
   for (const project of source) {
     const key = `${project.environmentId}:${project.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    entries.push({ key, title: project.title, project });
+    unique.push({ key, project });
   }
-  return entries.toSorted((left, right) => left.title.localeCompare(right.title, "de"));
+  const labelled = buildProjectSwitcherEntries(
+    unique.map(({ key, project }) => ({
+      id: key,
+      title: project.title,
+      metaCandidates: [projectFolderName(project.path)],
+    })),
+  );
+  return unique
+    .map(({ key, project }, index) => ({
+      key,
+      title: project.title,
+      meta: labelled[index]?.meta ?? null,
+      project,
+    }))
+    .toSorted((left, right) => left.title.localeCompare(right.title, "de"));
 }
 
 export function NewThreadInMenu(props: {
@@ -42,7 +59,10 @@ export function NewThreadInMenu(props: {
   readonly onCreateProject: () => void;
   /** Opened programmatically (the sidebar „+“); no visible trigger of its own. */
   readonly hideTrigger?: boolean;
+  /** Kopfzeile aus dem Sprachkatalog. */
+  readonly title?: string;
 }) {
+  const title = props.title ?? NEW_THREAD_IN_LABEL;
   return (
     <Menu open={props.open} onOpenChange={props.onOpenChange}>
       <MenuTrigger
@@ -50,7 +70,7 @@ export function NewThreadInMenu(props: {
           <SidebarMenuButton
             size="icon"
             type="button"
-            aria-label={NEW_THREAD_IN_LABEL}
+            aria-label={title}
             data-workjet-action="thread.new.in"
             tabIndex={props.hideTrigger ? -1 : undefined}
             aria-hidden={props.hideTrigger ? true : undefined}
@@ -64,17 +84,26 @@ export function NewThreadInMenu(props: {
       >
         <ChevronDownIcon aria-hidden className="size-3.5" />
       </MenuTrigger>
-      <MenuPopup align="end" className="min-w-56 max-w-80">
+      <MenuPopup align="end" className="w-72 max-w-[calc(100vw-1rem)]">
         <MenuGroup>
-          <MenuGroupLabel>{NEW_THREAD_IN_LABEL}</MenuGroupLabel>
+          <MenuGroupLabel className="whitespace-normal">{title}</MenuGroupLabel>
           {props.entries.map((entry) => (
             <MenuItem
               key={entry.key}
               data-workjet-action={`thread.new.in:${entry.project.id}`}
               onClick={() => props.onSelect(entry.project)}
             >
-              <FolderIcon aria-hidden className="size-4" />
-              <span className="min-w-0 truncate">{entry.title}</span>
+              <FolderIcon aria-hidden className="size-4 self-start mt-0.5" />
+              <span className="min-w-0 flex-1">
+                <span className="block whitespace-normal break-words" data-sensitive="">
+                  {entry.title}
+                </span>
+                {entry.meta ? (
+                  <span className="block truncate text-[12px] text-muted-foreground">
+                    {entry.meta}
+                  </span>
+                ) : null}
+              </span>
             </MenuItem>
           ))}
           {props.entries.length === 0 ? (

@@ -1,0 +1,14 @@
+{
+  "enabled": false,
+  "userHome": "__USER_HOME__",
+  "evidenceDirectory": "__USER_HOME__/.codex/task-evidence/workjet/auto-install",
+  "owner": "__MAIN_OWNER_ID__",
+  "python": "__ABSOLUTE_PYTHON_PATH__",
+  "macGate": "__USER_HOME__/.codex/bin/dev-heavy-run.py",
+  "installedAsar": "/Applications/Workjet.app/Contents/Resources/app.asar",
+  "calendarSnapshot": "__AGENT_DIRECTORY__/calendar.json",
+  "projectIds": [],
+  "afterPullRequests": [],
+  "lastGreenReceipt": "__MEASURED_GREEN_RECEIPT__",
+  "adapters": {}
+}

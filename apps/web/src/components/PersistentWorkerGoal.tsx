@@ -94,9 +94,7 @@ export function PersistentWorkerGoal({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <button
           type="button"
-          className={
-            expanded ? "order-last basis-full text-left" : "min-w-0 flex-1 text-left"
-          }
+          className={expanded ? "order-last basis-full text-left" : "min-w-0 flex-1 text-left"}
           aria-expanded={expanded}
           aria-label={expanded ? "Ziel einklappen" : "Ziel aufklappen"}
           onClick={() => setExpanded((open) => !open)}

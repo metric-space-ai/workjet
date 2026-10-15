@@ -1508,9 +1508,7 @@ function WorkGroupToggleTimelineRow({
           Weniger {row.onlyToolEntries ? "Werkzeugaufrufe" : "Einträge"}
         </span>
       ) : (
-        <span className="font-medium text-foreground">
-          Frühere {labelNoun}
-        </span>
+        <span className="font-medium text-foreground">Frühere {labelNoun}</span>
       )}
     </button>
   );

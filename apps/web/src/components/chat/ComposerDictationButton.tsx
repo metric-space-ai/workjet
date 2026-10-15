@@ -170,11 +170,7 @@ export function ComposerDictationButton(props: {
         }
         title={stateLabel}
         onClick={() =>
-          phase === "recording"
-            ? finish()
-            : error && !props.onErrorLine
-              ? settings()
-              : start()
+          phase === "recording" ? finish() : error && !props.onErrorLine ? settings() : start()
         }
       >
         {phase === "recording" ? (

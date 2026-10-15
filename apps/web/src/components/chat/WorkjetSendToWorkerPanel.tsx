@@ -712,7 +712,9 @@ function WorkjetScopeFilePicker(props: {
                 aria-label={`${path} entfernen`}
                 title={`${path} entfernen`}
                 disabled={props.disabled}
-                onClick={() => props.onChange(selected.filter((entry) => entry !== path).join("\n"))}
+                onClick={() =>
+                  props.onChange(selected.filter((entry) => entry !== path).join("\n"))
+                }
               >
                 <XIcon aria-hidden="true" className="size-3" />
               </Button>

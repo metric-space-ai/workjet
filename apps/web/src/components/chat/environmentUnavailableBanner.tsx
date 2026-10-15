@@ -20,12 +20,7 @@ export function environmentUnavailableBannerItem(input: {
     icon: <WifiOffIcon />,
     title: line.text,
     actions: (
-      <Button
-        size="xs"
-        variant="outline"
-        disabled={input.reconnecting}
-        onClick={input.onReconnect}
-      >
+      <Button size="xs" variant="outline" disabled={input.reconnecting} onClick={input.onReconnect}>
         {input.reconnecting ? "Verbinde …" : line.actionLabel}
       </Button>
     ),

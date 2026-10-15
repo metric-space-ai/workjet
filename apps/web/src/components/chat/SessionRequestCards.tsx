@@ -355,21 +355,24 @@ export function RequestCard({
         error={error}
         onDecline={() => void decide("decline")}
         onAuthorize={() =>
-          void run(async () => {
-            const c = await call("connect", { server: r.toolkit });
-            if (!bridge?.toolhubAuthorize || !instance)
-              throw Object.assign(new Error("unavailable"), { status: 0 });
-            const result = await bridge.toolhubAuthorize({
-              instanceId: instance,
-              toolkit: r.toolkit,
-              authorizeUrl: String(c.authorize_url ?? ""),
-            });
-            if (result._tag === "cancelled") return;
-            if (result._tag === "failed" || !result.callbackUrl)
-              throw Object.assign(new Error("authorize_failed"), { status: 500 });
-            await call("oauth/complete", { callback_url: result.callbackUrl });
-            await call("ui/resolve", { id: r.id, action: "connected" });
-          }, t("Nicht verbunden", "Not connected"))
+          void run(
+            async () => {
+              const c = await call("connect", { server: r.toolkit });
+              if (!bridge?.toolhubAuthorize || !instance)
+                throw Object.assign(new Error("unavailable"), { status: 0 });
+              const result = await bridge.toolhubAuthorize({
+                instanceId: instance,
+                toolkit: r.toolkit,
+                authorizeUrl: String(c.authorize_url ?? ""),
+              });
+              if (result._tag === "cancelled") return;
+              if (result._tag === "failed" || !result.callbackUrl)
+                throw Object.assign(new Error("authorize_failed"), { status: 500 });
+              await call("oauth/complete", { callback_url: result.callbackUrl });
+              await call("ui/resolve", { id: r.id, action: "connected" });
+            },
+            t("Nicht verbunden", "Not connected"),
+          )
         }
       />
     );

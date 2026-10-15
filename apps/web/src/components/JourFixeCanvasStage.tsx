@@ -87,11 +87,7 @@ export default function JourFixeCanvasStage({
           {loadFailed ? (
             <div className="flex items-center gap-2">
               <span>{JOUR_FIXE_SLIDE_LOAD_FAILED}</span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setAttempt((count) => count + 1)}
-              >
+              <Button size="sm" variant="outline" onClick={() => setAttempt((count) => count + 1)}>
                 Erneut versuchen
               </Button>
             </div>

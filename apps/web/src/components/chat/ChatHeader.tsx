@@ -241,10 +241,7 @@ export const ChatHeader = memo(function ChatHeader({
                 }
               >
                 <h2 className="min-w-0 truncate">{activeThreadTitle}</h2>
-                <ChevronDownIcon
-                  aria-hidden
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                />
+                <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
               </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
             </Tooltip>

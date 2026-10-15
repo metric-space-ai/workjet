@@ -134,7 +134,10 @@ function JourFixeCanvasThumb({
     const slide = deck.slides.find((item) => item.id === slideId);
     if (!slide) return;
     const scene = slide.canvas ?? canvasSceneForSlide(slide, deck.assets);
-    void loadCanvasRuntime({ assetBaseUrl: THUMB_RUNTIME_BASE, messages: JOUR_FIXE_CANVAS_MESSAGES })
+    void loadCanvasRuntime({
+      assetBaseUrl: THUMB_RUNTIME_BASE,
+      messages: JOUR_FIXE_CANVAS_MESSAGES,
+    })
       .then((runtime) =>
         runtime.exportToSvg({
           elements: scene.elements,

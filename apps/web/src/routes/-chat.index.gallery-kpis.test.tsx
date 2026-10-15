@@ -334,7 +334,8 @@ describe("gallery KPI failures", () => {
     expect(html).not.toContain("nicht geladen");
     expect(html).not.toContain("Erneut versuchen");
     expect(html).not.toContain("could not be loaded");
-    expect(html).toContain("—");
+    // Unknown KPI values drop out entirely; no „—“ placeholder (Feinschliff WP-K2).
+    expect(html).not.toContain("—");
   });
 
   it("retries a failed read once after 15s and then fills the tile", async () => {

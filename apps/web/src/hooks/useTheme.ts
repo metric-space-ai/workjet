@@ -9,7 +9,6 @@ import {
   canonicalThemePreference,
   isKnownThemePreference,
   getThemePreferenceMode,
-  parseThemeHalves,
   resolveDesktopTheme,
   resolveThemeAppearance,
   resolveThemeHalf,
@@ -50,12 +49,9 @@ export function readThemeHalves(): ThemeHalves | null {
 }
 
 function readStoredThemeHalves(): ThemeHalves | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return parseThemeHalves(window.localStorage.getItem(THEME_HALVES_STORAGE_KEY));
-  } catch {
-    return null;
-  }
+  // Per-appearance theme mixes came from the removed theme library (#553); a
+  // stored mix is ignored so the app renders the standard palette.
+  return null;
 }
 
 function themeHalvesSignature(halves: ThemeHalves | null): string {
@@ -173,8 +169,11 @@ export function readThemePreference(): Theme {
       cause,
     });
   }
+  // Only Hell/Dunkel/System remain (#553). A stored theme id from the removed
+  // theme library (named, imported or custom) falls back to the default.
   if (raw !== null && isKnownThemePreference(raw)) {
-    return canonicalThemePreference(raw);
+    const canonical = canonicalThemePreference(raw);
+    if (canonical === "light" || canonical === "dark" || canonical === "system") return canonical;
   }
   // Workjet Desktop is dark-first. Existing explicit preferences still win;
   // only a genuinely fresh desktop profile receives the dark default.

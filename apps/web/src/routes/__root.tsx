@@ -30,6 +30,7 @@ import {
   toastManager,
 } from "../components/ui/toast";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
+import { DEFAULT_UNIFIED_SETTINGS } from "@workjet/contracts/settings";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
 import { useClientSettings } from "../hooks/useSettings";
 import {
@@ -138,7 +139,6 @@ function RootRouteView() {
     <ToastProvider>
       <AnchoredToastProvider>
         <DocumentTitleSync />
-        <GlassAppearanceSync />
         <FontAppearanceSync />
         {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
         <RelayClientInstallPanel />
@@ -153,51 +153,29 @@ function RootRouteView() {
         {primarySubscriptionsEnabled ? <EventRouter /> : null}
         {primarySubscriptionsEnabled ? <ProviderUpdateLaunchNotification /> : null}
         {appShell}
-        {/* Above the router: a theme draft is judged by walking the app, so the
-            editor has to survive navigation away from settings. */}
       </AnchoredToastProvider>
     </ToastProvider>
   );
 }
 
-function GlassAppearanceSync() {
-  const glassOpacity = useClientSettings((settings) => settings.glassOpacity);
-
-  useEffect(() => {
-    document.documentElement.style.setProperty("--glass-opacity", `${glassOpacity}%`);
-  }, [glassOpacity]);
-
-  return null;
-}
-
 function FontAppearanceSync() {
-  const fontFamilySans = useClientSettings((settings) => settings.fontFamilySans);
-  const fontFamilyCode = useClientSettings((settings) => settings.fontFamilyCode);
-  const fontFamilyComposer = useClientSettings((settings) => settings.fontFamilyComposer);
   const fontSizeInterface = useClientSettings((settings) => settings.fontSizeInterface);
   const fontSizePrompt = useClientSettings((settings) => settings.fontSizePrompt);
   const fontSizeCode = useClientSettings((settings) => settings.fontSizeCode);
-  const fontSmoothing = useClientSettings((settings) => settings.fontSmoothing);
 
   useEffect(() => {
     applyAppearanceFontVariables(document.documentElement, {
-      sans: fontFamilySans,
-      code: fontFamilyCode,
-      composer: fontFamilyComposer,
+      // Schriftfamilien, Glas und Kantenglättung sind entfallen (#553): gespeicherte
+      // Altwerte wirken nicht mehr, es gelten die Standardwerte.
+      sans: "",
+      code: "",
+      composer: "",
       sizeInterface: fontSizeInterface,
       sizePrompt: fontSizePrompt,
       sizeCode: fontSizeCode,
-      smoothing: fontSmoothing,
+      smoothing: DEFAULT_UNIFIED_SETTINGS.fontSmoothing,
     });
-  }, [
-    fontFamilyCode,
-    fontFamilyComposer,
-    fontFamilySans,
-    fontSizeCode,
-    fontSizeInterface,
-    fontSizePrompt,
-    fontSmoothing,
-  ]);
+  }, [fontSizeCode, fontSizeInterface, fontSizePrompt]);
 
   return null;
 }

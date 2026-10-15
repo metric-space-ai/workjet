@@ -4,197 +4,110 @@ import {
   searchableSetting,
   searchSettings,
   SETTINGS_SEARCH_ITEMS,
+  SETTINGS_SECTION_LABELS,
+  settingsPageForPath,
   type SettingsSearchItem,
 } from "./settingsSearch";
 
 const ITEMS: ReadonlyArray<SettingsSearchItem> = [
-  {
-    id: "word-wrap",
-    title: "Word wrap",
-    to: "/settings/general",
-  },
-  {
-    id: "network-access",
-    title: "Network access",
-    to: "/settings/computers",
-  },
-  {
-    id: "harnesses",
-    title: "Harnesses",
-    to: "/settings/computers",
-  },
-  {
-    id: "provider-updates",
-    title: "Update checks",
-    to: "/settings/general",
-  },
-  {
-    id: "automatic-updates",
-    title: "Automatic updates",
-    to: "/settings/general",
-  },
+  { id: "word-wrap", title: "Word wrap", to: "/settings/general" },
+  { id: "network-access", title: "Network access", to: "/settings/computers" },
+  { id: "provider-updates", title: "Update checks", to: "/settings/general" },
+  { id: "automatic-updates", title: "Automatic updates", to: "/settings/general" },
 ];
+
+const ids = (query: string, developerMode = false) =>
+  searchSettings(query, { developerMode }).map((item) => item.id);
 
 describe("searchSettings", () => {
   it("matches setting titles and the pages themselves", () => {
-    expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
-    expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
-    // A sidebar label is findable even when no individual setting carries it.
-    expect(searchSettings("connections", ITEMS)).toEqual([]);
-    expect(searchSettings("instances", ITEMS)).toEqual([
-      {
-        id: "/settings/business-os",
-        title: "Instanzen",
-        to: "/settings/business-os",
-        searchAliases: ["Instances"],
-      },
+    expect(searchSettings("word", { items: ITEMS }).map((item) => item.id)).toEqual(["word-wrap"]);
+    expect(searchSettings("network", { items: ITEMS }).map((item) => item.id)).toEqual([
+      "network-access",
     ]);
-    expect(searchSettings("claude", ITEMS)).toEqual([]);
-  });
-
-  it("does not repeat a page whose title an item already carries", () => {
-    // "Harnesses" is both the sidebar label and a catalog item landing on the
-    // same page; one result, not two identical rows.
-    expect(searchSettings("harnesses", ITEMS)).toEqual([
-      { id: "harnesses", title: "Harnesses", to: "/settings/computers" },
+    expect(searchSettings("connections", { items: ITEMS })).toEqual([]);
+    expect(searchSettings("instances", { items: ITEMS }).map((item) => item.to)).toEqual([
+      "/settings/business-os",
     ]);
-    // "Computers" likewise resolves to the single catalog entry for the page.
-    expect(searchSettings("computers").map((item) => item.id)).toEqual(["workjet-computers"]);
   });
 
-  it("matches normalized title substrings", () => {
-    expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
-    expect(searchSettings("glas").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
-    expect(searchSettings("xyzzy")).toEqual([]);
-  });
-
-  it("keeps catalog order for multiple title matches", () => {
-    expect(searchSettings("update", ITEMS).map((item) => item.id)).toEqual([
+  it("keeps catalog order and ignores empty queries", () => {
+    expect(searchSettings("update", { items: ITEMS }).map((item) => item.id)).toEqual([
       "provider-updates",
       "automatic-updates",
     ]);
+    expect(searchSettings("   ")).toEqual([]);
+    expect(searchSettings("xyzzy")).toEqual([]);
   });
 
-  it("returns no results for an empty query", () => {
-    expect(searchSettings("   ", ITEMS)).toEqual([]);
+  it("finds Modelle, Textmodell and the project model for „modell“ (#603)", () => {
+    const results = searchSettings("modell");
+    expect(results.map((item) => item.title)).toEqual(
+      expect.arrayContaining(["Modelle", "Textmodell", "Projekt-Modell"]),
+    );
+    // Every hit names its page.
+    expect(results.find((item) => item.title === "Textmodell")?.to).toBe("/settings/models");
+    expect(results.find((item) => item.title === "Projekt-Modell")?.to).toBe("/settings/projects");
   });
 
-  it("finds session import and links to its section on the Harnesses page", () => {
-    for (const query of ["import", "sitzungen importieren", "histories"]) {
-      expect(searchSettings(query)).toEqual([
-        {
-          id: "import-sessions",
-          title: "Sitzungen importieren",
-          to: "/settings/computers",
-          searchAliases: ["import", "history", "histories"],
-        },
-      ]);
+  it("offers no hits on hidden settings without developer mode (#550)", () => {
+    for (const query of [
+      "plan-modus",
+      "token-streaming",
+      "diagnose",
+      "harnesses",
+      "tastenkürzel",
+    ]) {
+      expect(ids(query)).toEqual([]);
+      expect(ids(query, true).length).toBeGreaterThan(0);
     }
-    expect(searchableSetting("import-sessions")).toEqual({
-      id: "import-sessions",
-      title: "Sitzungen importieren",
-    });
+    expect(ids("modell")).not.toContain("source-control-writing-model");
+    expect(ids("modell", true)).toContain("source-control-writing-model");
   });
 
-  it("keeps catalog result ids unique", () => {
-    const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it("finds German navigation labels and keeps the old English search vocabulary", () => {
-    for (const [german, english, path] of [
-      ["Allgemein", "General", "/settings/general"],
-      ["Darstellung", "Appearance", "/settings/appearance"],
-      ["Rechner", "Computers", "/settings/computers"],
-      ["Sprachausgabe", "Speech", "/settings/speech"],
-    ] as const) {
-      expect(searchSettings(german).map((item) => item.to)).toContain(path);
-      expect(searchSettings(english).map((item) => item.to)).toContain(path);
+  it("drops the removed theme and font settings (#553)", () => {
+    for (const query of ["glas", "kantenglättung", "oberflächenschrift", "terminal-schrift"]) {
+      expect(searchSettings(query, { developerMode: true })).toEqual([]);
     }
+    expect(ids("dunkel")).toEqual(["color-scheme"]);
+    expect(ids("schriftgröße")).toEqual(["font-size"]);
   });
 
-  it("keeps Business OS first and removes Connections from visible settings", async () => {
-    const { SETTINGS_SECTION_LABELS } = await import("./settingsSearch");
-    expect(Object.keys(SETTINGS_SECTION_LABELS)[0]).toBe("/settings/business-os");
-    expect(Object.values(SETTINGS_SECTION_LABELS)).not.toContain("Connections");
+  it("finds Textmodell on Modelle, not on Allgemein (#550)", () => {
+    expect(searchSettings("textmodell")).toEqual([
+      { id: "text-generation-model", title: "Textmodell", to: "/settings/models" },
+    ]);
   });
 
-  it("serves anchor props to panels from the catalog", () => {
-    expect(searchableSetting("word-wrap")).toEqual({ id: "word-wrap", title: "Zeilenumbruch" });
+  it("keeps catalog result ids unique and anchor props from the catalog", () => {
+    const allIds = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
+    expect(new Set(allIds).size).toBe(allIds.length);
     expect(searchableSetting("archive")).toEqual({
       id: "archive",
       title: "Archivierte Unterhaltungen",
     });
   });
 
-  it("registers the Workjet catalog areas before Greppy runtime", () => {
-    // Both the current label and legacy vocabulary resolve to one catalog item.
-    for (const query of ["worker", "Preset", "Lumas"]) {
-      expect(searchSettings(query)).toEqual([
-        {
-          id: "workjet-workers",
-          title: "Worker-Presets",
-          to: "/settings/workjet",
-          searchAliases: ["worker", "workers", "presets", "lumas", "agent", "agents"],
-        },
-      ]);
+  it("finds German page labels and the old vocabulary", () => {
+    for (const [query, path] of [
+      ["Allgemein", "/settings/general"],
+      ["Darstellung", "/settings/general"],
+      ["Instanzen", "/settings/business-os"],
+      ["Computers", "/settings/computers"],
+      ["Worker-Presets", "/settings/workjet"],
+      ["Sprachausgabe", "/settings/speech"],
+      ["Archiv", "/settings/archived"],
+      ["Verbrauch", "/settings/usage"],
+    ] as const) {
+      expect(searchSettings(query).map((item) => item.to)).toContain(path);
     }
-    expect(searchSettings("llm-anbieter")).toEqual([
-      { id: "workjet-provider-accounts", title: "LLM-Anbieter", to: "/settings/models" },
-    ]);
-    expect(searchSettings("llm-routen")).toEqual([
-      { id: "workjet-llm-routes", title: "LLM-Routen", to: "/settings/models" },
-    ]);
-    expect(searchSettings("greppy-laufzeit")).toEqual([
-      {
-        id: "greppy-runtime",
-        title: "Code-Suche",
-        to: "/settings/workjet",
-        searchAliases: ["greppy", "greppy-laufzeit"],
-      },
-    ]);
-    expect(searchSettings("arbeitskopien-speicher")).toEqual([
-      {
-        id: "automatic-worktree-storage",
-        title: "Arbeitskopien-Speicher",
-        to: "/settings/workjet",
-        targetId: "workjet-execution",
-      },
-    ]);
-
-    // System-Prompts are their own page (#618).
-    expect(searchSettings("system-prompts")[0]).toMatchObject({
-      id: "workjet-prompt",
-      to: "/settings/prompts",
-    });
-    const workjetIds = SETTINGS_SEARCH_ITEMS.filter((item) => item.to === "/settings/workjet").map(
-      (item) => item.id,
-    );
-    // Computers is its own page, provider accounts and LLM routes live on
-    // /settings/models, and capabilities are toggled in the worker editor —
-    // only the five tabs plus their nested anchors resolve to the Worker page.
-    expect(workjetIds).toEqual([
-      "workjet-workers",
-      "workjet-telemetry",
-      "workjet-execution",
-      "automatic-worktree-storage",
-      "greppy-runtime",
-    ]);
   });
 
-  it("routes appearance settings to their current section", () => {
-    expect(searchSettings("theme")[0]).toMatchObject({
-      id: "theme",
-      to: "/settings/appearance",
-    });
-    expect(searchSettings("zeilenumbruch")[0]).toMatchObject({
-      id: "word-wrap",
-      to: "/settings/appearance",
-    });
-    expect(searchSettings("umgebungskennung")[0]).toMatchObject({
-      id: "environment-identification",
-      to: "/settings/appearance",
-      targetId: "appearance",
-    });
+  it("maps subpages to their parent page", () => {
+    expect(settingsPageForPath("/settings/prompts")).toBe("/settings/workjet");
+    expect(settingsPageForPath("/settings/usage")).toBe("/settings/models");
+    expect(settingsPageForPath("/settings/projects/abc")).toBe("/settings/projects");
+    expect(settingsPageForPath("/settings/general")).toBe("/settings/general");
+    expect(SETTINGS_SECTION_LABELS["/settings/business-os"]).toBe("Instanz");
   });
 });

@@ -353,7 +353,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
 /** Narrow layout (420 px): one head row with the page list as a select. */
 export function SettingsCompactNav({ pathname }: { pathname: string }) {
   const nav = useSettingsNavigation(pathname);
-  const current = nav.items.find((item) => item.to === nav.activePage) ?? null;
+  const current =
+    nav.items.find((item) => {
+      return item.to === nav.activePage;
+    }) ?? null;
   return (
     <div
       className="flex flex-col gap-2 border-b border-border px-3 py-2"

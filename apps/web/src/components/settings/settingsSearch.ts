@@ -32,7 +32,7 @@ export interface SettingsSearchItem {
 }
 
 /** Die acht Seiten in Navigationsreihenfolge. */
-export const SETTINGS_PAGE_PATHS: ReadonlyArray<SettingsPagePath> = [
+export const SETTINGS_PAGE_PATHS: readonly SettingsPagePath[] = [
   "/settings/general",
   "/settings/business-os",
   "/settings/computers",
@@ -44,14 +44,14 @@ export const SETTINGS_PAGE_PATHS: ReadonlyArray<SettingsPagePath> = [
 ];
 
 /** Zusätzliche Seiten im Entwicklermodus, in Navigationsreihenfolge. */
-export const DEVELOPER_SETTINGS_PAGE_PATHS: ReadonlyArray<SettingsPagePath> = [
+export const DEVELOPER_SETTINGS_PAGE_PATHS: readonly SettingsPagePath[] = [
   "/settings/diagnostics",
   "/settings/harnesses",
   "/settings/source-control",
   "/settings/keybindings",
 ];
 
-const DEVELOPER_PAGES: ReadonlySet<SettingsPath> = new Set<SettingsPath>([
+const DEVELOPER_PAGES = new Set<SettingsPath>([
   ...DEVELOPER_SETTINGS_PAGE_PATHS,
   "/settings/prompts",
 ]);

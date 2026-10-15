@@ -29,7 +29,6 @@
     "d|components/settings/SessionImportSection.tsx|([]); const scopeKey = JSON.stringify([environmentId, presentationInstanceId, selectionRevision, mode]); const scopeRef ",
     "d|components/settings/SessionImportSection.tsx|(null); const [error, setError] = useState",
     "d|components/settings/SessionImportSection.tsx|new Map(), ); const [preview, setPreview] = useState",
-    "d|components/settings/SettingsPanels.tsx|) : null; const fontEnumeration = useFontEnumeration(); // Everyone starts on the plain input; focusing it is the user g",
     "d|components/settings/SourceControlWritingSettings.tsx|(null); const style = settings.sourceControlWritingStyle; const defaults = DEFAULT_UNIFIED_SETTINGS.sourceControlWriting",
     "d|components/settings/SpeechSettingsPanel.tsx|(); const [error, setError] = useState",
     "d|components/settings/WorkjetGatewayAccounts.tsx|= [ \"claude\", \"codex\", \"antigravity\", ]; /** * Providers added by pasting a key rather than by a browser login. They sit",

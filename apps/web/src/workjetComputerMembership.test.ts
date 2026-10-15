@@ -6,9 +6,73 @@ import {
   type DesktopCtoxBridge,
   type WorkjetComputer,
 } from "@workjet/contracts";
-import { describe, expect, it, vi } from "vite-plus/test";
-import { MEMBERSHIP_DEADLINE_MS, createComputerMembershipStore } from "./workjetComputerMembership";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { createComputerMembershipStore } from "./workjetComputerMembership";
 import type { OperationalComputerEnrollment } from "./computerCapabilityEnrollment";
+import { createKernel } from "./ctox/kernel/kernel.mjs";
+import { KernelTransport } from "./ctox/kernel/transport.mjs";
+import { bindKernelCtoxClient } from "./ctox/kernelClient";
+import type { Kernel } from "./ctox/ctoxClient";
+
+let fixtureSequence = 0;
+const hosts = new Map<string, Kernel>();
+const releases: (() => void)[] = [];
+const stores: ReturnType<typeof createComputerMembershipStore>[] = [];
+afterEach(async () => {
+  stores.splice(0).forEach((store) => store.dispose());
+  releases.splice(0).forEach((release) => release());
+  await Promise.all([...hosts.values()].map((kernel) => kernel.close()));
+  hosts.clear();
+});
+async function readyStore(
+  instanceId: string,
+  computers: readonly CtoxWorkjetComputerProjection[] = [],
+) {
+  const kernel = createKernel({
+    instanceId,
+    userId: "fixture-owner",
+    storage: "memory",
+    dbName: `p11b-membership-${++fixtureSequence}`,
+    multiTab: false,
+    transport: new KernelTransport(),
+  });
+  hosts.set(instanceId, kernel);
+  await kernel.ready;
+  releases.push(bindKernelCtoxClient(kernel, "p11-b"));
+  await kernel.receivePage({
+    epoch: "1",
+    collection: "workjet_computers",
+    scope_hash: "local",
+    gen: 1,
+    cursor_to: "1",
+    complete: true,
+    docs: computers.map((row) => ({
+      id: row.id,
+      seq: "1",
+      rev: "1",
+      data: {
+        id: row.id,
+        display_name: row.displayName,
+        hosting_mode: row.hostingMode,
+        status: row.status,
+        capabilities: row.capabilities,
+        self_hosted_colocation: row.selfHostedColocation,
+        owner_user_id: "fixture-owner",
+        device_binding_id: "fixture-device",
+        actor_epoch: 1,
+        last_seen_at_ms: 0,
+        replication_up: false,
+        created_at_ms: 0,
+        updated_at_ms: 0,
+        is_deleted: false,
+      },
+    })),
+  });
+  const store = createComputerMembershipStore();
+  stores.push(store);
+  await store.refresh(instanceId, undefined);
+  return store;
+}
 
 function deferredResult() {
   let resolve!: (value: CtoxWorkjetComputerControlResult) => void;
@@ -32,12 +96,6 @@ const projection: CtoxWorkjetComputerProjection = {
   capabilities: [],
   selfHostedColocation: false,
 };
-const listed = (
-  computers: ReadonlyArray<CtoxWorkjetComputerProjection> = [],
-): CtoxWorkjetComputerControlResult => ({
-  _tag: "completed",
-  response: { action: "computer.list", computers },
-});
 const port = () => vi.fn<NonNullable<DesktopCtoxBridge["requestComputerControl"]>>();
 const bridge = (requestComputerControl: NonNullable<DesktopCtoxBridge["requestComputerControl"]>) =>
   ({ requestComputerControl }) as DesktopCtoxBridge;
@@ -82,9 +140,8 @@ describe("instance computer membership", () => {
   };
 
   it("removes a native-only NAS without creating a coding connection", async () => {
-    const store = createComputerMembershipStore();
-    const request = port().mockResolvedValueOnce(listed([nasProjection]));
-    await store.refresh("selected", bridge(request));
+    const store = await readyStore("selected", [nasProjection]);
+    const request = port();
     request.mockResolvedValueOnce({
       _tag: "completed",
       response: {
@@ -94,17 +151,16 @@ describe("instance computer membership", () => {
     });
     expect(await store.unassign("selected", nas.computerId, bridge(request))).toBe(true);
     expect(store.getSnapshot().computers).toEqual([]);
-    expect(request.mock.calls[1]?.[1]).toMatchObject({
+    expect(request.mock.calls[0]?.[1]).toMatchObject({
       action: "computer.unassign",
       computerId: nas.computerId,
     });
-    expect(request.mock.calls[1]?.[1]).not.toHaveProperty("environmentId");
+    expect(request.mock.calls[0]?.[1]).not.toHaveProperty("environmentId");
   });
 
   it("serializes enrollment and publishes only after both native confirmations", async () => {
-    const store = createComputerMembershipStore();
-    const request = port().mockResolvedValueOnce(listed());
-    await store.refresh("selected", bridge(request));
+    const store = await readyStore("selected");
+    const request = port();
     const pending = deferredResult();
     request
       .mockResolvedValueOnce({
@@ -137,9 +193,8 @@ describe("instance computer membership", () => {
   });
 
   it("does not publish old enrollment or configure its endpoint after switching instances", async () => {
-    const store = createComputerMembershipStore();
-    const request = port().mockResolvedValueOnce(listed());
-    await store.refresh("selected", bridge(request));
+    const store = await readyStore("selected");
+    const request = port();
     const pending = deferredResult();
     request.mockReturnValueOnce(pending.promise);
     const enrollment = store.enroll("selected", nas, bridge(request));
@@ -152,51 +207,49 @@ describe("instance computer membership", () => {
       },
     });
     await expect(enrollment).rejects.toThrow("Instanz gewechselt");
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot()).toMatchObject({ instanceId: "other", computers: [] });
   });
-  it.each([
-    ["sync_unavailable", "Synchronisierung"],
-    ["query_unsupported", "Rechnerliste noch nicht laden"],
-    ["command_failed", "nicht ausführen"],
-    ["response_invalid", "unpassendes Ergebnis"],
-  ] as const)(
-    "explains %s without granting membership and permits a successful retry",
-    async (code, message) => {
-      const store = createComputerMembershipStore();
-      const request = port()
-        .mockResolvedValueOnce({ _tag: "failed", code })
-        .mockResolvedValueOnce(listed([projection]));
-      await store.refresh("managed:welsch", bridge(request));
-      expect(store.getSnapshot().error).toContain(message);
-      expect(store.getSnapshot().computers).toEqual([]);
-      await store.refresh("managed:welsch", bridge(request));
-      expect(store.getSnapshot().phase).toBe("ready");
-      expect(store.getSnapshot().error).toBeNull();
-      expect(store.getSnapshot().computers).toEqual([projection]);
-    },
-  );
-
-  it("keeps confirmed computers during a same-instance refresh, but clears them on failure", async () => {
-    const store = createComputerMembershipStore();
-    const request = port().mockResolvedValueOnce(listed([projection]));
-    await store.refresh("managed:welsch", bridge(request));
-    const pending = deferredResult();
-    request.mockReturnValueOnce(pending.promise);
-    const refresh = store.refresh("managed:welsch", bridge(request));
-    expect(store.getSnapshot().computers).toEqual([projection]);
-    pending.resolve({ _tag: "failed", code: "authentication_required" });
-    await refresh;
+  it("keeps confirmed computers offline without a desktop read and adopts local updates", async () => {
+    const store = await readyStore("fixture:a", [projection]);
+    const request = port();
+    await store.refresh("fixture:a", bridge(request));
+    expect(store.getSnapshot()).toMatchObject({ phase: "ready", computers: [projection] });
+    expect(request).not.toHaveBeenCalled();
+    const kernel = hosts.get("fixture:a")!;
+    await kernel.receivePage({
+      epoch: "1",
+      collection: "workjet_computers",
+      scope_hash: "local",
+      gen: 1,
+      cursor_to: "2",
+      complete: true,
+      docs: [
+        {
+          id: projection.id,
+          seq: "2",
+          rev: "2",
+          data: {
+            id: projection.id,
+            display_name: projection.displayName,
+            hosting_mode: "workstation",
+            status: "assigned",
+            capabilities: [],
+            self_hosted_colocation: false,
+            is_deleted: true,
+          },
+        },
+      ],
+    });
     expect(store.getSnapshot().computers).toEqual([]);
-    expect(store.getSnapshot().error).toContain("anmelden");
   });
+
   it("waits for native confirmation, then adds and removes the exact computer", async () => {
-    const store = createComputerMembershipStore();
-    const request = port().mockResolvedValueOnce(listed());
-    await store.refresh("managed:welsch", bridge(request));
+    const store = await readyStore("fixture:a");
+    const request = port();
     const pending = deferredResult();
     request.mockReturnValueOnce(pending.promise);
-    const assignment = store.setAssigned("managed:welsch", computer, true, bridge(request));
+    const assignment = store.setAssigned("fixture:a", computer, true, bridge(request));
     expect(store.getSnapshot().pendingComputerId).toBe(computer.id);
     expect(store.getSnapshot().computers).toEqual([]);
     pending.resolve({
@@ -205,8 +258,8 @@ describe("instance computer membership", () => {
     });
     expect(await assignment).toBe(true);
     expect(store.getSnapshot().computers).toEqual([projection]);
-    const sent = request.mock.calls[1];
-    expect(sent?.[0]).toBe("managed:welsch");
+    const sent = request.mock.calls[0];
+    expect(sent?.[0]).toBe("fixture:a");
     expect(sent?.[1]).toMatchObject({
       action: "computer.assign",
       computerId: computer.id,
@@ -217,33 +270,50 @@ describe("instance computer membership", () => {
       _tag: "completed",
       response: { action: "computer.unassign", computer: { ...projection, status: "unassigned" } },
     });
-    expect(await store.setAssigned("managed:welsch", computer, false, bridge(request))).toBe(true);
+    expect(await store.setAssigned("fixture:a", computer, false, bridge(request))).toBe(true);
     expect(store.getSnapshot().computers).toEqual([]);
   });
 
-  it("discards a late response after switching instances", async () => {
-    const store = createComputerMembershipStore();
-    const pending = deferredResult();
-    const request = port().mockReturnValueOnce(pending.promise).mockResolvedValueOnce(listed());
-    const old = store.refresh("managed:welsch", bridge(request));
-    await store.refresh("managed:other", bridge(request));
-    pending.resolve(listed([projection]));
-    await old;
+  it("discards updates from the former instance after switching", async () => {
+    const store = await readyStore("fixture:a", [projection]);
+    store.select("fixture:b");
+    await hosts.get("fixture:a")!.receivePage({
+      epoch: "1",
+      collection: "workjet_computers",
+      scope_hash: "local",
+      gen: 1,
+      cursor_to: "2",
+      complete: true,
+      docs: [
+        {
+          id: "late",
+          seq: "2",
+          rev: "2",
+          data: {
+            id: "late",
+            display_name: "Late",
+            hosting_mode: "workstation",
+            status: "assigned",
+            capabilities: [],
+            self_hosted_colocation: false,
+          },
+        },
+      ],
+    });
     expect(store.getSnapshot()).toMatchObject({
-      instanceId: "managed:other",
+      instanceId: "fixture:b",
       computers: [],
-      phase: "ready",
+      phase: "loading",
     });
   });
 
   it("does not apply an assignment to a newly selected instance", async () => {
-    const store = createComputerMembershipStore();
-    const request = port().mockResolvedValueOnce(listed());
-    await store.refresh("managed:welsch", bridge(request));
+    const store = await readyStore("fixture:a");
+    const request = port();
     const pending = deferredResult();
     request.mockReturnValueOnce(pending.promise);
-    const mutation = store.setAssigned("managed:welsch", computer, true, bridge(request));
-    store.select("managed:other");
+    const mutation = store.setAssigned("fixture:a", computer, true, bridge(request));
+    store.select("fixture:b");
     pending.resolve({
       _tag: "completed",
       response: { action: "computer.assign", computer: projection },
@@ -253,55 +323,35 @@ describe("instance computer membership", () => {
   });
 
   it("rejects a confirmation for a different computer and retains a retryable error", async () => {
-    const store = createComputerMembershipStore();
-    const request = port().mockResolvedValueOnce(listed());
-    await store.refresh("managed:welsch", bridge(request));
+    const store = await readyStore("fixture:a");
+    const request = port();
     request.mockResolvedValueOnce({
       _tag: "completed",
       response: { action: "computer.assign", computer: { ...projection, id: "other-computer" } },
     });
-    expect(await store.setAssigned("managed:welsch", computer, true, bridge(request))).toBe(false);
+    expect(await store.setAssigned("fixture:a", computer, true, bridge(request))).toBe(false);
     expect(store.getSnapshot().computers).toEqual([]);
     expect(store.getSnapshot().error).toContain("nicht bestätigt werden");
     expect(store.getSnapshot().pendingComputerId).toBeNull();
   });
 
-  it("stops checking a blocked instance after the deadline and allows a retry", async () => {
-    vi.useFakeTimers();
-    try {
-      const store = createComputerMembershipStore();
-      const request = port()
-        .mockReturnValueOnce(new Promise(() => undefined))
-        .mockResolvedValueOnce(listed([projection]));
-      const refresh = store.refresh("managed:welsch", bridge(request));
-      expect(store.getSnapshot().phase).toBe("loading");
-      await vi.advanceTimersByTimeAsync(MEMBERSHIP_DEADLINE_MS);
-      await refresh;
-      expect(store.getSnapshot()).toMatchObject({ phase: "failed", computers: [] });
-      expect(store.getSnapshot().error).toBe("Instanz antwortet nicht.");
-      await store.refresh("managed:welsch", bridge(request));
-      expect(store.getSnapshot()).toMatchObject({ phase: "ready", computers: [projection] });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("reports unsupported shells and never invents a local grant", async () => {
+  it("does not invent membership or call a legacy host while no App API is bound", async () => {
     const store = createComputerMembershipStore();
-    await store.refresh("managed:welsch", undefined);
-    expect(store.getSnapshot()).toMatchObject({ phase: "failed", computers: [] });
-    expect(store.getSnapshot().error).toContain("braucht ein Update");
+    stores.push(store);
+    const request = port();
+    await store.refresh("unbound-fixture", bridge(request));
+    expect(store.getSnapshot()).toMatchObject({ phase: "loading", computers: [], error: null });
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("serializes visible mutations and excludes duplicate submits", async () => {
-    const store = createComputerMembershipStore();
-    const request = port().mockResolvedValueOnce(listed());
-    await store.refresh("managed:welsch", bridge(request));
+    const store = await readyStore("fixture:a");
+    const request = port();
     const pending = deferredResult();
     request.mockReturnValueOnce(pending.promise);
-    const first = store.setAssigned("managed:welsch", computer, true, bridge(request));
-    expect(await store.setAssigned("managed:welsch", computer, true, bridge(request))).toBe(false);
-    expect(request).toHaveBeenCalledTimes(2);
+    const first = store.setAssigned("fixture:a", computer, true, bridge(request));
+    expect(await store.setAssigned("fixture:a", computer, true, bridge(request))).toBe(false);
+    expect(request).toHaveBeenCalledTimes(1);
     pending.resolve({ _tag: "failed", code: "timeout" });
     expect(await first).toBe(false);
     expect(store.getSnapshot().error).toContain("noch nicht bestätigt");

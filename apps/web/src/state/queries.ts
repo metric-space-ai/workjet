@@ -3,15 +3,12 @@ import {
   type CheckpointDiffTarget,
   type ComposerPathSearchTarget,
 } from "@workjet/client-runtime/state/threads";
-import {
-  createThreadSearchResultsAtomFamily,
-  makeThreadSearchKey,
-  type EnvironmentThreadSearchMatch,
-} from "@workjet/client-runtime/state/thread-search";
+import type { EnvironmentThreadSearchMatch } from "@workjet/client-runtime/state/thread-search";
 import { type VcsRefTarget } from "@workjet/client-runtime/state/vcs";
 import type {
   EnvironmentId,
   OrchestrationThread,
+  OrchestrationMessage,
   ProjectContentMatch,
   ProjectEntryKind,
   ThreadId,
@@ -22,6 +19,10 @@ import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { useCtoxQuery } from "../ctox/hooks";
+import { useWorkjetThreadShells } from "../ctox/workjetThreadData";
+import { useActiveWorkjetScope } from "../activeWorkjetScope";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { orchestrationEnvironment } from "./orchestration";
@@ -35,26 +36,10 @@ const PROJECT_PATH_SEARCH_DEBOUNCE_MS = 120;
 const COMPOSER_PATH_SEARCH_LIMIT = 80;
 const PROJECT_CONTENT_SEARCH_DEBOUNCE_MS = 120;
 const PROJECT_CONTENT_SEARCH_LIMIT = 500;
-const THREAD_SEARCH_DEBOUNCE_MS = 200;
 const VCS_REF_LIST_LIMIT = 100;
 const EMPTY_REFS: ReadonlyArray<VcsRef> = [];
 const EMPTY_CONTENT_MATCHES: ReadonlyArray<ProjectContentMatch> = [];
 const INITIAL_BRANCH_CURSORS = [undefined] as const;
-const EMPTY_THREAD_SEARCH_MATCHES: ReadonlyArray<EnvironmentThreadSearchMatch> = Object.freeze([]);
-const EMPTY_THREAD_SEARCH_ATOM = Atom.make({
-  matches: EMPTY_THREAD_SEARCH_MATCHES,
-  isLoading: false,
-}).pipe(Atom.withLabel("web:thread-search:empty"));
-
-const threadSearchResultsAtom = createThreadSearchResultsAtomFamily({
-  getSearchAtom: (environmentId, query) =>
-    orchestrationEnvironment.threadSearch({
-      environmentId,
-      input: { query },
-    }),
-  labelPrefix: "web:thread-search",
-});
-
 export interface ThreadDetailView {
   readonly data: OrchestrationThread | null;
   readonly error: string | null;
@@ -85,22 +70,39 @@ export function useThreadSearch(
   readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
   readonly isPending: boolean;
 } {
+  const { selectedInstanceId } = useActiveWorkjetScope();
+  const threads = useWorkjetThreadShells(selectedInstanceId);
   const normalizedQuery = query.trim();
-  const debouncedQuery = useDebouncedValue(normalizedQuery, THREAD_SEARCH_DEBOUNCE_MS);
   const canSearch = environmentIds.length > 0 && normalizedQuery.length >= 2;
-  const settledQuery = canSearch && normalizedQuery === debouncedQuery ? debouncedQuery : null;
-  const searchKey = useMemo(
-    () => (settledQuery === null ? null : makeThreadSearchKey(environmentIds, settledQuery)),
-    [environmentIds, settledQuery],
+  const scopedThreads = threads.filter((thread) => environmentIds.includes(thread.environmentId));
+  const escaped = normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const messages = useCtoxQuery<OrchestrationMessage & { thread_id: string }>(
+    canSearch ? selectedInstanceId : null,
+    "workjet_thread_messages",
+    {
+      selector: {
+        thread_id: { $in: scopedThreads.map((thread) => thread.id) },
+        role: { $in: ["user", "assistant"] },
+        text: { $regex: escaped, $options: "i" },
+      },
+      sort: [{ createdAt: "desc" }],
+      limit: 50,
+    },
   );
-  const result = useAtomValue(
-    searchKey === null ? EMPTY_THREAD_SEARCH_ATOM : threadSearchResultsAtom(searchKey),
-  );
-  const isDebouncing = canSearch && normalizedQuery !== debouncedQuery;
-  return {
-    matches: isDebouncing ? EMPTY_THREAD_SEARCH_MATCHES : result.matches,
-    isPending: canSearch && (isDebouncing || result.isLoading),
-  };
+  const matches: EnvironmentThreadSearchMatch[] = [];
+  for (const message of messages) {
+    const thread = scopedThreads.find((candidate) => candidate.id === message.thread_id);
+    if (!thread || (message.role !== "user" && message.role !== "assistant")) continue;
+    matches.push({
+      environmentId: thread.environmentId,
+      threadId: thread.id,
+      projectId: thread.projectId,
+      source: message.role,
+      snippet: message.text.slice(0, 240),
+      messageCreatedAt: message.createdAt,
+    });
+  }
+  return { matches, isPending: false };
 }
 
 export function useThreadDetail(

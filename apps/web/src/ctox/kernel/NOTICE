@@ -1,0 +1,9 @@
+CTOX App API 4.0 kernel
+Source: https://github.com/metric-space-ai/ctox/pull/823
+Revision: c5a8f32f7d0b37085c1c57c71990b98ae9ac49a5
+Directory: src/apps/business-os/kernel
+
+The upstream JavaScript and index.d.ts are retained byte-for-byte. The upstream
+GNU Affero General Public License v3 text is in LICENSE. PROVENANCE.json records
+the source Git blobs and SHA-256 digests. kernel.d.mts and transport.d.mts are
+Workjet type-resolution adapters, not changes to the upstream runtime.

@@ -7,6 +7,9 @@ import {
   type WorkjetComputer,
 } from "@workjet/contracts";
 import { randomUUID } from "./lib/utils";
+import { getCtoxClient, subscribeCtoxClients, type CtoxAppApi } from "./ctox/ctoxClient";
+import type { CtoxMachineDocument } from "./ctox/workjetLiveData";
+import { projectCtoxMachine } from "./ctox/machineControl";
 import {
   enrollOperationalComputer,
   type OperationalComputerEnrollment,
@@ -45,26 +48,8 @@ function membershipError(code: string): string {
   }
 }
 
-/** A blocked instance must not leave the list „prüft…“ forever. */
+/** @deprecated V4 reads are synchronous; retained for legacy consumers until slice C. */
 export const MEMBERSHIP_DEADLINE_MS = 20_000;
-function withDeadline<T>(work: Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(membershipError("unreachable"))),
-      MEMBERSHIP_DEADLINE_MS,
-    );
-    work.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
-}
 
 /** Only native-confirmed projections enter this store. It never persists local membership claims. */
 export function createComputerMembershipStore() {
@@ -76,6 +61,15 @@ export function createComputerMembershipStore() {
     error: null,
   };
   let generation = 0;
+  let currentApi: CtoxAppApi | null = null;
+  let stopRows = () => {};
+  let stopClients = () => {};
+  const detach = () => {
+    stopRows();
+    stopClients();
+    stopRows = () => {};
+    stopClients = () => {};
+  };
   const listeners = new Set<() => void>();
   const publish = (next: ComputerMembershipSnapshot) => {
     snapshot = next;
@@ -84,54 +78,68 @@ export function createComputerMembershipStore() {
   const select = (instanceId: string | null) => {
     if (snapshot.instanceId === instanceId) return;
     generation++;
+    detach();
+    currentApi = null;
     publish({ instanceId, phase: "loading", computers: [], pendingComputerId: null, error: null });
   };
-  const refresh = async (instanceId: string, bridge: DesktopCtoxBridge | undefined) => {
+  const refresh = async (instanceId: string, _bridge: DesktopCtoxBridge | undefined) => {
     select(instanceId);
-    const revision = ++generation;
-    // A focus refresh must not remove the selected computer while its inventory reloads.
-    // Changing instances clears the previous inventory in select(); a failed refresh also clears it.
-    publish({ ...snapshot, phase: "loading", error: null, pendingComputerId: null });
-    try {
-      if (!bridge?.requestComputerControl) throw new Error(membershipError("unsupported"));
-      let result = await withDeadline(
-        bridge.requestComputerControl(instanceId, {
-          action: "computer.list",
-          includeOperationalDetails: true,
-        }),
-      );
-      if (revision !== generation) return;
-      if (result._tag === "failed" && result.code === "not_active" && bridge.ensurePooled) {
-        await withDeadline(bridge.ensurePooled(instanceId));
-        if (revision !== generation) return;
-        result = await withDeadline(
-          bridge.requestComputerControl(instanceId, {
-            action: "computer.list",
-            includeOperationalDetails: true,
-          }),
-        );
+    detach();
+    let boundApi: CtoxAppApi | null | undefined;
+    const bind = () => {
+      if (snapshot.instanceId !== instanceId) return;
+      const api = getCtoxClient(instanceId);
+      if (api === boundApi) return;
+      boundApi = api;
+      if (api !== currentApi) {
+        currentApi = api;
+        generation++;
+        publish({
+          ...snapshot,
+          phase: "loading",
+          computers: [],
+          pendingComputerId: null,
+          error: null,
+        });
       }
-      if (revision !== generation) return;
-      if (result._tag === "failed") throw new Error(membershipError(result.code));
-      if (result.response.action !== "computer.list")
-        throw new Error(membershipError("guest_failed"));
-      publish({
-        instanceId,
-        phase: "ready",
-        computers: result.response.computers,
-        pendingComputerId: null,
-        error: null,
+      stopRows();
+      stopRows = () => {};
+      if (snapshot.instanceId !== instanceId) return;
+      if (!api) {
+        publish({
+          ...snapshot,
+          phase: "loading",
+          computers: [],
+          pendingComputerId: null,
+          error: null,
+        });
+        return;
+      }
+      const rows = api.query<CtoxMachineDocument>("workjet_computers", {
+        selector: { status: "assigned", is_deleted: { $ne: true } },
       });
-    } catch (error) {
-      if (revision !== generation) return;
-      publish({
-        instanceId,
-        phase: "failed",
-        computers: [],
-        pendingComputerId: null,
-        error: error instanceof Error ? error.message : membershipError("guest_failed"),
-      });
-    }
+      const receive = (documents: CtoxMachineDocument[]) => {
+        if (snapshot.instanceId !== instanceId || getCtoxClient(instanceId) !== api) return;
+        try {
+          publish({
+            ...snapshot,
+            phase: "ready",
+            computers: documents.map(projectCtoxMachine),
+            error: null,
+          });
+        } catch {
+          publish({
+            ...snapshot,
+            phase: "failed",
+            computers: [],
+            error: membershipError("response_invalid"),
+          });
+        }
+      };
+      stopRows = rows.subscribe(receive);
+    };
+    stopClients = subscribeCtoxClients(bind);
+    bind();
   };
   const changeAssignment = async (
     instanceId: string,
@@ -265,6 +273,11 @@ export function createComputerMembershipStore() {
     }
   };
   return {
+    dispose: () => {
+      generation++;
+      currentApi = null;
+      detach();
+    },
     getSnapshot: () => snapshot,
     subscribe: (listener: () => void) => {
       listeners.add(listener);

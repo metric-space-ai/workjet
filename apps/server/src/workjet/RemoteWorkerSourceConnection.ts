@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
+// V4 retirement (P11-B -> C): source routing moves to authenticated machine peers;
+// this SSH reverse-forward adapter remains only for unmigrated legacy consumers.
 import type { DesktopSshEnvironmentTarget } from "@workjet/contracts";
 import type { SshAuthOptions } from "@workjet/ssh/auth";
 import { openSshReverseForward } from "@workjet/ssh/reverseForward";

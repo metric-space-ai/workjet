@@ -1,4 +1,5 @@
-import type { CtoxWorkjetProjectFeedPost } from "@workjet/contracts";
+import { CtoxWorkjetProjectFeedPost } from "@workjet/contracts";
+import * as Schema from "effect/Schema";
 import type {
   CommandId,
   CtoxGuestPreparationDiagnostic,
@@ -13,6 +14,8 @@ import { readActiveWorkjetScope } from "./activeWorkjetScope";
 import { newCommandId } from "./lib/utils";
 import { getCtoxClient } from "./ctox/ctoxClient";
 import { readLocalWorkjetProjects, readLocalWorkjetKpis } from "./ctox/workjetCollections";
+
+const decodeFeedPost = Schema.decodeUnknownSync(CtoxWorkjetProjectFeedPost);
 
 export type WorkjetProjectControlPort = NonNullable<DesktopCtoxBridge["requestProjectControl"]>;
 export type WorkjetProjectPoolPort = NonNullable<DesktopCtoxBridge["ensurePooled"]>;
@@ -193,6 +196,35 @@ export function requestWorkjetProjectControl(
         ? { ...result, response: { ...result.response, commandId: request.commandId } }
         : result,
     );
+  if (request.action === "project.feed.read") {
+    const api = getCtoxClient(instanceId);
+    if (api === null) return Promise.resolve({ _tag: "failed", code: "not_active" });
+    const posts = api
+      .query<CtoxWorkjetProjectFeedPost>("workjet_project_feed", {
+        selector: {
+          project_id: request.projectId,
+          is_deleted: { $ne: true },
+          ...(request.before_ms === undefined
+            ? {}
+            : { occurred_at_ms: { $lt: request.before_ms } }),
+        },
+        sort: [{ occurred_at_ms: "desc" }],
+        limit: request.limit ?? 30,
+      })
+      .get()
+      .map((row) => decodeFeedPost(row));
+    return Promise.resolve({
+      _tag: "completed",
+      response: {
+        action: request.action,
+        commandId: request.commandId,
+        projectId: request.projectId,
+        contract: "ctox.workjet.project_feed.v1",
+        posts,
+        next_before_ms: posts.at(-1)?.occurred_at_ms ?? null,
+      },
+    });
+  }
   const legacyPort = port ?? activeDesktopProjectControl();
   const legacyPool = ensurePooled ?? activeDesktopProjectPool();
   const readKey = projectControlReadKey(request);
@@ -357,13 +389,12 @@ export function saveWorkjetGalleryOrder(
 export async function readWorkjetProjectFeed(
   instanceId: string,
   projectId: ProjectId,
-  port: WorkjetProjectControlPort | undefined = activeDesktopProjectControl(),
+  port?: WorkjetProjectControlPort,
 ): Promise<
   | { readonly _tag: "posts"; readonly posts: readonly CtoxWorkjetProjectFeedPost[] }
   | { readonly _tag: "unsupported" }
   | { readonly _tag: "failed"; readonly code: string }
 > {
-  if (!port) return { _tag: "failed", code: "not_active" };
   const commandId = newCommandId();
   const result = await requestWorkjetProjectControl(
     instanceId,

@@ -5,6 +5,8 @@
  * access.
  *
  * @module ProjectionSnapshotQuery
+ * @deprecated V4 client reads use local typed thread collections. Retain this
+ * legacy interface until slice C removes the remaining non-V4 callers.
  */
 import type {
   CheckpointRef,

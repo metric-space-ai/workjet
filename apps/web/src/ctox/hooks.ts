@@ -47,10 +47,14 @@ export function useCtoxQuery<T>(instanceId: string | null, collection: string, q
   );
 }
 
-export function useCtoxDoc<T>(instanceId: string | null, collection: string, id: string): T | null {
+export function useCtoxDoc<T>(
+  instanceId: string | null,
+  collection: string,
+  id: string | null,
+): T | null {
   const api = useCtoxClient(instanceId);
   const store = useMemo(
-    () => (api === null ? null : createLiveStore(api.get<T>(collection, id))),
+    () => (api === null || id === null ? null : createLiveStore(api.get<T>(collection, id))),
     [api, collection, id],
   );
   return useSyncExternalStore(
@@ -89,10 +93,10 @@ export function useCtoxCommand(instanceId: string | null) {
     store?.getSnapshot ?? emptyDoc,
   );
   const command = useCallback(
-    (type: string, payload: object): CommandHandle => {
+    (type: string, payload: object, options?: { record_id?: string }): CommandHandle => {
       if (!scope.active || api === null || getCtoxClient(instanceId) !== api)
         throw new Error("ctox_client_unavailable");
-      const next = api.command(type, payload);
+      const next = api.command(type, payload, options);
       setCurrent({ api, handle: next });
       return next;
     },

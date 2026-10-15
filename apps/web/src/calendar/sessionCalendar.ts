@@ -1,5 +1,6 @@
 import type { CtoxWorkjetSessionProjection } from "@workjet/contracts";
 import { listWorkjetSessions } from "../workjetSessionControl";
+import { createCtoxSessionCalendarReader } from "../ctox/sessionData";
 
 export interface SessionCalendarSnapshot {
   readonly status: "loading" | "ready" | "unavailable";
@@ -12,6 +13,7 @@ export function createSessionCalendarReader(
   publish: (snapshot: SessionCalendarSnapshot) => void,
   read = listWorkjetSessions,
 ) {
+  if (read === listWorkjetSessions) return createCtoxSessionCalendarReader(instanceId, publish);
   let disposed = false;
   let pending = false;
   let queued = false;

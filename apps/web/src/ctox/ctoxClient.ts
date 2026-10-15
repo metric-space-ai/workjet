@@ -1,6 +1,6 @@
-import type { CtoxAppApi } from "./stub/index";
+import type { CtoxAppApi } from "./kernel/index";
 
-export type * from "./stub/index";
+export type * from "./kernel/index";
 
 /** The Shell owns the API and its instance/user store. Workjet owns no transport. */
 export function createCtoxClient(api: CtoxAppApi): CtoxAppApi {
@@ -15,6 +15,12 @@ const listeners = new Set<() => void>();
 
 export function getCtoxClient(instanceId: string | null): CtoxAppApi | null {
   return instanceId === null ? null : (clients.get(instanceId)?.api ?? null);
+}
+
+/** Host binding identity only; never a replacement for Core authorization. */
+export function getBoundCtoxClientInstance(api: CtoxAppApi): string | null {
+  const instanceId = scopes.get(api);
+  return instanceId !== undefined && clients.get(instanceId)?.api === api ? instanceId : null;
 }
 
 export function subscribeCtoxClients(listener: () => void): () => void {

@@ -6,19 +6,22 @@ import {
   type WorkjetComputer,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 
-import { useActiveWorkjetScope, subscribeActiveWorkjetHostContext } from "./activeWorkjetScope";
+import { useActiveWorkjetScope } from "./activeWorkjetScope";
+import { getCtoxClient, subscribeCtoxClients } from "./ctox/ctoxClient";
+import { useCtoxClient, useCtoxQuery } from "./ctox/hooks";
+import {
+  ACTIVE_PROJECTS,
+  WORKJET_PROJECTS,
+  readLocalWorkjetProjects,
+  type WorkjetProjectDocument,
+} from "./ctox/workjetCollections";
 import { useHydratePrimaryWorkjetSettings } from "./hooks/useSettings";
-import { listWorkjetProjects } from "./workjetProjectControl";
 import {
   LocalProjectRegistrationSynchronizer,
   ProjectTokenBudgetSourceSynchronizer,
 } from "./localProjectRegistration";
-import {
-  createProjectRegistryRefresh,
-  subscribeProjectRegistryWarmGuest,
-} from "./projectRegistryRefresh";
 
 export interface WorkjetProjectRegistrySnapshot {
   readonly presentationInstanceId: string | null;
@@ -31,6 +34,8 @@ export interface WorkjetProjectRegistrySnapshot {
   readonly sourceConfirmed?: boolean;
   readonly refreshError?: Extract<CtoxWorkjetProjectControlResult, { _tag: "failed" }>;
 }
+
+const decodeProjectProjection = Schema.decodeUnknownSync(CtoxWorkjetProjectProjection);
 
 const EMPTY_PROJECTS: readonly CtoxWorkjetProjectProjection[] = Object.freeze([]);
 const WORKJET_PROJECT_REGISTRY_STORAGE_PREFIX = "workjet:project-registry:v1:";
@@ -290,13 +295,33 @@ export function selectWorkjetProject(
 export function useWorkjetProjectRegistry(
   presentationInstanceId: string | null,
 ): WorkjetProjectRegistrySnapshot {
-  return useSyncExternalStore(
+  const selection = useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    () => readWorkjetProjectRegistry(presentationInstanceId),
-    () => readWorkjetProjectRegistry(presentationInstanceId),
+    () =>
+      snapshot.presentationInstanceId === presentationInstanceId
+        ? snapshot.selectedProjectId
+        : null,
+    () => null,
+  );
+  const api = useCtoxClient(presentationInstanceId);
+  const rows = useCtoxQuery<WorkjetProjectDocument>(
+    presentationInstanceId,
+    WORKJET_PROJECTS,
+    ACTIVE_PROJECTS,
+  );
+  return useMemo(
+    () => ({
+      presentationInstanceId,
+      phase: api === null ? (presentationInstanceId === null ? "idle" : "loading") : "ready",
+      projects: rows.map((row) => decodeProjectProjection(row)),
+      selectedProjectId: resolveSelectedWorkjetProjectId(rows, selection),
+      sourceConfirmed: api !== null,
+      refreshFailed: false,
+    }),
+    [api, presentationInstanceId, rows, selection],
   );
 }
 
@@ -334,52 +359,52 @@ export function WorkjetProjectRegistrySynchronizer() {
   const { selectedInstanceId: presentationInstanceId } = useActiveWorkjetScope();
 
   useEffect(() => {
-    let cancelled = false;
-    const restored = loadingWorkjetProjectRegistry(presentationInstanceId);
-    publish(restored);
-    if (presentationInstanceId === null) return;
-    const refreshController = createProjectRegistryRefresh(() =>
-      listWorkjetProjects(presentationInstanceId).then(
-        (result) => {
-          if (cancelled) return;
-          applyWorkjetProjectRegistryResult(presentationInstanceId, result);
-          return result._tag === "completed" && result.response.action === "project.list";
-        },
-        () => {
-          if (!cancelled) {
-            applyWorkjetProjectRegistryResult(presentationInstanceId, {
-              _tag: "failed",
-              code: "guest_failed",
-            });
-          }
-          return false;
-        },
-      ),
-    );
-    const refresh = () => {
-      void refreshController.refresh();
+    if (presentationInstanceId === null) {
+      publish(IDLE_SNAPSHOT);
+      return;
+    }
+    let stopRows = () => {};
+    const bind = () => {
+      stopRows();
+      stopRows = () => {};
+      const api = getCtoxClient(presentationInstanceId);
+      if (!api) {
+        publish({
+          presentationInstanceId,
+          phase: "loading",
+          projects: EMPTY_PROJECTS,
+          selectedProjectId: null,
+        });
+        return;
+      }
+      const apply = () => {
+        if (getCtoxClient(presentationInstanceId) !== api) return;
+        applyWorkjetProjectRegistryResult(presentationInstanceId, {
+          _tag: "completed",
+          response: {
+            action: "project.list",
+            projects: readLocalWorkjetProjects(api),
+            count: api.query(WORKJET_PROJECTS, ACTIVE_PROJECTS).get().length,
+            truncated: false,
+          },
+        });
+      };
+      publish({
+        presentationInstanceId,
+        phase: "ready",
+        projects: readLocalWorkjetProjects(api),
+        selectedProjectId:
+          snapshot.presentationInstanceId === presentationInstanceId
+            ? snapshot.selectedProjectId
+            : null,
+      });
+      stopRows = api.query(WORKJET_PROJECTS, ACTIVE_PROJECTS).subscribe(apply);
     };
-    const unsubscribeGuest = subscribeProjectRegistryWarmGuest(
-      presentationInstanceId,
-      refresh,
-      window.desktopBridge?.ctox?.onGuestState,
-    );
-    const onRequest = (event: Event) => {
-      if (event instanceof CustomEvent && event.detail === presentationInstanceId) refresh();
-    };
-    const unsubscribeHostContext = subscribeActiveWorkjetHostContext(refresh);
-    window.addEventListener("focus", refresh);
-    window.addEventListener("online", refresh);
-    window.addEventListener(REFRESH_PROJECT_REGISTRY_EVENT, onRequest);
-    refresh();
+    const stopClients = subscribeCtoxClients(bind);
+    bind();
     return () => {
-      cancelled = true;
-      refreshController.cancel();
-      unsubscribeGuest();
-      unsubscribeHostContext();
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener("online", refresh);
-      window.removeEventListener(REFRESH_PROJECT_REGISTRY_EVENT, onRequest);
+      stopRows();
+      stopClients();
     };
   }, [presentationInstanceId]);
   return (

@@ -3,6 +3,8 @@ import type {
   CtoxWorkjetSessionControlResult,
   DesktopCtoxBridge,
 } from "@workjet/contracts";
+import { getCtoxClient } from "./ctox/ctoxClient";
+import { readCtoxSessions } from "./ctox/sessionData";
 
 export type WorkjetSessionControlPort = NonNullable<DesktopCtoxBridge["requestSessionControl"]>;
 export type WorkjetSessionPoolPort = NonNullable<DesktopCtoxBridge["ensurePooled"]>;
@@ -23,6 +25,15 @@ export async function requestWorkjetSessionControl(
   port: WorkjetSessionControlPort | undefined = activeDesktopSessionControl(),
   ensurePooled: WorkjetSessionPoolPort | undefined = activeDesktopSessionPool(),
 ): Promise<CtoxWorkjetSessionControlResult> {
+  if (request.action === "session.list") {
+    const api = getCtoxClient(instanceId);
+    return api === null
+      ? { _tag: "failed", code: "not_active" }
+      : {
+          _tag: "completed",
+          response: { action: "session.list", sessions: readCtoxSessions(api) },
+        };
+  }
   if (port === undefined) return { _tag: "failed", code: "not_active" };
   if (instanceId.trim() === "") return { _tag: "failed", code: "not_active" };
   const first = await port(instanceId, request);

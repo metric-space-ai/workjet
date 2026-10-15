@@ -59,7 +59,7 @@ export function SupervisorTickStatus(props: {
       data-workjet-supervisor-tick=""
       role="status"
     >
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
         {lastLabel
           ? (text
               ? projectOverviewFormat(text.controlLast, { time: lastLabel })
@@ -75,8 +75,9 @@ export function SupervisorTickStatus(props: {
       </span>
       {props.state?.outcome === "skipped-busy" && (
         <span
-          className={`inline-flex items-center rounded-full border border-warning/40 px-2.5 py-0.5 text-[11px] ${WORKJET_STATUS_TEXT_CLASS.waiting}`}
+          className={`inline-flex items-center gap-1.5 text-[12px] ${WORKJET_STATUS_TEXT_CLASS.waiting}`}
         >
+          <span aria-hidden="true" className="size-2 rounded-full bg-warning" />
           {text?.controlSkipped ??
             (de ? "Takt übersprungen · Supervisor beschäftigt" : "Tick skipped · supervisor busy")}
         </span>

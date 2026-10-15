@@ -75,7 +75,7 @@ const team = {
 const teamLabels = {
   supervisor: "Supervisor",
   parents: "Persistente Worker",
-  workers: "One-shot-Worker",
+  workers: "Einmal-Worker",
 } as const;
 
 function TeamRow(props: { readonly title: string; readonly state: string; readonly dot: string }) {

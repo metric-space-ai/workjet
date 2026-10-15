@@ -40,7 +40,14 @@ export function MistralIcon({ className, ...props }: ComponentProps<"svg">) {
     <svg viewBox="0 0 10 10" className={className} {...props}>
       {cells.map((columns, row) =>
         columns.map((column) => (
-          <rect key={`${row}:${column}`} x={column * 2} y={row * 2} width={2} height={2} fill={rows[row]} />
+          <rect
+            key={`${row}:${column}`}
+            x={column * 2}
+            y={row * 2}
+            width={2}
+            height={2}
+            fill={rows[row]}
+          />
         )),
       )}
     </svg>
@@ -494,7 +501,10 @@ export function InstanceSpeechSettings({
                   ...(SPEECH_RATES.some((value) => String(value) === rate)
                     ? []
                     : [{ value: rate, label: rateLabel(Number(rate)) }]),
-                  ...SPEECH_RATES.map((value) => ({ value: String(value), label: rateLabel(value) })),
+                  ...SPEECH_RATES.map((value) => ({
+                    value: String(value),
+                    label: rateLabel(value),
+                  })),
                 ]}
                 onValueChange={(next) => {
                   const value = Number(next);

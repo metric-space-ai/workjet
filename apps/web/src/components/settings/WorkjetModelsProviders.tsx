@@ -19,6 +19,7 @@ import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
 import { InlinePanel } from "../ui/inline-panel";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Input } from "../ui/input";
 import { Row, type RowMenuAction, type RowStatus } from "../ui/row";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { SEGMENT_TOGGLE_CLASS } from "../ctox/InstanceAddInline";
@@ -290,19 +291,18 @@ export function AccountLimits({ health }: { readonly health: ModelsAccountHealth
   );
   if (!health || windows.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1 text-[11px] tabular-nums">
+    // Fenster nebeneinander als Chips, Balken ≥ 64 px (Audit C 39).
+    <div className="flex flex-wrap items-center gap-1.5 text-[11px] tabular-nums">
       {windows.map((window, index) => {
         const remaining = window.remainingPercent;
         const reported = remaining !== null && !window.notInPlan && !window.unlimited;
         return (
           <span
             key={window.id ?? `${window.label}:${index}`}
-            className="flex flex-wrap items-center gap-1.5"
+            className="inline-flex items-center gap-1.5 rounded border border-border/60 px-1.5 py-0.5"
             title={`${window.tooltip ?? window.label}${window.resetsAtMs === null ? "" : ` · Reset ${resetLabel(window.resetsAtMs)}`}${health.observedAtMs === null ? "" : ` · gemessen ${new Date(health.observedAtMs).toLocaleString()}`}${health.quotaError ? " · Aktualisierung fehlgeschlagen" : ""}`}
           >
-            <span className="shrink-0 flex-1 whitespace-nowrap text-muted-foreground">
-              {window.label}
-            </span>
+            <span className="shrink-0 whitespace-nowrap text-muted-foreground">{window.label}</span>
             {reported && (
               <span
                 role="meter"
@@ -310,7 +310,7 @@ export function AccountLimits({ health }: { readonly health: ModelsAccountHealth
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={remaining}
-                className="h-1 w-8 shrink-0 overflow-hidden rounded-full bg-muted"
+                className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-muted"
               >
                 <span
                   className={cn(
@@ -371,6 +371,8 @@ export function WorkjetModelsKeyForm({
   const [label, setLabel] = useState(account?.label ?? WORKJET_GATEWAY_PROVIDER_LABELS[provider]);
   const sharedModels = state.onEditProviderModels !== undefined;
   const [modelText, setModelText] = useState(provider === "kimi" ? "" : models.join(", "));
+  // Katalogmodelle als Auswahl statt kommagetrennter Eingabe (Audit C 13).
+  const [picked, setPicked] = useState<ReadonlyArray<string>>(provider === "kimi" ? [] : models);
   const [error, setError] = useState<string | null>(null);
   const providerLabel = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
   const apiKeyError =
@@ -383,7 +385,11 @@ export function WorkjetModelsKeyForm({
   const submit = () => {
     // Discover this key's own plan before intersecting shared provider models.
     const selectedModels = provider === "kimi" ? [] : (account?.modelIds ?? models);
-    const parsed = sharedModels ? selectedModels : parseModels(modelText);
+    const parsed = sharedModels
+      ? selectedModels
+      : models.length > 0
+        ? [...picked]
+        : parseModels(modelText);
     if (
       !key.trim() ||
       !label.trim() ||
@@ -423,15 +429,16 @@ export function WorkjetModelsKeyForm({
         statusTone="error"
       >
         <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-          <input
+          <Input
+            nativeInput
             data-workjet-action={`models.key-form.${account?.id ?? provider}.label`}
             aria-label="Kontoname"
             value={label}
             onChange={(event) => setLabel(event.target.value)}
             maxLength={160}
-            className="rounded-md border bg-background px-2 py-1.5 text-sm"
           />
-          <input
+          <Input
+            nativeInput
             aria-label={account ? `API-Key für ${account.label}` : `API-Key für ${providerLabel}`}
             type="password"
             data-workjet-action={`models.key-form.${account?.id ?? provider}.value`}
@@ -440,18 +447,42 @@ export function WorkjetModelsKeyForm({
             value={key}
             maxLength={512}
             onChange={(event) => setKey(event.target.value)}
-            className="rounded-md border bg-background px-2 py-1.5 text-sm"
           />
         </div>
-        {!account && !sharedModels ? (
-          <input
+        {!account && !sharedModels && models.length > 0 ? (
+          <div
+            role="group"
             aria-label={`Modelle für ${providerLabel}`}
-            placeholder={
-              provider === "kimi" ? "Modell-IDs (optional)" : "Modell-IDs, kommagetrennt"
-            }
+            className="flex min-w-0 flex-wrap gap-1"
+          >
+            {models.map((modelId) => {
+              const on = picked.includes(modelId);
+              return (
+                <Button
+                  key={modelId}
+                  type="button"
+                  size="xs"
+                  variant={on ? "default" : "outline"}
+                  aria-pressed={on}
+                  className="font-mono"
+                  onClick={() =>
+                    setPicked((current) =>
+                      on ? current.filter((id) => id !== modelId) : [...current, modelId],
+                    )
+                  }
+                >
+                  {modelId}
+                </Button>
+              );
+            })}
+          </div>
+        ) : !account && !sharedModels ? (
+          <Input
+            nativeInput
+            aria-label={`Modelle für ${providerLabel}`}
+            placeholder={provider === "kimi" ? "Modell (optional)" : "Modell"}
             value={modelText}
             onChange={(event) => setModelText(event.target.value)}
-            className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
           />
         ) : null}
       </InlinePanel>

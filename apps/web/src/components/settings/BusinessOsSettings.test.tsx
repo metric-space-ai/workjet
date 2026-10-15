@@ -133,7 +133,9 @@ describe("Business OS settings scope", () => {
       <BusinessOsSettingsView instances={[]} activeInstanceId={null} onAddInstance={() => {}} />,
     );
     expect(markup).toContain("Keine Instanz gewählt");
-    expect(markup).toMatch(/<button[^>]*data-workjet-action="instance.add"[^>]*>Instanz hinzufügen/);
+    expect(markup).toMatch(
+      /<button[^>]*data-workjet-action="instance.add"[^>]*>Instanz hinzufügen/,
+    );
   });
 
   it("shows no status box for a failed discovery; it retries quietly", () => {

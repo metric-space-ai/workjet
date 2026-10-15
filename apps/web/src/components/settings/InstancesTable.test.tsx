@@ -139,6 +139,6 @@ describe("instance identity", () => {
     );
     expect(instanceRowState({ ...instance("a"), workjetState: "disabled" }).status).toBe("off");
     expect(instanceRowMeta(instance("local:abc", "local_daemon"))).toBe("Dieser Rechner");
-    expect(instanceRowMeta(instance("paired:abc", "pairing_invite"))).toBe("—");
+    expect(instanceRowMeta(instance("paired:abc", "pairing_invite"))).toBe("");
   });
 });

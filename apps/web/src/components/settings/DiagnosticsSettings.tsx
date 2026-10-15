@@ -67,9 +67,9 @@ function formatBytes(value: number): string {
 }
 
 function formatRelative(value: DateTime.Utc | null): string {
-  if (!value) return "—";
+  if (!value) return "";
   const relative = formatRelativeTime(DateTime.formatIso(value));
-  if (!relative) return "—";
+  if (!relative) return "";
   return relative.suffix ? `vor ${relative.value}` : "gerade eben";
 }
 
@@ -805,9 +805,7 @@ function DiagnosticsLastChecked({ checkedAt }: { checkedAt: DateTime.Utc | null 
     return <span className="text-[11px] text-muted-foreground/50">Prüft …</span>;
   }
 
-  if (relative.status === "invalid") {
-    return <span className="text-[11px] text-muted-foreground/50">—</span>;
-  }
+  if (relative.status === "invalid") return null;
 
   return (
     <span className="text-[11px] text-muted-foreground/60">
@@ -1012,14 +1010,78 @@ export function DiagnosticsSettingsPanel() {
     ? Option.getOrElse(data.partialFailure, () => false)
     : false;
 
+  // Ein Abschnitt „Ressourcenverlauf“: der Serververlauf sitzt im selben Abschnitt (Audit C 31).
+  const serverHistory = (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 px-3 sm:px-4">
+        <h3 className="text-xs font-medium text-muted-foreground">Server</h3>
+        <div className="flex items-center gap-1.5">
+          <ResourceHistoryWindowSelector
+            selectedWindowMs={resourceWindowMs}
+            onSelect={setResourceWindowMs}
+          />
+          <DiagnosticsLastChecked checkedAt={resourceData?.readAt ?? null} />
+          <DiagnosticsRefreshButton
+            isPending={isResourcePending}
+            label="Verlauf aktualisieren"
+            onClick={refreshResources}
+          />
+        </div>
+      </div>
+      <StatsGrid>
+        <StatBlock
+          label="CPU-Zeit"
+          value={resourceData ? formatCpuTime(resourceData.totalCpuSecondsApprox) : "..."}
+          tooltip="Server und Kindprozesse im gewählten Zeitraum"
+        />
+        <StatBlock
+          label="Messpunkte"
+          value={resourceData ? formatCount(resourceData.retainedSampleCount) : "..."}
+          tooltip="Im Speicher, bis zum Server-Neustart"
+        />
+        <StatBlock
+          label="Intervall"
+          value={resourceData ? formatDuration(resourceData.sampleIntervalMs) : "..."}
+        />
+        <StatBlock
+          label="Erfasste Prozesse"
+          value={resourceData ? formatCount(resourceData.topProcesses.length) : "..."}
+        />
+      </StatsGrid>
+      {processResourceError || resourceError ? (
+        <div className="space-y-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground sm:px-5">
+          {processResourceError ? (
+            <div className="flex items-start gap-2 text-destructive">
+              <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+              <span>{processResourceError.message}</span>
+            </div>
+          ) : null}
+          {resourceError ? (
+            <div className="flex items-start gap-2 text-destructive">
+              <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+              <span>{resourceError}</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <ProcessResourceHistoryChart buckets={resourceData?.buckets ?? []} />
+      <ProcessResourceHistoryTable
+        processes={resourceData?.topProcesses ?? []}
+        emptyLabel={
+          isResourcePending && resourceData === null ? "Sammelt Messpunkte …" : "Keine Messpunkte"
+        }
+      />
+    </div>
+  );
+
   return (
     <SettingsPageContainer className="gap-10">
       <SupportBundleSection />
 
-      <ResourceTelemetryDiagnostics />
+      <ResourceTelemetryDiagnostics serverHistory={serverHistory} />
 
       <SettingsSection
-        title="Prozesse"
+        title="Server-Prozesse"
         headerAction={
           <div className="flex items-center gap-1.5">
             <DiagnosticsLastChecked checkedAt={processData?.readAt ?? null} />
@@ -1076,69 +1138,7 @@ export function DiagnosticsSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection
-        title="Ressourcenverlauf"
-        headerAction={
-          <div className="flex items-center gap-1.5">
-            <ResourceHistoryWindowSelector
-              selectedWindowMs={resourceWindowMs}
-              onSelect={setResourceWindowMs}
-            />
-            <DiagnosticsLastChecked checkedAt={resourceData?.readAt ?? null} />
-            <DiagnosticsRefreshButton
-              isPending={isResourcePending}
-              label="Verlauf aktualisieren"
-              onClick={refreshResources}
-            />
-          </div>
-        }
-      >
-        <StatsGrid>
-          <StatBlock
-            label="CPU-Zeit"
-            value={resourceData ? formatCpuTime(resourceData.totalCpuSecondsApprox) : "..."}
-            tooltip="Server und Kindprozesse im gewählten Zeitraum"
-          />
-          <StatBlock
-            label="Messpunkte"
-            value={resourceData ? formatCount(resourceData.retainedSampleCount) : "..."}
-            tooltip="Im Speicher, bis zum Server-Neustart"
-          />
-          <StatBlock
-            label="Intervall"
-            value={resourceData ? formatDuration(resourceData.sampleIntervalMs) : "..."}
-          />
-          <StatBlock
-            label="Prozesse"
-            value={resourceData ? formatCount(resourceData.topProcesses.length) : "..."}
-          />
-        </StatsGrid>
-        {processResourceError || resourceError ? (
-          <div className="space-y-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground sm:px-5">
-            {processResourceError ? (
-              <div className="flex items-start gap-2 text-destructive">
-                <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
-                <span>{processResourceError.message}</span>
-              </div>
-            ) : null}
-            {resourceError ? (
-              <div className="flex items-start gap-2 text-destructive">
-                <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
-                <span>{resourceError}</span>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        <ProcessResourceHistoryChart buckets={resourceData?.buckets ?? []} />
-        <ProcessResourceHistoryTable
-          processes={resourceData?.topProcesses ?? []}
-          emptyLabel={
-            isResourcePending && resourceData === null ? "Sammelt Messpunkte …" : "Keine Messpunkte"
-          }
-        />
-      </SettingsSection>
-
-      <SettingsSection
-        title="Traces"
+        title="Abläufe"
         headerAction={
           <div className="flex items-center gap-1.5">
             <DiagnosticsLastChecked checkedAt={data?.readAt ?? null} />
@@ -1161,21 +1161,21 @@ export function DiagnosticsSettingsPanel() {
             </Tooltip>
             <DiagnosticsRefreshButton
               isPending={isPending}
-              label="Traces aktualisieren"
+              label="Abläufe aktualisieren"
               onClick={refresh}
             />
           </div>
         }
       >
         <StatsGrid>
-          <StatBlock label="Spans" value={data ? formatCount(data.recordCount) : "..."} />
+          <StatBlock label="Abschnitte" value={data ? formatCount(data.recordCount) : "..."} />
           <StatBlock
             label="Fehler"
             value={data ? formatCount(data.failureCount) : "..."}
             tone={data && data.failureCount > 0 ? "danger" : "default"}
           />
           <StatBlock
-            label="Langsame Spans"
+            label="Langsame Abschnitte"
             value={data ? formatCount(data.slowSpanCount) : "..."}
             tooltip={data ? `Ab ${formatDuration(data.slowSpanThresholdMs)}` : undefined}
             tone={data && data.slowSpanCount > 0 ? "warning" : "default"}
@@ -1274,7 +1274,7 @@ export function DiagnosticsSettingsPanel() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="Langsamste Spans">
+      <SettingsSection title="Langsamste Abschnitte">
         {data && data.slowestSpans.length > 0 ? (
           <DiagnosticsTable
             headers={["Span", "Dauer", "Ende", "Trace"]}
@@ -1299,11 +1299,11 @@ export function DiagnosticsSettingsPanel() {
             ))}
           </DiagnosticsTable>
         ) : (
-          <EmptyRows label={isInitialLoading ? "Lädt …" : "Keine Spans"} />
+          <EmptyRows label={isInitialLoading ? "Lädt …" : "Keine Abschnitte"} />
         )}
       </SettingsSection>
 
-      <SettingsSection title="Span-Logs">
+      <SettingsSection title="Protokoll">
         {data && data.latestWarningAndErrorLogs.length > 0 ? (
           <ScrollArea
             chainVerticalScroll
@@ -1365,7 +1365,7 @@ export function DiagnosticsSettingsPanel() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="Häufigste Spans">
+      <SettingsSection title="Häufigste Abschnitte">
         {data && data.topSpansByCount.length > 0 ? (
           <DiagnosticsTable
             headers={["Span", "Anzahl", "Fehler", "Mittel", "Max."]}
@@ -1393,7 +1393,7 @@ export function DiagnosticsSettingsPanel() {
             ))}
           </DiagnosticsTable>
         ) : (
-          <EmptyRows label={isInitialLoading ? "Lädt …" : "Keine Spans"} />
+          <EmptyRows label={isInitialLoading ? "Lädt …" : "Keine Abschnitte"} />
         )}
       </SettingsSection>
     </SettingsPageContainer>

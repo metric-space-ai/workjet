@@ -635,7 +635,10 @@ function ProjectDetail({
   const savingScriptsRef = useRef(false);
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
-  const openProjectFile = (environmentId: (typeof selectedCheckout)["environmentId"], path: string) => {
+  const openProjectFile = (
+    environmentId: (typeof selectedCheckout)["environmentId"],
+    path: string,
+  ) => {
     const editor = resolveAndPersistPreferredEditor(availableEditors ?? []);
     if (!editor) return;
     void openInEditor({ environmentId, input: { cwd: path, editor } });

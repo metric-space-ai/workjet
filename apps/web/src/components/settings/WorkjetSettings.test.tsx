@@ -219,7 +219,7 @@ describe("Workjet configuration settings", () => {
       renderToStaticMarkup(<WorktreeStorageInline storage={automaticWorktreeStorage} />),
     ).toContain("125 GB frei");
     expect(formatAvailableBytes(1_500_000_000)).toBe("1.50 GB");
-    expect(formatAvailableBytes(Number.NaN)).toBe("—");
+    expect(formatAvailableBytes(Number.NaN)).toBe("");
   });
 
   it("checks, applies, and resets storage only through valid selected-server controls", () => {

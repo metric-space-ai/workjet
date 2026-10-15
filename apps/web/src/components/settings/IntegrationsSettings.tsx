@@ -20,11 +20,7 @@ import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { InlineExpand } from "../ui/inline-expand";
 import { Row } from "../ui/row";
 import { CredentialCard } from "../toolhub/ToolhubCards";
-import {
-  INTEGRATIONS,
-  INTEGRATION_CATEGORIES,
-  type IntegrationEntry,
-} from "./integrationsCatalog";
+import { INTEGRATIONS, INTEGRATION_CATEGORIES, type IntegrationEntry } from "./integrationsCatalog";
 import { SettingsAddButton, SettingsLoadingRow, type SettingsAddOption } from "./settingsAdd";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useToolhubIntegrations, type ToolhubIntegrations } from "./useToolhubIntegrations";
@@ -215,9 +211,7 @@ function ConnectedIntegrationRow({
       <InlineExpand label={entry.name} open={expanded} onOpenChange={onToggle} hideCollapseControl>
         {tools.length > 0 ? (
           <section className="flex flex-col gap-1 px-3 pb-2 pl-9">
-            <h3 className="text-xs font-medium text-muted-foreground">
-              {t("Werkzeuge", "Tools")}
-            </h3>
+            <h3 className="text-xs font-medium text-muted-foreground">{t("Werkzeuge", "Tools")}</h3>
             <ul className="divide-y divide-border/60 rounded-md border border-border/60">
               {tools.map((x) => (
                 <li

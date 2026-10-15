@@ -81,7 +81,7 @@ export function instanceRowMeta(instance: CtoxManagedInstance): string {
     case "ssh_managed":
       return "SSH";
     default:
-      return "—";
+      return "";
   }
 }
 
@@ -132,10 +132,11 @@ export function dedupeCtoxInstances(
 
 function InstanceDiagnosis({ instance }: { readonly instance: CtoxManagedInstance }) {
   const state = instanceRowState(instance);
+  // Fehlende Werte fallen samt Beschriftung weg (Audit C 40).
   const entries: ReadonlyArray<readonly [string, string]> = [
     ["Zustand", state.label],
     ["Quelle", SOURCE_LABELS[instance.source]],
-    ["Adresse", instance.domain ?? "—"],
+    ...(instance.domain ? [["Adresse", instance.domain] as const] : []),
     ["Synchronisierung", instance.healthSummary.dataPlaneReady ? "bereit" : "nicht bestätigt"],
   ];
   return (

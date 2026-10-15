@@ -67,24 +67,17 @@ export function SupportBundleSectionView({
   return (
     <SettingsSection
       id="support-bundle"
-      title="Support-Bundle"
+      title="Hilfepaket"
       icon={<LifeBuoyIcon className="size-4 text-muted-foreground" />}
       headerAction={
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={state.status === "creating"}
-                onClick={onCreate}
-              >
-                {state.status === "creating" ? "Erstellt …" : "Erstellen"}
-              </Button>
-            }
-          />
-          <TooltipPopup side="top">Datei bleibt auf diesem Rechner</TooltipPopup>
-        </Tooltip>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={state.status === "creating"}
+          onClick={onCreate}
+        >
+          {state.status === "creating" ? "Erstellt …" : "Erstellen"}
+        </Button>
       }
     >
       {state.status === "created" && state.result ? (

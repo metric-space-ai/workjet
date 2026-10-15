@@ -30,7 +30,7 @@ export const sessionImportFolderName = (path: string | null) =>
         .replace(/[\\/]+$/u, "")
         .split(/[\\/]/u)
         .at(-1) || path
-    : "—";
+    : "";
 const inputClass =
   "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 disabled:opacity-50";
 
@@ -216,10 +216,14 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
                     </span>
                     <span className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
                       <span className="shrink-0">{sessionImportSourceLabel(candidate.source)}</span>
-                      <span aria-hidden>·</span>
-                      <span className="truncate" title={candidate.workspaceRoot ?? undefined}>
-                        {sessionImportFolderName(candidate.workspaceRoot)}
-                      </span>
+                      {candidate.workspaceRoot ? (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span className="truncate" title={candidate.workspaceRoot}>
+                            {sessionImportFolderName(candidate.workspaceRoot)}
+                          </span>
+                        </>
+                      ) : null}
                       <span className="ml-auto shrink-0">
                         {new Date(candidate.updatedAt).toLocaleDateString("de-DE", {
                           month: "short",
@@ -290,12 +294,14 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
                 {sessionImportSourceLabel(first.source)} ·{" "}
                 {new Date(first.updatedAt).toLocaleDateString("de-DE")}
               </p>
-              <p
-                className="mt-2 break-all text-xs text-muted-foreground"
-                title={first.workspaceRoot ?? undefined}
-              >
-                {first.workspaceRoot ?? "—"}
-              </p>
+              {first.workspaceRoot ? (
+                <p
+                  className="mt-2 break-all text-xs text-muted-foreground"
+                  title={first.workspaceRoot}
+                >
+                  {first.workspaceRoot}
+                </p>
+              ) : null}
               {!first.workspaceAvailable ? (
                 <p className="mt-3 text-xs text-muted-foreground">
                   {first.workspaceRoot ? "Ordner nicht verfügbar" : "Kein Ordner erfasst"}

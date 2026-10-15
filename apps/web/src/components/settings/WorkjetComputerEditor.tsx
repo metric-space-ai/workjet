@@ -224,6 +224,10 @@ export function WorkjetComputerEditor({
   const selectedEnvironment = environments.find(
     (environment) => environment.environmentId === draft.environmentId,
   );
+  // Ohne bekannte Verbindungsart fällt die Zeile samt Beschriftung weg (Audit C 40).
+  const connectionLabel = PRESENTATION_OPTIONS.find(
+    (option) => option.id === (computer?.presentationKind ?? selectedEnvironment?.presentationKind),
+  )?.label;
 
   return (
     <form
@@ -292,16 +296,14 @@ export function WorkjetComputerEditor({
               }}
             />
           </div>
-          <div className={cn("space-y-1.5", !compact && "sm:col-span-2")}>
-            <Label htmlFor="workjet-computer-kind">Verbindung</Label>
-            <p id="workjet-computer-kind" className="text-sm text-muted-foreground">
-              {PRESENTATION_OPTIONS.find(
-                (option) =>
-                  option.id ===
-                  (computer?.presentationKind ?? selectedEnvironment?.presentationKind),
-              )?.label ?? "—"}
-            </p>
-          </div>
+          {connectionLabel ? (
+            <div className={cn("space-y-1.5", !compact && "sm:col-span-2")}>
+              <Label htmlFor="workjet-computer-kind">Verbindung</Label>
+              <p id="workjet-computer-kind" className="text-sm text-muted-foreground">
+                {connectionLabel}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-2">

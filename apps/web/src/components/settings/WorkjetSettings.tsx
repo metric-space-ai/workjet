@@ -472,7 +472,7 @@ const inspectAutomaticWorktreeRootCommand = createEnvironmentRpcCommand(connecti
 });
 
 export function formatAvailableBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
   const units = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
   let value = bytes;
   let unitIndex = 0;

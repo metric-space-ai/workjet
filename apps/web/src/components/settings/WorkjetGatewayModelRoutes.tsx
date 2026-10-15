@@ -55,7 +55,7 @@ export function workjetGatewayModelRouteDescription(
     const poolSuffix = entry.poolId === null || entry.via === "pool" ? "" : ` · Pool ${poolLabel}`;
     return `${provider} · ${source}${poolSuffix}`;
   }
-  return ROUTE_REASON_LABELS[entry.reason] ?? "—";
+  return ROUTE_REASON_LABELS[entry.reason] ?? "";
 }
 
 export function WorkjetGatewayModelRoutes({

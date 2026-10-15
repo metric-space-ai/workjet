@@ -750,13 +750,37 @@ export function WorkjetWorkerEditor({
                       </Button>
                     </div>
                   </>
+                ) : chosenAccount && chosenAccount.modelIds.length > 0 ? (
+                  // Modelle des Kontos als Auswahl statt Tippen (Audit C 33).
+                  <Select
+                    value={draft.modelId || null}
+                    onValueChange={(model) => {
+                      if (model !== null) patchDraft({ modelId: model });
+                    }}
+                  >
+                    <SelectTrigger id="workjet-worker-model" className="w-full">
+                      <SelectValue placeholder={t("Modell wählen", "Choose model")} />
+                    </SelectTrigger>
+                    <SelectPopup>
+                      {[
+                        ...new Set([
+                          ...chosenAccount.modelIds,
+                          ...(draft.modelId ? [draft.modelId] : []),
+                        ]),
+                      ].map((model) => (
+                        <SelectItem key={model} value={model}>
+                          <span className="break-all whitespace-normal">{model}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
                 ) : (
                   <Input
                     id="workjet-worker-model"
                     nativeInput
                     value={draft.modelId}
                     onChange={(event) => patchDraft({ modelId: event.target.value })}
-                    placeholder="Modell-ID"
+                    placeholder={t("Modell", "Model")}
                   />
                 )}
               </div>
@@ -830,7 +854,7 @@ export function WorkjetWorkerEditor({
                 {draft.capabilityIds.includes("decision-hub") ? (
                   <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
                     <Label htmlFor="workjet-decision-hub-connection">
-                      {t("CTOX-Verbindung", "CTOX connection")}
+                      {t("Instanz", "Instance")}
                     </Label>
                     <Select
                       value={decisionHubBinding?.target.connectionId ?? ""}
@@ -932,11 +956,11 @@ export function WorkjetWorkerEditor({
                     })}
                     {connections.length === 0 ? (
                       <p role="alert" className="text-[11px] text-amber-500">
-                        Keine MCP-Verbindung auf diesem Rechner.
+                        Keine Instanz verbunden.
                       </p>
                     ) : selectedDecisionHubConnection === null ? (
                       <p role="alert" className="text-[11px] text-amber-500">
-                        Verbindung wählen.
+                        Instanz wählen.
                       </p>
                     ) : (
                       <div className="flex items-center justify-between gap-2">

@@ -202,7 +202,11 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
                 label: secretDisplayName(row),
                 onSelect: () => startAdd(row.name),
               })),
-              { key: "", label: t("Eigener Schlüssel", "Custom key"), onSelect: () => startAdd(true) },
+              {
+                key: "",
+                label: t("Eigener Schlüssel", "Custom key"),
+                onSelect: () => startAdd(true),
+              },
             ]}
           />
         )

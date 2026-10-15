@@ -190,13 +190,14 @@ function NativeAccountRow({
     });
   };
   return (
-    <div data-account-id={account.id} className={account.enabled ? undefined : "text-muted-foreground"}>
+    <div
+      data-account-id={account.id}
+      className={account.enabled ? undefined : "text-muted-foreground"}
+    >
       <Row
         className="py-1.5"
         status={status}
-        statusLabel={
-          status === "ok" ? "Bereit" : status === "error" ? "Fehler" : "Aus"
-        }
+        statusLabel={status === "ok" ? "Bereit" : status === "error" ? "Fehler" : "Aus"}
         name={
           <span className="flex min-w-0 items-center gap-2">
             {ProviderIcon ? <ProviderIcon className="size-4 shrink-0" /> : null}
@@ -484,18 +485,18 @@ function NativeProviderGroup({
         </div>
       ) : null}
       {accounts.map((account, index) => (
-          <NativeAccountRow
-            key={account.id}
-            ordinal={index + 1}
-            account={account}
-            registry={registry}
-            label={label}
-            busy={state.busy}
-            run={state.run}
-            check={state.check}
-            error={state.errorAccountId === account.id ? state.error : undefined}
-          />
-        ))}
+        <NativeAccountRow
+          key={account.id}
+          ordinal={index + 1}
+          account={account}
+          registry={registry}
+          label={label}
+          busy={state.busy}
+          run={state.run}
+          check={state.check}
+          error={state.errorAccountId === account.id ? state.error : undefined}
+        />
+      ))}
     </div>
   );
 }

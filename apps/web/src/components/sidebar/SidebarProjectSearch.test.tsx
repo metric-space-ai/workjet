@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import commandPaletteSource from "../CommandPalette.tsx?raw";
 import sidebarSource from "../Sidebar.tsx?raw";
 import {
+  SearchErrorLine,
   SidebarSearchModeSegment,
   sidebarSearchPlaceholder,
   withoutIndentation,
@@ -15,6 +16,13 @@ describe("inline file and content search in the sidebar", () => {
     expect(sidebarSearchPlaceholder("threads", "Suchen")).toBe("Suchen");
     expect(sidebarSearchPlaceholder("files", "Suchen")).toBe("Datei suchen");
     expect(sidebarSearchPlaceholder("content", "Suchen")).toBe("Im Projekt suchen");
+  });
+
+  it("shows a failed search as one line with exactly one retry action", () => {
+    const html = renderToStaticMarkup(<SearchErrorLine onRetry={() => {}} />);
+    expect(html).toContain("Suche fehlgeschlagen");
+    expect(html.match(/Erneut versuchen/g)).toHaveLength(1);
+    expect(html).toContain('role="alert"');
   });
 
   it("renders the mode segment inline", () => {

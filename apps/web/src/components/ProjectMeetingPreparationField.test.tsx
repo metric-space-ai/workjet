@@ -9,6 +9,7 @@ describe("meeting preparation configuration", () => {
         value={undefined}
         disabled={false}
         onChange={() => {}}
+        phase="ready"
       />,
     );
     expect(markup).toContain("Regeltermin-Vorbereitung");
@@ -20,5 +21,21 @@ describe("meeting preparation configuration", () => {
     for (const harness of ["grok-cli", "opencode", "pi-code"])
       expect(markup).toContain(`data-option="${harness}" data-disabled`);
     expect(markup).toContain("Worktree-Begrenzung fehlt");
+  });
+
+  it("shows one error line with a retry action while presets are unreachable", () => {
+    const markup = renderToStaticMarkup(
+      <MeetingPreparationField
+        id="preparation"
+        value={undefined}
+        disabled={false}
+        onChange={() => {}}
+        phase="unavailable"
+        retry={() => {}}
+      />,
+    );
+    expect(markup).toContain("Presets nicht erreichbar");
+    expect(markup).toContain("Erneut versuchen");
+    expect(markup).not.toContain("Kein passendes Preset");
   });
 });

@@ -23,6 +23,7 @@ import {
 } from "../files/ProjectFilePicker.logic";
 import { useProjectFilePickerQuery } from "../files/projectFilesQueryState";
 import { HighlightedSearchLine } from "../search/HighlightedSearchLine";
+import { Button } from "../ui/button";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 
 export const SIDEBAR_SEARCH_MODES: ReadonlyArray<{
@@ -82,17 +83,26 @@ export function SidebarSearchModeSegment(props: {
   );
 }
 
-function StatusLine(props: { readonly children: string; readonly tone?: "error" }) {
+function StatusLine(props: { readonly children: string }) {
   return (
-    <p
-      role={props.tone === "error" ? "alert" : "status"}
-      className={cn(
-        "px-2 py-4 text-center text-xs",
-        props.tone === "error" ? "text-destructive" : "text-sidebar-muted-foreground",
-      )}
-    >
+    <p role="status" className="px-2 py-4 text-center text-xs text-sidebar-muted-foreground">
       {props.children}
     </p>
+  );
+}
+
+/** Suchfehler: eine Zeile und genau eine Aktion. */
+export function SearchErrorLine(props: { readonly onRetry: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center justify-center gap-2 px-2 py-4 text-xs text-destructive"
+    >
+      <span>Suche fehlgeschlagen</span>
+      <Button type="button" size="xs" variant="outline" onClick={props.onRetry}>
+        Erneut versuchen
+      </Button>
+    </div>
   );
 }
 
@@ -188,7 +198,7 @@ function FileResults(props: {
   };
   const [activeIndex, setActiveIndex] = useResultKeyboard(props.inputRef, matches.length, open);
 
-  if (result.error) return <StatusLine tone="error">Suche fehlgeschlagen</StatusLine>;
+  if (result.error) return <SearchErrorLine onRetry={result.retry} />;
   if (matches.length === 0)
     return <StatusLine>{result.isPending ? "Suche läuft …" : "Keine Dateien"}</StatusLine>;
   return (
@@ -267,7 +277,7 @@ function ContentResults(props: {
   const [activeIndex, setActiveIndex] = useResultKeyboard(props.inputRef, matches.length, open);
 
   if (!search.hasQuery) return null;
-  if (search.error) return <StatusLine tone="error">Suche fehlgeschlagen</StatusLine>;
+  if (search.error) return <SearchErrorLine onRetry={search.retry} />;
   if (matches.length === 0)
     return <StatusLine>{search.isPending ? "Suche läuft …" : "Keine Treffer"}</StatusLine>;
   return (

@@ -4132,6 +4132,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   aligned with the last row and never overlaps the flow. */}
               <div ref={composerFooterFlowRef} className="flex min-w-0 flex-1 items-center">
                 <ComposerBar
+                  targetSummary={selectedWorkjetWorker?.name ?? null}
                   attachments={composerAttachmentControl}
                   worker={
                     <ComposerWorkerControl

@@ -8,7 +8,7 @@ import {
 import { Checkbox } from "./ui/checkbox";
 import { OptionSelect } from "./ui/option-select";
 import { useEffect, useState } from "react";
-import { useProjectSupervisorLumas } from "./ProjectSupervisorLumaField";
+import { PresetsUnavailableLine, useProjectSupervisorLumas } from "./ProjectSupervisorLumaField";
 import { workjetHarnessDisplayLabel } from "./settings/WorkjetWorkerEditor";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -40,9 +40,11 @@ export function MeetingPreparationField({
   onChange,
   profiles = emptyProfiles,
   phase = "unavailable",
+  retry,
 }: PreparationFieldProps & {
   readonly profiles?: readonly WorkjetWorkerProfile[];
   readonly phase?: "loading" | "ready" | "unavailable";
+  readonly retry?: (() => void) | undefined;
 }) {
   const config = value ?? DEFAULT_MEETING_PREPARATION_CONFIGURATION;
   const matching = profiles.filter((p) => p.harness === config.harness);
@@ -184,16 +186,15 @@ export function MeetingPreparationField({
           </Button>
         )}
       </div>
-      <p className="break-words text-xs text-muted-foreground" role="status">
-        {oneShotHarnessUnavailableReason(config.harness) ??
-          (phase === "loading"
-            ? loadingSlow
-              ? "Presets nicht erreichbar"
-              : ""
-            : available.length === 0
-              ? "Kein passendes Preset"
-              : "")}
-      </p>
+      {oneShotHarnessUnavailableReason(config.harness) === null &&
+      (phase === "unavailable" || (phase === "loading" && loadingSlow)) ? (
+        <PresetsUnavailableLine retry={retry} />
+      ) : (
+        <p className="break-words text-xs text-muted-foreground" role="status">
+          {oneShotHarnessUnavailableReason(config.harness) ??
+            (phase === "ready" && available.length === 0 ? "Kein passendes Preset" : "")}
+        </p>
+      )}
     </fieldset>
   );
 }

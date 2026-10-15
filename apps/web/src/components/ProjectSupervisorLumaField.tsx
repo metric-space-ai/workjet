@@ -7,7 +7,8 @@ import {
 import { Schema } from "effect";
 
 type WorkjetLumaInstanceConfiguration = typeof WorkjetLumaInstanceConfigurationSchema.Type;
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
+import { Button } from "./ui/button";
 import { OptionSelect } from "./ui/option-select";
 import { useBusinessOsCodeScope } from "../businessOsCodeScope";
 import { usePrimaryEnvironment } from "../state/environments";
@@ -69,6 +70,8 @@ export function useProjectSupervisorLumas(boundSource?: {
   readonly profiles: readonly WorkjetWorkerProfile[];
   /** Live gelesene oder zuletzt bekannte Instanz-Konfiguration. */
   readonly configuration: WorkjetLumaInstanceConfiguration | null;
+  /** Fragt Verbindungen und Preset-Konfiguration erneut ab. */
+  readonly retry: () => void;
 } {
   const scope = useBusinessOsCodeScope();
   const environment = usePrimaryEnvironment();
@@ -96,6 +99,12 @@ export function useProjectSupervisorLumas(boundSource?: {
           input: { connectionId: connection.connectionId, instanceId: connection.instanceId },
         }),
   );
+  const refreshConnections = connections.refresh;
+  const refreshSnapshot = snapshot.refresh;
+  const retry = useCallback(() => {
+    refreshConnections();
+    refreshSnapshot();
+  }, [refreshConnections, refreshSnapshot]);
   const liveReady = scope.phase === "ready" && connection !== undefined && snapshot.data !== null;
   const liveConfiguration = liveReady ? (snapshot.data?.configuration ?? null) : null;
   const liveTarget = connection
@@ -130,6 +139,7 @@ export function useProjectSupervisorLumas(boundSource?: {
       phase: "ready",
       profiles: cached.configuration?.workerProfiles ?? [],
       configuration: cached.configuration,
+      retry,
     };
   }
   return {
@@ -139,6 +149,7 @@ export function useProjectSupervisorLumas(boundSource?: {
     phase,
     profiles: liveReady ? (liveConfiguration?.workerProfiles ?? []) : [],
     configuration: liveConfiguration,
+    retry,
   };
 }
 
@@ -179,9 +190,12 @@ export function ProjectSupervisorLumaSelect({
   disabled,
   phase,
   profiles,
+  retry,
 }: LumaFieldProps & {
   readonly phase: "loading" | "ready" | "unavailable";
   readonly profiles: readonly WorkjetWorkerProfile[];
+  /** Ohne Wiederholung bleibt nur die Fehlerzeile. */
+  readonly retry?: (() => void) | undefined;
 }) {
   const selected = profiles.find((profile) => profile.id === value);
   return (
@@ -201,17 +215,33 @@ export function ProjectSupervisorLumaSelect({
         ]}
         onValueChange={(next) => onChange(next || null)}
       />
-      <span className="break-words text-xs text-muted-foreground" role="status">
-        {phase === "loading"
-          ? ""
-          : phase === "unavailable"
-            ? "Presets nicht erreichbar"
+      {phase === "unavailable" ? (
+        <PresetsUnavailableLine retry={retry} />
+      ) : (
+        <span className="break-words text-xs text-muted-foreground" role="status">
+          {phase === "loading"
+            ? ""
             : selected
               ? `${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
               : value !== null
                 ? "Preset fehlt in dieser Instanz"
                 : ""}
-      </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Fehlerzeile „Presets nicht erreichbar“ mit genau einer Aktion. */
+export function PresetsUnavailableLine({ retry }: { readonly retry?: (() => void) | undefined }) {
+  return (
+    <div role="alert" className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+      <span className="text-destructive-foreground">Presets nicht erreichbar</span>
+      {retry ? (
+        <Button type="button" size="xs" variant="outline" onClick={retry}>
+          Erneut versuchen
+        </Button>
+      ) : null}
     </div>
   );
 }

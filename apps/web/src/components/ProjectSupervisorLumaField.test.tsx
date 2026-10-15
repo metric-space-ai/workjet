@@ -72,6 +72,22 @@ describe("Project Supervisor-Preset selection", () => {
     expect(html).toContain(`value="${profile.id}"`);
     expect(html).toContain("Presets nicht erreichbar");
     expect(html).not.toContain(profile.modelId);
+    expect(html).not.toContain("Erneut versuchen");
+  });
+  it("offers exactly one retry action when the hook can retry", () => {
+    const html = renderToStaticMarkup(
+      <ProjectSupervisorLumaSelect
+        id="luma"
+        value={null}
+        onChange={() => {}}
+        disabled={false}
+        phase="unavailable"
+        profiles={[]}
+        retry={() => {}}
+      />,
+    );
+    expect(html).toContain("Presets nicht erreichbar");
+    expect(html.match(/Erneut versuchen/g)).toHaveLength(1);
   });
 });
 

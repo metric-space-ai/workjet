@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { ProjectId } from "@workjet/contracts";
 import { JourFixeRoom, type JourFixeAreaStatus } from "../components/JourFixeRoom";
 import { JourFixeSpeechRoom } from "../components/JourFixeSpeechRoom";
-import { ProviderUpdateChipView } from "../components/ProviderUpdateLaunchNotification";
+import { VersionChipView } from "../components/VersionChip";
 import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
 import { updateSlideCanvas } from "@workjet/slide-engine/excalidraw/scene";
 import type { SlideDocument } from "@workjet/slide-engine/schema";
@@ -211,13 +211,19 @@ function Fixture() {
               },
             )}
           </span>
-          {!chipDismissed && (
-            <ProviderUpdateChipView
-              title="Codex 0.162.1 verfügbar"
-              onOpen={() => {}}
-              onDismiss={() => setChipDismissed(true)}
-            />
-          )}
+          <VersionChipView
+            label="Workjet 0.0.103 · Host 0.1.3 · welsch"
+            update={
+              chipDismissed
+                ? null
+                : {
+                    title: "Codex 0.162.1 verfügbar",
+                    onOpen: () => {},
+                    onDismiss: () => setChipDismissed(true),
+                  }
+            }
+            onOpenDetails={() => {}}
+          />
         </div>
       )}
       <nav

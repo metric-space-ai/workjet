@@ -4,39 +4,13 @@ import type {
   WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { normalizeWorkjetThreadConfig } from "@workjet/contracts";
-import { CommandId, ProjectId, WorkjetConnectionId, IsoDateTime } from "@workjet/contracts";
-import * as Schema from "effect/Schema";
+import type { WorkjetPrivateChatIntent } from "./workjetPrivateChatIntent";
+export { WorkjetPrivateChatIntent, samePrivateChatIntentScope } from "./workjetPrivateChatIntent";
 
 import {
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
-
-// Draft-owned write-ahead intent also retains project ownership after binding.
-export const WorkjetPrivateChatIntent = Schema.Struct({
-  instanceId: Schema.String,
-  connectionId: WorkjetConnectionId,
-  projectId: ProjectId,
-  workerProfileId: Schema.String,
-  separate: Schema.Boolean,
-  membershipCommandId: CommandId,
-  chatCommandId: CommandId,
-  createdAt: IsoDateTime,
-});
-export type WorkjetPrivateChatIntent = typeof WorkjetPrivateChatIntent.Type;
-
-export function samePrivateChatIntentScope(
-  a: WorkjetPrivateChatIntent,
-  b: WorkjetPrivateChatIntent,
-): boolean {
-  return (
-    a.instanceId === b.instanceId &&
-    a.connectionId === b.connectionId &&
-    a.projectId === b.projectId &&
-    a.workerProfileId === b.workerProfileId &&
-    a.separate === b.separate
-  );
-}
 
 export function privateChatIntentRequest(
   intent: WorkjetPrivateChatIntent,
@@ -67,10 +41,10 @@ export async function createWorkjetPrivateChat(input: {
   readonly isCurrent: () => boolean;
   readonly port?: WorkjetProjectControlPort;
 }): Promise<WorkjetThreadCtoxCrewChat> {
-  if (!input.isCurrent()) throw new Error("The selected project is no longer active.");
+  if (!input.isCurrent()) throw new Error("Projekt nicht mehr aktiv.");
   const result = await requestWorkjetProjectControl(input.instanceId, input.request, input.port);
-  if (!input.isCurrent()) throw new Error("The selected project changed while creating the chat.");
-  if (result._tag !== "completed") throw new Error("CTOX did not confirm the private chat.");
+  if (!input.isCurrent()) throw new Error("Projekt wurde zwischenzeitlich gewechselt.");
+  if (result._tag !== "completed") throw new Error("CTOX hat den Chat nicht bestätigt.");
   const response = result.response;
   if (
     (response.action !== "project.worker.add" && response.action !== "project.chat.create") ||
@@ -80,7 +54,7 @@ export async function createWorkjetPrivateChat(input: {
     response.workerProfileId !== input.request.workerProfileId ||
     !/^workjet_private_.+/.test(response.chatId)
   )
-    throw new Error("CTOX returned a different private chat request.");
+    throw new Error("CTOX meldet einen anderen Chat.");
   return {
     instanceId: input.instanceId,
     connectionId: input.connectionId,
@@ -100,7 +74,7 @@ export function bindWorkjetPrivateChat(
       normalized.ctoxCrewChat.instanceId !== chat.instanceId ||
       normalized.ctoxCrewChat.connectionId !== chat.connectionId)
   ) {
-    throw new Error("Open a new thread for a different private chat.");
+    throw new Error("Neue Unterhaltung für anderen Chat öffnen.");
   }
   return { ...normalized, ctoxCrewChat: chat };
 }

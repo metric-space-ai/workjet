@@ -11,7 +11,7 @@ describe("WorkjetProductModeSwitch", () => {
     );
 
     expect(markup).toContain('role="radiogroup"');
-    expect(markup).toContain('aria-label="Workjet product mode"');
+    expect(markup).toContain('aria-label="Workjet-Modus"');
     expect(markup).toMatch(
       new RegExp(
         `<button[^>]*aria-checked="true"[^>]*data-product-mode="${mode}"[^>]*role="radio"[^>]*tabindex="0"`,
@@ -51,7 +51,7 @@ describe("WorkjetProductModeSwitch", () => {
     const footerSource = sidebarChromeSource.slice(
       sidebarChromeSource.indexOf("export const SidebarChromeFooter"),
     );
-    expect(footerSource).toContain("<span>Settings</span>");
+    expect(footerSource).toContain("<span>Einstellungen</span>");
     expect(footerSource.split("<SidebarMenuItem").length - 1).toBe(1);
     expect(footerSource).not.toContain('size="icon"');
     expect(footerSource).not.toContain("openWorkjetDevicePairing");

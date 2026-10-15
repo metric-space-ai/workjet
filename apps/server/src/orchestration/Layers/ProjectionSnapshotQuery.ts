@@ -96,6 +96,10 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
     modelSelection: Schema.fromJsonString(ModelSelection),
     workjetConfig: Schema.fromJsonString(WorkjetThreadConfig),
     latestAssistantMessagePreview: Schema.optional(Schema.NullOr(Schema.String)),
+    waitingOnSupervisor: Schema.optional(Schema.Number),
+    workerDecisionProblem: Schema.optional(
+      Schema.NullOr(Schema.Literals(["missing-supervisor", "timed-out"])),
+    ),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -495,6 +499,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
+          EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id
+              AND decisions.worker_thread_id <> coalesce(decisions.supervisor_thread_id, '') AND decisions.status <> 'resolved') AS "waitingOnSupervisor",
+          CASE WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status = 'timed-out') THEN 'timed-out'
+          WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status <> 'resolved' AND decisions.supervisor_thread_id IS NULL)
+            THEN 'missing-supervisor' ELSE NULL END AS "workerDecisionProblem",
+
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           deleted_at AS "deletedAt"
         FROM projection_threads
@@ -539,6 +552,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
+          EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id
+              AND decisions.worker_thread_id <> coalesce(decisions.supervisor_thread_id, '') AND decisions.status <> 'resolved') AS "waitingOnSupervisor",
+          CASE WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status = 'timed-out') THEN 'timed-out'
+          WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status <> 'resolved' AND decisions.supervisor_thread_id IS NULL)
+            THEN 'missing-supervisor' ELSE NULL END AS "workerDecisionProblem",
+
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           deleted_at AS "deletedAt"
         FROM projection_threads
@@ -585,6 +607,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
+          EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id
+              AND decisions.worker_thread_id <> coalesce(decisions.supervisor_thread_id, '') AND decisions.status <> 'resolved') AS "waitingOnSupervisor",
+          CASE WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status = 'timed-out') THEN 'timed-out'
+          WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status <> 'resolved' AND decisions.supervisor_thread_id IS NULL)
+            THEN 'missing-supervisor' ELSE NULL END AS "workerDecisionProblem",
+
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           deleted_at AS "deletedAt"
         FROM projection_threads
@@ -1111,6 +1142,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
+          EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id
+              AND decisions.worker_thread_id <> coalesce(decisions.supervisor_thread_id, '') AND decisions.status <> 'resolved') AS "waitingOnSupervisor",
+          CASE WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status = 'timed-out') THEN 'timed-out'
+          WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status <> 'resolved' AND decisions.supervisor_thread_id IS NULL)
+            THEN 'missing-supervisor' ELSE NULL END AS "workerDecisionProblem",
+
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           deleted_at AS "deletedAt"
         FROM projection_threads
@@ -1158,6 +1198,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
+          EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id
+              AND decisions.worker_thread_id <> coalesce(decisions.supervisor_thread_id, '') AND decisions.status <> 'resolved') AS "waitingOnSupervisor",
+          CASE WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status = 'timed-out') THEN 'timed-out'
+          WHEN EXISTS (SELECT 1 FROM workjet_worker_supervisor_decisions decisions
+            WHERE decisions.worker_thread_id = projection_threads.thread_id AND decisions.status <> 'resolved' AND decisions.supervisor_thread_id IS NULL)
+            THEN 'missing-supervisor' ELSE NULL END AS "workerDecisionProblem",
+
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           deleted_at AS "deletedAt"
         FROM projection_threads
@@ -2219,8 +2268,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       titleRegeneration: mapTitleRegeneration(row),
                       session: sessionByThread.get(row.threadId) ?? null,
                       latestUserMessageAt: row.latestUserMessageAt,
-                      hasPendingApprovals: row.pendingApprovalCount > 0,
-                      hasPendingUserInput: row.pendingUserInputCount > 0,
+                      hasPendingApprovals:
+                        row.pendingApprovalCount > 0 && row.waitingOnSupervisor !== 1,
+                      hasPendingUserInput:
+                        row.pendingUserInputCount > 0 && row.waitingOnSupervisor !== 1,
+                      ...(row.waitingOnSupervisor === 1 ? { waitingOnSupervisor: true } : {}),
+                      ...(row.workerDecisionProblem
+                        ? { workerDecisionProblem: row.workerDecisionProblem }
+                        : {}),
                       hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                       backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
                         row.threadId,
@@ -2367,8 +2422,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   titleRegeneration: mapTitleRegeneration(row),
                   session: sessionByThread.get(row.threadId) ?? null,
                   latestUserMessageAt: row.latestUserMessageAt,
-                  hasPendingApprovals: row.pendingApprovalCount > 0,
-                  hasPendingUserInput: row.pendingUserInputCount > 0,
+                  hasPendingApprovals:
+                    row.pendingApprovalCount > 0 && row.waitingOnSupervisor !== 1,
+                  hasPendingUserInput:
+                    row.pendingUserInputCount > 0 && row.waitingOnSupervisor !== 1,
+                  ...(row.waitingOnSupervisor === 1 ? { waitingOnSupervisor: true } : {}),
+                  ...(row.workerDecisionProblem
+                    ? { workerDecisionProblem: row.workerDecisionProblem }
+                    : {}),
                   hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                   backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
                     row.threadId,
@@ -2691,8 +2752,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
-        hasPendingApprovals: threadRow.value.pendingApprovalCount > 0,
-        hasPendingUserInput: threadRow.value.pendingUserInputCount > 0,
+        hasPendingApprovals:
+          threadRow.value.pendingApprovalCount > 0 && threadRow.value.waitingOnSupervisor !== 1,
+        hasPendingUserInput:
+          threadRow.value.pendingUserInputCount > 0 && threadRow.value.waitingOnSupervisor !== 1,
+        ...(threadRow.value.waitingOnSupervisor === 1 ? { waitingOnSupervisor: true } : {}),
+        ...(threadRow.value.workerDecisionProblem
+          ? { workerDecisionProblem: threadRow.value.workerDecisionProblem }
+          : {}),
         hasActionableProposedPlan: threadRow.value.hasActionableProposedPlan > 0,
         backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
           threadRow.value.threadId,

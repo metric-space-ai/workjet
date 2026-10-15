@@ -1,9 +1,28 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { ComputerProvisioningSection } from "./ComputerProvisioningSection";
+import { ComputerProvisioningSection, preflightOutcome } from "./ComputerProvisioningSection";
 
 afterEach(() => vi.unstubAllGlobals());
+
+const preflight = {
+  preflightId: "preflight-1",
+  expiresAt: "2026-10-11T20:00:00.000Z",
+  target: {
+    _tag: "ssh" as const,
+    ssh: { alias: "100.120.16.93", hostname: "100.120.16.93", username: "metricspace", port: 22 },
+  },
+  platform: "linux" as const,
+  architecture: "x64" as const,
+  internetAvailable: true,
+  administratorCapable: true,
+  administratorPasswordRequired: false,
+  administratorElevationRequired: false,
+  graphicalSession: false,
+  ctoxInstalledVersion: null,
+  workjetInstalledVersion: null,
+  warnings: [],
+};
 
 describe("ComputerProvisioningSection", () => {
   it("stays absent in web-only clients", () => {
@@ -11,7 +30,7 @@ describe("ComputerProvisioningSection", () => {
     expect(renderToStaticMarkup(<ComputerProvisioningSection />)).toBe("");
   });
 
-  it("presents local and SSH provisioning without manual signaling fields", () => {
+  it("is one compact inline block without captions or settings sections", () => {
     vi.stubGlobal("window", {
       desktopBridge: {
         inspectProvisioningHostKey: vi.fn(),
@@ -20,12 +39,48 @@ describe("ComputerProvisioningSection", () => {
         getProvisioningOperation: vi.fn(),
       },
     });
-    const markup = renderToStaticMarkup(<ComputerProvisioningSection />);
-    expect(markup).toContain("Provision CTOX and Workjet");
-    expect(markup).toContain("This computer");
-    expect(markup).toContain("Remote over SSH");
-    expect(markup).toContain("checksum-verified");
-    expect(markup).not.toContain("Signaling server");
-    expect(markup).not.toContain("Room password");
+    const markup = renderToStaticMarkup(
+      <ComputerProvisioningSection
+        initialKind="ssh"
+        fixedTargetKind
+        initialTarget={{ host: "100.120.16.93", username: "metricspace", port: 22 }}
+      />,
+    );
+    expect(markup).toContain('value="100.120.16.93"');
+    expect(markup).toContain('value="metricspace"');
+    expect(markup).toContain("Prüfen");
+    expect(markup).not.toContain("Provision CTOX and Workjet");
+    expect(markup).not.toContain("Install on a computer");
+    expect(markup).not.toContain("checksum-verified");
+    expect(markup).not.toContain("never proxied over HTTP");
+    expect(markup).not.toContain("Passwords and SSH passphrases");
+    expect(markup).not.toContain("<section");
+  });
+});
+
+describe("preflight result (Befund 3: never jump back silently)", () => {
+  it("advances to the components step on success", () => {
+    const outcome = preflightOutcome({ _tag: "ready", preflight });
+    expect(outcome.next).toBe("components");
+  });
+
+  it("keeps a non-host-key failure as an error line instead of the fingerprint step", () => {
+    for (const code of [
+      "preflight_failed",
+      "authentication_failed",
+      "internet_unavailable",
+      "required_tool_unavailable",
+    ] as const) {
+      const outcome = preflightOutcome({ _tag: "failed", code, message: "kaputt" });
+      expect(outcome).toEqual({ next: "error", message: "kaputt" });
+    }
+  });
+
+  it("returns to the fingerprint only for host-key codes, and always with a message", () => {
+    for (const code of ["host_key_confirmation_required", "host_key_changed"] as const) {
+      const outcome = preflightOutcome({ _tag: "failed", code, message: "" });
+      expect(outcome.next).toBe("fingerprint");
+      expect(outcome).toHaveProperty("message", "Prüfung fehlgeschlagen.");
+    }
   });
 });

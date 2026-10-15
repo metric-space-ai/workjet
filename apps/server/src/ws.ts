@@ -1,3 +1,5 @@
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { recordWorkerOwnerActivity } from "./workjet/WorkerSupervisorDecisions.ts";
 import { makeCtoxCalendarRpc } from "./workjet/ctox/CtoxCalendarRpc.ts";
 import { WorkjetCalendarError } from "@workjet/contracts";
 
@@ -13,11 +15,13 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
@@ -94,6 +98,7 @@ import {
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { threadHasQueuedTurnStart } from "./orchestration/decider.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as WorkjetCrossModeCtoxClient from "./workjet/crossmode/WorkjetCrossModeCtoxClient.ts";
@@ -109,6 +114,7 @@ import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 import * as LegacyWorkjetImport from "./workjet/legacy/LegacyWorkjetImport.ts";
 import * as LegacyWorkjetImportRpc from "./workjet/legacy/LegacyWorkjetImportRpc.ts";
 import * as WorkjetSessionImport from "./workjet/sessionImport/WorkjetSessionImport.ts";
+import { WorkerPullRequestLifecycle } from "./workjet/WorkerPullRequestLifecycle.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
@@ -167,6 +173,15 @@ import * as SourceControlProviderRegistry from "./sourceControl/SourceControlPro
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as WorkjetHarnessAvailability from "./workjet/WorkjetHarnessAvailability.ts";
 import * as WorktreeStorage from "./worktree/WorktreeStorage.ts";
+import {
+  manualProjectWorkerParent,
+  canBypassManualWorkerPreparation,
+  ManualProjectWorkerSetupError,
+  manualProjectWorkerConfig,
+} from "./workjet/ManualProjectWorker.ts";
+import { validateManualWorkerSource } from "./workjet/ManualProjectWorkerSource.ts";
+import { makeWorkerOrdinal } from "./workjet/WorkerOrdinal.ts";
+import { deriveWorkerTitle } from "./workjet/WorkerDispatch.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
@@ -413,13 +428,16 @@ const makeWsRpcLayer = (
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
       const currentSessionId = currentSession.sessionId;
       const workerBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
       const workerReceiver = yield* Effect.serviceOption(RemoteWorkerReceiver);
       const computerEnrollment = yield* Effect.serviceOption(RemoteWorkerComputerEnrollment);
       const workerConnection = yield* Effect.serviceOption(RemoteWorkerConnectionBootstrap);
       const crypto = yield* Crypto.Crypto;
+      const workerPullRequestLifecycle = yield* Effect.serviceOption(WorkerPullRequestLifecycle);
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+      const fileSystem = yield* FileSystem.FileSystem;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
@@ -1037,6 +1055,8 @@ const makeWsRpcLayer = (
           Stream.flatMap((items) => Stream.fromIterable(items)),
         );
 
+      const allocateManualWorkerOrdinal = yield* makeWorkerOrdinal;
+      const manualWorkerPreparation = yield* Semaphore.make(1);
       const dispatchBootstrapTurnStart = (
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
@@ -1044,12 +1064,13 @@ const makeWsRpcLayer = (
           const bootstrap = command.bootstrap;
           const { bootstrap: _bootstrap, ...finalTurnStartCommand } = command;
           let createdThread = false;
+          let manualWorkerPrepared = false;
           let targetProjectId = bootstrap?.createThread?.projectId;
           let targetProjectCwd = bootstrap?.prepareWorktree?.projectCwd;
           let targetWorktreePath = bootstrap?.createThread?.worktreePath ?? null;
 
           const cleanupCreatedThread = () =>
-            createdThread
+            createdThread && !manualWorkerPrepared
               ? serverCommandId("bootstrap-thread-delete").pipe(
                   Effect.flatMap((commandId) =>
                     orchestrationEngine.dispatch({
@@ -1058,9 +1079,27 @@ const makeWsRpcLayer = (
                       threadId: command.threadId,
                     }),
                   ),
-                  Effect.ignoreCause({ log: true }),
+                  Effect.as(true),
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("bootstrap thread cleanup failed", { cause }).pipe(
+                      Effect.as(false),
+                    ),
+                  ),
                 )
-              : Effect.void;
+              : bootstrap?.createThread && !createdThread
+                ? projectionSnapshotQuery.getCommandReadModel().pipe(
+                    Effect.map((snapshot) =>
+                      snapshot.threads.some(
+                        (thread) =>
+                          thread.id === command.threadId &&
+                          thread.projectId === bootstrap.createThread!.projectId &&
+                          thread.deletedAt !== null &&
+                          thread.latestTurn === null,
+                      ),
+                    ),
+                    Effect.catchCause(() => Effect.succeed(false)),
+                  )
+                : Effect.succeed(false);
 
           const recordSetupScriptLaunchFailure = (input: {
             readonly error: ProjectSetupScriptRunner.ProjectSetupScriptRunnerError;
@@ -1178,7 +1217,20 @@ const makeWsRpcLayer = (
             });
 
           const bootstrapProgram = Effect.gen(function* () {
-            if (bootstrap?.createThread) {
+            const existingBootstrapThread = bootstrap?.createThread
+              ? yield* projectionSnapshotQuery.getThreadShellById(command.threadId)
+              : Option.none();
+            if (
+              bootstrap?.createThread &&
+              Option.isSome(existingBootstrapThread) &&
+              existingBootstrapThread.value.projectId !== bootstrap.createThread.projectId
+            )
+              return yield* Effect.fail(
+                new ManualProjectWorkerSetupError({
+                  message: "Bootstrap retry belongs to a different project.",
+                }),
+              );
+            if (bootstrap?.createThread && Option.isNone(existingBootstrapThread)) {
               const workjetConfig = bootstrap.createThread.workjetConfig;
               if (workjetConfig.enabledCapabilityIds.includes("decision-hub")) {
                 const connections = yield* withDecisionHubConnections((registry) => registry.list);
@@ -1220,7 +1272,129 @@ const makeWsRpcLayer = (
               createdThread = true;
             }
 
-            if (bootstrap?.prepareWorktree) {
+            const shell = yield* projectionSnapshotQuery.getShellSnapshot();
+            const thread = shell.threads.find((candidate) => candidate.id === command.threadId);
+            const manualParent = thread
+              ? manualProjectWorkerParent(thread, shell.threads)
+              : undefined;
+            if (thread && manualParent) {
+              const project = shell.projects.find((candidate) => candidate.id === thread.projectId);
+              const cwd = project?.workspaceRoot;
+              if (!cwd)
+                return yield* Effect.fail(
+                  new ManualProjectWorkerSetupError({
+                    message: "A project worker requires a published Git source checkout.",
+                  }),
+                );
+              const sourceStatus = yield* gitWorkflow.status({ cwd });
+              const { branch, resuming } = validateManualWorkerSource(
+                thread,
+                shell.threads,
+                sourceStatus,
+              );
+              if (!resuming) {
+                const baseRef =
+                  bootstrap?.prepareWorktree?.baseBranch ?? thread.branch ?? sourceStatus.refName;
+                if (!baseRef)
+                  return yield* Effect.fail(
+                    new ManualProjectWorkerSetupError({
+                      message: "Select a published base branch before starting this worker.",
+                    }),
+                  );
+                const pinnedBase = yield* gitVcsDriver.resolveCommit({ cwd, revision: baseRef });
+                const publishedBase = yield* gitWorkflow.resolveRemoteTrackingCommit({
+                  cwd,
+                  refName: baseRef,
+                  fallbackRemoteName: "origin",
+                });
+                const published = yield* gitVcsDriver.execute({
+                  cwd,
+                  operation: "manual-worker-published-base",
+                  args: [
+                    "merge-base",
+                    "--is-ancestor",
+                    pinnedBase.commitSha,
+                    publishedBase.commitSha,
+                  ],
+                  allowNonZeroExit: true,
+                });
+                if (published.exitCode !== 0)
+                  return yield* Effect.fail(
+                    new ManualProjectWorkerSetupError({
+                      message:
+                        "Selected worker base has unpublished commits; publish it before starting. Existing work is preserved.",
+                    }),
+                  );
+                const worktree = yield* gitWorkflow.createWorktree({
+                  cwd,
+                  refName: pinnedBase.commitSha,
+                  baseRefName: baseRef,
+                  newRefName: branch,
+                  path: null,
+                });
+                // Once created, retain this owned checkout on dispatch failure: retries reuse
+                // persisted identity, and no user edits can be removed by rollback.
+                manualWorkerPrepared = true;
+                targetWorktreePath = worktree.worktree.path;
+                yield* orchestrationEngine.dispatch({
+                  type: "thread.meta.update",
+                  commandId: yield* serverCommandId("manual-worker-checkout"),
+                  threadId: thread.id,
+                  branch,
+                  worktreePath: targetWorktreePath,
+                });
+              } else {
+                const ownedStatus = yield* gitWorkflow.localStatus({ cwd: thread.worktreePath! });
+                if (
+                  thread.worktreePath === cwd ||
+                  !ownedStatus.isRepo ||
+                  ownedStatus.refName !== branch
+                )
+                  return yield* Effect.fail(
+                    new ManualProjectWorkerSetupError({
+                      message:
+                        "Saved worker checkout does not match its isolated branch; preserve it for explicit recovery.",
+                    }),
+                  );
+                manualWorkerPrepared = true;
+                targetWorktreePath = thread.worktreePath;
+              }
+              const environmentId = yield* serverEnvironment.getEnvironmentId;
+              const parent = { environmentId, threadId: manualParent.id };
+              const ordinal = yield* allocateManualWorkerOrdinal(parent, thread.id);
+              yield* orchestrationEngine.dispatch({
+                type: "thread.meta.update",
+                commandId: yield* serverCommandId("manual-worker-title"),
+                threadId: thread.id,
+                title: deriveWorkerTitle(
+                  ordinal,
+                  manualParent.title,
+                  (command.modelSelection ?? thread.modelSelection).model,
+                ),
+              });
+              yield* orchestrationEngine.dispatch({
+                type: "thread.workjet-config.set",
+                commandId: yield* serverCommandId("manual-worker-config"),
+                threadId: thread.id,
+                workjetConfig: manualProjectWorkerConfig(
+                  thread,
+                  manualParent,
+                  environmentId,
+                  command.message.text,
+                ),
+                createdAt: command.createdAt,
+              });
+            }
+
+            if (Option.isSome(existingBootstrapThread) && targetWorktreePath === null)
+              targetWorktreePath = existingBootstrapThread.value.worktreePath;
+            if (
+              bootstrap?.prepareWorktree &&
+              !manualParent &&
+              !(
+                Option.isSome(existingBootstrapThread) && existingBootstrapThread.value.worktreePath
+              )
+            ) {
               let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
               // "Start from origin" is a stored default; repos without an
               // origin remote fall back to the local base branch instead of
@@ -1263,16 +1437,41 @@ const makeWsRpcLayer = (
 
             yield* runSetupProgram();
 
-            return yield* orchestrationEngine.dispatch(finalTurnStartCommand);
+            const result = yield* orchestrationEngine.dispatch(finalTurnStartCommand);
+            if (!manualWorkerPrepared)
+              yield* recordWorkerOwnerActivity(finalTurnStartCommand).pipe(
+                Effect.provideService(SqlClient.SqlClient, sql),
+                Effect.orDie,
+              );
+            return result;
           });
 
           return yield* bootstrapProgram.pipe(
             Effect.catchCause((cause) => {
-              const dispatchError = toBootstrapDispatchCommandCauseError(cause);
+              const originalError = toBootstrapDispatchCommandCauseError(cause);
+              const dispatchError =
+                manualWorkerPrepared && targetWorktreePath
+                  ? new OrchestrationDispatchCommandError({
+                      message: `${originalError.message} Worker checkout preserved at ${targetWorktreePath} on workjet/worker/${command.threadId}; retry recorded ownership or recover it explicitly.`,
+                      cause,
+                    })
+                  : originalError;
               if (Cause.hasInterruptsOnly(cause)) {
                 return Effect.fail(dispatchError);
               }
-              return cleanupCreatedThread().pipe(Effect.flatMap(() => Effect.fail(dispatchError)));
+              return cleanupCreatedThread().pipe(
+                Effect.flatMap((deleted) =>
+                  Effect.fail(
+                    deleted
+                      ? new OrchestrationDispatchCommandError({
+                          message: dispatchError.message,
+                          cause,
+                          rolledBackThreadId: command.threadId,
+                        })
+                      : dispatchError,
+                  ),
+                ),
+              );
             }),
           );
         });
@@ -1281,8 +1480,20 @@ const makeWsRpcLayer = (
         normalizedCommand: OrchestrationCommand,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> => {
         const dispatchEffect =
-          normalizedCommand.type === "thread.turn.start" && normalizedCommand.bootstrap
-            ? dispatchBootstrapTurnStart(normalizedCommand)
+          normalizedCommand.type === "thread.turn.start"
+            ? projectionSnapshotQuery.getThreadShellById(normalizedCommand.threadId).pipe(
+                Effect.flatMap((existing) => {
+                  // Materializing worker config must not unlock a concurrent first turn.
+                  return canBypassManualWorkerPreparation(Option.getOrUndefined(existing))
+                    ? dispatchBootstrapTurnStart(normalizedCommand)
+                    : manualWorkerPreparation.withPermit(
+                        dispatchBootstrapTurnStart(normalizedCommand),
+                      );
+                }),
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to prepare project worker"),
+                ),
+              )
             : orchestrationEngine
                 .dispatch(normalizedCommand)
                 .pipe(
@@ -1392,11 +1603,68 @@ const makeWsRpcLayer = (
             { "rpc.aggregate": "worker-dispatch" },
           ),
 
+        [ORCHESTRATION_WS_METHODS.getThreadContinuation]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getThreadContinuation,
+            Effect.gen(function* () {
+              const snapshot = yield* projectionSnapshotQuery.getThreadDetailSnapshot(
+                input.threadId,
+              );
+              if (Option.isNone(snapshot))
+                return yield* new OrchestrationGetSnapshotError({
+                  message: "The source conversation was not found.",
+                });
+              const thread = snapshot.value.thread;
+              const exportedAt = yield* nowIso;
+              if (
+                thread.deletedAt !== null ||
+                thread.session?.status === "starting" ||
+                thread.session?.status === "running" ||
+                thread.messages.some((message) => message.streaming) ||
+                threadHasQueuedTurnStart(thread, exportedAt)
+              )
+                return yield* new OrchestrationGetSnapshotError({
+                  message: "Finish the source turn before switching computers.",
+                });
+              return snapshot.value;
+            }).pipe(
+              Effect.mapError((cause) =>
+                Schema.is(OrchestrationGetSnapshotError)(cause)
+                  ? cause
+                  : new OrchestrationGetSnapshotError({
+                      message:
+                        "Could not read the complete source conversation. No history was copied.",
+                      cause,
+                    }),
+              ),
+            ),
+            { "rpc.aggregate": "thread" },
+          ),
+
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
             Effect.gen(function* () {
               const normalizedCommand = yield* normalizeDispatchCommand(command);
+              if (normalizedCommand.type === "thread.continuation.import") {
+                const project = yield* projectionSnapshotQuery.getProjectShellById(
+                  normalizedCommand.createThread.projectId,
+                );
+                const thread = yield* projectionSnapshotQuery.getThreadShellById(
+                  normalizedCommand.threadId,
+                );
+                const cwd =
+                  Option.getOrUndefined(thread)?.worktreePath ??
+                  Option.getOrUndefined(project)?.workspaceRoot;
+                const checkout = cwd
+                  ? yield* fileSystem.stat(cwd).pipe(Effect.option)
+                  : Option.none();
+                if (Option.isNone(checkout) || checkout.value.type !== "Directory")
+                  return yield* new OrchestrationDispatchCommandError({
+                    message:
+                      "The project checkout is missing or inaccessible on this computer. No history was copied.",
+                  });
+              }
               // Archive and settle both mean "done with this thread", so a
               // live provider session must not keep running background work
               // (PR monitors, dev servers, subagent fleets) after either
@@ -1920,11 +2188,11 @@ const makeWsRpcLayer = (
         [WS_METHODS.workjetLumaUpdate]: (input) =>
           lumaConfiguration?.update(input) ??
           Effect.fail(new WorkjetLumaConfigurationError({ reason: "connection-unavailable" })),
-        [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
+        [WS_METHODS.serverUpdateSettings]: ({ patch, expectedWorkjet }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
             serverSettings
-              .updateSettings(patch)
+              .updateSettings(patch, expectedWorkjet)
               .pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
             {
               "rpc.aggregate": "server",
@@ -2771,6 +3039,11 @@ const makeWsRpcLayer = (
                     onFailure: (cause) => Queue.failCause(queue, cause),
                     onSuccess: () =>
                       refreshGitStatus(input.cwd).pipe(
+                        Effect.andThen(
+                          Option.isSome(workerPullRequestLifecycle)
+                            ? workerPullRequestLifecycle.value.reconcileWorktree(input.cwd)
+                            : Effect.void,
+                        ),
                         Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
                       ),
                   }),

@@ -41,6 +41,8 @@ import { CtoxBusinessOsToolkitRegistrationLive } from "./toolkits/workjet/CtoxBu
 import { CollectiveToolkitRegistrationLive } from "./toolkits/workjet/CollectiveTool.ts";
 import { WorkBlockToolkitRegistrationLive } from "./toolkits/workjet/WorkBlockTool.ts";
 import { GoalToolkitRegistrationLive } from "./toolkits/workjet/GoalTool.ts";
+import { WorkerDecisionToolkitRegistrationLive } from "./toolkits/workjet/WorkerDecisionTool.ts";
+import { WorkerAutonomyToolkitRegistrationLive } from "./toolkits/workjet/WorkerAutonomyTool.ts";
 import { WorkerKanbanToolkitRegistrationLive } from "./toolkits/workjet/WorkerKanbanTool.ts";
 import { ManagerToolkitRegistrationLive } from "./toolkits/workjet/ManagerTool.ts";
 
@@ -241,6 +243,8 @@ const ProductionWorkjetToolkitRegistrationLive = Layer.mergeAll(
   CollectiveToolkitRegistrationLive,
   WorkBlockToolkitRegistrationLive,
   GoalToolkitRegistrationLive,
+  WorkerDecisionToolkitRegistrationLive,
+  WorkerAutonomyToolkitRegistrationLive,
   WorkerKanbanToolkitRegistrationLive,
   ManagerToolkitRegistrationLive,
   WorkerToolkitRegistrationLive,

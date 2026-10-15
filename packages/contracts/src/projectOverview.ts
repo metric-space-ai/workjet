@@ -1,5 +1,9 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { SupervisorTickConfiguration } from "./supervisorTick.ts";
+import { MeetingPreparationConfiguration } from "./meetingPreparation.ts";
+import { CtoxWorkjetJourFixe } from "./ctox.ts";
+import { ProjectTokenBudgetSettings } from "./projectTokenBudget.ts";
 
 export const ProjectWebsiteUrl = TrimmedNonEmptyString.check(
   Schema.isMaxLength(2048),
@@ -41,11 +45,18 @@ export const ProjectOverviewSlot = Schema.Union([
 export type ProjectOverviewSlot = typeof ProjectOverviewSlot.Type;
 const OptionalSlot = Schema.NullOr(ProjectOverviewSlot);
 export const ProjectOverview = Schema.Struct({
+  supervisorTick: Schema.optionalKey(SupervisorTickConfiguration),
+  meetingPreparation: Schema.optionalKey(MeetingPreparationConfiguration),
+  regularMeeting: Schema.optionalKey(Schema.NullOr(CtoxWorkjetJourFixe)),
+  tokenBudget: Schema.optionalKey(ProjectTokenBudgetSettings),
   // Archiving changes gallery visibility while retaining the project and all histories.
   archived: Schema.optionalKey(Schema.Boolean),
   // Repository metadata is independent of a deployment website or local checkout.
   repositoryUrl: Schema.optionalKey(Schema.NullOr(ProjectWebsiteUrl)),
   websiteUrl: Schema.NullOr(ProjectWebsiteUrl),
+  // A conscious clear in the editor opts out of the domain-title fallback;
+  // an unmarked null means the website was never set (legacy and automatic writes).
+  websiteUrlCleared: Schema.optionalKey(Schema.Boolean),
   slots: Schema.Tuple([OptionalSlot, OptionalSlot, OptionalSlot]),
 });
 export type ProjectOverview = typeof ProjectOverview.Type;

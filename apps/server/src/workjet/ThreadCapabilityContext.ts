@@ -5,15 +5,17 @@ import {
   validateCapabilityActivation,
   type CapabilityRegistry,
 } from "@metric-space-ai/workjet-capabilities";
-import type {
-  WorkjetCapabilityId,
-  WorkjetConnectionId,
-  WorkjetThreadConfig,
-  WorkjetThreadRole,
+import {
+  workjetExecutionRole,
+  type WorkjetCapabilityId,
+  type WorkjetConnectionId,
+  type WorkjetThreadConfig,
+  type WorkjetThreadRole,
 } from "@workjet/contracts";
 
 export interface ThreadCapabilityContext {
   readonly workjetRole: WorkjetThreadRole;
+  readonly projectTeamRole?: "supervisor" | "specialist" | "worker";
   readonly mcpCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
   readonly promptCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
   readonly compiledManagedPrompt: string;
@@ -56,11 +58,12 @@ export function resolveThreadCapabilityContext(
     "ctox-business-os",
   );
   return Object.freeze({
-    workjetRole: workjetConfig.role,
+    workjetRole: workjetExecutionRole(workjetConfig),
+    ...(team ? { projectTeamRole: team.role } : {}),
     mcpCapabilityIds: Object.freeze(mcpManifests.map((manifest) => manifest.id)),
     promptCapabilityIds: Object.freeze(promptManifests.map((manifest) => manifest.id)),
     compiledManagedPrompt: compileCapabilityPrompt({
-      role: workjetConfig.role,
+      role: workjetExecutionRole(workjetConfig),
       ...(team
         ? {
             team:

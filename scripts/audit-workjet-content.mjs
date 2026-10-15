@@ -293,7 +293,7 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
   {
     path: "apps/desktop/src/ctox/CtoxGuestManager.ts",
     context:
-      /message(?:\s*===|\.startsWith\()\s*Native (?:WebRTC peer is not connected|request ctox\.workjet\.device\.v1 exceeded )/u,
+      /message(?:\s*===|\.startsWith\()\s*"?(?:Native (?:WebRTC peer is not connected|request ctox\.workjet\.device\.v1 exceeded )|Invalid native provider metadata or request\.)/u,
     reason:
       "Generated guest control compares exact native transport errors; it does not render them.",
   },
@@ -318,9 +318,35 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
     reason: "Registry transport fields are an internal sync contract.",
   },
   {
+    path: "apps/web/src/components/settings/businessOsPairing.ts",
+    context: /transport:\s*"webrtc"|rxdb-webrtc/iu,
+    reason: "Pairing payload transport fields are an internal sync contract.",
+  },
+  {
+    path: "apps/web/src/components/settings/WorkjetComputersSettings.tsx",
+    context:
+      /\bnative\b(?:\?)?\.id|native:\$\{|data-workjet-native-computer|\(native\)|computer: null, native/u,
+    reason: "Instance-reported computer records are identifiers, not displayed copy.",
+  },
+  {
+    path: "apps/web/src/fixtures/rechner.fixture.tsx",
+    context: /native-[a-z0-9-]+/u,
+    reason: "Fixture identifiers for instance-reported computers.",
+  },
+  {
     path: "apps/desktop/src/ctox/CtoxLaunchConfig.ts",
     context: /transport.*webrtc/iu,
     reason: "Launch configuration transport is an internal sync value.",
+  },
+  {
+    path: "apps/web/src/components/PersistentWorkerKanban.tsx",
+    context: /learnordie-dark-room/u,
+    reason: "The slide-engine theme identifier is an internal stylesheet name.",
+  },
+  {
+    path: "apps/web/src/fixtures/persistent-worker-goal.fixture.tsx",
+    context: /learnordie-dark-room/u,
+    reason: "The fixture selects the slide-engine theme by its internal identifier.",
   },
   {
     path: "apps/desktop/src/ctox/CtoxBusinessOsShell.ts",
@@ -376,6 +402,11 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
     path: "apps/desktop/src/window/DesktopWindow.ts",
     context: /ctox-guest/iu,
     reason: "The window target name is an internal host symbol.",
+  },
+  {
+    path: "apps/desktop/src/ctox/CtoxGuestDiagnostics.ts",
+    context: /withSpan\(["'`]?ctox\.guest\.preparation\.failed/u,
+    reason: "The trace span name is internal telemetry; the UI renders the typed reason instead.",
   },
   {
     path: "apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts",

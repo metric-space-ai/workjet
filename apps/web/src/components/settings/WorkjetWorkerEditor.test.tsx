@@ -68,7 +68,6 @@ describe("WorkjetWorkerEditor", () => {
       llmRouteId: routeId,
       modelId: " gpt-5.6-sol ",
       reasoning: "high",
-      role: "standard",
       capabilityIds: ["greppy", "web-search", "web-stack-browser"],
       capabilityBindings: [],
       personalization,
@@ -90,7 +89,7 @@ describe("WorkjetWorkerEditor", () => {
     });
   });
 
-  it("requires exactly one Decision Hub binding and persists the root role", () => {
+  it("requires exactly one Decision Hub binding without granting a role", () => {
     const draft = {
       ...createWorkjetWorkerDraft({ computers: [computer], routes: [route], id: "worker-1" }),
       name: "Owner coordinator",
@@ -98,7 +97,7 @@ describe("WorkjetWorkerEditor", () => {
       role: "orchestrator" as const,
       capabilityIds: ["decision-hub" as const],
     };
-    expect(() => saveWorkjetWorkerDraft(draft)).toThrow("exactly one Decision Hub connection");
+    expect(() => saveWorkjetWorkerDraft(draft)).toThrow("Genau eine Decision-Hub-Verbindung");
 
     const saved = saveWorkjetWorkerDraft({
       ...draft,
@@ -112,7 +111,7 @@ describe("WorkjetWorkerEditor", () => {
         },
       ],
     });
-    expect(saved.role).toBe("orchestrator");
+    expect(saved.role).toBe("standard");
     expect(saved.capabilityBindings).toHaveLength(1);
   });
 
@@ -133,8 +132,8 @@ describe("WorkjetWorkerEditor", () => {
     };
     const before = structuredClone(draft);
 
-    expect(workjetHarnessAvailabilityWarning(draft, [computer])).toContain(
-      "Enable it in Computers",
+    expect(workjetHarnessAvailabilityWarning(draft, [computer])).toBe(
+      "Codex CLI auf Remote devbox nicht verfügbar.",
     );
     expect(draft).toEqual(before);
   });
@@ -150,34 +149,26 @@ describe("WorkjetWorkerEditor", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Add Luma"');
-    expect(markup).toContain('aria-label="Luma personality"');
-    expect(markup).toContain('type="range"');
-    expect(markup).toContain('aria-label="Enable Luma personalization"');
-
-    // Name and task lead; the retained slider profile is directly discoverable.
-    const sections = [
-      ">Name</label>",
-      ">Task</label>",
-      "Personality",
-      "Personality sliders",
-      "Harness",
-      "LLM route",
-      "Model",
-      "Reasoning",
-      "Tools",
-      "Target computer",
-      "Technical details",
-    ] as const;
-    const order = sections.map((section) => markup.indexOf(section));
-    expect(sections.filter((_s, i) => order[i]! < 0)).toEqual([]);
-    expect(order).toEqual([...order].sort((a, b) => a - b));
-
+    expect(markup).toContain('aria-label="Preset hinzufügen"');
+    // #615: compact tabs; the open editor stays within ~30% of the viewport.
+    expect(markup).toContain('role="tablist"');
+    expect(markup).toContain("max-h-[30vh]");
+    for (const tab of [">Aufgabe<", ">Persönlichkeit<", ">Harness · Modell · Rechner<"])
+      expect(markup).toContain(tab);
+    // No heading or labels used as titles.
+    expect(markup).not.toContain("Luma bearbeiten");
+    expect(markup).not.toContain(">Name</label>");
+    expect(markup).toContain('aria-label="Name"');
+    expect(markup).toContain('aria-label="Aufgabe"');
+    expect(markup).toContain(">Speichern</button>");
     // Options visible, not hidden behind a trigger.
-    expect(markup).toContain("Claude Code");
-    expect(markup).toContain("OpenCode");
-    expect(markup).toContain("Web Stack Browser");
-    // With a route chosen the panel names it.
-    expect(markup).toContain("Route: Codex work");
+    expect(markup).not.toContain("Orchestrator");
+    expect(markup).not.toContain("Root role");
+    // No disclosure, no raw ids, no explanatory sentences, no popup.
+    expect(markup).not.toContain("<details");
+    expect(markup).not.toContain("computer-1");
+    expect(markup).not.toContain("route-1");
+    expect(markup).not.toContain("Settings → Computers");
+    expect(markup).not.toContain('role="dialog"');
   });
 });

@@ -35,6 +35,8 @@ pub struct XaiPreparedRequest {
     pub base_model: String,
     pub session_id: String,
     pub namespace_tools: BTreeMap<String, NamespaceToolRef>,
+    pub custom_tools: BTreeSet<String>,
+    pub boxed_functions: BTreeSet<String>,
     pub client_declared_tools: BTreeSet<ClientToolKey>,
     pub filter_internal_x_search: bool,
 }
@@ -275,13 +277,16 @@ pub fn prepare_xai_responses_body(
         }
     }
     promote_additional_tools(&mut root);
-    normalize_tools(&mut root);
+    let custom_tools = collect_custom_tool_names(&root);
+    let namespace_tools = collect_namespace_tool_refs(&root);
+    let boxed_functions = normalize_tools(&mut root);
+    normalize_input_reasoning_content(&mut root);
     normalize_input_custom_tool_calls(&mut root);
+    normalize_input_boxed_functions(&mut root, &boxed_functions)?;
     if policy.inject_x_search {
         ensure_native_x_search(&mut root);
     }
     prune_orphaned_tool_choice(&mut root);
-    let namespace_tools = collect_namespace_tool_refs(&root);
     let client_declared_tools = collect_client_declared_tools(&root);
     let filter_internal_x_search = request_has_native_x_search(&root);
     let session_id = policy.session_id.unwrap_or_default().trim().to_owned();
@@ -290,6 +295,8 @@ pub fn prepare_xai_responses_body(
         base_model: strip_thinking_suffix(policy.model),
         session_id,
         namespace_tools,
+        custom_tools,
+        boxed_functions,
         client_declared_tools,
         filter_internal_x_search,
     })
@@ -345,14 +352,46 @@ fn promote_additional_tools(root: &mut Value) {
     }
 }
 
-fn normalize_tools(root: &mut Value) {
+fn collect_custom_tool_names(root: &Value) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for tool in root
+        .get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if tool.get("type").and_then(Value::as_str) == Some("custom") {
+            if let Some(name) = tool.get("name").and_then(Value::as_str) {
+                names.insert(name.to_owned());
+            }
+        } else if tool.get("type").and_then(Value::as_str) == Some("namespace") {
+            if let Some(namespace) = tool.get("name").and_then(Value::as_str) {
+                for child in tool
+                    .get("tools")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    if child.get("type").and_then(Value::as_str) == Some("custom") {
+                        if let Some(name) = child.get("name").and_then(Value::as_str) {
+                            names.insert(format!("{namespace}__{name}"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    names
+}
+
+fn normalize_tools(root: &mut Value) -> BTreeSet<String> {
+    let mut boxed = BTreeSet::new();
     let Some(tools) = root.get_mut("tools").and_then(Value::as_array_mut) else {
-        return;
+        return boxed;
     };
     let mut flattened = Vec::new();
     for mut tool in std::mem::take(tools) {
-        let is_namespace = tool.get("type").and_then(Value::as_str) == Some("namespace");
-        if is_namespace {
+        if tool.get("type").and_then(Value::as_str) == Some("namespace") {
             let namespace = tool
                 .get("name")
                 .and_then(Value::as_str)
@@ -360,40 +399,83 @@ fn normalize_tools(root: &mut Value) {
                 .to_owned();
             if let Some(children) = tool.get_mut("tools").and_then(Value::as_array_mut) {
                 for mut child in std::mem::take(children) {
-                    normalize_function_tool(&mut child, Some(&namespace));
+                    if normalize_function_tool(&mut child, Some(&namespace)) {
+                        if let Some(name) = child.get("name").and_then(Value::as_str) {
+                            boxed.insert(name.to_owned());
+                        }
+                    }
                     flattened.push(child);
                 }
             }
         } else {
-            normalize_function_tool(&mut tool, None);
+            if normalize_function_tool(&mut tool, None) {
+                if let Some(name) = tool.get("name").and_then(Value::as_str) {
+                    boxed.insert(name.to_owned());
+                }
+            }
             flattened.push(tool);
         }
     }
     *tools = flattened;
+    boxed
 }
 
-fn normalize_function_tool(tool: &mut Value, namespace: Option<&str>) {
+fn normalize_function_tool(tool: &mut Value, namespace: Option<&str>) -> bool {
     let Some(object) = tool.as_object_mut() else {
-        return;
+        return false;
     };
     let kind = object
         .get("type")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    if kind == "web_search" && object.get("external_web_access") == Some(&Value::Bool(true)) {
+        // Native xAI web search is online by default. Preserve an explicit
+        // offline request rather than silently widening its access.
+        object.remove("external_web_access");
+        return false;
+    }
     if kind == "custom" {
         object.insert("type".into(), Value::String("function".into()));
+        object.remove("format");
+        object.insert(
+            "parameters".into(),
+            serde_json::json!({
+                "type": "object", "properties": {"input": {"type": "string"}},
+                "required": ["input"], "additionalProperties": false
+            }),
+        );
+        object.insert("strict".into(), Value::Bool(true));
     }
     if object.get("type").and_then(Value::as_str) != Some("function") {
-        return;
+        return false;
     }
     if let Some(namespace) = namespace {
         if let Some(name) = object.get("name").and_then(Value::as_str) {
             object.insert("name".into(), Value::String(format!("{namespace}__{name}")));
         }
     }
-    if let Some(parameters) = object.get_mut("parameters").and_then(Value::as_object_mut) {
+    let needs_box = object.get("parameters").is_some_and(|schema| {
+        schema.get("type").and_then(Value::as_str) != Some("object")
+            || ["anyOf", "oneOf", "allOf"]
+                .iter()
+                .any(|key| schema.get(key).is_some())
+    });
+    if needs_box {
+        let mut schema = object.remove("parameters").unwrap();
+        if let Some(object) = schema.as_object_mut() {
+            ensure_object_union_types(object);
+        }
+        object.insert(
+            "parameters".into(),
+            serde_json::json!({
+                "type":"object", "properties":{"input":schema},
+                "required":["input"], "additionalProperties":false
+            }),
+        );
+    } else if let Some(parameters) = object.get_mut("parameters").and_then(Value::as_object_mut) {
         ensure_object_union_types(parameters);
     }
+    needs_box
 }
 
 fn ensure_object_union_types(schema: &mut Map<String, Value>) {
@@ -449,6 +531,20 @@ fn prune_orphaned_tool_choice(root: &mut Value) {
     }
 }
 
+fn normalize_input_reasoning_content(root: &mut Value) {
+    if let Some(input) = root.get_mut("input").and_then(Value::as_array_mut) {
+        for item in input {
+            if item.get("type").and_then(Value::as_str) == Some("reasoning")
+                && item.get("content").is_some_and(Value::is_null)
+            {
+                // Codex serializes an absent optional reasoning body as null;
+                // xAI accepts omission, but rejects the explicit null value.
+                item.as_object_mut().unwrap().remove("content");
+            }
+        }
+    }
+}
+
 fn normalize_input_custom_tool_calls(root: &mut Value) {
     let Some(input) = root.get_mut("input").and_then(Value::as_array_mut) else {
         return;
@@ -457,11 +553,30 @@ fn normalize_input_custom_tool_calls(root: &mut Value) {
         let Some(object) = item.as_object_mut() else {
             continue;
         };
+        if matches!(
+            object.get("type").and_then(Value::as_str),
+            Some("function_call" | "custom_tool_call")
+        ) {
+            if let (Some(namespace), Some(name)) = (
+                object
+                    .remove("namespace")
+                    .and_then(|value| value.as_str().map(str::to_owned)),
+                object
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            ) {
+                object.insert("name".into(), Value::String(format!("{namespace}__{name}")));
+            }
+        }
         match object.get("type").and_then(Value::as_str) {
             Some("custom_tool_call") => {
                 object.insert("type".into(), Value::String("function_call".into()));
                 if let Some(input) = object.remove("input") {
-                    object.insert("arguments".into(), input);
+                    object.insert(
+                        "arguments".into(),
+                        Value::String(serde_json::json!({"input": input}).to_string()),
+                    );
                 }
             }
             Some("custom_tool_call_output") => {
@@ -472,21 +587,54 @@ fn normalize_input_custom_tool_calls(root: &mut Value) {
     }
 }
 
+fn normalize_input_boxed_functions(
+    root: &mut Value,
+    names: &BTreeSet<String>,
+) -> Result<(), serde_json::Error> {
+    if let Some(input) = root.get_mut("input").and_then(Value::as_array_mut) {
+        for item in input {
+            if item.get("type").and_then(Value::as_str) == Some("function_call")
+                && item
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| names.contains(name))
+            {
+                let arguments = item
+                    .get("arguments")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        custom_json_error("Wrapped function arguments must be JSON text")
+                    })?;
+                let value: Value = serde_json::from_str(arguments)?;
+                item["arguments"] = Value::String(serde_json::json!({"input":value}).to_string());
+            }
+        }
+    }
+    Ok(())
+}
+
 fn collect_namespace_tool_refs(root: &Value) -> BTreeMap<String, NamespaceToolRef> {
     root.get("tools")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|tool| {
-            let name = tool.get("name")?.as_str()?;
-            let (namespace, original) = name.split_once("__")?;
-            Some((
-                name.to_owned(),
-                NamespaceToolRef {
-                    namespace: namespace.to_owned(),
-                    name: original.to_owned(),
-                },
-            ))
+        .filter(|tool| tool.get("type").and_then(Value::as_str) == Some("namespace"))
+        .flat_map(|tool| {
+            let namespace = tool.get("name").and_then(Value::as_str).unwrap_or_default();
+            tool.get("tools")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(move |child| {
+                    let name = child.get("name")?.as_str()?;
+                    Some((
+                        format!("{namespace}__{name}"),
+                        NamespaceToolRef {
+                            namespace: namespace.to_owned(),
+                            name: name.to_owned(),
+                        },
+                    ))
+                })
         })
         .collect()
 }

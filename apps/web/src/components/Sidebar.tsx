@@ -1,4 +1,7 @@
+import { localizedThreadTitle } from "../localizedThreadTitle";
+import { workjetUiLanguage } from "../workjetProjectControl";
 import { autoAnimate } from "@formkit/auto-animate";
+import { scheduleUndoableThreadDelete } from "../lib/undoableDelete";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -39,15 +42,18 @@ import {
   AlarmClockOffIcon,
   CheckIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
   ClockIcon,
+  EllipsisIcon,
   FolderIcon,
-  FolderPlusIcon,
   GitBranchIcon,
   MessageSquareIcon,
   PinIcon,
+  LayoutDashboardIcon,
+  LayoutGridIcon,
   PlusIcon,
   SearchIcon,
   ServerIcon,
@@ -101,9 +107,24 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { openCommandPalette } from "../commandPaletteBus";
+import {
+  onNewThreadMenuRequest,
+  onSidebarSearchMode,
+  openCommandPalette,
+  type SidebarSearchMode,
+} from "../commandPaletteBus";
+import { buildNewThreadMenuEntries, NewThreadInMenu } from "./NewThreadInMenu";
+import {
+  SidebarProjectSearchResults,
+  SidebarSearchModeSegment,
+  sidebarSearchPlaceholder,
+} from "./sidebar/SidebarProjectSearch";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
+import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
+import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
+import { ProjectTokenBudget } from "./ProjectTokenBudget";
+import { isRunningProjectOneShot, projectOverviewWorkerState } from "../projectOverviewModel";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -119,7 +140,7 @@ import {
   resolveActiveThreadRouteRef,
   resolveThreadRouteTarget,
 } from "../threadRoutes";
-import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat";
+import { formatCompactRelativeTimeLabel, parseTimestampDate } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
@@ -132,7 +153,6 @@ import {
   includeAvailableProjectsInSidebar,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
-  isSidebarNewThreadDisabled,
   orderItemsByPreferredIds,
   planPinnedReorder,
   resolveAdjacentThreadId,
@@ -170,10 +190,18 @@ import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
+} from "./ui/menu";
+import { useUiText } from "../hooks/useUiText";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
-import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import {
   composerDraftHasUserContent,
@@ -192,11 +220,43 @@ import {
 import {
   groupThreadsByProjectTeam,
   PROJECT_TEAM_SECTIONS,
-  projectTeamSectionOf,
   projectTeamStatus,
   projectTeamHarnessLabel,
+  projectTeamParentTitle,
   duplicateProjectTeamTitles,
 } from "../lib/projectTeamSections";
+
+/** Actions whose failure the sidebar reports with one shared toast (#558). */
+const SIDEBAR_ACTIONS = {
+  copy: { en: "Copy", de: "Kopieren" },
+  rename: { en: "Rename", de: "Umbenennen" },
+  settle: { en: "Mark done", de: "Erledigen" },
+  reopen: { en: "Reopen", de: "Wieder öffnen" },
+  wake: { en: "Wake", de: "Wecken" },
+  pin: { en: "Pin", de: "Anheften" },
+  unpin: { en: "Unpin", de: "Lösen" },
+  reorder: { en: "Reorder", de: "Sortieren" },
+  snooze: { en: "Snooze", de: "Zurückstellen" },
+  title: { en: "Generate title", de: "Titel erzeugen" },
+  delete: { en: "Delete", de: "Löschen" },
+} as const;
+
+/** Visible word for a row action (#727: no icon-only, no hover-only controls). */
+function sidebarActionLabel(action: keyof typeof SIDEBAR_ACTIONS): string {
+  return SIDEBAR_ACTIONS[action][workjetUiLanguage() === "en" ? "en" : "de"];
+}
+
+/** One error toast for every sidebar action: "<Action> failed" plus the reason. */
+function sidebarFailureToast(action: keyof typeof SIDEBAR_ACTIONS, error: unknown, stacked = true) {
+  const en = workjetUiLanguage() === "en";
+  const toast = {
+    type: "error" as const,
+    title: `${SIDEBAR_ACTIONS[action][en ? "en" : "de"]} ${en ? "failed" : "fehlgeschlagen"}`,
+    description:
+      error instanceof Error ? error.message : en ? "Unknown error" : "Unbekannter Fehler",
+  };
+  return stacked ? stackedThreadToast(toast) : toast;
+}
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -206,14 +266,9 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 const SETTLED_SHELF_EXPANDED_KEY = "workjet:sidebar-v2:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "workjet:sidebar-v2:snoozed-expanded";
 
-function compactSidebarTimeLabel(label: string): string {
-  if (label === "just now") return "now";
-  return label.endsWith(" ago") ? label.slice(0, -4) : label;
-}
-
 function threadTimeLabel(thread: SidebarThreadSummary): string {
   const timestamp = thread.latestUserMessageAt ?? thread.updatedAt;
-  return compactSidebarTimeLabel(formatRelativeTimeLabel(timestamp));
+  return formatCompactRelativeTimeLabel(timestamp);
 }
 
 // Settled rows read "how long ago did this wrap up", matching their sort
@@ -221,7 +276,7 @@ function threadTimeLabel(thread: SidebarThreadSummary): string {
 // disagree.
 function settledTimeLabel(thread: SidebarThreadSummary): string {
   const timestamp = resolveSettledTimestamp(thread);
-  return timestamp === null ? "" : compactSidebarTimeLabel(formatRelativeTimeLabel(timestamp));
+  return timestamp === null ? "" : formatCompactRelativeTimeLabel(timestamp);
 }
 
 // Floats at the row's right edge, vertically centered, while the jump
@@ -259,7 +314,7 @@ function WorkingDuration(props: { startedAt: string | null }) {
 }
 
 function terminalProcessLabel(count: number): string {
-  return `${count} terminal ${count === 1 ? "process" : "processes"} running`;
+  return `${count} Terminal-Prozess${count === 1 ? "" : "e"} aktiv`;
 }
 
 function SidebarThreadTooltip({
@@ -300,7 +355,7 @@ function SidebarThreadTooltip({
     >
       <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)]">
         <div className="min-w-0 truncate text-xs leading-none font-medium text-foreground">
-          {thread.title}
+          {localizedThreadTitle(thread.title)}
         </div>
         <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
           {projectTitle ? (
@@ -330,7 +385,7 @@ function SidebarThreadTooltip({
             <div className="flex min-w-0 items-start gap-2 text-warning">
               <CircleAlertIcon aria-hidden className="mt-0.5 size-3 shrink-0 stroke-current" />
               <div className="min-w-0 flex-1 wrap-break-word leading-5">
-                You're currently checked out on another branch.
+                Anderer Branch ausgecheckt
               </div>
             </div>
           ) : null}
@@ -338,7 +393,11 @@ function SidebarThreadTooltip({
             <div className="flex min-w-0 items-center gap-2">
               <ProviderInstanceIcon
                 driverKind={driverKind}
-                displayName={thread.session?.providerName ?? modelInstanceId}
+                displayName={
+                  thread.session?.providerInstanceId === modelInstanceId
+                    ? (thread.session.providerName ?? modelInstanceId)
+                    : modelInstanceId
+                }
                 iconClassName="size-3 shrink-0 grayscale opacity-60"
               />
               <div className="min-w-0 truncate text-foreground/75">{modelLabel}</div>
@@ -358,7 +417,7 @@ function SidebarThreadTooltip({
           {thread.session?.lastError ? (
             <div className="flex min-w-0 items-center gap-2 text-red-600 dark:text-red-400">
               <CircleAlertIcon className="size-3 shrink-0 stroke-current" />
-              <div className="min-w-0 truncate">Error occurred</div>
+              <div className="min-w-0 truncate">Fehler aufgetreten</div>
             </div>
           ) : null}
         </div>
@@ -367,59 +426,67 @@ function SidebarThreadTooltip({
   );
 }
 
+/** German labels for the fixed snooze presets (ids from client-runtime). */
+const SNOOZE_PRESET_LABELS: Readonly<Record<string, string>> = {
+  hour: "In 1 Stunde",
+  "three-hours": "In 3 Stunden",
+  evening: "Heute Abend",
+  tomorrow: "Morgen",
+  "next-week": "Nächste Woche",
+};
+
 /**
- * Hover entry point for snooze: a clock button opening the preset menu.
+ * Hover entry point for snooze: a plain ⋯ menu with the fixed presets (drei
+ * Orte, keine Popups — a selection menu, no popover with content).
  * Controlled by the row (which also uses the open state to pin its hover
  * actions while the menu is up).
  */
-function SnoozePopoverButton(props: {
+function SnoozeMenuButton(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSnooze: (preset: SnoozePreset) => void;
   timestampFormat: TimestampFormat;
 }) {
   const { open, onOpenChange, onSnooze, timestampFormat } = props;
-  // Presets resolve at open time so "In 1 hour" is relative to the click,
+  // Presets resolve at open time so "In 1 Stunde" is relative to the click,
   // not to when the row mounted.
   const presets = useMemo(
     () => (open ? resolveSnoozePresets(new Date(), timestampFormat) : []),
     [open, timestampFormat],
   );
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger
+    <Menu open={open} onOpenChange={onOpenChange}>
+      <MenuTrigger
         render={
           <button
             type="button"
-            aria-label="Snooze thread"
+            aria-label="Zurückstellen"
             onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
             className="inline-flex h-full cursor-pointer items-center gap-0.5 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
           />
         }
       >
-        <ClockIcon className="size-3" />
-      </PopoverTrigger>
-      <PopoverPopup side="bottom" align="end" className="w-56" viewportClassName="p-1">
+        <EllipsisIcon className="size-3.5" />
+      </MenuTrigger>
+      <MenuPopup align="end" className="min-w-48">
         {presets.map((preset) => (
-          <button
+          <MenuItem
             key={preset.id}
-            type="button"
             onClick={(event) => {
               event.stopPropagation();
-              onOpenChange(false);
               onSnooze(preset);
             }}
-            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-foreground/90 hover:bg-accent hover:text-foreground"
           >
-            <span className="flex-1">{preset.label}</span>
+            <ClockIcon className="size-3.5" />
+            <span className="flex-1">{SNOOZE_PRESET_LABELS[preset.id] ?? preset.label}</span>
             <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums">
               {preset.whenLabel}
             </span>
-          </button>
+          </MenuItem>
         ))}
-      </PopoverPopup>
-    </Popover>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -461,7 +528,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   onNavigate: (draftId: DraftId) => void;
   onDiscard: (draftId: DraftId) => void;
 }) {
-  const { composer, draftId, onDiscard, onNavigate, session } = props;
+  const { composer, draftId, onDiscard, onNavigate } = props;
   const promptPreview = composer.prompt.trim().split("\n", 1)[0] ?? "";
   // images mirrors persistedAttachments once rehydration finishes; before
   // that only the persisted list is populated, hence max not sum.
@@ -505,41 +572,24 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         data-testid="sidebar-draft-row"
         className={cn(
           "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left text-sidebar-foreground outline-none select-none",
-          props.isActive
-            ? "bg-sidebar-row-active"
-            : "bg-amber-400/[0.04] hover:bg-amber-400/[0.08]",
+          props.isActive ? "bg-sidebar-row-active" : "hover:bg-sidebar-row-hover",
         )}
         onClick={handleActivate}
         onKeyDown={handleKeyDown}
       >
-        <div className="relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
-          <div className="flex h-5 min-w-0 items-center gap-1.5">
-            <SquarePenIcon
-              aria-hidden
-              className="size-3 shrink-0 text-amber-600 dark:text-amber-300/80"
-            />
-            <ProjectFavicon
-              environmentId={session.environmentId}
-              cwd={props.projectCwd ?? ""}
-              faviconPath={props.projectFaviconPath}
-              className="size-4 shrink-0"
-            />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-secondary-label">
-              {props.projectTitle}
-            </span>
-            <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-end">
-              <button
-                type="button"
-                aria-label="Discard draft"
-                title="Discard draft"
-                onClick={handleDiscard}
-                className="pointer-events-none inline-flex cursor-pointer items-center rounded-md bg-transparent px-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100"
-              >
-                <XIcon className="size-3" />
-              </button>
-            </span>
-          </div>
-          <div className="mt-0.5 truncate text-sm font-medium text-foreground/90">{preview}</div>
+        {/* A draft is a normal chat row: one line, pen icon instead of a status (#629). */}
+        <div className="relative z-10 flex h-9 min-w-0 items-center gap-2 px-[var(--sidebar-row-content-inset)]">
+          <SquarePenIcon aria-hidden className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-sm text-sidebar-foreground">{preview}</span>
+          <button
+            type="button"
+            aria-label="Entwurf verwerfen"
+            title="Entwurf verwerfen"
+            onClick={handleDiscard}
+            className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground opacity-60 transition-opacity hover:text-foreground hover:opacity-100 focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover/sidebar-row:opacity-100"
+          >
+            <XIcon className="size-3" />
+          </button>
         </div>
       </div>
     </li>
@@ -675,6 +725,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   variant: "card" | "slim";
   projectTeam?: boolean | undefined;
   teamHarnessLabel?: string | undefined;
+  teamParentTitle?: string | undefined;
   // Slim rows are either settled (action: un-settle) or merely quiet
   // (seen Ready threads — action: settle).
   variantAction: "settle" | "unsettle" | "unsnooze";
@@ -766,6 +817,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const terminalProcessCount = runningTerminalIds.length;
+  const overviewLanguage = useProjectOverviewLanguage();
+  const overviewText = PROJECT_OVERVIEW_TEXT[overviewLanguage];
 
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const gitStatus = useEnvironmentQuery(
@@ -816,7 +869,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const topStatus =
     status === "working"
       ? {
-          label: "Working",
+          label: "Läuft",
           icon: "working" as const,
           // No shimmer: a label that animates forever is noise in a sidebar
           // full of them (and repaints every vsync on high-refresh displays).
@@ -829,37 +882,37 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         ? {
             // Monitoring is calm background presence, not active progress
             // (monitoring-pill D6), so it keeps the label at full strength.
-            label: "Monitoring",
+            label: "Beobachtet",
             icon: null,
             className: "text-sky-600 dark:text-sky-400",
           }
         : status === "approval"
           ? {
-              label: "Approval",
+              label: "Freigabe",
               icon: null,
               className: "text-amber-700 dark:text-amber-300",
             }
           : status === "input"
             ? {
-                label: "Input",
+                label: "Eingabe",
                 icon: null,
                 className: "text-indigo-600 dark:text-indigo-300",
               }
             : status === "failed"
               ? {
-                  label: "Failed",
+                  label: "Fehlgeschlagen",
                   icon: null,
                   className: "text-red-700 dark:text-red-300",
                 }
               : isWoke
                 ? {
-                    label: "Woke",
+                    label: "Geweckt",
                     icon: "woke" as const,
                     className: "text-amber-700 dark:text-amber-300",
                   }
                 : isUnread
                   ? {
-                      label: "Done",
+                      label: "Fertig",
                       icon: "done" as const,
                       className: "text-emerald-700 dark:text-emerald-300",
                     }
@@ -880,7 +933,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     onChangeRequestState(threadKey, prState);
   }, [onChangeRequestState, prState, threadKey]);
 
-  const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const modelInstanceId = thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const driverKind = providerEntry?.driverKind ?? null;
   const selectedModel = providerEntry?.models.find(
@@ -1068,7 +1121,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     <input
       autoFocus
       value={renamingTitle}
-      aria-label="Thread title"
+      aria-label="Titel der Unterhaltung"
       onChange={(event) => onRenameTitleChange(event.target.value)}
       onFocus={(event) => event.currentTarget.select()}
       onKeyDown={handleRenameKeyDown}
@@ -1104,7 +1157,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         isRegeneratingTitle && "opacity-[0.55]",
       )}
     >
-      {thread.title}
+      {localizedThreadTitle(thread.title)}
     </span>
   );
 
@@ -1180,8 +1233,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {teamStatus ? (
                 <span
                   className={cn("block size-2 rounded-full", teamStatus.dot)}
-                  title={teamStatus.label}
-                  aria-label={teamStatus.label}
+                  title={overviewText[projectOverviewWorkerState(thread)]}
+                  aria-label={overviewText[projectOverviewWorkerState(thread)]}
                 />
               ) : (
                 <ProjectFavicon
@@ -1199,10 +1252,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 {props.teamHarnessLabel}
               </span>
             ) : null}
+            {props.teamParentTitle ? (
+              <span
+                className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground"
+                title={`Beauftragt von ${props.teamParentTitle}`}
+              >
+                {props.teamParentTitle}
+              </span>
+            ) : null}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">
-                Regenerating title
+                Titel wird erzeugt
               </span>
             ) : null}
             {/* The PR badge stays outside the hover-fading slot: it must
@@ -1213,33 +1274,40 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               <span
                 className={cn(
                   "inline-flex justify-end tabular-nums text-secondary-label transition-opacity",
-                  !isWoke && "group-hover/sidebar-row:opacity-0",
                 )}
               >
                 {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
                   // Snoozed rows show when they come BACK, not when they were
                   // last touched — the return ticket is the row's whole story.
                   <span className="text-xs text-blue-600 tabular-nums dark:text-blue-400">
-                    {props.snoozeWakeLabelText}
+                    {props.projectTeam
+                      ? overviewText[projectOverviewWorkerState(thread)]
+                      : props.snoozeWakeLabelText}
                   </span>
                 ) : isWoke ? (
                   // A wake can land straight in the settled tail (e.g. PR
                   // merged while snoozed); the signal must survive the trip.
                   <button
                     type="button"
-                    aria-label="Dismiss Woke notification"
-                    title="Dismiss Woke notification"
+                    aria-label="Hinweis verwerfen"
+                    title="Hinweis verwerfen"
                     onClick={handleAcknowledgeWokeClick}
                     className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-amber-700 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
                   >
                     <AlarmClockIcon aria-hidden className="size-3" />
-                    <span role="status">Woke</span>
+                    <span role="status">
+                      {props.projectTeam
+                        ? overviewText[projectOverviewWorkerState(thread)]
+                        : "Geweckt"}
+                    </span>
                   </button>
                 ) : (
                   <span className="text-xs">
-                    {variantAction === "unsettle"
-                      ? settledTimeLabel(thread)
-                      : threadTimeLabel(thread)}
+                    {props.projectTeam
+                      ? overviewText[projectOverviewWorkerState(thread)]
+                      : variantAction === "unsettle"
+                        ? settledTimeLabel(thread)
+                        : threadTimeLabel(thread)}
                   </span>
                 )}
               </span>
@@ -1247,39 +1315,39 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 !props.snoozeSupported ? null : (
                   <button
                     type="button"
-                    aria-label="Wake thread now"
+                    aria-label="Jetzt wecken"
                     onClick={handleUnsnoozeClick}
                     className={cn(
-                      "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                      isWoke && "group-hover/sidebar-row:static",
+                      "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                     )}
                   >
-                    <AlarmClockOffIcon className="mb-px size-3" />
+                    <AlarmClockOffIcon aria-hidden className="mb-px size-3" />
+                    <span>{sidebarActionLabel("wake")}</span>
                   </button>
                 )
               ) : !props.settlementSupported ? null : variantAction === "unsettle" ? (
                 <button
                   type="button"
-                  aria-label="Un-settle thread"
+                  aria-label="Wieder öffnen"
                   onClick={handleUnsettleClick}
                   className={cn(
-                    "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                    isWoke && "group-hover/sidebar-row:static",
+                    "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                   )}
                 >
-                  <Undo2Icon className="mb-px size-3.5" />
+                  <Undo2Icon aria-hidden className="mb-px size-3.5" />
+                  <span>{sidebarActionLabel("reopen")}</span>
                 </button>
               ) : (
                 <button
                   type="button"
-                  aria-label="Settle thread"
+                  aria-label="Erledigen"
                   onClick={handleSettleClick}
                   className={cn(
-                    "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                    isWoke && "group-hover/sidebar-row:static",
+                    "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                   )}
                 >
-                  <CheckIcon className="size-3" />
+                  <CheckIcon aria-hidden className="size-3" />
+                  <span>{sidebarActionLabel("settle")}</span>
                 </button>
               )}
             </span>
@@ -1352,8 +1420,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 props.pinningSupported ? (
                   <button
                     type="button"
-                    aria-label="Unpin thread"
-                    title="Unpin thread"
+                    aria-label="Lösen"
+                    title="Lösen"
                     onClick={handleUnpinClick}
                     className="inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
@@ -1361,7 +1429,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   </button>
                 ) : (
                   <PinIcon
-                    aria-label="Pinned"
+                    aria-label="Angeheftet"
                     role="img"
                     className="size-3 shrink-0 text-muted-foreground/65"
                   />
@@ -1388,8 +1456,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     isWokeStatus ? (
                       <button
                         type="button"
-                        aria-label="Dismiss Woke notification"
-                        title="Dismiss Woke notification"
+                        aria-label="Hinweis verwerfen"
+                        title="Hinweis verwerfen"
                         onClick={handleAcknowledgeWokeClick}
                         className={cn(
                           "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring",
@@ -1439,7 +1507,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     )}
                   >
                     {showSnoozeButton ? (
-                      <SnoozePopoverButton
+                      <SnoozeMenuButton
                         open={snoozeMenuOpen}
                         onOpenChange={setSnoozeMenuOpen}
                         onSnooze={handleSnoozePreset}
@@ -1449,12 +1517,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     {props.settlementSupported ? (
                       <button
                         type="button"
-                        aria-label="Settle thread"
+                        aria-label="Erledigen"
                         onClick={handleSettleClick}
                         className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
                       >
                         <CheckIcon className="size-3.5" />
-                        Settle
+                        Erledigen
                       </button>
                     ) : null}
                   </span>
@@ -1465,7 +1533,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
-                  Regenerating title
+                  Titel wird erzeugt
                 </span>
               ) : null}
             </div>
@@ -1481,6 +1549,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ) : (
                 <span className="flex-1" />
               )}
+              {props.teamParentTitle ? (
+                <span
+                  className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground"
+                  title={`Beauftragt von ${props.teamParentTitle}`}
+                >
+                  {props.teamParentTitle}
+                </span>
+              ) : null}
               {terminalStatusIcon}
               {prBadge}
               {diff ? (
@@ -1502,7 +1578,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   <span className="inline-flex shrink-0 items-center opacity-60">
                     <ProviderInstanceIcon
                       driverKind={driverKind}
-                      displayName={thread.session?.providerName ?? modelInstanceId}
+                      displayName={
+                        thread.session?.providerInstanceId === modelInstanceId
+                          ? (thread.session.providerName ?? modelInstanceId)
+                          : modelInstanceId
+                      }
                       iconClassName="size-3.5"
                     />
                   </span>
@@ -1558,7 +1638,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     activeThreadBranch: thread.branch,
     currentGitBranch: gitStatus.data?.refName ?? null,
   });
-  const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const modelInstanceId = thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const driverKind = providerEntry?.driverKind ?? null;
   const selectedModel = providerEntry?.models.find(
@@ -1645,9 +1725,10 @@ export default function Sidebar() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
-  const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
+  const overviewLanguage = useProjectOverviewLanguage();
+  const overviewText = PROJECT_OVERVIEW_TEXT[overviewLanguage];
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const workjetConfiguration = usePrimarySettings((settings) => settings.workjet);
   const selectedWorkjetComputer = useMemo(
@@ -1675,6 +1756,10 @@ export default function Sidebar() {
     workjetProjectRegistry.selectedProjectId,
     workjetProjects,
   ]);
+  const newThreadMenuEntries = useMemo(
+    () => buildNewThreadMenuEntries(availableProjects, sidebarFallbackProject),
+    [availableProjects, sidebarFallbackProject],
+  );
   const sidebarAvailableProjectCount =
     availableProjects.length > 0
       ? availableProjects.length
@@ -1698,18 +1783,12 @@ export default function Sidebar() {
     onCopy: ({ path }) => {
       toastManager.add({
         type: "success",
-        title: "Path copied",
+        title: "Pfad kopiert",
         description: path,
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy path",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
@@ -1717,57 +1796,41 @@ export default function Sidebar() {
     onCopy: ({ branch }) => {
       toastManager.add({
         type: "success",
-        title: "Branch copied",
+        title: "Branch kopiert",
         description: branch,
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy branch",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
     onCopy: ({ threadId }) => {
       toastManager.add({
         type: "success",
-        title: "Thread ID copied",
+        title: "ID kopiert",
         description: threadId,
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy thread ID",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const { copyToClipboard: copyDeepLinkToClipboard } = useCopyToClipboard<{ link: string }>({
     onCopy: ({ link }) => {
       toastManager.add({
         type: "success",
-        title: "Workjet link copied",
+        title: "Workjet-Link kopiert",
         description: link,
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy Workjet link",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
+  const [newThreadMenuOpen, setNewThreadMenuOpen] = useState(false);
+  useEffect(() => onNewThreadMenuRequest(() => setNewThreadMenuOpen(true)), []);
   const newThreadContext = useHandleNewThread();
   const openAddProjectCommandPalette = useCallback(
     () => openCommandPalette({ open: "add-project" }),
@@ -2014,8 +2077,8 @@ export default function Sidebar() {
       } catch (error) {
         toastManager.add({
           type: "error",
-          title: "Could not open project",
-          description: error instanceof Error ? error.message : "Please try again.",
+          title: "Projekt konnte nicht geöffnet werden",
+          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         });
       } finally {
         projectSwitchPending.current = false;
@@ -2047,8 +2110,8 @@ export default function Sidebar() {
           } catch (error) {
             toastManager.add({
               type: "error",
-              title: "Could not open project overview",
-              description: error instanceof Error ? error.message : "Please try again.",
+              title: "Übersicht konnte nicht geöffnet werden",
+              description: error instanceof Error ? error.message : "Unbekannter Fehler",
             });
           } finally {
             projectSwitchPending.current = false;
@@ -2076,8 +2139,8 @@ export default function Sidebar() {
         } catch (error) {
           toastManager.add({
             type: "error",
-            title: "Could not open project",
-            description: error instanceof Error ? error.message : "Please try again.",
+            title: "Projekt konnte nicht geöffnet werden",
+            description: error instanceof Error ? error.message : "Unbekannter Fehler",
           });
         } finally {
           projectSwitchPending.current = false;
@@ -2098,8 +2161,8 @@ export default function Sidebar() {
       } catch (error) {
         toastManager.add({
           type: "error",
-          title: "Could not open project",
-          description: error instanceof Error ? error.message : "Please try again.",
+          title: "Projekt konnte nicht geöffnet werden",
+          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         });
       } finally {
         projectSwitchPending.current = false;
@@ -2258,7 +2321,7 @@ export default function Sidebar() {
         setOpenMobile(false);
       }
       void router.navigate({
-        to: "/projects/$projectKey",
+        to: "/settings/projects/$projectKey",
         params: { projectKey: projectGroup.projectKey },
       });
     },
@@ -2307,7 +2370,9 @@ export default function Sidebar() {
       // its exact slot in the pinned block. (For unpinned threads
       // this is also the snooze-beats-auto-settle rule: the wake time is a
       // stronger statement about when the thread matters again.)
-      if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
+      if (scopedProjectKeys !== null && !isRunningProjectOneShot(thread)) {
+        settled.push(thread);
+      } else if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
         snoozed.push(thread);
         // A pin otherwise overrides the lifecycle: pinned threads never
         // auto-settle out of sight. (The decider clears settled state on
@@ -2315,7 +2380,7 @@ export default function Sidebar() {
         // arise from stale or raced writes.)
       } else if (thread.pinnedAt != null) {
         pinned.push(thread);
-      } else if (scopedProjectKeys !== null && projectTeamSectionOf(thread) !== "other") {
+      } else if (scopedProjectKeys !== null) {
         active.push(thread);
       } else if (
         supportsSettlement &&
@@ -2371,7 +2436,12 @@ export default function Sidebar() {
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
-  const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  // ⌘K searches threads, ⌘P files, ⌘⇧F file contents; all in this one field.
+  const [searchMode, setSearchMode] = useState<SidebarSearchMode>("threads");
+  useEffect(() => onSidebarSearchMode(setSearchMode), []);
+  const isSearchingProject = searchMode !== "threads";
+  const isSearchingThreads = !isSearchingProject && threadSearchQuery.trim().length > 0;
+  const isSearchActive = isSearchingProject || isSearchingThreads;
   const searchableThreads = useMemo(
     () => [...pinnedThreads, ...activeThreads, ...snoozedThreads, ...settledThreads],
     [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
@@ -2380,6 +2450,13 @@ export default function Sidebar() {
     () => searchSidebarThreadsByTitle(searchableThreads, threadSearchQuery),
     [searchableThreads, threadSearchQuery],
   );
+  // The search also finds projects (#581): "met" must reach "Metric".
+  const projectSearchQuery = threadSearchQuery.trim().toLocaleLowerCase();
+  const projectSearchResults = isSearchingThreads
+    ? selectableWorkjetProjects.filter((project) =>
+        project.title.toLocaleLowerCase().includes(projectSearchQuery),
+      )
+    : [];
   const threadSearchResultOrderKey = threadSearchResults
     .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)))
     .join("\0");
@@ -2604,6 +2681,7 @@ export default function Sidebar() {
   const clearThreadSearch = useCallback(() => {
     setThreadSearchQuery("");
     setActiveSearchResultIndex(0);
+    setSearchMode("threads");
   }, []);
   const selectThreadSearchResult = useCallback(
     (thread: EnvironmentThreadShell) => {
@@ -2617,13 +2695,14 @@ export default function Sidebar() {
       // IME composition (Japanese/Chinese input) uses the same keys; committing
       // a candidate must not move the highlight or navigate away mid-compose.
       if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-      if (event.key === "Escape" && isSearchingThreads) {
+      if (event.key === "Escape" && isSearchActive) {
         event.preventDefault();
         event.stopPropagation();
         clearThreadSearch();
         return;
       }
-      if (threadSearchResults.length === 0) return;
+      // File and content results own their arrow/enter keys.
+      if (isSearchingProject || threadSearchResults.length === 0) return;
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setActiveSearchResultIndex((index) => (index + 1) % threadSearchResults.length);
@@ -2645,7 +2724,8 @@ export default function Sidebar() {
     [
       activeSearchResultIndex,
       clearThreadSearch,
-      isSearchingThreads,
+      isSearchActive,
+      isSearchingProject,
       selectThreadSearchResult,
       threadSearchResults,
     ],
@@ -2664,7 +2744,7 @@ export default function Sidebar() {
         const trimmed = title.trim();
         setRenamingThreadKey(null);
         if (trimmed.length === 0) {
-          toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
+          toastManager.add({ type: "warning", title: "Titel darf nicht leer sein" });
           return;
         }
         if (trimmed === originalTitle) return;
@@ -2674,13 +2754,7 @@ export default function Sidebar() {
         });
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to rename thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("rename", error));
         }
       })();
     },
@@ -2757,13 +2831,7 @@ export default function Sidebar() {
             // Never navigate away from a thread that did not settle.
             if (!isAtomCommandInterrupted(result)) {
               const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Failed to settle thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
-                }),
-              );
+              toastManager.add(sidebarFailureToast("settle", error));
             }
             return;
           }
@@ -2785,13 +2853,7 @@ export default function Sidebar() {
         const result = await unsettleThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to un-settle thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("reopen", error));
         }
       })();
     },
@@ -2803,13 +2865,7 @@ export default function Sidebar() {
         const result = await unsnoozeThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to wake thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("wake", error));
         }
       })();
     },
@@ -2896,13 +2952,7 @@ export default function Sidebar() {
         const result = await pinThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to pin thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("pin", error));
         }
       })();
     },
@@ -2914,13 +2964,7 @@ export default function Sidebar() {
         const result = await unpinThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to unpin thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("unpin", error));
         }
       })();
     },
@@ -2979,13 +3023,7 @@ export default function Sidebar() {
             setOptimisticPinnedOrder(null);
             if (isAtomCommandInterrupted(result)) return;
             const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Failed to reorder pinned threads",
-                description: error instanceof Error ? error.message : "An error occurred.",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("reorder", error));
             return;
           }
         }
@@ -3038,14 +3076,7 @@ export default function Sidebar() {
       void (async () => {
         const outcome = await performSnooze(threadRef, preset, opts);
         if (outcome.status === "failure") {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to snooze thread",
-              description:
-                outcome.error instanceof Error ? outcome.error.message : "An error occurred.",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("snooze", outcome.error));
           return;
         }
         if (outcome.status !== "success") return;
@@ -3054,10 +3085,10 @@ export default function Sidebar() {
         toastManager.add(
           stackedThreadToast({
             type: "success",
-            title: `Snoozed until ${snoozeWakeDescription(preset.snoozedUntil, new Date(), timestampFormat)}`,
+            title: `Zurückgestellt bis ${snoozeWakeDescription(preset.snoozedUntil, new Date(), timestampFormat)}`,
             timeout: 5_000,
             actionProps: {
-              children: "Undo",
+              children: "Rückgängig",
               onClick: () => attemptUnsnooze(threadRef),
             },
           }),
@@ -3109,12 +3140,12 @@ export default function Sidebar() {
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
-            { id: "settle", label: `Settle (${count})` },
+            { id: "settle", label: `Erledigen (${count})` },
             ...(canSnoozeSelection
               ? [
                   {
                     id: "snooze",
-                    label: `Snooze (${count})`,
+                    label: `Zurückstellen (${count})`,
                     children: snoozePresets.map((preset) => ({
                       id: `snooze:${preset.id}`,
                       label: `${preset.label} (${preset.whenLabel})`,
@@ -3123,8 +3154,8 @@ export default function Sidebar() {
                 ]
               : []),
             ...(titleRegenerationMenuItem ? [titleRegenerationMenuItem] : []),
-            { id: "mark-unread", label: `Mark unread (${count})` },
-            { id: "delete", label: `Delete (${count})`, destructive: true },
+            { id: "mark-unread", label: `Ungelesen (${count})` },
+            { id: "delete", label: `Löschen (${count})`, destructive: true },
           ],
           position,
         ),
@@ -3161,15 +3192,12 @@ export default function Sidebar() {
                 type: failedCount > 0 ? "warning" : "success",
                 title:
                   failedCount > 0
-                    ? `Snoozed ${snoozedCount} of ${selectedThreads.length} threads`
-                    : `Snoozed ${snoozedCount} thread${snoozedCount === 1 ? "" : "s"}`,
-                description:
-                  failedCount > 0
-                    ? `${failedCount} thread${failedCount === 1 ? "" : "s"} couldn't be snoozed.`
-                    : undefined,
+                    ? `${snoozedCount} von ${selectedThreads.length} zurückgestellt`
+                    : `${snoozedCount} zurückgestellt`,
+                description: failedCount > 0 ? `${failedCount} fehlgeschlagen` : undefined,
                 timeout: 5_000,
                 actionProps: {
-                  children: "Undo",
+                  children: "Rückgängig",
                   onClick: () => {
                     for (const threadRef of snoozedThreadRefs) attemptUnsnooze(threadRef);
                   },
@@ -3178,14 +3206,7 @@ export default function Sidebar() {
             );
           } else if (failures.length > 0) {
             const firstError = failures[0];
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Failed to snooze threads",
-                description:
-                  firstError instanceof Error ? firstError.message : "An error occurred.",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("snooze", firstError));
           }
         }
         return;
@@ -3199,13 +3220,7 @@ export default function Sidebar() {
           if (result._tag === "Success") continue;
           if (!isAtomCommandInterrupted(result)) {
             const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Failed to regenerate thread titles",
-                description: error instanceof Error ? error.message : "An error occurred.",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("title", error));
           }
           return;
         }
@@ -3236,51 +3251,35 @@ export default function Sidebar() {
         return;
       }
       if (clicked.value !== "delete") return;
-      if (confirmThreadDelete) {
-        const confirmed = await settlePromise(() =>
-          api.dialogs.confirm(
-            [
-              `Delete ${count} thread${count === 1 ? "" : "s"}?`,
-              "This permanently clears conversation history for these threads.",
-            ].join("\n"),
-            { variant: "destructive" },
-          ),
-        );
-        if (confirmed._tag === "Failure" || !confirmed.value) return;
-      }
-      // Grown as deletions actually land, never seeded with the whole batch:
-      // orphaned-worktree detection must only discount threads that are
-      // really gone, or the first delete would treat still-alive batch mates
-      // as deleted and remove a worktree they still point at.
-      const deletedThreadKeys = new Set<string>();
-      for (const threadKey of threadKeys) {
-        const thread = threadByKeyRef.current.get(threadKey);
-        if (!thread) continue;
-        const result = await deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
-          deletedThreadKeys,
-        });
-        if (result._tag === "Failure") {
-          if (!isAtomCommandInterrupted(result)) {
-            const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Failed to delete threads",
-                description: error instanceof Error ? error.message : "An error occurred.",
-              }),
-            );
-          }
-          return;
-        }
-        deletedThreadKeys.add(threadKey);
-      }
+      // Undo instead of confirm: the delete runs after the undo window (#637).
       removeFromSelection(threadKeys);
+      scheduleUndoableThreadDelete(count, async () => {
+        // Grown as deletions actually land, never seeded with the whole batch:
+        // orphaned-worktree detection must only discount threads that are
+        // really gone, or the first delete would treat still-alive batch mates
+        // as deleted and remove a worktree they still point at.
+        const deletedThreadKeys = new Set<string>();
+        for (const threadKey of threadKeys) {
+          const thread = threadByKeyRef.current.get(threadKey);
+          if (!thread) continue;
+          const result = await deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
+            deletedThreadKeys,
+          });
+          if (result._tag === "Failure") {
+            if (!isAtomCommandInterrupted(result)) {
+              const error = squashAtomCommandFailure(result);
+              toastManager.add(sidebarFailureToast("delete", error, true));
+            }
+            return;
+          }
+          deletedThreadKeys.add(threadKey);
+        }
+      });
     },
     [
       attemptSettle,
       attemptSnooze,
       clearSelection,
-      confirmThreadDelete,
       deleteThread,
       markThreadUnread,
       performSnooze,
@@ -3374,8 +3373,8 @@ export default function Sidebar() {
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Could not create thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  title: "Unterhaltung konnte nicht erstellt werden",
+                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
                 }),
               );
             }
@@ -3407,13 +3406,7 @@ export default function Sidebar() {
             });
             if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
               const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Failed to regenerate thread title",
-                  description: error instanceof Error ? error.message : "An error occurred.",
-                }),
-              );
+              toastManager.add(sidebarFailureToast("title", error));
             }
             return;
           }
@@ -3425,8 +3418,7 @@ export default function Sidebar() {
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Path unavailable",
-                  description: "This thread does not have a workspace path to copy.",
+                  title: "Kein Pfad vorhanden",
                 }),
               );
               return;
@@ -3450,30 +3442,13 @@ export default function Sidebar() {
             return;
           }
           case "delete": {
-            if (confirmThreadDelete) {
-              const confirmed = await settlePromise(() =>
-                api.dialogs.confirm(
-                  [
-                    `Delete thread "${thread.title}"?`,
-                    "This permanently clears conversation history for this thread.",
-                  ].join("\n"),
-                  { variant: "destructive" },
-                ),
-              );
-              if (confirmed._tag === "Failure" || !confirmed.value) return;
-            }
-            const result = await deleteThread(threadRef);
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Failed to delete thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
-                }),
-              );
-              return;
-            }
+            scheduleUndoableThreadDelete(1, async () => {
+              const result = await deleteThread(threadRef);
+              if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+                const error = squashAtomCommandFailure(result);
+                toastManager.add(sidebarFailureToast("delete", error, true));
+              }
+            });
             return;
           }
           default:
@@ -3488,7 +3463,6 @@ export default function Sidebar() {
       attemptUnpin,
       attemptUnsettle,
       attemptUnsnooze,
-      confirmThreadDelete,
       copyBranchToClipboard,
       copyDeepLinkToClipboard,
       copyPathToClipboard,
@@ -3576,9 +3550,8 @@ export default function Sidebar() {
   }, []);
 
   // New thread defaults to the project you're in (active thread's project,
-  // falling back to the top project) — same resolution the command palette
-  // uses. The command palette already offers a "New thread in..." submenu
-  // for multi-project setups.
+  // falling back to the top project). Multi-project setups without a scoped
+  // project open the dropdown „Neue Unterhaltung in …“ next to the button.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
       if (workjetProjects.length > 0) {
@@ -3594,8 +3567,12 @@ export default function Sidebar() {
         if (target === undefined) {
           toastManager.add({
             type: "warning",
-            title: "No working copy on this computer",
-            description: "Choose a computer with an active working copy of this project.",
+            title: overviewText.noCheckoutTitle,
+            description: overviewText.noCheckoutDescription,
+            actionProps: {
+              children: overviewText.setUpCheckout,
+              onClick: () => void router.navigate({ to: "/settings/projects" }),
+            },
           });
           return;
         }
@@ -3613,6 +3590,14 @@ export default function Sidebar() {
       if (sidebarFallbackProject !== null) {
         if (isMobile) setOpenMobile(false);
         void newThreadContext.handleNewThread(sidebarFallbackProject);
+        return;
+      }
+
+      // No project yet: the button opens the inline „Projekt anlegen“ in the
+      // project gallery instead of sitting disabled.
+      if (sidebarAvailableProjectCount === 0) {
+        if (isMobile) setOpenMobile(false);
+        openAddProjectCommandPalette();
         return;
       }
 
@@ -3634,12 +3619,12 @@ export default function Sidebar() {
         });
         return;
       }
-      if (isMobile) setOpenMobile(false);
-      openCommandPalette({ open: "new-thread-in" });
+      setNewThreadMenuOpen(true);
     },
     [
       isMobile,
       newThreadContext,
+      openAddProjectCommandPalette,
       setOpenMobile,
       sidebarAvailableProjectCount,
       sidebarFallbackProject,
@@ -3652,7 +3637,7 @@ export default function Sidebar() {
   );
 
   // The button mirrors chat.new: in multi-project setups both route through
-  // the command palette's "New thread in..." picker, and in single-project
+  // the dropdown „Neue Unterhaltung in …“, and in single-project
   // setups both create immediately. In multi-project setups the label is only
   // the picker's shortcut: falling back to chat.newLocal would advertise the
   // same shortcut for both the picker and direct create. In single-project
@@ -3665,6 +3650,10 @@ export default function Sidebar() {
       ? shortcutLabelForCommand(keybindings, "chat.newLocal")
       : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  const t = useUiText();
+  const [archivedSectionsOpen, setArchivedSectionsOpen] = useState<
+    Partial<Record<string, boolean>>
+  >({});
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
@@ -3674,124 +3663,8 @@ export default function Sidebar() {
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="relative z-[1] gap-1 p-[var(--sidebar-content-inset)]">
-            <div className="flex items-center gap-1">
-              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
-                <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
-                <Input
-                  ref={threadSearchInputRef}
-                  nativeInput
-                  unstyled
-                  type="search"
-                  value={threadSearchQuery}
-                  onChange={(event) => {
-                    setThreadSearchQuery(event.currentTarget.value);
-                    setActiveSearchResultIndex(0);
-                  }}
-                  onKeyDown={handleThreadSearchKeyDown}
-                  placeholder="Search"
-                  aria-label="Search threads"
-                  role="combobox"
-                  aria-autocomplete="list"
-                  aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
-                  aria-controls={
-                    isSearchingThreads && threadSearchResults.length > 0
-                      ? "sidebar-thread-search-results"
-                      : undefined
-                  }
-                  aria-activedescendant={
-                    isSearchingThreads && threadSearchResults[activeSearchResultIndex]
-                      ? `sidebar-thread-search-result-${activeSearchResultIndex}`
-                      : undefined
-                  }
-                  className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
-                />
-                {isSearchingThreads ? (
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                    aria-label="Clear thread search"
-                    onClick={() => {
-                      clearThreadSearch();
-                      threadSearchInputRef.current?.focus();
-                    }}
-                  >
-                    <XIcon className="size-3" />
-                  </Button>
-                ) : null}
-              </div>
-              <div className="shrink-0">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <SidebarMenuButton
-                        size="icon"
-                        type="button"
-                        className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                        onClick={handleNewThreadClick}
-                        disabled={isSidebarNewThreadDisabled(sidebarAvailableProjectCount)}
-                        aria-label="New thread"
-                      />
-                    }
-                  >
-                    <SquarePenIcon />
-                    <span
-                      className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                      aria-hidden="true"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="right">
-                    {sidebarAvailableProjectCount > 1 ? (
-                      <span className="flex flex-col gap-0.5">
-                        <span>
-                          {newThreadShortcutLabel
-                            ? `New thread (${newThreadShortcutLabel})`
-                            : "New thread"}
-                        </span>
-                        <span className="text-muted-foreground">
-                          New thread in current project: Shift+click
-                          {newThreadInProjectShortcutLabel
-                            ? ` (${newThreadInProjectShortcutLabel})`
-                            : ""}
-                        </span>
-                      </span>
-                    ) : newThreadShortcutLabel ? (
-                      `New thread (${newThreadShortcutLabel})`
-                    ) : (
-                      "New thread"
-                    )}
-                  </TooltipPopup>
-                </Tooltip>
-              </div>
-            </div>
-            <SidebarMenuButton
-              type="button"
-              data-workjet-action="project.overview"
-              disabled={isSwitchingProject}
-              className="w-full focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-              onClick={() => {
-                const instanceId = workjetProjectRegistry.presentationInstanceId;
-                if (instanceId !== null && !selectWorkjetProject(instanceId, null)) return;
-                selectProjectOverviewRef(instanceId, null);
-                setProjectScopeKey(null);
-                setProjectScopeMenuOpen(false);
-                if (isMobile) setOpenMobile(false);
-                void router.navigate({ to: "/" }).catch((error) => {
-                  toastManager.add({
-                    type: "error",
-                    title: "Could not open project overview",
-                    description: error instanceof Error ? error.message : "Please try again.",
-                  });
-                });
-              }}
-            >
-              <FolderIcon aria-hidden className="size-4 shrink-0" />
-              <span>All projects</span>
-            </SidebarMenuButton>
             {projectGroups.length > 0 || workjetProjects.length > 0 ? (
               <div className="space-y-1">
-                <p className="px-2 text-[11px] text-sidebar-muted-foreground">Project</p>
                 <div className="flex items-center gap-1">
                   <Menu
                     open={projectScopeMenuOpen}
@@ -3806,23 +3679,60 @@ export default function Sidebar() {
                     <MenuTrigger
                       render={
                         <SidebarMenuButton
-                          aria-label="Choose project"
+                          aria-label={t("Projekt wählen", "Choose project")}
                           aria-busy={isSwitchingProject}
                           disabled={isSwitchingProject}
-                          className="min-w-0 flex-1 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                          data-workjet-action="project.switcher"
+                          className="h-11 min-w-0 flex-1 gap-2.5 text-[15px] font-semibold text-sidebar-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         />
                       }
                     >
-                      <FolderIcon aria-hidden className="size-4 shrink-0" />
+                      <span
+                        aria-hidden
+                        className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-[13px] font-semibold uppercase text-sidebar-accent-foreground"
+                      >
+                        {(
+                          selectedWorkjetProject?.title ??
+                          selectedLocalLogicalProject?.title ??
+                          scopedProjectGroup?.displayName ??
+                          ""
+                        )
+                          .trim()
+                          .charAt(0) || <LayoutGridIcon className="size-4" />}
+                      </span>
                       <span className="min-w-0 flex-1 truncate">
                         {selectedWorkjetProject?.title ??
                           selectedLocalLogicalProject?.title ??
                           scopedProjectGroup?.displayName ??
-                          "Choose project"}
+                          overviewText.allProjects}
                       </span>
                       <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
                     </MenuTrigger>
                     <MenuPopup align="start" className="min-w-64 max-w-80">
+                      <MenuItem
+                        data-workjet-action="project.overview"
+                        onClick={() => {
+                          const instanceId = workjetProjectRegistry.presentationInstanceId;
+                          if (instanceId !== null && !selectWorkjetProject(instanceId, null))
+                            return;
+                          selectProjectOverviewRef(instanceId, null);
+                          setProjectScopeKey(null);
+                          setProjectScopeMenuOpen(false);
+                          if (isMobile) setOpenMobile(false);
+                          void router.navigate({ to: "/" }).catch((error) => {
+                            toastManager.add({
+                              type: "error",
+                              title: "Übersicht konnte nicht geöffnet werden",
+                              description:
+                                error instanceof Error ? error.message : "Unbekannter Fehler",
+                            });
+                          });
+                        }}
+                      >
+                        <LayoutGridIcon aria-hidden className="size-4" />
+                        <span>{overviewText.allProjects}</span>
+                      </MenuItem>
+                      <MenuSeparator />
                       <MenuRadioGroup
                         value={
                           selectableWorkjetProjects.length > 0
@@ -3846,7 +3756,22 @@ export default function Sidebar() {
                                 closeOnClick
                                 data-workjet-action={`project.select:${project.id}`}
                               >
-                                <span className="min-w-0 truncate">{project.title}</span>
+                                <span className="min-w-0 truncate" data-sensitive="">
+                                  {project.title}
+                                </span>
+                                <span className="ml-auto">
+                                  <ProjectTokenBudget
+                                    project={{
+                                      key: project.id,
+                                      id: project.id,
+                                      title: project.title,
+                                      native: true,
+                                      local:
+                                        sidebarProjects.find((local) => local.id === project.id) ??
+                                        null,
+                                    }}
+                                  />
+                                </span>
                               </MenuRadioItem>
                             ))
                           : projectGroups.map((project) => (
@@ -3856,53 +3781,232 @@ export default function Sidebar() {
                                 closeOnClick
                               >
                                 <span className="min-w-0 truncate">{project.displayName}</span>
+                                <span className="ml-auto">
+                                  <ProjectTokenBudget
+                                    project={{
+                                      key: project.projectKey,
+                                      id: project.id,
+                                      title: project.displayName,
+                                      native: false,
+                                      local:
+                                        projects.find(
+                                          (local) =>
+                                            local.id === project.id &&
+                                            local.environmentId === project.environmentId,
+                                        ) ?? null,
+                                    }}
+                                  />
+                                </span>
                               </MenuRadioItem>
                             ))}
                       </MenuRadioGroup>
+                      <MenuSeparator />
+                      <MenuItem
+                        data-workjet-action="project.add.sidebar.persistent"
+                        onClick={openAddProjectCommandPalette}
+                      >
+                        <PlusIcon aria-hidden className="size-4" />
+                        <span>{overviewText.newProject}</span>
+                      </MenuItem>
                     </MenuPopup>
                   </Menu>
-                  {scopedProjectGroup ? (
-                    <SidebarMenuButton
-                      type="button"
-                      size="icon"
-                      aria-label={`Project settings for ${scopedProjectGroup.displayName}`}
-                      onClick={(event) => void handleProjectSettings(event, scopedProjectGroup)}
-                    >
-                      <SettingsIcon aria-hidden className="size-4" />
-                    </SidebarMenuButton>
-                  ) : null}
-                  <SidebarMenuButton
-                    type="button"
-                    size="icon"
-                    aria-label="New project"
-                    data-workjet-action="project.add.sidebar.persistent"
-                    onClick={openAddProjectCommandPalette}
-                  >
-                    <FolderPlusIcon aria-hidden className="size-4" />
-                  </SidebarMenuButton>
                 </div>
-                {selectedWorkjetProject || selectedLocalLogicalProject ? (
-                  <SidebarMenuButton
+              </div>
+            ) : null}
+            {/* Navigation: Übersicht, Suche (#629). */}
+            {selectedWorkjetProject || selectedLocalLogicalProject ? (
+              <SidebarMenuButton
+                type="button"
+                data-workjet-action="project.workspace.overview"
+                disabled={isSwitchingProject}
+                isActive={routeTarget === null}
+                onClick={() =>
+                  void handleWorkjetProjectSelection(
+                    (selectedWorkjetProject ?? selectedLocalLogicalProject)!.id,
+                  )
+                }
+              >
+                <LayoutDashboardIcon aria-hidden className="size-4 shrink-0" />
+                <span>{overviewText.overview}</span>
+              </SidebarMenuButton>
+            ) : null}
+            {scopedProjectGroup || selectedWorkjetProject ? (
+              <SidebarMenuButton
+                type="button"
+                className="text-sidebar-muted-foreground hover:text-sidebar-foreground"
+                data-workjet-action="project.settings.sidebar"
+                aria-label={`${overviewText.projectSettingsFor} ${
+                  scopedProjectGroup?.displayName ?? selectedWorkjetProject?.title ?? ""
+                }`}
+                onClick={(event) => {
+                  if (scopedProjectGroup) {
+                    void handleProjectSettings(event, scopedProjectGroup);
+                    return;
+                  }
+                  setProjectScopeMenuOpen(false);
+                  if (isMobile) setOpenMobile(false);
+                  void router.navigate({ to: "/settings/projects" });
+                }}
+              >
+                <SettingsIcon aria-hidden className="size-4 shrink-0" />
+                <span>{overviewText.projectSettings}</span>
+              </SidebarMenuButton>
+            ) : null}
+            <div className="relative flex items-center gap-1">
+              {/* The whole row opens search, not only the text field. */}
+              <div
+                className="flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                onMouseDown={(event) => {
+                  if (event.target === threadSearchInputRef.current) return;
+                  event.preventDefault();
+                  threadSearchInputRef.current?.focus();
+                }}
+              >
+                <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
+                <Input
+                  ref={threadSearchInputRef}
+                  data-sidebar-search=""
+                  nativeInput
+                  unstyled
+                  type="search"
+                  value={threadSearchQuery}
+                  onChange={(event) => {
+                    setThreadSearchQuery(event.currentTarget.value);
+                    setActiveSearchResultIndex(0);
+                  }}
+                  onKeyDown={handleThreadSearchKeyDown}
+                  placeholder={sidebarSearchPlaceholder(searchMode, overviewText.search)}
+                  aria-label={overviewText.searchThreads}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
+                  aria-controls={
+                    isSearchingThreads && threadSearchResults.length > 0
+                      ? "sidebar-thread-search-results"
+                      : undefined
+                  }
+                  aria-activedescendant={
+                    isSearchingThreads && threadSearchResults[activeSearchResultIndex]
+                      ? `sidebar-thread-search-result-${activeSearchResultIndex}`
+                      : undefined
+                  }
+                  className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
+                />
+                {isSearchActive ? (
+                  <Button
                     type="button"
-                    data-workjet-action="project.workspace.overview"
-                    disabled={isSwitchingProject}
-                    isActive={routeTarget === null}
-                    onClick={() =>
-                      void handleWorkjetProjectSelection(
-                        (selectedWorkjetProject ?? selectedLocalLogicalProject)!.id,
-                      )
-                    }
+                    size="icon-xs"
+                    variant="ghost"
+                    className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+                    aria-label={overviewText.clearSearch}
+                    onClick={() => {
+                      clearThreadSearch();
+                      threadSearchInputRef.current?.focus();
+                    }}
                   >
-                    <FolderIcon aria-hidden className="size-4 shrink-0" />
-                    <span>Overview</span>
-                  </SidebarMenuButton>
+                    <XIcon className="size-3" />
+                  </Button>
                 ) : null}
               </div>
+              <div className="shrink-0">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <SidebarMenuButton
+                        type="button"
+                        className="h-8 w-auto gap-1 px-2 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                        onClick={handleNewThreadClick}
+                        aria-label={overviewText.newThread}
+                      />
+                    }
+                  >
+                    <PlusIcon aria-hidden />
+                    <span className="text-xs">{overviewText.newThreadShort}</span>
+                  </TooltipTrigger>
+                  <TooltipPopup side="right">
+                    {sidebarAvailableProjectCount > 1 ? (
+                      <span className="flex flex-col gap-0.5">
+                        <span>
+                          {newThreadShortcutLabel
+                            ? `${overviewText.newThread} (${newThreadShortcutLabel})`
+                            : overviewText.newThread}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {overviewText.newThreadInProject}
+                          {newThreadInProjectShortcutLabel
+                            ? ` (${newThreadInProjectShortcutLabel})`
+                            : ""}
+                        </span>
+                      </span>
+                    ) : newThreadShortcutLabel ? (
+                      `${overviewText.newThread} (${newThreadShortcutLabel})`
+                    ) : (
+                      overviewText.newThread
+                    )}
+                  </TooltipPopup>
+                </Tooltip>
+              </div>
+              {sidebarAvailableProjectCount > 1 ? (
+                // Opened by „+“; the menu has no trigger of its own (#629).
+                <NewThreadInMenu
+                  hideTrigger
+                  entries={newThreadMenuEntries}
+                  open={newThreadMenuOpen}
+                  onOpenChange={setNewThreadMenuOpen}
+                  onCreateProject={openAddProjectCommandPalette}
+                  onSelect={(project) => {
+                    setNewThreadMenuOpen(false);
+                    if (isMobile) setOpenMobile(false);
+                    void newThreadContext.handleNewThread(project);
+                  }}
+                />
+              ) : null}
+            </div>
+            {isSearchActive ? (
+              <SidebarSearchModeSegment
+                mode={searchMode}
+                onModeChange={(mode) => {
+                  setSearchMode(mode);
+                  setActiveSearchResultIndex(0);
+                  threadSearchInputRef.current?.focus();
+                }}
+              />
             ) : null}
           </SidebarGroup>
         }
       >
         <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">
+          {isSearchingProject ? (
+            <SidebarProjectSearchResults
+              mode={searchMode === "files" ? "files" : "content"}
+              query={threadSearchQuery}
+              inputRef={threadSearchInputRef}
+              onOpened={() => {
+                if (isMobile) setOpenMobile(false);
+              }}
+            />
+          ) : null}
+          {projectSearchResults.length > 0 ? (
+            <ul
+              aria-label={overviewText.allProjects}
+              className="mb-1 flex flex-col gap-px"
+              data-sidebar-project-search-results=""
+            >
+              {projectSearchResults.map((project) => (
+                <li key={project.id}>
+                  <button
+                    type="button"
+                    className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
+                    data-workjet-action={`project.open.search:${project.id}`}
+                    onClick={() => void handleWorkjetProjectSelection(project.id)}
+                  >
+                    <FolderIcon className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
+                    <span className="min-w-0 truncate">{project.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -3914,7 +4018,7 @@ export default function Sidebar() {
                 <ul
                   id="sidebar-thread-search-results"
                   role="listbox"
-                  aria-label="Thread search results"
+                  aria-label={overviewText.searchResults}
                   className="flex flex-col gap-px"
                 >
                   {threadSearchResults.map((thread, index) => {
@@ -3950,16 +4054,9 @@ export default function Sidebar() {
                   })}
                 </ul>
               </TooltipProvider>
-            ) : (
-              <p
-                role="status"
-                className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
-              >
-                No threads found
-              </p>
-            )
+            ) : null
           ) : null}
-          {!isSearchingThreads ? (
+          {!isSearchActive ? (
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
               delay={150}
@@ -3969,11 +4066,7 @@ export default function Sidebar() {
               <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
                 {(() => {
                   const groupByTeam =
-                    selectedWorkjetProject !== null ||
-                    (scopedProjectGroup !== null &&
-                      [...pinnedThreads, ...activeThreads].some(
-                        (thread) => projectTeamSectionOf(thread) !== "other",
-                      ));
+                    selectedWorkjetProject !== null || scopedProjectGroup !== null;
                   const duplicateTitles = duplicateProjectTeamTitles([
                     ...pinnedThreads,
                     ...activeThreads,
@@ -4004,8 +4097,11 @@ export default function Sidebar() {
                         thread={thread}
                         variant={rowVariant}
                         projectTeam={groupByTeam}
+                        teamParentTitle={
+                          groupByTeam ? projectTeamParentTitle(thread, threads) : undefined
+                        }
                         teamHarnessLabel={
-                          groupByTeam && duplicateTitles.has(thread.title)
+                          !groupByTeam && duplicateTitles.has(thread.title)
                             ? projectTeamHarnessLabel(thread)
                             : undefined
                         }
@@ -4133,7 +4229,8 @@ export default function Sidebar() {
                       </SortableContext>
                     </DndContext>,
                   ];
-                  if (groupByTeam) items.splice(1);
+                  // Grouped: draft and pinned rows render inside their team category.
+                  if (groupByTeam) items.splice(0);
                   if (pinnedThreads.length > 0 && !groupByTeam) {
                     items.push(
                       <li
@@ -4148,25 +4245,54 @@ export default function Sidebar() {
                   // whose chats carry team roles, reads as its team: supervisor first, then
                   // the long-lived parents, then one-time PR workers (archived on merge).
                   if (groupByTeam) {
+                    // Exactly three chat categories below the divider (#629): Supervisor,
+                    // persistent and one-shot workers. Archived chats sit collapsed inside
+                    // the two worker groups; the draft sits with the one-shot workers.
                     const team = groupThreadsByProjectTeam([
                       ...orderedPinnedThreads,
                       ...activeThreads,
                     ]);
-                    for (const { section, label } of PROJECT_TEAM_SECTIONS) {
-                      if (team[section].length === 0) continue;
+                    const archivedTeam = groupThreadsByProjectTeam(settledThreads);
+                    archivedTeam.parents.push(...archivedTeam.supervisor);
+                    const teamLabel = {
+                      supervisor: t("Supervisor", "Supervisor"),
+                      parents: t("Persistente Worker", "Persistent workers"),
+                      workers: t("One-shot-Worker", "One-shot workers"),
+                    } as const;
+                    items.push(
+                      <li
+                        key="team-divider"
+                        aria-hidden
+                        className="mx-2.5 mb-1 mt-1 h-px list-none bg-sidebar-border"
+                      />,
+                    );
+                    for (const { section } of PROJECT_TEAM_SECTIONS) {
+                      const archived = section === "supervisor" ? [] : archivedTeam[section];
+                      const showDraft = section === "workers";
                       items.push(
                         <li
                           key={`team-${section}-header`}
                           data-workjet-team-section={section}
-                          className="mb-1 mt-3 flex list-none items-center gap-2 px-2.5 first:mt-1"
+                          className="mb-0.5 mt-3 list-none px-2.5 first:mt-1"
                         >
-                          <span className="text-xs font-medium text-muted-foreground/70">
-                            {label}
-                            {section === "supervisor" ? "" : ` ${team[section].length}`}
+                          <span className="text-xs font-medium text-sidebar-muted-foreground">
+                            {teamLabel[section]}
                           </span>
-                          <span className="h-px flex-1 bg-sidebar-border/60" />
                         </li>,
                       );
+                      if (showDraft) {
+                        items.push(
+                          <SidebarDraftBlock
+                            key="draft-sessions"
+                            projectDisplayNameByKey={projectDisplayNameByKey}
+                            projectCwdByKey={projectCwdByKey}
+                            projectFaviconPathByKey={projectFaviconPathByKey}
+                            scopedProjectKeys={scopedProjectKeys}
+                            routeDraftId={routeDraftIdForRows}
+                            onNavigateToDraft={navigateToDraft}
+                          />,
+                        );
+                      }
                       for (const thread of team[section]) {
                         items.push(
                           renderThreadRow(
@@ -4175,23 +4301,43 @@ export default function Sidebar() {
                           ),
                         );
                       }
-                    }
-                    if (team.other.length > 0) {
-                      items.push(
-                        <li
-                          key="team-other-header"
-                          data-workjet-team-section="other"
-                          className="mb-1 mt-3 flex list-none items-center gap-2 px-2.5"
-                        >
-                          <span className="text-xs font-medium text-muted-foreground/70">
-                            Other chats
-                          </span>
-                          <span className="h-px flex-1 bg-sidebar-border/60" />
-                        </li>,
-                      );
-                    }
-                    for (const thread of team.other) {
-                      items.push(renderThreadRow(thread, "active"));
+                      if (archived.length > 0) {
+                        const open = archivedSectionsOpen[section] === true;
+                        items.push(
+                          <li
+                            key={`team-${section}-archived`}
+                            data-thread-selection-safe
+                            className="list-none"
+                          >
+                            <button
+                              type="button"
+                              aria-expanded={open}
+                              data-workjet-action={`sidebar.archived.${section}`}
+                              onClick={() =>
+                                setArchivedSectionsOpen((current) => ({
+                                  ...current,
+                                  [section]: !open,
+                                }))
+                              }
+                              className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                            >
+                              <ChevronRightIcon
+                                aria-hidden
+                                className={cn(
+                                  "size-3.5 shrink-0 transition-transform",
+                                  open && "rotate-90",
+                                )}
+                              />
+                              <span>{t("Archiviert", "Archived")}</span>
+                            </button>
+                          </li>,
+                        );
+                        if (open) {
+                          for (const thread of archived) {
+                            items.push(renderThreadRow(thread, "settled"));
+                          }
+                        }
+                      }
                     }
                   } else {
                     for (const thread of activeThreads) {
@@ -4219,8 +4365,8 @@ export default function Sidebar() {
                         >
                           <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
                             {snoozedShelfExpanded
-                              ? "Snoozed"
-                              : `Snoozed (${snoozedThreads.length})`}
+                              ? "Zurückgestellt"
+                              : `Zurückgestellt (${snoozedThreads.length})`}
                           </span>
                           <span className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
                           <ChevronDownIcon
@@ -4237,7 +4383,7 @@ export default function Sidebar() {
                       items.push(renderThreadRow(thread, "snoozed"));
                     }
                   }
-                  if (settledThreads.length > 0) {
+                  if (settledThreads.length > 0 && !groupByTeam) {
                     items.push(
                       <li
                         key="settled-shelf-header"
@@ -4253,8 +4399,8 @@ export default function Sidebar() {
                         >
                           <span className="text-xs font-medium text-muted-foreground/50">
                             {settledShelfExpanded
-                              ? "Archiviert"
-                              : `Archiviert (${settledThreads.length})`}
+                              ? overviewText.archive
+                              : `${overviewText.archive} (${settledThreads.length})`}
                           </span>
                           <span className="h-px flex-1 bg-sidebar-border/60" />
                           <ChevronDownIcon
@@ -4268,8 +4414,10 @@ export default function Sidebar() {
                       </li>,
                     );
                   }
-                  for (const thread of renderedSettledThreads) {
-                    items.push(renderThreadRow(thread, "settled"));
+                  if (!groupByTeam) {
+                    for (const thread of renderedSettledThreads) {
+                      items.push(renderThreadRow(thread, "settled"));
+                    }
                   }
                   return items;
                 })()}
@@ -4281,14 +4429,22 @@ export default function Sidebar() {
                       className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                     >
                       <PlusIcon aria-hidden className="size-4 shrink-0" />
-                      Show {Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)} more
+                      {overviewText.showMore.replace(
+                        "{count}",
+                        String(Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)),
+                      )}
                     </button>
                   </li>
                 ) : null}
               </ul>
             </TooltipProvider>
           ) : null}
-          {!isSearchingThreads &&
+          {!isSearchActive &&
+          // A project shows its three category headers even when empty (#629).
+          ((selectedWorkjetProject === null && scopedProjectGroup === null) ||
+            (workjetProjects.length > 0 &&
+              (sidebarAvailableProjectCount === 0 ||
+                (projects.length === 0 && !hasResolvableSidebarComputer)))) &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +
@@ -4298,7 +4454,7 @@ export default function Sidebar() {
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {projects.length === 0 && workjetProjects.length === 0 ? (
                 <>
-                  <span>No projects yet</span>
+                  <span>Noch keine Projekte</span>
                   <button
                     type="button"
                     data-workjet-action="project.add.sidebar"
@@ -4306,14 +4462,14 @@ export default function Sidebar() {
                     className="inline-flex items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
+                    Projekt hinzufügen
                   </button>
                 </>
               ) : workjetProjects.length > 0 &&
                 projects.length === 0 &&
                 !hasResolvableSidebarComputer ? (
                 <>
-                  <span>Choose a computer to start a session</span>
+                  <span>Kein Rechner gewählt</span>
                   <Button
                     type="button"
                     size="xs"
@@ -4321,18 +4477,36 @@ export default function Sidebar() {
                     onClick={() => void router.navigate({ to: "/settings/computers" })}
                   >
                     <ServerIcon aria-hidden className="size-3.5" />
-                    Choose computer
+                    {overviewText.chooseComputer}
                   </Button>
                 </>
               ) : workjetProjects.length > 0 && sidebarAvailableProjectCount === 0 ? (
-                <span>Project available, but no working copy on this computer</span>
+                <>
+                  <span>{overviewText.noCheckoutTitle}</span>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={() => void router.navigate({ to: "/settings/projects" })}
+                  >
+                    {overviewText.setUpCheckout}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => void router.navigate({ to: "/settings/computers" })}
+                  >
+                    <ServerIcon aria-hidden className="size-3.5" />
+                    {overviewText.chooseComputer}
+                  </Button>
+                </>
               ) : selectedWorkjetProject ? (
-                `No chats in ${selectedWorkjetProject.title} yet`
+                "Noch keine Unterhaltungen"
               ) : scopedProjectGroup ? (
-                `No threads in ${scopedProjectGroup.displayName} yet`
-              ) : (
-                "Choose a project to see its chats"
-              )}
+                "Noch keine Unterhaltungen" // Leerzustand ohne Satz (Audit F11/F18): ohne gewähltes Projekt
+              ) : // bleibt die Liste einfach leer.
+              null}
             </div>
           ) : null}
         </SidebarGroup>

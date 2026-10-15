@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { WorkjetCalendarEvent } from "@workjet/contracts";
-import { buildAccountEvents, ProjectCalendar } from "../components/ProjectCalendar";
+import {
+  accountCalendarProblem,
+  buildAccountEvents,
+  ProjectCalendar,
+} from "../components/ProjectCalendar";
 const event: WorkjetCalendarEvent = {
   id: "owned-event",
   calendar_id: "owned-calendar",
@@ -47,7 +51,7 @@ describe("connected account calendar", () => {
       );
       expect(html).toContain("Account appointment");
       expect(html).toContain("My account");
-      expect(html).toContain("Partial sync");
+      expect(html).toContain("Teilweise abgeglichen");
     }
   });
   it("binds provider project IDs to local project keys without admitting foreign projects", () => {
@@ -121,7 +125,44 @@ describe("connected account calendar", () => {
         accountEvents={[{ ...event, all_day: true }]}
       />,
     );
-    expect(html).toContain('aria-label="All-day events"');
-    expect(html).toContain("all-day");
+    expect(html).toContain('aria-label="Ganztägige Termine"');
+    expect(html).toContain("ganztägig");
+  });
+});
+
+describe("calendar sidebar declutter", () => {
+  const base = { id: "c", label: "Work", truncated: false, syncedAtMs: null } as const;
+  it("shows no caption under healthy or syncing accounts", () => {
+    expect(accountCalendarProblem({ ...base, status: "ready" })).toBeNull();
+    expect(accountCalendarProblem({ ...base, status: "loading" })).toBeNull();
+    const html = renderToStaticMarkup(
+      <ProjectCalendar
+        projects={[]}
+        initialDate="2026-10-09"
+        sessionsStatus="loading"
+        accountCalendars={[{ ...base, status: "ready", syncedAtMs: 1 }]}
+        onRefreshSessions={() => {}}
+        onRefreshAccounts={() => {}}
+      />,
+    );
+    expect(html).not.toContain("Sitzungen werden geladen");
+    expect(html).not.toContain("Sitzungen aktualisieren");
+    expect(html).not.toContain("Konten abgleichen");
+    expect(html).toContain("Aktualisieren");
+    expect(html).toContain('title="Abgeglichen');
+  });
+  it("keeps exceptions visible", () => {
+    expect(accountCalendarProblem({ ...base, status: "unavailable" })).toBe(
+      "Abgleich fehlgeschlagen",
+    );
+    expect(accountCalendarProblem({ ...base, status: "unsupported" })).toBe("Nicht unterstützt");
+    expect(accountCalendarProblem({ ...base, status: "ready", truncated: true })).toBe(
+      "Teilweise abgeglichen",
+    );
+  });
+  it("hides the empty accounts heading", () => {
+    const html = renderToStaticMarkup(<ProjectCalendar projects={[]} initialDate="2026-10-09" />);
+    expect(html).not.toContain("Verbundene Konten");
+    expect(html).not.toContain("Keine Kalenderkonten verbunden");
   });
 });

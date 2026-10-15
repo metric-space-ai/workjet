@@ -27,20 +27,18 @@ function findTooltipText(node: ReactNode): string | undefined {
 }
 
 describe("WorkjetGatewayModelCountsHelp", () => {
-  it("uses the shared catalog-versus-pattern explanation", () => {
+  it("uses one short tooltip for the catalog-versus-pattern distinction", () => {
     expect(findTooltipText(WorkjetGatewayModelCountsHelp())).toBe(
       WORKJET_GATEWAY_MODEL_COUNTS_EXPLANATION,
     );
-    expect(WORKJET_GATEWAY_MODEL_COUNTS_EXPLANATION).toContain("do not need to match");
-    expect(WORKJET_GATEWAY_MODEL_COUNTS_EXPLANATION).toContain(
-      "neither is live availability or capacity",
-    );
+    expect(WORKJET_GATEWAY_MODEL_COUNTS_EXPLANATION.split(/\s+/).length).toBeLessThanOrEqual(12);
+    expect(WORKJET_GATEWAY_MODEL_COUNTS_EXPLANATION).toContain("Live-Verfügbarkeit");
   });
 
   it("distinguishes catalog models from account patterns in singular and plural", () => {
-    expect(formatWorkjetGatewayCatalogModelCount(1)).toBe("1 catalog model");
-    expect(formatWorkjetGatewayCatalogModelCount(2)).toBe("2 catalog models");
-    expect(formatWorkjetGatewayAccountPatternCount(1)).toBe("1 account pattern");
-    expect(formatWorkjetGatewayAccountPatternCount(2)).toBe("2 account patterns");
+    expect(formatWorkjetGatewayCatalogModelCount(1)).toBe("1 Katalogmodell");
+    expect(formatWorkjetGatewayCatalogModelCount(2)).toBe("2 Katalogmodelle");
+    expect(formatWorkjetGatewayAccountPatternCount(1)).toBe("1 Kontomuster");
+    expect(formatWorkjetGatewayAccountPatternCount(2)).toBe("2 Kontomuster");
   });
 });

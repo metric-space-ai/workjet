@@ -1,8 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { ProjectId } from "@workjet/contracts";
 import { ProjectCalendar, buildSessionEvents } from "./ProjectCalendar";
 import type { GalleryProject } from "../projectOverview";
+
+// Diese Tests prüfen deutsche Texte und Datumsformate: Oberflächensprache
+// fest auf "de", damit "System" nicht von der Testumgebung (englisch) abhängt.
+vi.mock("../hooks/useProjectOverviewLanguage", () => ({
+  useProjectOverviewLanguage: () => "de",
+}));
 
 function project(id: string, meeting?: { weekday: number; time: string; timezone: string }) {
   return {
@@ -27,8 +33,8 @@ describe("project calendar", () => {
         ]}
       />,
     );
-    expect(html).toContain('aria-label="Calendar view"');
-    expect(html).toContain("Project meetings");
+    expect(html).toContain('aria-label="Kalenderansicht"');
+    expect(html).toContain("Regeltermine");
     expect(html).toContain('data-calendar-day="2026-10-07"');
     expect(html).toContain('aria-label="ctox.dev, ');
     expect(html).toContain('aria-label="greppy.xyz, ');
@@ -36,9 +42,35 @@ describe("project calendar", () => {
     expect(html).toContain('title="greppy.xyz · America/New_York"');
   });
 
+  it("speaks German dates and 24-hour times, and honours the week start", () => {
+    const html = renderToStaticMarkup(
+      <ProjectCalendar
+        initialDate="2026-10-14"
+        projects={[project("ctox.dev", { weekday: 3, time: "13:00", timezone: "UTC" })]}
+      />,
+    ).replace(/[\u2009\u202f]/g, " ");
+    expect(html).toContain("12.–18. Okt. 2026 · KW 42");
+    expect(html).toContain("Oktober 2026");
+    expect(html).not.toMatch(/\b(AM|PM)\b/);
+    expect(html).toContain("13:00");
+    expect(html).not.toContain("October");
+
+    const sunday = renderToStaticMarkup(
+      <ProjectCalendar
+        initialDate="2026-10-14"
+        locale="en-US"
+        weekStart="locale"
+        projects={[project("ctox.dev", { weekday: 3, time: "13:00", timezone: "UTC" })]}
+      />,
+    ).replace(/[\u2009\u202f]/g, " ");
+    expect(sunday).toContain("Oct 11 – 17, 2026 · Week 42");
+    expect(sunday).toContain("1 PM");
+    expect(sunday).toContain("October 2026");
+  });
+
   it("offers the day, week, month and year views", () => {
     const html = renderToStaticMarkup(<ProjectCalendar projects={[]} initialDate="2026-10-07" />);
-    for (const label of ["Day", "Week", "Month", "Year", "Today", "Previous", "Next"]) {
+    for (const label of ["Tag", "Woche", "Monat", "Jahr", "Heute", "Zurück", "Weiter"]) {
       expect(html).toContain(label);
     }
   });
@@ -47,7 +79,7 @@ describe("project calendar", () => {
     const html = renderToStaticMarkup(
       <ProjectCalendar initialDate="2026-10-07" projects={[project("miltonticket.app")]} />,
     );
-    expect(html).toContain('aria-label="Projects without a regular meeting"');
+    expect(html).toContain('aria-label="Projekte ohne Regeltermin"');
     expect(html).toContain("miltonticket.app");
     expect(html).toContain('data-workjet-action="project.open.calendar:instance:miltonticket.app"');
     expect(html).not.toContain('title="miltonticket.app · ');
@@ -91,9 +123,9 @@ describe("native project session calendar", () => {
           sessions={[session]}
         />,
       );
-      expect(html).toContain("Session (running)");
-      expect(html).toContain('aria-label="Calendar project"');
-      expect(html).toContain("All projects");
+      expect(html).toContain("Sitzung (running)");
+      expect(html).toContain('aria-label="Kalenderprojekt"');
+      expect(html).toContain("Alle Projekte");
     });
   }
   it("marks retained data stale when the native read fails", () => {
@@ -105,6 +137,6 @@ describe("native project session calendar", () => {
         sessionsStatus="unavailable"
       />,
     );
-    expect(html).toContain("Previously loaded sessions may be out of date");
+    expect(html).toContain("Sitzungen nicht erreichbar · Anzeige evtl. veraltet");
   });
 });

@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ComposerBar } from "./ComposerBar";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import { ComposerWorkerControl } from "./ComposerWorkerControl";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerDictationButton } from "./ComposerDictationButton";
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 function render(workerMode = false) {
   return renderToStaticMarkup(
@@ -26,8 +27,8 @@ function render(workerMode = false) {
         workerMode ? null : (
           <>
             <button>Harness</button>
-            <button>Model</button>
-            <button>Computer</button>
+            <button>Modell</button>
+            <button>Rechner</button>
           </>
         )
       }
@@ -44,16 +45,16 @@ function render(workerMode = false) {
   );
 }
 describe("shared composer bar", () => {
-  it("orders attachment-only plus, Manual, harness, model, computer, gear, mic and send", () => {
+  it("orders attachment-only plus, Manuell, harness, model, computer, gear, mic and send", () => {
     const html = render();
     const labels = [
-      'aria-label="Add images or project files"',
-      ">Manual<",
+      'aria-label="Anhang hinzufügen"',
+      ">Ohne Preset<",
       ">Harness<",
-      ">Model<",
-      ">Computer<",
-      'aria-label="Advanced settings"',
-      'aria-label="Dictate message"',
+      ">Modell<",
+      ">Rechner<",
+      'aria-label="Optionen"',
+      'aria-label="Diktieren"',
       ">Send<",
     ];
     const positions = labels.map((label) => html.indexOf(label));
@@ -65,9 +66,9 @@ describe("shared composer bar", () => {
   it("keeps a chosen Luma in the bar without competing manual controls", () => {
     const html = render(true);
     expect(html).toContain("Selected Luma");
-    expect(html).not.toContain(">Manual<");
-    for (const label of ["Harness", "Model", "Computer"]) expect(html).not.toContain(`>${label}<`);
-    expect(html).toContain('aria-label="Advanced settings"');
-    expect(html).toContain('aria-label="Dictate message"');
+    expect(html).not.toContain(">Ohne Preset<");
+    for (const label of ["Harness", "Modell", "Rechner"]) expect(html).not.toContain(`>${label}<`);
+    expect(html).toContain('aria-label="Optionen"');
+    expect(html).toContain('aria-label="Diktieren"');
   });
 });

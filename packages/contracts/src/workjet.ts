@@ -3,7 +3,9 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { WorkjetProjectTeamMember } from "./workjetProjectTeam.ts";
 import { WorkjetThreadGoal } from "./workjetGoal.ts";
+import { SupervisorTickState } from "./supervisorTick.ts";
 import { WorkjetExecutionPolicy } from "./workjetExecutionPolicy.ts";
+import { WorkjetParentTeamBinding } from "./workjetParentTeamBinding.ts";
 import { WorkjetSupervisorJournal } from "./workjetSupervisor.ts";
 import {
   EnvironmentId,
@@ -15,6 +17,7 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 import { BusinessOsInstanceId } from "./workjetBusinessOsComputers.ts";
+import { ComputerMetadata } from "./computerDetection.ts";
 
 export const WorkjetThreadRole = Schema.Literals(["standard", "orchestrator", "worker"]);
 export type WorkjetThreadRole = typeof WorkjetThreadRole.Type;
@@ -113,6 +116,7 @@ export const WorkjetComputer = Schema.Struct({
   label: TrimmedNonEmptyString,
   environmentId: EnvironmentId,
   presentationKind: WorkjetComputerPresentationKind,
+  metadata: Schema.optionalKey(ComputerMetadata),
   harnesses: Schema.Array(WorkjetHarnessConfiguration).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -285,6 +289,7 @@ export const WorkjetWorkerProfile = Schema.Struct({
   llmRouteId: WorkjetLlmRouteId,
   modelId: TrimmedNonEmptyString,
   reasoning: WorkjetReasoningSelection,
+  /** Read-only legacy compatibility; Lumas do not grant a thread coordination rights. */
   role: Schema.Literals(["standard", "orchestrator"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("standard" as const)),
   ),
@@ -1018,7 +1023,9 @@ const WorkjetThreadConfigV2BaseFields = {
   schemaVersion: Schema.Literal(2),
   team: Schema.optionalKey(WorkjetProjectTeamMember),
   goal: Schema.optionalKey(WorkjetThreadGoal),
+  supervisorTick: Schema.optionalKey(SupervisorTickState),
   executionPolicy: Schema.optionalKey(WorkjetExecutionPolicy),
+  parentTeamBinding: Schema.optionalKey(WorkjetParentTeamBinding),
   managedInstructions: Schema.String,
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),
@@ -1060,8 +1067,28 @@ export type WorkjetThreadConfig = typeof WorkjetThreadConfig.Type;
 
 export type WorkjetThreadConfigV2 = Extract<WorkjetThreadConfig, { readonly schemaVersion: 2 }>;
 
+/** Coordination is a project team responsibility, never a Luma setting. */
+export function canCoordinateWorkjet(config: WorkjetThreadConfig): boolean {
+  const team = config.schemaVersion === 2 ? config.team : undefined;
+  return team?.role === "supervisor" || team?.role === "specialist";
+}
+
+/** Legacy role values remain readable; provider credentials derive their role from team membership. */
+export function workjetExecutionRole(config: WorkjetThreadConfig): WorkjetThreadRole {
+  if (canCoordinateWorkjet(config)) return "orchestrator";
+  if (config.role === "worker" || (config.schemaVersion === 2 && config.team?.role === "worker"))
+    return "worker";
+  return "standard";
+}
+
 export function normalizeWorkjetThreadConfig(config: WorkjetThreadConfig): WorkjetThreadConfigV2 {
-  if (config.schemaVersion === 2) return config;
+  if (config.schemaVersion === 2) {
+    // Lossless migration: retain team IDs, instructions, bindings and history references.
+    // The old explicit switch cannot grant or remove a team's coordination rights.
+    if (canCoordinateWorkjet(config) && config.role === "orchestrator")
+      return { ...config, role: "standard", parent: null };
+    return config;
+  }
   if (config.role === "worker") {
     return {
       schemaVersion: 2,
@@ -1082,6 +1109,22 @@ export function normalizeWorkjetThreadConfig(config: WorkjetThreadConfig): Workj
     capabilityBindings: [],
     ctoxSession: null,
   };
+}
+
+/** New threads inherit settings, never another thread's execution or native references. */
+export function inheritWorkjetThreadSettings(config: WorkjetThreadConfig): WorkjetThreadConfigV2 {
+  const normalized = normalizeWorkjetThreadConfig(config);
+  const settings = {
+    schemaVersion: 2,
+    managedInstructions: normalized.managedInstructions,
+    enabledCapabilityIds: normalized.enabledCapabilityIds,
+    capabilityBindings: normalized.capabilityBindings,
+    ctoxSession: null,
+    ...(normalized.executionPolicy === undefined
+      ? {}
+      : { executionPolicy: normalized.executionPolicy }),
+  } as const;
+  return { ...settings, role: "standard", parent: null };
 }
 
 /** Replace-all settings updates retain the one PR of this worker run. */
@@ -1434,6 +1477,31 @@ export type WorkjetGatewayProviderHealth = typeof WorkjetGatewayProviderHealth.T
  */
 export const WorkjetGatewayQuotaWindow = Schema.Struct({
   name: TrimmedNonEmptyString,
+  /** Whitelisted provider reading; optional for hosts predating quota provenance. */
+  source: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        field: Schema.Literals([
+          "utilization",
+          "used_percent",
+          "percentage",
+          "current_interval_remaining_percent",
+          "current_weekly_remaining_percent",
+        ]),
+        value: Schema.NullOr(
+          Schema.Number.pipe(
+            Schema.check(Schema.isFinite()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+            Schema.check(Schema.isLessThanOrEqualTo(100)),
+          ),
+        ),
+        windowSeconds: Schema.NullOr(NonNegativeInt),
+        status: Schema.NullOr(NonNegativeInt),
+        unit: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
+        number: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
+      }),
+    ),
+  ),
   remainingPercent: Schema.NullOr(
     Schema.Number.pipe(
       Schema.check(Schema.isFinite()),
@@ -1469,6 +1537,27 @@ export const WorkjetGatewayAccountBalance = Schema.Struct({
 });
 export type WorkjetGatewayAccountBalance = typeof WorkjetGatewayAccountBalance.Type;
 
+/** Exact configured-model eligibility from the host's real selection state. */
+export const WorkjetGatewayAccountModelHealth = Schema.Struct({
+  modelId: TrimmedNonEmptyString,
+  status: Schema.Literals([
+    "ready",
+    "unknown",
+    "disabled",
+    "cooldown",
+    "model-unavailable",
+    "auth-required",
+    "quota",
+    "balance",
+  ]),
+  usable: Schema.Boolean,
+  cooldownUntilMs: Schema.NullOr(NonNegativeInt),
+  errorCode: Schema.NullOr(TrimmedNonEmptyString),
+  httpStatus: Schema.NullOr(NonNegativeInt),
+  observedAtMs: Schema.NullOr(NonNegativeInt),
+});
+export type WorkjetGatewayAccountModelHealth = typeof WorkjetGatewayAccountModelHealth.Type;
+
 export const WorkjetGatewayAccountHealth = Schema.Struct({
   accountId: WorkjetGatewayAccountId,
   provider: WorkjetGatewayProvider,
@@ -1489,6 +1578,8 @@ export const WorkjetGatewayAccountHealth = Schema.Struct({
   quotaSupported: Schema.Boolean,
   quotaRefreshing: Schema.Boolean,
   quotaError: Schema.NullOr(Schema.Literals(["unavailable", "provider-error"])),
+  /** Absent on older host releases; never synthesize an all-clear from it. */
+  models: Schema.optionalKey(Schema.Array(WorkjetGatewayAccountModelHealth)),
 });
 export type WorkjetGatewayAccountHealth = typeof WorkjetGatewayAccountHealth.Type;
 
@@ -1885,6 +1976,55 @@ export const WorkjetGatewayModelChecks = Schema.Struct({
   deferredCount: NonNegativeInt,
 });
 export type WorkjetGatewayModelChecks = typeof WorkjetGatewayModelChecks.Type;
+
+/** Read-only evidence for worker model draws; only `available` rows are eligible. */
+export const WorkjetOfficialCodingModelExport = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  observedAtMs: NonNegativeInt,
+  healthObservedAtMs: NonNegativeInt,
+  harnessProbedAt: TrimmedNonEmptyString,
+  models: Schema.Array(
+    Schema.Struct({
+      provider: WorkjetGatewayProvider,
+      modelId: TrimmedNonEmptyString,
+      accountId: WorkjetGatewayAccountId,
+      modelListCheckedAtMs: NonNegativeInt,
+      enabled: Schema.Boolean,
+      coding: Schema.Boolean,
+      available: Schema.Boolean,
+      routeId: Schema.NullOr(WorkjetLlmRouteId),
+      harness: Schema.NullOr(WorkjetHarness),
+      homeHarness: Schema.NullOr(WorkjetHarness),
+      computerId: Schema.NullOr(WorkjetComputerId),
+      reason: Schema.NullOr(
+        Schema.Literals([
+          "coding-route-unverified",
+          "route-disabled",
+          "harness-unavailable",
+          "account-unavailable",
+          "provider-unavailable",
+          "model-check-unverified",
+        ]),
+      ),
+    }),
+  ),
+  unverifiedAccounts: Schema.Array(
+    Schema.Struct({
+      accountId: WorkjetGatewayAccountId,
+      provider: WorkjetGatewayProvider,
+      reason: Schema.NullOr(
+        Schema.Literals([
+          "account-unavailable",
+          "account-disabled",
+          "provider-unsupported",
+          "catalog-unavailable",
+          "account-changed",
+        ]),
+      ),
+    }),
+  ),
+});
+export type WorkjetOfficialCodingModelExport = typeof WorkjetOfficialCodingModelExport.Type;
 export const WorkjetGatewayModelCheckInput = Schema.Struct({
   accountId: Schema.optional(WorkjetGatewayAccountId),
   modelId: Schema.optional(TrimmedNonEmptyString),

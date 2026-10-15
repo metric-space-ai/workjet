@@ -6,6 +6,11 @@ packages:
   - packages/*
   - scripts
 
+# pnpm defaults to 120 on Unix and 60 on Windows. Rolldown includes these
+# dependency directory names in its module regions; use the Windows-safe
+# layout everywhere so bundled server bytes do not depend on the build host.
+virtualStoreDirMaxLength: 60
+
 # Successor to onlyBuiltDependencies/ignoredBuiltDependencies (pnpm 11).
 # true = allowed to run build scripts; false mirrors the pnpm 10 behavior
 # where anything outside onlyBuiltDependencies was silently not built.

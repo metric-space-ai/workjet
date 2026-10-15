@@ -26,7 +26,7 @@ describe("meeting microphone boundary", () => {
     expect(pcm.push(new Float32Array(256))).toHaveLength(1);
   });
   it("rejects a different audio rate and clears unfinished samples on cancellation", () => {
-    expect(() => new JourFixePcmFramer(48_000)).toThrow("16 kHz");
+    expect(() => new JourFixePcmFramer(48_000)).toThrow("16-kHz");
     const pcm = new JourFixePcmFramer(16_000);
     pcm.push(new Float32Array(319).fill(1));
     pcm.clear();
@@ -68,7 +68,7 @@ describe("meeting microphone boundary", () => {
     vad.push(frame(0.1));
     vad.clear();
     expect(vad.finish()).toEqual([]);
-    expect(() => vad.push(new Uint8Array(4))).toThrow("Invalid");
+    expect(() => vad.push(new Uint8Array(4))).toThrow("Ungültiger");
   });
   it("serializes async writes and owns the queued bytes", async () => {
     const first = deferred<void>();
@@ -109,7 +109,7 @@ describe("meeting microphone boundary", () => {
     );
     for (let index = 0; index < 34; index++) drain.push(frame(0.1));
     expect(errors).toHaveLength(1);
-    expect(errors[0]!.message).toContain("cannot keep up");
+    expect(errors[0]!.message).toContain("Audioverbindung überlastet");
     expect(signals).toHaveLength(1);
     expect(signals[0]!.aborted).toBe(true);
     drain.push(frame(0.1));

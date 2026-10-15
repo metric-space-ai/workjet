@@ -6,7 +6,6 @@ import {
   describeSupportBundleRedaction,
   formatSupportBundleSize,
   INITIAL_SUPPORT_BUNDLE_STATE,
-  SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE,
   SupportBundleSectionView,
 } from "./SupportBundleSection";
 
@@ -36,17 +35,17 @@ describe("support bundle section", () => {
   it("formats sizes and the redaction receipt", () => {
     expect(formatSupportBundleSize(512)).toBe("512 B");
     expect(formatSupportBundleSize(20_480)).toBe("20 KB");
-    expect(formatSupportBundleSize(2_097_152)).toBe("2.0 MB");
+    expect(formatSupportBundleSize(2_097_152)).toBe("2,0 MB");
     expect(describeSupportBundleRedaction(RESULT)).toBe(
-      "20 KB · 142 fields collected · 7 redacted · 3 omitted",
+      "20 KB · 142 Felder · 7 geschwärzt · 3 ausgelassen",
     );
   });
 
-  it("offers the action and promises no upload", () => {
+  it("offers the action as title plus button, without paragraphs", () => {
     const markup = renderView();
-    expect(markup).toContain("Create support bundle");
-    expect(markup).toContain("Nothing is uploaded");
-    expect(markup).toContain("read it before you send it");
+    expect(markup).toContain("Support-Bundle");
+    expect(markup).toContain("Erstellen");
+    expect(markup).not.toMatch(/<p[\s>]/);
   });
 
   it("shows the exact path and the redaction counts after a run", () => {
@@ -54,14 +53,12 @@ describe("support bundle section", () => {
       state: { status: "created", result: RESULT, errorMessage: null },
     });
     expect(markup).toContain(RESULT.filePath);
-    expect(markup).toContain("7 redacted");
-    expect(markup).toContain("Copy bundle path");
+    expect(markup).toContain("7 geschwärzt");
+    expect(markup).toContain("Pfad kopieren");
   });
 
-  it("explains itself instead of offering a dead button off the desktop", () => {
-    const markup = renderView({ isAvailable: false });
-    expect(markup).toContain(SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE);
-    expect(markup).toContain("disabled");
+  it("hides the whole section off the desktop instead of a dead button", () => {
+    expect(renderView({ isAvailable: false })).toBe("");
   });
 
   it("surfaces a failure instead of pretending a bundle exists", () => {

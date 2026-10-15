@@ -58,41 +58,44 @@ export function isDesktopUpdateButtonDisabled(state: DesktopUpdateState | null):
 
 export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState): string {
   if (!shouldShowArm64IntelBuildWarning(state)) {
-    return "This install is using the correct architecture.";
+    return "Richtige Architektur";
   }
 
   const action = resolveDesktopUpdateButtonAction(state);
   if (action === "download") {
-    return "This Mac has Apple Silicon, but Workjet is still running the Intel build under Rosetta. Download the available update to switch to the Apple Silicon build.";
+    return "Intel-Build unter Rosetta · Update lädt Apple Silicon";
   }
   if (action === "install") {
-    return "This Mac has Apple Silicon, but Workjet is still running the Intel build under Rosetta. Restart to install the downloaded Apple Silicon build.";
+    return "Intel-Build unter Rosetta · Neustart installiert Apple Silicon";
   }
-  return "This Mac has Apple Silicon, but Workjet is still running the Intel build under Rosetta. The next app update will replace it with the Apple Silicon build.";
+  return "Intel-Build unter Rosetta · nächstes Update bringt Apple Silicon";
 }
 
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
   if (state.status === "available") {
-    return `Update ${state.availableVersion ?? "available"} ready to download`;
+    return state.availableVersion
+      ? `Update ${state.availableVersion} herunterladen`
+      : "Update herunterladen";
   }
   if (state.status === "downloading") {
     const progress =
       typeof state.downloadPercent === "number" ? ` (${Math.floor(state.downloadPercent)}%)` : "";
-    return `Downloading update${progress}`;
+    return `Update wird geladen${progress}`;
   }
   if (state.status === "downloaded") {
-    return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} downloaded. Click to restart and install.`;
+    const version = state.downloadedVersion ?? state.availableVersion;
+    return `Update${version ? ` ${version}` : ""} geladen · Neustart zum Installieren`;
   }
   if (state.status === "error") {
     if (state.errorContext === "download" && state.availableVersion) {
-      return `Download failed for ${state.availableVersion}. Click to retry.`;
+      return `Download von ${state.availableVersion} fehlgeschlagen · Erneut versuchen`;
     }
     if (state.errorContext === "install" && state.downloadedVersion) {
-      return `Install failed for ${state.downloadedVersion}. Click to retry.`;
+      return `Installation von ${state.downloadedVersion} fehlgeschlagen · Erneut versuchen`;
     }
-    return state.message ?? "Update failed";
+    return state.message ?? "Update fehlgeschlagen";
   }
-  return "Up to date";
+  return "Aktuell";
 }
 
 export function getDesktopUpdateInstallConfirmationMessage(
@@ -101,9 +104,9 @@ export function getDesktopUpdateInstallConfirmationMessage(
 ): string {
   const version = state.downloadedVersion ?? state.availableVersion;
   const windowsInstallWarning = isWindowsPlatform(platform)
-    ? "\n\nOn Windows, Workjet may remain closed for several minutes while the update installs, and no installer window may appear. Workjet will reopen automatically when installation finishes."
+    ? "\n\nUnter Windows bleibt Workjet einige Minuten geschlossen, ohne Installationsfenster, und startet danach neu."
     : "";
-  return `Install update${version ? ` ${version}` : ""} and restart Workjet?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.${windowsInstallWarning}`;
+  return `Update${version ? ` ${version}` : ""} installieren und Workjet neu starten?\n\nLaufende Aufgaben werden unterbrochen.${windowsInstallWarning}`;
 }
 
 export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): string | null {

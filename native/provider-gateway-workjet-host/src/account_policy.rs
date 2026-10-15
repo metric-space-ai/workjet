@@ -17,8 +17,21 @@ use workjet_provider_gateway::sdk::cliproxy::auth::{
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct QuotaSource {
+    pub field: String,
+    pub value: Option<f64>,
+    pub window_seconds: Option<u64>,
+    pub status: Option<u32>,
+    pub unit: Option<u32>,
+    pub number: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct QuotaWindow {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<QuotaSource>,
     #[serde(default)]
     pub model_pattern: Option<String>,
     #[serde(default)]

@@ -58,6 +58,9 @@ import * as RemoteWorkerBroker from "./workjet/RemoteWorkerBroker.ts";
 import * as RemoteWorkerReceiver from "./workjet/RemoteWorkerReceiver.ts";
 import * as RemoteWorkerConnectionBootstrap from "./workjet/RemoteWorkerConnectionBootstrap.ts";
 import * as RemoteWorkerStore from "./workjet/RemoteWorkerStore.ts";
+import * as IsolatedWorkerWorktree from "./workjet/IsolatedWorkerWorktree.ts";
+import * as IsolatedWorkerWorktreeStore from "./workjet/IsolatedWorkerWorktreeStore.ts";
+import * as LocalWorkerWorktree from "./workjet/LocalWorkerWorktree.ts";
 import * as RemoteWorkerAuthorityStore from "./workjet/RemoteWorkerAuthorityStore.ts";
 import * as RemoteWorkerComputerEnrollmentLive from "./workjet/RemoteWorkerComputerEnrollmentLive.ts";
 import * as RemoteWorkerSourceOperationsLive from "./workjet/RemoteWorkerSourceOperationsLive.ts";
@@ -66,6 +69,7 @@ import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHu
 import * as DecisionHubEscalationService from "./workjet/decisionHub/DecisionHubEscalationService.ts";
 import * as DecisionHubMcpClient from "./workjet/decisionHub/DecisionHubMcpClient.ts";
 import * as DecisionHubReconciler from "./workjet/decisionHub/DecisionHubReconciler.ts";
+import * as CtoxWorkerSourceRotation from "./workjet/ctox/CtoxWorkerSourceRotation.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
@@ -93,6 +97,9 @@ import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderComma
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import { PersistentGoalReactorLive } from "./orchestration/Layers/PersistentGoalReactor.ts";
+import { WorkerSupervisorDecisionReactorLive } from "./orchestration/Layers/WorkerSupervisorDecisionReactor.ts";
+import { SupervisorTickReactorLive } from "./orchestration/Layers/SupervisorTickReactor.ts";
+import { SupervisorMeetingPreparationLive } from "./workjet/SupervisorMeetingPreparation.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
@@ -145,6 +152,7 @@ import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts
 import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinary.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as ProjectTokenBudgetMonitor from "./usage/ProjectTokenBudgetMonitor.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import * as RemoteWorkerTargetAdmission from "./workjet/RemoteWorkerTargetAdmission.ts";
 import { acquireProfileOwnership } from "./profileOwnership.ts";
@@ -207,7 +215,10 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
 );
 
-const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+const UsageLayerLive = UsageService.layer.pipe(
+  Layer.provide(ServerSettingsLayerLive),
+  Layer.provide(SqlitePersistenceLayerLive),
+);
 
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(
   ResourceTelemetryLayerLive,
@@ -319,12 +330,17 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderCommandReactorLive.pipe(Layer.provide(CtoxCrewTurnAdmissionLive))),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(PersistentGoalReactorLive),
+  Layer.provideMerge(WorkerSupervisorDecisionReactorLive),
+  Layer.provideMerge(
+    SupervisorTickReactorLive.pipe(Layer.provide(GitHubCli.layer), Layer.provide(UsageLayerLive)),
+  ),
   Layer.provideMerge(
     // Worker worktree release is a thread-deletion reaction, so its service is
     // provided directly to the reactor that consumes `thread.deleted`.
     ThreadDeletionReactorLive.pipe(
       Layer.provide(
         WorkerWorktreeCleanup.layer.pipe(
+          Layer.provide(IsolatedWorkerWorktreeStore.layer),
           Layer.provide(
             NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer)),
           ),
@@ -454,8 +470,15 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive.pipe(Layer.provide(RemoteWorkerTargetAdmission.layer))),
 );
 
+const NativeWorkerWorktreeRemoverLayerLive = NativeWorkerWorktreeRemover.layer.pipe(
+  Layer.provide(ResourceMonitorBinary.layer),
+);
 const WorkerDispatchRollbackLayerLive = WorkerDispatchRollback.layer.pipe(
-  Layer.provide(NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer))),
+  Layer.provide(NativeWorkerWorktreeRemoverLayerLive),
+);
+const IsolatedWorkerWorktreeLayerLive = IsolatedWorkerWorktree.layer.pipe(
+  Layer.provide(IsolatedWorkerWorktreeStore.layer),
+  Layer.provide(NativeWorkerWorktreeRemoverLayerLive),
 );
 const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
   Layer.provide(RemoteWorkerStore.layer),
@@ -467,9 +490,13 @@ const RemoteWorkerComputerEnrollmentLayerLive = RemoteWorkerComputerEnrollmentLi
 const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.layer.pipe(
   Layer.provide(
     RemoteWorkerSourceOperationsLive.layer.pipe(
+      Layer.provide(SourceControlProviderRegistryLayerLive),
+      Layer.provide(VcsProcess.layer),
       Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
       Layer.provide(CtoxThreadBindingSourceLayerLive),
       Layer.provide(RemoteWorkerAuthorityStore.layer),
+      Layer.provide(WorkerPullRequestStore.layer),
+      Layer.provide(RemoteWorkerBrokerLayerLive),
       Layer.provide(DecisionHubConnectionRegistryLive),
     ),
   ),
@@ -478,6 +505,7 @@ const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.laye
   Layer.provide(ServerSecretStore.layer),
 );
 const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
+  Layer.provide(IsolatedWorkerWorktreeLayerLive),
   Layer.provide(RemoteWorkerTargetAdmission.layer),
   Layer.provide(RemoteWorkerStore.layer),
   Layer.provide(WorktreeStorageLayerLive),
@@ -488,6 +516,12 @@ const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
 // A single service instance owns the stable native intent IDs and the normal
 // MCP dispatch path. Both entries share its durable broker and first-use lock.
 const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
+  Layer.provide(
+    LocalWorkerWorktree.layer.pipe(
+      Layer.provide(IsolatedWorkerWorktreeLayerLive),
+      Layer.provide(WorktreeStorageLayerLive),
+    ),
+  ),
   Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),
   Layer.provide(WorkerDispatchRollbackLayerLive),
@@ -497,6 +531,9 @@ const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
   Layer.provide(WorkjetSnapshotStoreLive),
 );
 const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.pipe(
+  Layer.provide(SourceControlProviderRegistryLayerLive),
+  Layer.provide(VcsProcess.layer),
+  Layer.provide(WorkerPullRequestStore.layer),
   Layer.provide(WorkerDispatchLayerLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),
   Layer.provide(CtoxThreadBindingSourceLayerLive),
@@ -504,8 +541,23 @@ const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.
 );
 
 const RuntimeCoreFoundationLive = Layer.mergeAll(
-  ReactorLayerLive,
+  ReactorLayerLive.pipe(
+    Layer.provide(
+      SupervisorMeetingPreparationLive.pipe(
+        Layer.provide(WorkerDispatchLayerLive),
+        Layer.provide(RemoteWorkerBrokerLayerLive),
+        Layer.provide(CtoxThreadBindingSourceLayerLive),
+        Layer.provide(DecisionHubConnectionRegistryLive),
+        Layer.provide(WorkerPullRequestStore.layer),
+        Layer.provide(GitHubCli.layer),
+      ),
+    ),
+  ),
   WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer)),
+  ProjectTokenBudgetMonitor.layer.pipe(
+    Layer.provide(UsageLayerLive),
+    Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+  ),
 ).pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(WorktreeStorageLayerLive),
@@ -526,7 +578,12 @@ const RuntimeCoreDependenciesLive = RuntimeCoreFoundationLive.pipe(
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  Layer.provideMerge(
+    ProviderInstanceRegistryHydrationLive.pipe(
+      Layer.provide(IsolatedWorkerWorktreeStore.layer),
+      Layer.provide(ResourceMonitorBinary.layer),
+    ),
+  ),
   // The CTOX driver resolves each thread's native scope instead of spawning a
   // process. It takes these optionally — a build without them reports the
   // instance unavailable rather than dragging the session-directory chain into
@@ -574,7 +631,7 @@ const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   Layer.provideMerge(ResourceDiagnosticsLayerLive),
   Layer.provideMerge(UsageLayerLive),
   Layer.provideMerge(TraceDiagnostics.layer),
-  Layer.provideMerge(AnalyticsService.layer),
+  Layer.provideMerge(AnalyticsService.layer.pipe(Layer.provide(ServerSettingsLayerLive))),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
   Layer.provide(NetService.layer),
@@ -707,6 +764,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   WorkjetDelegationExecutorLive,
   NativeSupervisorWorkerDispatchLive,
   DecisionHubReconcilerLive,
+  CtoxWorkerSourceRotation.layer.pipe(Layer.provide(DecisionHubConnectionRegistryLive)),
 ).pipe(
   // One shared, server-lifetime redacted mailbox audit emitter. It is provided
   // ONCE here so the delivery, transport, and executor services and the

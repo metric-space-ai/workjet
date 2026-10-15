@@ -72,14 +72,12 @@ export function WorkjetMailboxNotificationList({
 
   return (
     <section
-      aria-label="Workjet mailbox activity"
+      aria-label="Workjet-Postfach"
       className="flex flex-col gap-2"
       data-workjet-mailbox-notifications=""
     >
       <h2 className="text-xs font-medium text-muted-foreground">
-        {warningCount > 0
-          ? `Mailbox — ${warningCount} need${warningCount === 1 ? "s" : ""} attention`
-          : "Mailbox"}
+        {warningCount > 0 ? `Postfach — ${warningCount} offen` : "Postfach"}
       </h2>
       <ul className="flex flex-col gap-1.5">
         {notifications.map((notification) => (

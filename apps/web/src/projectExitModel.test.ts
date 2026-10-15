@@ -1,0 +1,266 @@
+import { describe, expect, it, vi } from "vite-plus/test";
+import { CommandId, ProjectId } from "@workjet/contracts";
+import {
+  exitModelPresentation,
+  exitSourceUrl,
+  exitModelChange,
+  formatExitChange,
+  formatExitDate,
+  formatExitEur,
+  formatExitMissingInput,
+  formatExitFinding,
+  formatExitPercent,
+  formatExitProposal,
+  isConfirmableExitProposal,
+  requestProjectExitModel,
+} from "./projectExitModel";
+import { exitModelFixture } from "./test/exitModelFixture";
+import type { WorkjetProjectControlPort } from "./workjetProjectControl";
+
+/** Intl schreibt je nach Umgebung U+00A0 oder U+202F; Tests vergleichen normalisiert. */
+const de = (text: string) => text.replace(/[\u00A0\u202F]/g, " ");
+
+const request = {
+  action: "project.exit_model.read",
+  commandId: CommandId.make("command-one"),
+  projectId: ProjectId.make("project-one"),
+} as const;
+const receipt = { ...request, assessment: exitModelFixture };
+
+describe("project exit assessment", () => {
+  it("compares with the previous calculated amount, excluding the current and unfinished runs", () => {
+    const previous = {
+      run_id: "previous-run",
+      as_of: "2026-09-08",
+      exit_date: "2031-09-08",
+      status: "provisional" as const,
+      result: { ...exitModelFixture.result!, expected_exit_equity_eur: 400_000 },
+      missing_inputs: [],
+    };
+    const assessment = {
+      ...exitModelFixture,
+      history: [
+        { ...previous, run_id: exitModelFixture.run_id!, result: exitModelFixture.result },
+        { ...previous, run_id: "research-run", status: "researching" as const, result: null },
+        previous,
+      ],
+    };
+    expect(exitModelChange(assessment)).toEqual({ percent: 100, asOf: "2026-09-08" });
+    expect(de(formatExitChange(100))).toBe("+100 %");
+    expect(de(formatExitChange(12.5))).toBe("+12,5 %");
+    expect(de(formatExitChange(-52.981))).toBe("-53 %");
+    expect(de(formatExitChange(-3))).toBe("-3 %");
+    expect(exitModelChange({ ...assessment, result: null })).toBeNull();
+    expect(exitModelChange({ ...assessment, history: [] })).toBeNull();
+    expect(
+      exitModelChange({
+        ...assessment,
+        history: [{ ...previous, result: { ...previous.result, expected_exit_equity_eur: 0 } }],
+      }),
+    ).toBeNull();
+    expect(
+      exitModelChange({ ...assessment, history: [{ ...previous, as_of: "2026-11-08" }] }),
+    ).toBeNull();
+    expect(
+      exitModelChange({
+        ...assessment,
+        result: { ...exitModelFixture.result!, expected_exit_equity_eur: 0 },
+      })?.percent,
+    ).toBe(-100);
+  });
+
+  it("routes the typed native request only through its selected instance", async () => {
+    const port = vi
+      .fn<WorkjetProjectControlPort>()
+      .mockResolvedValue({ _tag: "completed", response: receipt });
+    await expect(requestProjectExitModel("managed:selected", request, port)).resolves.toEqual({
+      _tag: "completed",
+      assessment: exitModelFixture,
+    });
+    expect(port).toHaveBeenCalledExactlyOnceWith("managed:selected", request);
+  });
+
+  it.each([
+    { ...receipt, commandId: CommandId.make("another-command") },
+    { ...receipt, projectId: ProjectId.make("foreign-project") },
+    { ...receipt, action: "project.exit_model.refresh" as const },
+    {
+      ...receipt,
+      assessment: { ...exitModelFixture, project_id: ProjectId.make("foreign-project") },
+    },
+  ])("rejects an uncorrelated receipt %#", async (response) => {
+    const port = vi
+      .fn<WorkjetProjectControlPort>()
+      .mockResolvedValue({ _tag: "completed", response });
+    expect((await requestProjectExitModel("managed:selected", request, port))._tag).toBe("failed");
+  });
+
+  it("adopts a proposal only when the receipt confirms the same run", async () => {
+    const proposal = {
+      ...exitModelFixture,
+      status: "blocked" as const,
+      result: null,
+      scenarios: [],
+      diagnostics: [],
+      run_id: "run-proposal",
+      plan_summary: { ...exitModelFixture.plan_summary!, confirmed: false },
+      missing_inputs: ["confirmed_resource_plan"],
+      findings: [
+        {
+          code: "resource_proposal_requires_confirmation",
+          message: "Vorschlag erfordert Bestätigung",
+        },
+      ],
+      resource_proposal: {
+        hours_per_week: 12,
+        monthly_budget_eur: 3_000,
+        comparison_mode: "project_specific" as const,
+      },
+      history: [],
+    };
+    const adopted = {
+      ...exitModelFixture,
+      plan_summary: { ...exitModelFixture.plan_summary!, confirmed: true },
+      missing_inputs: [],
+      confirmed_from_run_id: "run-proposal",
+    };
+    const submit = {
+      action: "project.exit_model.submit" as const,
+      commandId: CommandId.make("command-submit"),
+      projectId: ProjectId.make("project-one"),
+      confirmRunId: "run-proposal",
+    };
+    expect(isConfirmableExitProposal(proposal)).toBe(true);
+    expect(formatExitProposal(proposal.resource_proposal)).toBe("12 h/Woche · 3.000 €/Monat");
+    expect(exitModelPresentation(proposal, "project-one").value).toBe("—");
+    const matched = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "completed",
+      response: { ...submit, assessment: adopted },
+    });
+    await expect(requestProjectExitModel("managed:selected", submit, matched)).resolves.toEqual({
+      _tag: "completed",
+      assessment: expect.objectContaining({ confirmed_from_run_id: "run-proposal" }),
+    });
+    const wrongRun = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "completed",
+      response: {
+        ...submit,
+        assessment: { ...adopted, confirmed_from_run_id: "run-other" },
+      },
+    });
+    expect(await requestProjectExitModel("managed:selected", submit, wrongRun)).toEqual({
+      _tag: "failed",
+      message: "Antwort passt nicht zum Projekt.",
+      reason: "uncorrelated",
+    });
+    const timedOut = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "failed",
+      code: "timeout",
+    });
+    const timedOutResult = await requestProjectExitModel("managed:selected", submit, timedOut);
+    expect(timedOutResult._tag === "failed" && timedOutResult.reason).toBe("timeout");
+    const rejected = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "failed",
+      code: "invalid_input",
+    });
+    const rejectedResult = await requestProjectExitModel("managed:selected", submit, rejected);
+    expect(rejectedResult._tag === "failed" && rejectedResult.reason).toBe("rejected");
+  });
+
+  it("shows service absence without turning it into zero proceeds", async () => {
+    const port = vi
+      .fn<WorkjetProjectControlPort>()
+      .mockResolvedValue({ _tag: "failed", code: "unsupported" });
+    expect(await requestProjectExitModel("managed:selected", request, port)).toEqual({
+      _tag: "failed",
+      message: "Bewertungsdienst nicht verfügbar.",
+      reason: "unavailable",
+    });
+    expect(exitModelPresentation(null, "project-one").value).toBe("—");
+  });
+
+  it("keeps dated values visible while explicitly labelling expired evidence", () => {
+    expect(exitModelPresentation(exitModelFixture, "project-one", "2026-10-08")).toMatchObject({
+      value: formatExitEur(800_000),
+      label: "Vorläufig",
+      stale: false,
+    });
+    expect(exitModelPresentation(exitModelFixture, "project-one", "2026-11-08")).toMatchObject({
+      value: formatExitEur(800_000),
+      label: "Veraltet",
+      stale: true,
+    });
+    expect(
+      exitModelPresentation(
+        { ...exitModelFixture, refresh_due: "2026-12-08" },
+        "project-one",
+        "2026-11-09",
+      ).stale,
+    ).toBe(true);
+    expect(exitModelPresentation(exitModelFixture, "another-project").value).toBe("—");
+  });
+
+  it("does not promote retained history into a current blocked valuation", () => {
+    const blocked = {
+      ...exitModelFixture,
+      status: "blocked" as const,
+      result: null,
+      missing_inputs: ["Confirmed rights"],
+      scenarios: [],
+      history: [
+        {
+          run_id: "old-run",
+          as_of: "2026-10-08",
+          exit_date: "2031-10-08",
+          status: "provisional" as const,
+          result: exitModelFixture.result,
+          missing_inputs: [],
+        },
+      ],
+    };
+    expect(exitModelPresentation(blocked, "project-one", "2026-10-08")).toMatchObject({
+      value: "—",
+      label: "Angaben fehlen",
+      stale: false,
+    });
+  });
+
+  it("explains missing inputs without exposing machine field names", () => {
+    expect(formatExitMissingInput("confirmed_60_month_resource_plan")).toBe(
+      "Bestätigter Monatsplan für fünf Jahre",
+    );
+    expect(formatExitMissingInput("current_source:fixture", exitModelFixture)).toBe(
+      "Aktueller Beleg: https://example.org/synthetic-evidence",
+    );
+    expect(
+      formatExitFinding({
+        code: "resource_or_supervisor_missing",
+        message: "raw implementation detail",
+      }),
+    ).toBe("Ressourcenplan oder Supervisor fehlt.");
+  });
+
+  it("uses forecast precision and links only ordinary credential-free web sources", () => {
+    expect(de(formatExitEur(3_163_500))).toBe("3,2 Mio. €");
+    expect(de(formatExitEur(800_000))).toBe("800 Tsd. €");
+    expect(de(formatExitEur(8_050))).toBe("8,1 Tsd. €");
+    expect(de(formatExitEur(950))).toBe("950 €");
+    expect(de(formatExitEur(0))).toBe("0 €");
+    expect(formatExitEur(3_163_500, "en")).toBe("€3.2M");
+    expect(formatExitEur(800_000, "en")).toBe("€800K");
+    expect(formatExitEur(950, "en")).toBe("€950");
+    expect(formatExitEur(Number.NaN)).toBe("—");
+    expect(formatExitEur(null)).toBe("—");
+    expect(de(formatExitPercent(0.8))).toBe("80 %");
+    expect(formatExitDate("2026-10-08")).toBe("08.10.2026");
+    expect(formatExitDate(null)).toBe("—");
+    expect(exitSourceUrl("https://example.org/evidence")).toBe("https://example.org/evidence");
+    for (const reference of [
+      "javascript:alert(1)",
+      "file:///secret",
+      "https://user:pass@example.org",
+      "receipt:source",
+    ])
+      expect(exitSourceUrl(reference)).toBeNull();
+  });
+});

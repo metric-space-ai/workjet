@@ -36,8 +36,8 @@ export function DiffCommentAnnotation({
   onCancel,
   onComment,
   onDelete,
-  placeholder = "Add a comment…",
-  submitLabel = "Comment",
+  placeholder = "Kommentar hinzufügen …",
+  submitLabel = "Kommentieren",
   pending = false,
   secondaryAction,
 }: DiffCommentAnnotationProps) {
@@ -60,7 +60,7 @@ export function DiffCommentAnnotation({
             className="-my-1 -mr-1 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/comment:opacity-100 focus-visible:opacity-100 max-sm:opacity-100"
             variant="ghost"
             size="icon-xs"
-            aria-label="Delete comment"
+            aria-label="Kommentar löschen"
             onClick={onDelete}
           >
             <Trash2 className="size-3" />
@@ -84,7 +84,7 @@ export function DiffCommentAnnotation({
         size="sm"
         value={displayedText}
         placeholder={placeholder}
-        aria-label={`Comment on lines ${rangeLabel}`}
+        aria-label={`Kommentar zu Zeilen ${rangeLabel}`}
         onChange={(event) => (onTextChange ?? setLocalDraftText)(event.target.value)}
         onFocus={(event) => {
           const end = event.currentTarget.value.length;
@@ -102,14 +102,16 @@ export function DiffCommentAnnotation({
         }}
       />
       <div className="mt-1.5 flex items-center gap-1">
-        <span className="mr-auto text-[10px] text-muted-foreground/70">⌘/Ctrl Enter to send</span>
+        <span className="mr-auto text-[10px] text-muted-foreground/70">
+          ⌘/Ctrl Enter zum Senden
+        </span>
         <Button
           className="text-muted-foreground hover:text-foreground"
           variant="ghost"
           size="xs"
           onClick={onCancel}
         >
-          Cancel
+          Abbrechen
         </Button>
         {secondaryAction ? (
           <Button

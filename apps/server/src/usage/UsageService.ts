@@ -12,6 +12,7 @@
  * @module UsageService
  */
 import * as NodeOS from "node:os";
+import { usageSourceFingerprintKey } from "@workjet/shared/usageMerge";
 
 import {
   USAGE_CONTRACT_VERSION,
@@ -31,14 +32,16 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import * as Semaphore from "effect/Semaphore";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ServerConfig } from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { resolveClaudeHomePath } from "../provider/Drivers/ClaudeHome.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { UsageAggregator } from "./usageAggregation.ts";
-import { parseRateTable, type RateTable } from "./usagePricing.ts";
+import { parseRateTable } from "./usagePricing.ts";
+import bundledRates from "./catalog/model-rates.json" with { type: "json" };
 import {
   listTranscriptFiles,
   readDirectoryVolumeId,
@@ -53,11 +56,8 @@ import {
 } from "./usageScanCache.ts";
 import type { UsageRecord } from "./usageTranscripts.ts";
 
-const LITELLM_RATES_URL =
-  "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
-
-/** Rates move rarely; a day-old table keeps the page working offline. */
-const RATES_TTL_MS = 24 * 60 * 60 * 1000;
+const RATES_SOURCE = `bundled:${bundledRates.version}`;
+const BUNDLED_RATES = parseRateTable(bundledRates.document);
 
 /**
  * Files are filtered by mtime before opening. The slack covers a session whose
@@ -69,27 +69,33 @@ const MAX_HOURLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Longest window the UI offers, plus slack. Older entries are pruned. */
 const CACHE_RETENTION_DAYS = 90;
 
-/** On-disk shape of the rate snapshot. */
-const RatesCacheFile = Schema.Struct({
-  fetchedAtMs: Schema.Number,
-  document: Schema.Unknown,
-});
-const decodeRatesCache = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(RatesCacheFile as unknown as Schema.Codec<typeof RatesCacheFile.Type>),
-);
-const encodeRatesCache = Schema.encodeEffect(
-  Schema.fromJsonString(RatesCacheFile as unknown as Schema.Codec<typeof RatesCacheFile.Type>),
-);
-
 /** The scan cache is narrowed by hand in `usageScanCache`, so JSON is enough here. */
 const ScanCacheJson = Schema.fromJsonString(Schema.Unknown as unknown as Schema.Codec<unknown>);
 const decodeScanCacheFile = Schema.decodeUnknownEffect(ScanCacheJson);
 const encodeScanCacheFile = Schema.encodeEffect(ScanCacheJson);
 
+export interface AssistantUsageObservation {
+  readonly threadId: string;
+  readonly sessionId: string;
+  readonly messageId: string;
+  readonly model: string;
+  readonly createdAt: string;
+  readonly usage: {
+    readonly input_tokens: number;
+    readonly output_tokens: number;
+    readonly cache_read_input_tokens?: number;
+    readonly cache_creation_input_tokens?: number;
+  };
+}
+
 export class UsageService extends Context.Service<
   UsageService,
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
+    /** Provider observations without a persistent CLI transcript enter this same priced scan. */
+    readonly recordAssistantUsage?: (
+      input: AssistantUsageObservation,
+    ) => Effect.Effect<void, UsageReadError>;
   }
 >()("workjet/usage/UsageService") {}
 
@@ -108,7 +114,7 @@ export const layerTest = Layer.succeed(
         sources: [],
         pricing: {
           status: "unavailable",
-          source: LITELLM_RATES_URL,
+          source: RATES_SOURCE,
           fetchedAt: null,
           knownModels: 0,
         },
@@ -121,68 +127,15 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig;
+  const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
   const settingsService = yield* ServerSettings.ServerSettingsService;
-  const httpClient = yield* HttpClient.HttpClient;
 
+  const scanMutex = yield* Semaphore.make(1);
   const fileCache: ScanCache = new Map();
   let cacheDirty = false;
 
-  const ratesCachePath = path.join(config.stateDir, "usage-model-rates.json");
   const scanCachePath = path.join(config.stateDir, "usage-scan-cache.json");
-  let rates: RateTable = new Map();
-  let ratesFetchedAtMs: number | null = null;
-  let ratesStatus: UsageSummary["pricing"]["status"] = "unavailable";
-
-  /**
-   * Loads the LiteLLM rate table, preferring a fresh copy and falling back to
-   * the on-disk snapshot. With neither, every model reports as unpriced rather
-   * than the page failing.
-   */
-  const ensureRates = Effect.fn("UsageService.ensureRates")(function* () {
-    const now = yield* Clock.currentTimeMillis;
-    if (ratesFetchedAtMs !== null && now - ratesFetchedAtMs < RATES_TTL_MS) return;
-
-    if (ratesFetchedAtMs === null) {
-      const fromDisk = yield* fileSystem.readFileString(ratesCachePath).pipe(
-        Effect.flatMap((raw) => decodeRatesCache(raw)),
-        Effect.catchCause(() => Effect.succeed(null)),
-      );
-      if (fromDisk !== null) {
-        const parsed = parseRateTable(fromDisk.document);
-        if (parsed.size > 0) {
-          rates = parsed;
-          ratesFetchedAtMs = fromDisk.fetchedAtMs;
-          ratesStatus = "cached";
-          if (now - fromDisk.fetchedAtMs < RATES_TTL_MS) return;
-        }
-      }
-    }
-
-    const fetched = yield* httpClient.get(LITELLM_RATES_URL).pipe(
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
-      Effect.flatMap((response) => response.json),
-      Effect.timeout(10_000),
-      Effect.catchCause(() => Effect.succeed(null)),
-    );
-    if (fetched === null) {
-      // The refresh failed; whatever we are serving is now past its TTL and
-      // must not keep claiming to be fresh.
-      if (rates.size > 0) ratesStatus = "cached";
-      return;
-    }
-
-    const parsed = parseRateTable(fetched);
-    if (parsed.size === 0) return;
-
-    rates = parsed;
-    ratesFetchedAtMs = now;
-    ratesStatus = "fresh";
-
-    yield* encodeRatesCache({ fetchedAtMs: now, document: fetched }).pipe(
-      Effect.flatMap((serialized) => fileSystem.writeFileString(ratesCachePath, serialized)),
-      Effect.catchCause(() => Effect.void),
-    );
-  });
+  const rates = BUNDLED_RATES;
 
   /**
    * Claude's config dir is the home itself when overridden, but a default
@@ -221,6 +174,7 @@ export const make = Effect.gen(function* () {
 
     return [
       { provider: "claude" as const, dir: claudeDir },
+      { provider: "claude" as const, dir: path.join(config.stateDir, "usage", "claude") },
       { provider: "codex" as const, dir: path.join(codexLayout.sharedHomePath, "sessions") },
     ];
   });
@@ -299,7 +253,11 @@ export const make = Effect.gen(function* () {
     }
 
     let hourlyWindow: { readonly sinceTimeMs: number; readonly untilTimeMs: number } | null = null;
-    if (input.resolution === "hour") {
+    if (
+      input.resolution === "hour" ||
+      input.sinceTime !== undefined ||
+      input.untilTime !== undefined
+    ) {
       const sinceTime =
         input.sinceTime === undefined ? Option.none() : DateTime.make(input.sinceTime);
       const untilTime =
@@ -313,7 +271,10 @@ export const make = Effect.gen(function* () {
       const sinceTimeMs = DateTime.toEpochMillis(sinceTime.value);
       const untilTimeMs = DateTime.toEpochMillis(untilTime.value);
       const durationMs = untilTimeMs - sinceTimeMs;
-      if (durationMs <= 0 || durationMs > MAX_HOURLY_WINDOW_MS) {
+      if (
+        durationMs <= 0 ||
+        durationMs > (input.resolution === "hour" ? MAX_HOURLY_WINDOW_MS : 370 * 86_400_000)
+      ) {
         return yield* new UsageReadError({
           reason: "invalidWindow",
           detail: "Hourly usage window must be greater than zero and at most 24 hours",
@@ -323,7 +284,7 @@ export const make = Effect.gen(function* () {
     }
 
     const startedAtMs = yield* Clock.currentTimeMillis;
-    yield* ensureRates();
+
     yield* ensureScanCacheLoaded;
 
     const hostId = NodeOS.hostname();
@@ -349,12 +310,87 @@ export const make = Effect.gen(function* () {
       rates,
     });
 
+    type ProjectThread = {
+      projectId: string;
+      threadId: string;
+      title: string;
+      role: string;
+      provider: string | null;
+      sessionId: string | null;
+      latestTurnAt: string | null;
+    };
+    let projectThreads: readonly ProjectThread[] = [];
+    if (input.projectId !== undefined) {
+      if (Option.isNone(sql))
+        return yield* new UsageReadError({
+          reason: "scanFailed",
+          detail: "Project usage attribution is unavailable on this environment.",
+        });
+      projectThreads = yield* sql.value<ProjectThread>`
+        SELECT t.project_id AS "projectId", t.thread_id AS "threadId", t.title,
+          COALESCE(json_extract(t.workjet_config_json, '$.team.role'), json_extract(t.workjet_config_json, '$.role'), 'standard') AS role,
+          COALESCE(r.provider_name, s.provider_name) AS provider,
+          COALESCE(json_extract(r.resume_cursor_json, '$.resume'), json_extract(r.resume_cursor_json, '$.sessionId'), json_extract(r.resume_cursor_json, '$.threadId'), s.provider_session_id, s.provider_thread_id) AS "sessionId",
+          (SELECT MAX(requested_at) FROM projection_turns turns WHERE turns.thread_id = t.thread_id) AS "latestTurnAt"
+        FROM projection_threads t LEFT JOIN projection_thread_sessions s ON s.thread_id = t.thread_id
+        LEFT JOIN provider_session_runtime r ON r.thread_id = t.thread_id
+        WHERE t.project_id = ${input.projectId}
+      `.pipe(
+        Effect.mapError(
+          (cause) =>
+            new UsageReadError({
+              reason: "scanFailed",
+              detail: "Project thread attribution could not be read.",
+              cause,
+            }),
+        ),
+      );
+    }
+    const historicalBindings =
+      input.projectId === undefined || Option.isNone(sql)
+        ? []
+        : yield* sql.value<ProjectThread>`
+        SELECT t.project_id AS "projectId", t.thread_id AS "threadId", t.title,
+          COALESCE(json_extract(t.workjet_config_json, '$.team.role'), json_extract(t.workjet_config_json, '$.role'), 'standard') AS role,
+          b.provider_name AS provider, b.session_id AS "sessionId", NULL AS "latestTurnAt"
+        FROM usage_session_bindings b JOIN projection_threads t ON t.thread_id = b.thread_id
+        WHERE t.project_id = ${input.projectId}
+      `.pipe(
+            Effect.mapError(
+              (cause) =>
+                new UsageReadError({
+                  reason: "scanFailed",
+                  detail: "Project session history could not be read.",
+                  cause,
+                }),
+            ),
+          );
+    const sessionThreads = new Map<string, ProjectThread>();
+    const ambiguousSessions = new Set<string>();
+    for (const thread of [...projectThreads, ...historicalBindings]) {
+      if (!thread.sessionId) continue;
+      const provider =
+        thread.provider === "claudeAgent" || thread.provider === "claude-code"
+          ? "claude"
+          : thread.provider;
+      const key = `${provider}:${thread.sessionId}`;
+      if (sessionThreads.has(key) && sessionThreads.get(key)!.threadId !== thread.threadId)
+        ambiguousSessions.add(key);
+      else sessionThreads.set(key, thread);
+    }
+    const measuredThreads = new Set<string>();
     const sources: UsageSource[] = [];
     const livePaths = new Set<string>();
     const walkedRoots: string[] = [];
 
     for (const { provider, dir } of dirs) {
       const volumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
+      const sourceKey = usageSourceFingerprintKey({
+        hostId,
+        provider,
+        resolvedHomePath: dir,
+        volumeId,
+      });
       const exists = yield* fileSystem
         .exists(dir)
         .pipe(Effect.catchCause(() => Effect.succeed(false)));
@@ -391,8 +427,12 @@ export const make = Effect.gen(function* () {
         for (const record of records) {
           // Only sessions that contributed in-window count: the mtime slack
           // admits boundary files whose records fall outside the range.
-          if (aggregator.add(record) && record.sessionId.length > 0) {
+          const key = `${record.provider}:${record.sessionId}`;
+          const thread = ambiguousSessions.has(key) ? undefined : sessionThreads.get(key);
+          if (input.projectId !== undefined && thread === undefined) continue;
+          if (aggregator.add(record, thread, sourceKey) && record.sessionId.length > 0) {
             sessionIds.add(record.sessionId);
+            if (thread) measuredThreads.add(thread.threadId);
           }
         }
       }
@@ -428,21 +468,68 @@ export const make = Effect.gen(function* () {
       sinceDay: input.sinceDay,
       untilDay: input.untilDay,
       buckets: aggregated.buckets,
+      ...(input.projectId === undefined
+        ? {}
+        : {
+            projectThreads: projectThreads.map((thread) => ({
+              projectId: thread.projectId,
+              threadId: thread.threadId,
+              title: thread.title,
+              role: thread.role,
+              status: measuredThreads.has(thread.threadId)
+                ? ("measured" as const)
+                : thread.latestTurnAt === null ||
+                    (hourlyWindow && Date.parse(thread.latestTurnAt) < hourlyWindow.sinceTimeMs)
+                  ? ("no-turns" as const)
+                  : ("unknown" as const),
+            })),
+          }),
       sources,
       pricing: {
-        status: ratesStatus,
-        source: LITELLM_RATES_URL,
-        fetchedAt:
-          ratesFetchedAtMs === null
-            ? null
-            : DateTime.formatIso(DateTime.makeUnsafe(ratesFetchedAtMs)),
+        status: rates.size > 0 ? "cached" : "unavailable",
+        source: RATES_SOURCE,
+        fetchedAt: bundledRates.checkedAt,
         knownModels: rates.size,
       },
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
     } satisfies UsageSummary;
-  });
+  }, scanMutex.withPermit);
 
-  return { readSummary } as const;
+  const recordAssistantUsage = Effect.fn("UsageService.recordAssistantUsage")(
+    function* (input: AssistantUsageObservation) {
+      if (Option.isNone(sql))
+        return yield* new UsageReadError({
+          reason: "scanFailed",
+          detail: "Provider usage attribution is unavailable.",
+        });
+      const directory = path.join(config.stateDir, "usage", "claude");
+      const document = yield* encodeScanCacheFile({
+        type: "assistant",
+        timestamp: input.createdAt,
+        sessionId: input.sessionId,
+        message: { id: input.messageId, model: input.model, usage: input.usage },
+      });
+      yield* sql.value`INSERT OR IGNORE INTO usage_session_bindings (thread_id, provider_name, session_id)
+      VALUES (${input.threadId}, 'claudeAgent', ${input.sessionId})`;
+      yield* fileSystem.makeDirectory(directory, { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(directory, "sdk-" + input.createdAt.slice(0, 10) + ".jsonl"),
+        document + "\n",
+        { flag: "a" },
+      );
+    },
+    scanMutex.withPermit,
+    Effect.mapError(
+      (cause) =>
+        new UsageReadError({
+          reason: "scanFailed",
+          detail: "Provider usage observation could not be retained.",
+          cause,
+        }),
+    ),
+  );
+
+  return { readSummary, recordAssistantUsage } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

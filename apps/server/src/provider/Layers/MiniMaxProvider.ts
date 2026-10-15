@@ -39,26 +39,6 @@ const PRESENTATION = {
   showInteractionModeToggle: true,
   requiresNewThreadForModelChange: false,
 } as const;
-export const MINIMAX_GATEWAY_UNSUPPORTED =
-  "MiniMax Code requires an explicitly configured provider route in its selected profile. Workjet gateway injection is not verified for this CLI. Disable the gateway option and select an authorized native profile.";
-
-/** No direct-profile probe can establish readiness for an unsupported gateway route. */
-export const buildMiniMaxGatewayUnavailableSnapshot = (settings: MiniMaxSettings) =>
-  Effect.gen(function* () {
-    return buildServerProvider({
-      presentation: PRESENTATION,
-      enabled: settings.enabled,
-      checkedAt: DateTime.formatIso(yield* DateTime.now),
-      models: [],
-      probe: {
-        installed: false,
-        version: null,
-        status: "error",
-        auth: { status: "unknown" },
-        message: settings.enabled ? MINIMAX_GATEWAY_UNSUPPORTED : "MiniMax Code is disabled.",
-      },
-    });
-  });
 
 export const buildInitialMiniMaxProviderSnapshot = (settings: MiniMaxSettings) =>
   Effect.gen(function* () {

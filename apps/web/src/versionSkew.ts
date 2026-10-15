@@ -39,7 +39,7 @@ export function resolveVersionMismatch(
   return {
     clientVersion: normalizedClientVersion,
     serverVersion: normalizedServerVersion,
-    hint: "Version mismatch. Try syncing the client and server to the same CTOX version.",
+    hint: "Client- und Server-Version weichen ab.",
   };
 }
 
@@ -71,11 +71,11 @@ export function serverUpdateGuidance(
   switch (capability) {
     case "boot-service":
     case "respawn":
-      return `Update the ${serverLabel} so they stay in sync.`;
+      return `${serverLabel} aktualisieren.`;
     case "desktop-managed":
-      return `Update the desktop app that runs the ${serverLabel}.`;
+      return `Desktop-App für ${serverLabel} aktualisieren.`;
     default:
-      return `Relaunch the ${serverLabel} with the copied command to sync them.`;
+      return `${serverLabel} mit kopiertem Befehl neu starten.`;
   }
 }
 
@@ -143,5 +143,5 @@ export function appendVersionMismatchHint(
   if (!mismatch) {
     return normalizedMessage;
   }
-  return `${normalizedMessage} Hint: ${mismatch.hint}`;
+  return `${normalizedMessage} Hinweis: ${mismatch.hint}`;
 }

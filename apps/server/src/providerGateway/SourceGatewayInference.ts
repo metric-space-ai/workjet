@@ -1,8 +1,12 @@
 import {
   WorkjetGatewayInferenceError,
   WorkjetGatewayInferenceInput,
+  type WorkjetGatewayInferenceProtocol,
+  type WorkjetGatewayInferenceResult,
   WorkjetGatewayAdmissionInput,
   WorkjetRemoteWorkerPermit,
+  WorkjetExecutionPolicy,
+  sameWorkjetParentTeamBinding,
   type EnvironmentId,
   type WorkjetGatewayBindModelInput,
   type WorkjetGatewayModelBinding,
@@ -18,6 +22,7 @@ const decodePermit = Schema.decodeUnknownEffect(WorkjetRemoteWorkerPermit);
 const decodeAdmission = Schema.decodeUnknownEffect(WorkjetGatewayAdmissionInput);
 const decodeInference = Schema.decodeUnknownEffect(WorkjetGatewayInferenceInput);
 const samePermit = Schema.toEquivalence(WorkjetRemoteWorkerPermit);
+const sameExecutionPolicy = Schema.toEquivalence(Schema.UndefinedOr(WorkjetExecutionPolicy));
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 const failure = (reason: WorkjetGatewayInferenceError["reason"]) =>
@@ -85,6 +90,12 @@ export function makeSourceGatewayInference(dependencies: {
     deadlineMs: number,
     protocol: "responses" | "messages",
   ) => Effect.Effect<string, WorkjetGatewayInferenceError>;
+  readonly forwardProtocol?: (
+    selected: WorkjetGatewayModelBinding,
+    requestJson: string,
+    deadlineMs: number,
+    protocol: WorkjetGatewayInferenceProtocol,
+  ) => Effect.Effect<WorkjetGatewayInferenceResult, WorkjetGatewayInferenceError>;
   readonly now: Effect.Effect<number>;
 }) {
   const bindModel = Effect.fn("SourceGatewayInference.bindModel")(function* (
@@ -131,7 +142,23 @@ export function makeSourceGatewayInference(dependencies: {
     if (
       binding.sourceEnvironmentId !== environmentId ||
       binding.targetEnvironmentId === environmentId ||
-      binding.workspaceKey !== binding.requestId
+      binding.workspaceKey !== binding.requestId ||
+      !sameExecutionPolicy(binding.executionPolicy, input.workerRequest.executionPolicy) ||
+      !sameWorkjetParentTeamBinding(
+        binding.parentTeamBinding,
+        input.workerRequest.parentTeamBinding,
+      ) ||
+      (binding.parentTeamBinding !== undefined &&
+        (input.workerRequest.parentTeamRole !== "specialist" ||
+          binding.parentTeamBinding.owner_user_id !== input.permit.ownerUserId ||
+          binding.parentTeamBinding.project_id !== binding.projectId ||
+          binding.projectId !== input.workerRequest.project.id ||
+          binding.parentTeamBinding.thread_id !== binding.sourceSupervisorThreadId ||
+          binding.sourceSupervisorThreadId !== input.workerRequest.parent.threadId ||
+          binding.parentTeamBinding.supervisor_thread_id === binding.sourceSupervisorThreadId)) ||
+      (binding.executionPolicy !== undefined &&
+        (binding.executionPolicy.projectId !== binding.projectId ||
+          binding.projectId !== input.workerRequest.project.id))
     )
       return yield* failure("binding-mismatch");
     const selected = {
@@ -192,13 +219,18 @@ export function makeSourceGatewayInference(dependencies: {
         const request = body as Record<string, unknown>;
         if (
           request.model !== binding.modelRef.modelId ||
-          (request.stream !== undefined && request.stream !== false) ||
+          (request.stream !== undefined &&
+            (input.protocol === undefined
+              ? request.stream !== false
+              : typeof request.stream !== "boolean")) ||
           (request.background !== undefined && request.background !== false) ||
           request.previous_response_id !== undefined ||
           request.conversation !== undefined ||
-          (input.workerRequest.harness === "claude-code"
-            ? !Array.isArray(request.messages) || request.input !== undefined
-            : request.input === undefined || request.messages !== undefined)
+          ((input.protocol ??
+            (input.workerRequest.harness === "claude-code" ? "messages" : "responses")) ===
+          "responses"
+            ? request.input === undefined || request.messages !== undefined
+            : !Array.isArray(request.messages) || request.input !== undefined)
         )
           throw new Error();
       },
@@ -207,15 +239,27 @@ export function makeSourceGatewayInference(dependencies: {
     const authority = yield* requireAuthority(input);
     if (authority.permit.expiresAtMs - (yield* dependencies.now) < SOURCE_GATEWAY_TURN_TIMEOUT_MS)
       return yield* failure("native-admission-rejected");
-    const result = yield* dependencies.forward(
-      authority.selected,
-      input.requestJson,
-      authority.permit.expiresAtMs,
-      input.workerRequest.harness === "claude-code" ? "messages" : "responses",
-    );
+    const result =
+      input.protocol === undefined
+        ? {
+            requestJson: yield* dependencies.forward(
+              authority.selected,
+              input.requestJson,
+              authority.permit.expiresAtMs,
+              input.workerRequest.harness === "claude-code" ? "messages" : "responses",
+            ),
+          }
+        : dependencies.forwardProtocol === undefined
+          ? yield* failure("gateway-unavailable")
+          : yield* dependencies.forwardProtocol(
+              authority.selected,
+              input.requestJson,
+              authority.permit.expiresAtMs,
+              input.protocol,
+            );
     // A revoked/expired grant or native permit also prevents publication after the await.
     yield* requireAuthority({ ...input, permit: authority.permit });
-    return { requestJson: result };
+    return result;
   });
   return { bindModel, admit, infer };
 }

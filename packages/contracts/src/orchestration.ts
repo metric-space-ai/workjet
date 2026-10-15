@@ -11,6 +11,7 @@ import {
   CheckpointRef,
   CommandId,
   EventId,
+  EnvironmentId,
   IsoDateTime,
   MessageId,
   NonNegativeInt,
@@ -34,6 +35,7 @@ export const ORCHESTRATION_WS_METHODS = {
   searchThreads: "orchestration.searchThreads",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
   getArchivedTeamWorkerDetail: "orchestration.getArchivedTeamWorkerDetail",
+  getThreadContinuation: "orchestration.getThreadContinuation",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
 } as const;
@@ -491,6 +493,8 @@ export const OrchestrationThreadShell = Schema.Struct({
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
   hasPendingUserInput: Schema.Boolean,
+  waitingOnSupervisor: Schema.optional(Schema.Boolean),
+  workerDecisionProblem: Schema.optional(Schema.Literals(["missing-supervisor", "timed-out"])),
   hasActionableProposedPlan: Schema.Boolean,
   /**
    * Native background work alive after the turn settles: "working" while
@@ -671,6 +675,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   workspaceRoot: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   ctoxRegistration: Schema.optional(Schema.NullOr(CtoxProjectRegistration)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
+  expectedTokenBudgetRevision: Schema.optional(NonNegativeInt),
   // Absent = leave unchanged; null = clear the override.
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
@@ -831,6 +836,18 @@ export const ThreadGoalSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadGoalAssignCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.assign"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  supervisorThreadId: ThreadId,
+  status: Schema.Literals(["active", "paused", "blocked", "complete"]),
+  objective: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
+  reason: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(8000))),
+  expectedRevision: Schema.optional(NonNegativeInt),
+  createdAt: IsoDateTime,
+});
+
 const ThreadWorkerKanbanSetCommand = Schema.Struct({
   type: Schema.Literal("thread.worker-kanban.set"),
   commandId: CommandId,
@@ -899,6 +916,25 @@ const ThreadTurnStartBootstrap = Schema.Struct({
 });
 
 export type ThreadTurnStartBootstrap = typeof ThreadTurnStartBootstrap.Type;
+
+/** A portable transcript; provider sessions, grants and source filesystem paths stay local. */
+const ThreadContinuationImportCommand = Schema.Struct({
+  type: Schema.Literal("thread.continuation.import"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createThread: ThreadBootstrapCreateThread,
+  sourceEnvironmentId: EnvironmentId,
+  sourceLabel: TrimmedNonEmptyString,
+  messages: Schema.Array(
+    Schema.Struct({
+      messageId: MessageId,
+      role: Schema.Literals(["user", "assistant"]),
+      text: Schema.String,
+      createdAt: IsoDateTime,
+    }),
+  ),
+  createdAt: IsoDateTime,
+});
 
 export const ThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
@@ -990,6 +1026,7 @@ const ThreadSessionStopCommand = Schema.Struct({
 });
 
 const DispatchableClientOrchestrationCommand = Schema.Union([
+  ThreadContinuationImportCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -1020,6 +1057,7 @@ export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
 
 export const ClientOrchestrationCommand = Schema.Union([
+  ThreadContinuationImportCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -1053,6 +1091,15 @@ const ThreadSessionSetCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   session: OrchestrationSession,
+  createdAt: IsoDateTime,
+});
+
+const ThreadMessageSystemAddCommand = Schema.Struct({
+  type: Schema.Literal("thread.message.system.add"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  text: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
   createdAt: IsoDateTime,
 });
 
@@ -1141,12 +1188,33 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
 });
 
+const SupervisorTickScheduleCommand = Schema.Struct({
+  type: Schema.Literal("thread.supervisor.tick.schedule"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  firstTickAt: IsoDateTime,
+  createdAt: IsoDateTime,
+});
+
+const SupervisorTickCommand = Schema.Struct({
+  type: Schema.Literal("thread.supervisor.tick"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  scheduledAt: IsoDateTime,
+  text: Schema.String.check(Schema.isMaxLength(65536)),
+  createdAt: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
+  SupervisorTickScheduleCommand,
+  SupervisorTickCommand,
+  ThreadGoalAssignCommand,
   ThreadGoalExecutionObservedCommand,
   ThreadGoalExecutorObservedCommand,
   ThreadGoalAdvanceCommand,
   ThreadWorkerKanbanSetCommand,
   ThreadSessionSetCommand,
+  ThreadMessageSystemAddCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
   ThreadHistoryImportCommand,
@@ -1793,6 +1861,10 @@ export class OrchestrationGetWorkflowScriptError extends Schema.TaggedErrorClass
 }
 
 export const OrchestrationRpcSchemas = {
+  getThreadContinuation: {
+    input: Schema.Struct({ threadId: ThreadId }),
+    output: OrchestrationThreadDetailSnapshot,
+  },
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,
@@ -1848,6 +1920,8 @@ export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<O
   {
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
+    // Confirms a deleted, empty bootstrap identity, including drafts from older clients.
+    rolledBackThreadId: Schema.optional(ThreadId),
   },
 ) {}
 

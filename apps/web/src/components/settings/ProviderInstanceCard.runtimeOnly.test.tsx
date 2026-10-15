@@ -124,31 +124,50 @@ describe("harness cards show runtime state, never login state", () => {
   it("omits the account, the plan and the auth-flavoured server message", () => {
     const text = allText(renderCard(liveProvider(), true));
 
-    expect(text).not.toContain("Authenticated");
+    expect(text).not.toContain("Angemeldet");
     expect(text).not.toContain("person@example.com");
     expect(text).not.toContain("ChatGPT Pro 20x Subscription");
     expect(text).not.toContain("upstream providers connected");
-    expect(text).toContain("Installed");
+    expect(text).toContain("Installiert");
   });
 
   it("still shows all of it on the account surface", () => {
     const text = allText(renderCard(liveProvider(), false));
 
-    expect(text).toContain("Authenticated");
+    expect(text).toContain("Angemeldet");
   });
 
   it("reports runtime facts only, never the server message", () => {
     const base = { installed: true, enabled: true, message: "Authenticated as someone" };
 
     expect(getProviderRuntimeSummary({ ...base } as unknown as ServerProvider)).toEqual({
-      headline: "Installed",
+      headline: "Installiert",
       detail: null,
     });
     expect(
       getProviderRuntimeSummary({ ...base, enabled: false } as unknown as ServerProvider),
-    ).toEqual({ headline: "Disabled", detail: "Not offered for new sessions." });
+    ).toEqual({ headline: "Deaktiviert", detail: null });
     expect(
       getProviderRuntimeSummary({ ...base, installed: false } as unknown as ServerProvider),
-    ).toEqual({ headline: "Not installed", detail: "CLI not detected on PATH." });
+    ).toEqual({ headline: "Nicht installiert", detail: "Nicht im PATH" });
+  });
+
+  it("never shows an uninstalled harness as switched on (#475)", () => {
+    const provider = {
+      ...liveProvider(),
+      installed: false,
+      status: "error",
+    } as unknown as ServerProvider;
+    const switches: Array<Record<string, unknown>> = [];
+    visitElements(renderCard(provider, true), (element) => {
+      const props = element.props as Record<string, unknown>;
+      if (typeof props["aria-label"] === "string" && props["aria-label"] === "Claude aktiv") {
+        switches.push(props);
+      }
+      return false;
+    });
+    expect(switches).toHaveLength(1);
+    expect(switches[0]?.checked).toBe(false);
+    expect(switches[0]?.disabled).toBe(true);
   });
 });

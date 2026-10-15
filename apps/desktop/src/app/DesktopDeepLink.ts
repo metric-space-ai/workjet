@@ -43,14 +43,45 @@ const SCHEME_DESCRIPTORS: ReadonlyMap<string, SchemeDescriptor> = new Map([
   [DesktopSchemes.CTOX_DESKTOP_DEVELOPMENT_SCHEME, { family: "ctox", isDevelopment: true }],
 ] satisfies ReadonlyArray<readonly [string, SchemeDescriptor]>);
 
+/**
+ * Host of CTOX Business OS Sync QR codes: `workjet://pair?payload=<base64url>`
+ * (compact `w2` invite). Such a link never imports anything by itself. It
+ * opens Einstellungen › Instanzen with the „Einladungslink“ option and the
+ * link prefilled; the user still confirms with „Hinzufügen“.
+ */
+export const DESKTOP_PAIR_HOST = "pair";
+const PAIR_PAYLOAD_PATTERN = /^[A-Za-z0-9_-]{1,4096}$/;
+/** Renderer route (hash history) that hosts the inline „Instanz hinzufügen“ panel. */
+export const DESKTOP_PAIR_ROUTE = "/settings/business-os";
+
+/**
+ * The renderer uses hash history and the bundled protocol handler has no SPA
+ * fallback, so the target is expressed as `/index.html#/<route>?…`. The path
+ * is deliberately not `/`: that shape is Clerk's OAuth callback.
+ */
+function pairDeepLinkTarget(parsed: URL): { path: string; hash: string } | null {
+  if (parsed.pathname !== "" && parsed.pathname !== "/") return null;
+  if (parsed.hash !== "") return null;
+  const keys = [...parsed.searchParams.keys()];
+  if (keys.length !== 1 || keys[0] !== "payload") return null;
+  const payload = parsed.searchParams.get("payload") ?? "";
+  if (!PAIR_PAYLOAD_PATTERN.test(payload)) return null;
+  const search = new URLSearchParams([
+    ["add", "link"],
+    ["payload", payload],
+  ]);
+  return { path: "/index.html", hash: `#${DESKTOP_PAIR_ROUTE}?${search.toString()}` };
+}
+
 export function isDesktopDeepLinkScheme(scheme: string): boolean {
   return SCHEME_DESCRIPTORS.has(scheme.replace(/:$/, "").toLowerCase());
 }
 
 /**
  * Parse an OS-delivered deep link. Returns `none` for anything that is not one
- * of this app's schemes, or that targets a host other than the app host —
- * a foreign host must never be normalized onto the renderer origin.
+ * of this app's schemes, or that targets a host other than the app host or
+ * the pair host — a foreign host must never be normalized onto the renderer
+ * origin. A pair link is re-expressed as the Instanzen settings route.
  *
  * The schemes are registered as *standard* schemes (see
  * registerDesktopSchemePrivilegesSync), but this parser must also work in the
@@ -78,10 +109,25 @@ export function parseDesktopDeepLink(rawUrl: string): Option.Option<DesktopDeepL
     return Option.none();
   }
 
-  if (parsed.hostname !== DesktopSchemes.DESKTOP_HOST) return Option.none();
   if (parsed.port !== "" || parsed.username !== "" || parsed.password !== "") return Option.none();
-
   const canonicalScheme = DesktopSchemes.getDesktopScheme(descriptor.isDevelopment);
+
+  if (parsed.hostname === DESKTOP_PAIR_HOST) {
+    const target = pairDeepLinkTarget(parsed);
+    if (target === null) return Option.none();
+    return Option.some({
+      scheme,
+      canonicalScheme,
+      family: descriptor.family,
+      isDevelopment: descriptor.isDevelopment,
+      path: target.path,
+      search: "",
+      hash: target.hash,
+      canonicalUrl: `${canonicalScheme}://${DesktopSchemes.DESKTOP_HOST}${target.path}${target.hash}`,
+    });
+  }
+  if (parsed.hostname !== DesktopSchemes.DESKTOP_HOST) return Option.none();
+
   const parsedPath = parsed.pathname === "" ? "/" : parsed.pathname;
   const threadReferenceMatch = parsedPath.match(/^\/threads\/([^/]+)\/([^/]+)\/?$/);
   // External Workjet thread references carry an explicit `/threads/` marker.

@@ -47,7 +47,7 @@ describe("formatWorkjetHandoffBranch", () => {
       remoteConfigured: true,
     } as unknown as WorkjetReceivedHandoff["branch"]);
     expect(label).toContain("agent/th-thread-handoff");
-    expect(label).toContain("nothing was pushed");
+    expect(label).toContain("nichts gepusht");
     expect(label).not.toContain("available");
   });
 
@@ -57,8 +57,8 @@ describe("formatWorkjetHandoffBranch", () => {
       branch: "agent/no-commit",
       remoteConfigured: false,
     } as unknown as WorkjetReceivedHandoff["branch"]);
-    expect(label).toContain("head unknown");
-    expect(label).toContain("no remote");
+    expect(label).toContain("Head unbekannt");
+    expect(label).toContain("Kein Remote");
   });
 
   it("returns nothing when the handoff carried no branch", () => {
@@ -123,9 +123,9 @@ describe("WorkjetHandoffInbox", () => {
 
   it("lists an arrived handoff with a continue action", () => {
     const markup = render();
-    expect(markup).toContain("Handoffs (1)");
+    expect(markup).toContain("Übergaben (1)");
     expect(markup).toContain("thread-remote-source");
-    expect(markup).toContain("Continue here");
+    expect(markup).toContain("Hier fortsetzen");
     expect(markup).toContain('data-continue-state="ready"');
   });
 
@@ -141,17 +141,17 @@ describe("WorkjetHandoffInbox", () => {
 
   it("disables continuation and explains why when the context never arrived", () => {
     const markup = render({ handoffs: [handoff({ snapshotAvailable: false })] });
-    expect(markup).toContain("Context missing");
+    expect(markup).toContain("Kontext fehlt");
     expect(markup).toContain("disabled");
-    expect(markup).toContain("did not arrive on this machine");
+    expect(markup).toContain("Kontext nicht auf diesem Rechner");
   });
 
   it("offers the continued thread instead of a second continuation", () => {
     const markup = render({
       handoffs: [handoff({ acceptedThreadId: "thread-continued" as ThreadId })],
     });
-    expect(markup).toContain("Open thread");
-    expect(markup).not.toContain("Continue here");
+    expect(markup).toContain("Unterhaltung öffnen");
+    expect(markup).not.toContain("Hier fortsetzen");
   });
 
   it("renders a refusal inline without hiding the rows", () => {

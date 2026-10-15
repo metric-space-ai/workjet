@@ -68,12 +68,12 @@ export function PendingReviewCommentCard({
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <MessageSquareIcon className="size-3.5" />
-        <span>Pending — sent when you submit the review</span>
+        <span>Offen, wird mit der Prüfung gesendet</span>
         <Button
           size="icon-xs"
           variant="ghost"
           className="ml-auto"
-          aria-label="Discard this comment"
+          aria-label="Kommentar verwerfen"
           onClick={onRemove}
         >
           <Trash2Icon className="size-3.5" />
@@ -95,7 +95,7 @@ export function ReviewThreadCard({
   reference,
   pending,
   fixPending,
-  fixLabel = "Fix in a thread",
+  fixLabel = "In Chat beheben",
   onFix,
   onReply,
   canEditComment,
@@ -175,10 +175,10 @@ export function ReviewThreadCard({
           aria-expanded={expanded}
           onClick={() => setExpanded((current) => !current)}
         >
-          {thread.isResolved ? "Resolved" : "Open"} · {thread.comments.length}{" "}
-          {thread.comments.length === 1 ? "comment" : "comments"}
+          {thread.isResolved ? "Erledigt" : "Offen"} · {thread.comments.length}{" "}
+          {thread.comments.length === 1 ? "Kommentar" : "Kommentare"}
         </button>
-        {thread.isOutdated ? <span>outdated</span> : null}
+        {thread.isOutdated ? <span>veraltet</span> : null}
         {onFix ? (
           <Button
             size="xs"
@@ -188,7 +188,7 @@ export function ReviewThreadCard({
             onClick={onFix}
           >
             <HammerIcon className="size-3" />
-            {fixPending ? "Preparing..." : fixLabel}
+            {fixPending ? "Bereitet vor …" : fixLabel}
           </Button>
         ) : null}
         {canResolve ? (
@@ -199,7 +199,7 @@ export function ReviewThreadCard({
             disabled={pending}
             onClick={onToggleResolved}
           >
-            {thread.isResolved ? "Unresolve" : "Resolve"}
+            {thread.isResolved ? "Wieder öffnen" : "Erledigt"}
           </Button>
         ) : null}
       </div>
@@ -218,7 +218,7 @@ export function ReviewThreadCard({
                     className="mt-1"
                     value={comment.body}
                     cwd={workspaceRoot}
-                    label="Edit comment"
+                    label="Kommentar bearbeiten"
                     saving={savingEdit}
                     onSave={(body) => void saveEdit(comment.id, body)}
                     onCancel={() => setEditingId(null)}
@@ -235,7 +235,7 @@ export function ReviewThreadCard({
                         size="icon-xs"
                         variant="ghost"
                         className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
-                        aria-label="Edit comment"
+                        aria-label="Kommentar bearbeiten"
                         onClick={() => setEditingId(comment.id)}
                       >
                         <PencilIcon className="size-3" />
@@ -263,8 +263,8 @@ export function ReviewThreadCard({
                   autoFocus
                   size="sm"
                   value={reply}
-                  placeholder="Reply"
-                  aria-label="Reply to this conversation"
+                  placeholder="Antworten"
+                  aria-label="Antworten"
                   onChange={(event) => setReply(event.target.value)}
                   onKeyDown={submitKeys({
                     value: reply,
@@ -275,14 +275,14 @@ export function ReviewThreadCard({
                 />
                 <div className="mt-2 flex justify-end gap-2">
                   <Button size="xs" variant="ghost" onClick={() => setReplying(false)}>
-                    Cancel
+                    Abbrechen
                   </Button>
                   <Button
                     size="xs"
                     disabled={pending || reply.trim().length === 0}
                     onClick={() => void send()}
                   >
-                    Reply
+                    Antworten
                   </Button>
                 </div>
               </div>
@@ -293,7 +293,7 @@ export function ReviewThreadCard({
                 className="mt-2 px-1"
                 onClick={() => setReplying(true)}
               >
-                Reply
+                Antworten
               </Button>
             )
           ) : null}

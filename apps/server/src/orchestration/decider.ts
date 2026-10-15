@@ -1,3 +1,4 @@
+import * as NodeUtil from "node:util";
 import {
   EventId,
   CommandId,
@@ -9,7 +10,10 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_WORKJET_THREAD_CONFIG,
   retainWorkjetCtoxBinding,
+  withoutInheritedWorkjetSupervisorJournals,
   retainWorkjetWorkerPullRequest,
+  supervisorTickDueAt,
+  DEFAULT_SUPERVISOR_TICK_CONFIGURATION,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -20,6 +24,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import { requireOneShotIsolation } from "./oneShotIsolation.ts";
 import type * as PlatformError from "effect/PlatformError";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
@@ -34,16 +39,21 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
+import { continuationPrefixIssue } from "./threadContinuation.ts";
 import {
   initialWorkerGoal,
   prepareGoalContinuation,
   withoutGoalObservations,
 } from "../workjet/workerGoal.ts";
 import { createWorkerKanbanSlideDocument } from "../workjet/workerKanbanDocument.ts";
+import { withoutForeignSupervisorStateAtCreation } from "../workjet/workjetSupervisorState.ts";
+import { isSupervisorTickEligible } from "../workjet/supervisorTickEligibility.ts";
 import {
   requireProjectTeamLifecycle,
   requireProjectTeamOwnership,
 } from "./projectTeamInvariants.ts";
+
+import { reviseTokenBudgetOverview } from "@workjet/shared/projectTokenBudget";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -129,7 +139,11 @@ function hasOpenBlockingRequest(thread: {
  */
 export function threadHasQueuedTurnStart(
   thread: {
-    readonly messages: ReadonlyArray<{ readonly role: string; readonly createdAt: string }>;
+    readonly messages: ReadonlyArray<{
+      readonly id?: string;
+      readonly role: string;
+      readonly createdAt: string;
+    }>;
     readonly latestTurn: {
       readonly requestedAt: string;
       readonly startedAt: string | null;
@@ -142,7 +156,10 @@ export function threadHasQueuedTurnStart(
 ): boolean {
   const latestUserMessageAtMs = thread.messages.reduce(
     (latest, message) =>
-      message.role === "user" ? Math.max(latest, Date.parse(message.createdAt)) : latest,
+      message.role === "user" ||
+      (message.role === "system" && message.id?.startsWith("server:supervisor-tick:"))
+        ? Math.max(latest, Date.parse(message.createdAt))
+        : latest,
     Number.NEGATIVE_INFINITY,
   );
   const latestTurnAtMs =
@@ -387,6 +404,25 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "project.meta.update": {
+      const previousProject = readModel.projects.find(
+        (project) => project.id === command.projectId,
+      );
+      const revisedOverview =
+        command.overview === undefined
+          ? undefined
+          : yield* Effect.try({
+              try: () =>
+                reviseTokenBudgetOverview(
+                  previousProject?.overview,
+                  command.overview!,
+                  command.expectedTokenBudgetRevision,
+                ),
+              catch: () =>
+                new OrchestrationCommandInvariantError({
+                  commandType: command.type,
+                  detail: "Token budget changed. Reload project settings and try again.",
+                }),
+            });
       const registration = readModel.projects.find(
         (project) => project.id === command.projectId,
       )?.ctoxRegistration;
@@ -439,7 +475,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ? { defaultThreadEnvMode: command.defaultThreadEnvMode }
             : {}),
           ...(command.faviconPath !== undefined ? { faviconPath: command.faviconPath } : {}),
-          ...(command.overview !== undefined ? { overview: command.overview } : {}),
+          ...(revisedOverview !== undefined ? { overview: revisedOverview } : {}),
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
           updatedAt: occurredAt,
         },
@@ -534,7 +570,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           modelSelection: command.modelSelection,
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
-          workjetConfig: withoutGoalObservations(command.workjetConfig),
+          workjetConfig: withoutGoalObservations(
+            withoutForeignSupervisorStateAtCreation(command.workjetConfig, command.threadId),
+          ),
           branch: command.branch,
           worktreePath: command.worktreePath,
           createdAt: command.createdAt,
@@ -605,7 +643,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (workerPullRequestTerminal) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: "This worker's pull request is complete. Start a new worker for new work.",
+          detail: "This worker has submitted its pull request. Start a new worker for new work.",
         });
       }
       const thread = yield* requireThreadArchived({
@@ -987,6 +1025,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const workerConfig =
+        thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.role === "worker"
+          ? thread.workjetConfig
+          : undefined;
+      if (
+        workerConfig &&
+        ((command.branch !== undefined && command.branch !== thread.branch) ||
+          (command.worktreePath !== undefined && command.worktreePath !== thread.worktreePath))
+      )
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "A One-Shot Worker's assigned checkout and branch are immutable.",
+        });
+      const workerModel = command.modelSelection?.model ?? thread.modelSelection.model;
+      const workerPrefix = thread.title.match(/^(\[Worker[1-9]\d*@.*\]): /)?.[1];
+      const title = workerConfig?.pullRequest
+        ? `#${workerConfig.pullRequest.number}: ${workerModel}`
+        : workerConfig && workerPrefix
+          ? `${workerPrefix}: ${workerModel}`
+          : workerConfig &&
+              command.title !== undefined &&
+              !/^\[Worker[1-9]\d*@.*\]: /s.test(command.title)
+            ? thread.title
+            : command.title;
       const branch =
         command.branch !== undefined &&
         command.expectedBranch !== undefined &&
@@ -1004,8 +1066,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.meta-updated",
         payload: {
           threadId: command.threadId,
-          ...(command.title !== undefined ? { title: command.title } : {}),
-          ...(command.regenerateTitle === true
+          ...(title !== undefined ? { title } : {}),
+          ...(command.regenerateTitle === true && !workerConfig
             ? {
                 regenerateTitle: true as const,
                 previousTitle: thread.title,
@@ -1034,7 +1096,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      const requestIsCurrent = thread.titleRegeneration?.requestId === command.requestId;
+      const requestIsCurrent =
+        thread.workjetConfig.role !== "worker" &&
+        thread.titleRegeneration?.requestId === command.requestId;
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -1251,9 +1315,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.goal.set":
+    case "thread.goal.assign":
     case "thread.goal.advance": {
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
-      const config = thread.workjetConfig;
+      const config = withoutInheritedWorkjetSupervisorJournals(thread.workjetConfig);
       if (
         config.schemaVersion !== 2 ||
         config.team?.role !== "specialist" ||
@@ -1266,6 +1331,33 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
       const previous = config.goal;
+      if (command.type === "thread.goal.assign") {
+        const supervisor = yield* requireThread({
+          readModel,
+          command,
+          threadId: command.supervisorThreadId,
+        });
+        const team =
+          supervisor.workjetConfig.schemaVersion === 2 ? supervisor.workjetConfig.team : undefined;
+        if (
+          supervisor.archivedAt !== null ||
+          supervisor.deletedAt !== null ||
+          team?.role !== "supervisor" ||
+          team.threadId !== supervisor.id ||
+          team.projectId !== supervisor.projectId ||
+          supervisor.projectId !== thread.projectId ||
+          config.team.threadId !== thread.id ||
+          config.team.projectId !== thread.projectId ||
+          config.team.parentThreadId !== supervisor.id ||
+          command.status !== (previous?.status ?? "active")
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail:
+              "Supervisor assignment requires the current project/Parent binding and preserves Owner-stopped goals.",
+          });
+        }
+      }
       if (
         command.expectedRevision !== undefined &&
         command.expectedRevision !== previous?.revision
@@ -1350,10 +1442,28 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const previousConfig = withoutInheritedWorkjetSupervisorJournals(thread.workjetConfig);
+      let requestedConfig = command.workjetConfig;
+      // Migrate only a parent's receipt already copied into this child. A new
+      // foreign receipt still reaches the ownership guard below.
       if (
-        command.workjetConfig.schemaVersion === 2 &&
-        command.workjetConfig.ctoxSupervisorTurn &&
-        command.workjetConfig.ctoxSupervisorTurn.intent.threadId !== command.threadId
+        previousConfig !== thread.workjetConfig &&
+        thread.workjetConfig.schemaVersion === 2 &&
+        requestedConfig.schemaVersion === 2 &&
+        NodeUtil.isDeepStrictEqual(
+          requestedConfig.ctoxSupervisorTurn,
+          thread.workjetConfig.ctoxSupervisorTurn,
+        ) &&
+        NodeUtil.isDeepStrictEqual(
+          requestedConfig.ctoxSupervisorPreviousTurns,
+          thread.workjetConfig.ctoxSupervisorPreviousTurns,
+        )
+      )
+        requestedConfig = withoutInheritedWorkjetSupervisorJournals(requestedConfig);
+      if (
+        requestedConfig.schemaVersion === 2 &&
+        requestedConfig.ctoxSupervisorTurn &&
+        requestedConfig.ctoxSupervisorTurn.intent.threadId !== command.threadId
       ) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -1370,17 +1480,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: "Persistent goal state cannot be discarded by a legacy settings update.",
         });
       }
-      const retainedPr = retainWorkjetWorkerPullRequest(
-        thread.workjetConfig,
-        command.workjetConfig,
-      );
+      const retainedPr = retainWorkjetWorkerPullRequest(thread.workjetConfig, requestedConfig);
       if (retainedPr.error !== null) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
           detail: retainedPr.error,
         });
       }
-      const retained = retainWorkjetCtoxBinding(thread.workjetConfig, retainedPr.config);
+      const retained = retainWorkjetCtoxBinding(previousConfig, retainedPr.config);
       if (retained.error !== null) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -1418,11 +1525,162 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.supervisor.tick.schedule": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const config = thread.workjetConfig;
+      const project = readModel.projects.find((item) => item.id === thread.projectId);
+      if (
+        config.schemaVersion !== 2 ||
+        !isSupervisorTickEligible(thread, project) ||
+        config.supervisorTick
+      )
+        return [];
+      const cadence = project?.overview?.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION;
+      const now = Date.parse(command.createdAt);
+      const first = Date.parse(command.firstTickAt);
+      if (!cadence.enabled || first < now || first >= now + cadence.intervalMinutes * 60_000)
+        return [];
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: thread.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.workjet-config-set",
+        payload: {
+          threadId: thread.id,
+          workjetConfig: {
+            ...config,
+            supervisorTick: {
+              firstTickAt: command.firstTickAt,
+              lastTickAt: command.createdAt,
+              lastControlAt: null,
+              outcome: "scheduled",
+            },
+          },
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.supervisor.tick": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const config = thread.workjetConfig;
+      const project = readModel.projects.find((item) => item.id === thread.projectId);
+      if (config.schemaVersion !== 2 || !isSupervisorTickEligible(thread, project)) return [];
+      const dueAt = supervisorTickDueAt(
+        thread.createdAt,
+        project?.overview?.supervisorTick,
+        config.supervisorTick,
+      );
+      if (
+        dueAt === null ||
+        dueAt !== Date.parse(command.scheduledAt) ||
+        dueAt > Date.parse(command.createdAt)
+      )
+        return [];
+      const busy =
+        thread.latestTurn?.state === "running" ||
+        thread.session?.activeTurnId != null ||
+        thread.session?.status === "starting" ||
+        thread.session?.status === "running" ||
+        hasOpenBlockingRequest(thread) ||
+        threadHasQueuedTurnStart(thread, command.createdAt);
+      const state = {
+        lastTickAt: command.createdAt,
+        lastControlAt: busy ? (config.supervisorTick?.lastControlAt ?? null) : command.createdAt,
+        outcome: busy ? ("skipped-busy" as const) : ("started" as const),
+      };
+      const base = yield* withEventBase({
+        aggregateKind: "thread",
+        aggregateId: thread.id,
+        occurredAt: command.createdAt,
+        commandId: command.commandId,
+      });
+      const events: Array<Omit<OrchestrationEvent, "sequence">> = [
+        {
+          ...base,
+          type: "thread.workjet-config-set",
+          payload: {
+            threadId: thread.id,
+            workjetConfig: { ...config, supervisorTick: state },
+            updatedAt: command.createdAt,
+          },
+        },
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: thread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.activity-appended",
+          payload: {
+            threadId: thread.id,
+            activity: {
+              id: EventId.make(command.commandId + ":activity"),
+              tone: "info",
+              kind: "supervisor.control-round",
+              summary: busy
+                ? "Kontrollrunde übersprungen: Supervisor beschäftigt"
+                : "Kontrollrunde gestartet",
+              payload: { ...state, scheduledAt: command.scheduledAt },
+              turnId: null,
+              createdAt: command.createdAt,
+            },
+            createdAt: command.createdAt,
+          },
+        },
+      ];
+      if (busy) return events;
+      const messageId = MessageId.make(command.commandId);
+      events.push(
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: thread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.message-sent",
+          payload: {
+            threadId: thread.id,
+            messageId,
+            role: "system",
+            text: command.text,
+            attachments: [],
+            turnId: null,
+            streaming: false,
+            createdAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        },
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: thread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.turn-start-requested",
+          payload: {
+            threadId: thread.id,
+            messageId,
+            runtimeMode: thread.runtimeMode,
+            interactionMode: thread.interactionMode,
+            createdAt: command.createdAt,
+          },
+        },
+      );
+      return events;
+    }
+
     case "thread.turn.start": {
       if (workerPullRequestTerminal) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: "This worker's pull request is complete. Start a new worker for new work.",
+          detail: "This worker has submitted its pull request. Start a new worker for new work.",
         });
       }
       const targetThread = yield* requireThread({
@@ -1436,6 +1694,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Deleted thread '${command.threadId}' cannot start another turn.`,
         });
       }
+      yield* requireOneShotIsolation(targetThread, readModel);
       const sourceProposedPlan = command.sourceProposedPlan;
       if (command.goalRevision !== undefined) {
         const config = targetThread.workjetConfig;
@@ -1582,6 +1841,118 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
       return [...lifecycleResetEvents, userMessageEvent, turnStartRequestedEvent];
+    }
+
+    case "thread.continuation.import": {
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: command.createThread.projectId,
+      });
+      if (
+        project.deletedAt !== null ||
+        project.workspaceRoot === null ||
+        command.createThread.worktreePath !== null
+      )
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail:
+            "The destination project needs its own checkout. Source filesystem paths cannot be transferred.",
+        });
+      const existing = readModel.threads.find((thread) => thread.id === command.threadId);
+      const config = existing?.workjetConfig ?? command.createThread.workjetConfig;
+      if (
+        (config.schemaVersion === 2 && config.ctoxCrewChat !== undefined) ||
+        (command.createThread.workjetConfig.schemaVersion === 2 &&
+          command.createThread.workjetConfig.ctoxCrewChat !== undefined)
+      )
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "This native Luma needs a computer route from its Business OS configuration.",
+        });
+      if (existing) {
+        if (
+          existing.deletedAt !== null ||
+          existing.archivedAt !== null ||
+          existing.projectId !== project.id
+        )
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "The destination conversation belongs to a different or archived project.",
+          });
+        if (
+          existing.session?.status === "starting" ||
+          existing.session?.status === "running" ||
+          hasOpenBlockingRequest(existing) ||
+          threadHasQueuedTurnStart(existing, command.createdAt)
+        )
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail:
+              "Finish the destination turn and its pending requests before switching computers.",
+          });
+      }
+      const incoming = command.messages.map(({ messageId: id, role, text }) => ({
+        id,
+        role,
+        text,
+      }));
+      const prefixIssue = continuationPrefixIssue(existing?.messages ?? [], incoming);
+      if (prefixIssue)
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: prefixIssue,
+        });
+      const commands: OrchestrationCommand[] = [];
+      if (!existing)
+        commands.push({
+          ...command.createThread,
+          threadId: command.threadId,
+          type: "thread.create",
+          commandId: command.commandId,
+        });
+      else
+        commands.push({
+          type: "thread.meta.update",
+          threadId: command.threadId,
+          commandId: command.commandId,
+          modelSelection: command.createThread.modelSelection,
+        });
+      const additions = command.messages.slice(existing?.messages.length ?? 0);
+      for (let offset = 0; offset < additions.length; offset += 200)
+        commands.push({
+          type: "thread.history.import",
+          threadId: command.threadId,
+          commandId: command.commandId,
+          messages: additions.slice(offset, offset + 200),
+          createdAt: command.createdAt,
+        });
+      const transferId = EventId.make(`computer-continuation:${command.commandId}`);
+      commands.push({
+        type: "thread.activity.append",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        createdAt: command.createdAt,
+        activity: {
+          id: transferId,
+          tone: "info",
+          kind: "provider.history.transfer",
+          summary: `Next turn on this computer · history from ${command.sourceLabel} carried over`,
+          payload: {
+            sourceEnvironmentId: command.sourceEnvironmentId,
+            historyContinuation: {
+              transferId,
+              messageIds: incoming.map((message) => message.id),
+              pending: true,
+            },
+            detail:
+              "Text history is copied. Attachments, filesystem state, pending approvals and provider sessions stay on the source computer. The next turn uses this project's checkout and fresh permissions.",
+          },
+          turnId: null,
+          createdAt: command.createdAt,
+        },
+      });
+      return yield* decideCommandSequence({ commands, readModel, environmentId });
     }
 
     case "thread.history.import": {
@@ -1874,6 +2245,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
       return [unsettledEvent, sessionSetEvent];
+    }
+
+    case "thread.message.system.add": {
+      yield* requireThread({ readModel, command, threadId: command.threadId });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.message-sent",
+        payload: {
+          threadId: command.threadId,
+          messageId: command.messageId,
+          role: "system",
+          text: command.text,
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
     }
 
     case "thread.message.assistant.delta": {

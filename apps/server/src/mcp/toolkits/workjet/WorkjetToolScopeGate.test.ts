@@ -81,6 +81,8 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   { file: "WebStackTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "WebStackTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "WorkBlockTool.ts", enforcer: "requireWorkjetMember" },
+  { file: "WorkerAutonomyTool.ts", enforcer: "requireWorkjetMember" },
+  { file: "WorkerDecisionTool.ts", enforcer: "requireWorkjetMember" },
   { file: "WorkerKanbanTool.ts", enforcer: "requireWorkjetMember" },
   { file: "WorkerTool.ts", enforcer: "requireWorkjetOrchestrator" },
 ];

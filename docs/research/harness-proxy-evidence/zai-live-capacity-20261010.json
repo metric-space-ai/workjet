@@ -1,0 +1,10 @@
+{
+  "recordedAt": "2026-10-10T03:37:19.999Z",
+  "provider": "zai",
+  "model": "glm-5.3-flash",
+  "httpStatus": 200,
+  "upstreamStatus": "200",
+  "errorClass": null,
+  "error": null,
+  "hasOutput": true
+}

@@ -24,12 +24,8 @@ import {
   useClientSettings,
   useClientSettingsHydrated,
   useEnvironmentIdentificationMode,
-  useLegacySidebarEnabled,
 } from "../hooks/useSettings";
-import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
-import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
-import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import {
   resolveSidebarStageFocusRingOffsetClass,
   useSidebarStageBackdropVariant,
@@ -53,7 +49,6 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { CtoxMainShell, CtoxModeProvider } from "./ctox/CtoxModeShell";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
-import { WorkjetModesIntroGate } from "./WorkjetModesIntroGate";
 import { WorkjetHeaderFrame } from "./WorkjetHeader";
 import { useSharedWorkjetHeader } from "./WorkjetHeaderSlots";
 import { BusinessOsCodeScopeSynchronizer } from "../businessOsCodeScope";
@@ -138,12 +133,12 @@ function SidebarControl({ disabled = false }: { readonly disabled?: boolean }) {
                   stageBackdropVariant &&
                   resolveSidebarStageFocusRingOffsetClass(stageBackdropVariant),
               )}
-              aria-label="Toggle main sidebar"
+              aria-label="Seitenleiste umschalten"
             />
           }
         />
         <TooltipPopup side="bottom">
-          Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
+          Seitenleiste umschalten{shortcutLabel ? ` (${shortcutLabel})` : ""}
         </TooltipPopup>
       </Tooltip>
     </div>
@@ -173,7 +168,6 @@ export function resolveAppSidebarSurface({
 
 function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const legacySidebarEnabled = useLegacySidebarEnabled();
   const configuredProductMode = useClientSettings((settings) => settings.workjetProductMode);
   const productMode = resolveWorkjetProductMode({
     configuredMode: configuredProductMode,
@@ -266,7 +260,6 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
     >
       <BusinessOsCodeScopeSynchronizer />
       <WorkjetProjectRegistrySynchronizer />
-      <WorkjetModesIntroGate />
       <CtoxModeProvider businessOsVisible={isCtoxShell}>
         <WorkjetHeaderFrame mode={productMode} sidebarAvailable={!isCtoxShell}>
           {!isCtoxShell ? <ProjectProjectionRetention /> : null}
@@ -295,16 +288,10 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
                   onResize: setSidebarWidth,
                 }}
               >
-                {sidebarSurface === "settings" ? (
-                  <>
-                    <SidebarChromeHeader isElectron={isElectron} />
-                    <SettingsSidebarNav pathname={pathname} />
-                  </>
-                ) : (
-                  <InstanceNavigationBoundary>
-                    {legacySidebarEnabled ? <LegacyThreadSidebar /> : <ThreadSidebar />}
-                  </InstanceNavigationBoundary>
-                )}
+                {/* Settings open as a sheet over the app (#627): the app sidebar stays behind it. */}
+                <InstanceNavigationBoundary>
+                  <ThreadSidebar />
+                </InstanceNavigationBoundary>
                 <SidebarRail onDoubleClick={resetSidebarWidth} />
               </Sidebar>
             </InstanceSidebarBoundary>

@@ -1,5 +1,7 @@
 import * as NodeAssert from "node:assert/strict";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeTest from "node:test";
+import * as NodeURL from "node:url";
 
 import {
   FORBIDDEN_TERMS,
@@ -18,6 +20,42 @@ NodeTest.test("the current Workjet product surfaces pass the vocabulary guard", 
   NodeAssert.deepEqual(result.forbiddenTerms, FORBIDDEN_TERMS);
   NodeAssert.deepEqual(result.productTerms, PRODUCT_TERMS);
 });
+
+NodeTest.test(
+  "the meeting room carries no operation-identity jargon or English status copy, and no banners",
+  async () => {
+    const roomFiles = [
+      "apps/web/src/components/NativeJourFixeRoom.tsx",
+      "apps/web/src/components/JourFixeRoom.tsx",
+      "apps/web/src/components/JourFixeSpeechRoom.tsx",
+      "apps/web/src/components/JourFixePlayer.tsx",
+      "apps/web/src/lib/jourFixeNative.ts",
+    ];
+    const englishStatusCopy =
+      /operation identity|has not been confirmed|still catching up|waiting for retry|Earlier deck|Retry preserves/iu;
+    const read = (file) =>
+      NodeFSP.readFile(NodeURL.fileURLToPath(new URL(`../${file}`, import.meta.url)), "utf8");
+    for (const file of roomFiles) {
+      NodeAssert.doesNotMatch(
+        await read(file),
+        englishStatusCopy,
+        `${file} must word every room state in German`,
+      );
+    }
+    // Die Raum-Hüllen rendern ihre Zustände am Bereich; eine Kopfleiste über dem
+    // Raum (role="alert" in der Hülle) ist verboten.
+    for (const file of [
+      "apps/web/src/components/NativeJourFixeRoom.tsx",
+      "apps/web/src/components/JourFixeSpeechRoom.tsx",
+    ]) {
+      NodeAssert.doesNotMatch(
+        await read(file),
+        /role="alert"/u,
+        `${file} must not stack an alert bar above the room`,
+      );
+    }
+  },
+);
 
 NodeTest.test("visible JSX, labels, and ARIA copy are rejected outside diagnostics", () => {
   const findings = auditSourceText(
@@ -189,3 +227,44 @@ NodeTest.test("legacy links and bundle identity are scoped metadata contexts", (
     false,
   );
 });
+
+NodeTest.test(
+  "chat and supervisor bars offer operation instead of describing internal state",
+  async () => {
+    // Sätze, die einen internen Zustand beschreiben statt eine Bedienung
+    // anzubieten (Workjet 0.0.96, Befund vom 13.10.2026). Die Sperre gilt für
+    // die Leisten und Köpfe, die sie einst zeigten.
+    const forbiddenStateCopy = [
+      "Die Datenabfrage hat zu lange gedauert",
+      "Durchlauf 0",
+      "Revision 0",
+      "noch nicht aktualisiert",
+      "Noch kein Mini-Kanban",
+      "Anfragen warten länger",
+    ];
+    const guardedFiles = [
+      "apps/web/src/components/PersistentWorkerGoal.tsx",
+      "apps/web/src/components/PersistentWorkerKanban.tsx",
+      "apps/web/src/components/ProjectSupervisorLumaField.tsx",
+      "apps/web/src/components/chat/NativeSupervisorComposer.tsx",
+      "apps/web/src/components/chat/NativeSupervisorRouteControls.tsx",
+      "apps/web/src/components/chat/NativeSupervisorConversation.tsx",
+      "apps/web/src/components/chat/ComposerWorkjetTargetControls.tsx",
+      "apps/web/src/components/chat/ComposerWorkerControl.tsx",
+      "apps/web/src/components/chat/ChatComposer.tsx",
+      "apps/web/src/components/chat/ComposerBar.tsx",
+      "apps/web/src/components/chat/ThreadErrorBanner.tsx",
+    ];
+    const read = (file) =>
+      NodeFSP.readFile(NodeURL.fileURLToPath(new URL(`../${file}`, import.meta.url)), "utf8");
+    for (const file of guardedFiles) {
+      const source = await read(file);
+      for (const sentence of forbiddenStateCopy) {
+        NodeAssert.ok(
+          !source.includes(sentence),
+          `${file} must not carry the state sentence „${sentence}“`,
+        );
+      }
+    }
+  },
+);

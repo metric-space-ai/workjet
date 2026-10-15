@@ -211,7 +211,7 @@ describe("session import scope and search races", () => {
       await settle();
       browser = render();
       expect(state.inspect).toHaveBeenCalledTimes(2);
-      expect(browser.progress).toBe("Selecting conversations…");
+      expect(browser.progress).toBe("Unterhaltungen werden gewählt …");
 
       if (outcome === "success") oldRequest.resolve(success([candidate(1)]));
       else oldRequest.reject(new Error("Old instance request failed"));
@@ -219,7 +219,7 @@ describe("session import scope and search races", () => {
       browser = render();
       expect(browser.selected.size).toBe(0);
       expect(browser.error).toBeNull();
-      expect(browser.progress).toBe("Selecting conversations…");
+      expect(browser.progress).toBe("Unterhaltungen werden gewählt …");
 
       browser.onSelectAll();
       await settle();

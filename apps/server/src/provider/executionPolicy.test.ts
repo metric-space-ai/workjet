@@ -9,6 +9,7 @@ import {
 } from "@workjet/contracts";
 import {
   requireEnforcedExecutionPolicy,
+  requireOneShotWorktreeContainment,
   requirePersistedEnforcedExecutionPolicy,
 } from "./executionPolicy.ts";
 
@@ -87,3 +88,47 @@ describe("autonomous worktree execution admission", () => {
     }),
   );
 });
+
+it.effect(
+  "One-Shots fail closed on every harness without enforced confinement; other roles keep their autonomy",
+  () =>
+    Effect.gen(function* () {
+      for (const provider of [
+        "codex",
+        "claudeAgent",
+        "opencode",
+        "grok",
+        "pi",
+        "cursor",
+        "minimax",
+        "greppy",
+        "ctox",
+      ]) {
+        const worker = {
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          team: { role: "worker" },
+        } as unknown as typeof WorkjetThreadConfig.Type;
+        const result = yield* Effect.result(
+          requireOneShotWorktreeContainment(
+            "startSession",
+            ProviderDriverKind.make(provider),
+            worker,
+            "/assigned/worktree",
+          ),
+        );
+        expect(result._tag).toBe(
+          provider === "codex" || provider === "claudeAgent" ? "Success" : "Failure",
+        );
+        const persistent = {
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          team: { role: "specialist" },
+        } as unknown as typeof WorkjetThreadConfig.Type;
+        yield* requireOneShotWorktreeContainment(
+          "startSession",
+          ProviderDriverKind.make(provider),
+          persistent,
+          "/assigned/worktree",
+        );
+      }
+    }),
+);

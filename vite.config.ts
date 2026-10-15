@@ -17,6 +17,8 @@ export default defineConfig({
       "**/dist-electron/**",
       "**/.{idea,git,cache,output,temp}/**",
       "**/scripts/audit-workjet-content.test.mjs",
+      "**/scripts/offline-runtime-defaults.test.mjs",
+      "**/offline-runtime-defaults.test.mjs",
       "**/scripts/check-workjet-webrtc-only-release.test.ts",
       "**/scripts/generate-workjet-install-manifest.test.mjs",
       "**/audit-workjet-content.test.mjs",
@@ -153,6 +155,7 @@ export default defineConfig({
       "workjet/no-inline-schema-compile": "warn",
       "workjet/no-manual-effect-runtime-in-tests": "error",
       "workjet/namespace-node-imports": "error",
+      "workjet/no-native-form-controls": "error",
     },
     options: {
       // Revisit once Oxlint's tsgolint path can integrate with @effect/tsgo diagnostics.

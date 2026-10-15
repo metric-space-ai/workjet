@@ -3,13 +3,23 @@ import {
   CodexSettings,
   CursorSettings,
   GrokSettings,
+  GreppySettings,
   OpenCodeSettings,
   MiniMaxSettings,
+  PiSettings,
   ProviderDriverKind,
 } from "@workjet/contracts";
 import type * as Schema from "effect/Schema";
 import { TerminalIcon } from "lucide-react";
-import { ClaudeAI, CursorIcon, GrokIcon, type Icon, OpenAI, OpenCodeIcon } from "../Icons";
+import {
+  ClaudeAI,
+  CursorIcon,
+  GrokIcon,
+  type Icon,
+  OpenAI,
+  OpenCodeIcon,
+  PiCodeIcon,
+} from "../Icons";
 
 type ProviderSettingsSchema = {
   readonly fields: Readonly<Record<string, Schema.Top>>;
@@ -38,6 +48,12 @@ export interface ProviderClientDefinition {
 
 export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
   {
+    value: ProviderDriverKind.make("pi"),
+    label: "Pi Code",
+    icon: PiCodeIcon,
+    settingsSchema: PiSettings,
+  },
+  {
     value: ProviderDriverKind.make("minimax"),
     label: "MiniMax Code",
     icon: TerminalIcon,
@@ -59,14 +75,14 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     value: ProviderDriverKind.make("cursor"),
     label: "Cursor",
     icon: CursorIcon,
-    badgeLabel: "Early Access",
+    badgeLabel: "Vorschau",
     settingsSchema: CursorSettings,
   },
   {
     value: ProviderDriverKind.make("grok"),
     label: "Grok",
     icon: GrokIcon,
-    badgeLabel: "Early Access",
+    badgeLabel: "Vorschau",
     settingsSchema: GrokSettings,
   },
   {
@@ -74,6 +90,12 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     label: "OpenCode",
     icon: OpenCodeIcon,
     settingsSchema: OpenCodeSettings,
+  },
+  {
+    value: ProviderDriverKind.make("greppy"),
+    label: "Greppy",
+    icon: TerminalIcon,
+    settingsSchema: GreppySettings,
   },
 ];
 

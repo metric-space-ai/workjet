@@ -14,6 +14,40 @@ Absence preserves existing behavior. This is a policy reference, not a permit,
 a path grant, an approval bypass or a source of computer/account identity.
 The Owner project setting and its propagation are owned by Main.
 
+The dispatcher copies this reference from the server's saved parent into local
+worker configuration and the immutable `RemoteWorkerRequest.executionPolicy`.
+It accepts a reference only for that parent's project and saved team membership.
+The remote receiver preserves it in the target worker configuration, and rejects
+a foreign project or missing team role before storing a request or touching Git.
+Changed, removed or newly added policy references reject a retry of an older
+remote request. Reconciliation of an already recorded native result starts no
+new worker. The source reports invalid references as `execution-policy-invalid`;
+the existing native completion contract uses `capability-escalation`.
+The request digest includes the reference; an older
+receiver stripping the field cannot claim the same source request identity.
+No policy is accepted from the worker-dispatch MCP input. These checks preserve
+the policy at the provider boundary; they do not verify native current policy
+or supply a sandbox permit.
+
+The source copies the same reference into
+`RemoteWorkerNativeBinding.executionPolicy`. Native issue, claim, revalidation
+and renewal receive that immutable reference. The client rejects a missing,
+added, foreign-project or changed reference before resolving account grants
+or contacting native, and rejects a native receipt that omits or substitutes
+it. The persisted intent and receipt retain the reference across recovery;
+revocation still uses the original binding after an account grant is removed.
+The shared Source model-gateway schema retains this same optional reference.
+Admission and inference reject a missing, added, changed or foreign-project
+reference before looking up grants or contacting native. The exact reference
+survives native receipt decoding and must remain unchanged during renewal and
+the revalidation after model forwarding; a substituted receipt withholds the
+response. Policy-free requests keep their legacy wire shape.
+
+An older native that rejects the new optional binding cannot admit this mode.
+The native producer must additionally verify current Owner policy/revision and
+actual enrolled team provenance at every usage. Echoing the reference alone
+does not supply that authority, a sandbox witness or a supported policy mode.
+
 The common provider boundary currently **rejects this mode for every harness**.
 No supported autonomous-worktree policy mode is advertised. In particular,
 `full-access`, Codex's `workspace-write`, Claude's `acceptEdits`, and a
@@ -44,3 +78,323 @@ access to credential directories.
 Installed G2 acceptance remains open. This change prevents a premature project
 setting from silently turning into host-wide access; it does not claim that an
 autonomous worker has been accepted.
+
+## Complete native Parent enrollment
+
+A Persistent Worker stores the complete Owner-issued
+`ctox.workjet.persistent-worker-binding.v1` reference in optional v2 config
+`parentTeamBinding`: contract, owner_user_id, project_id, supervisor_thread_id,
+thread_id, role, revision and state. Workjet preserves the eight native fields
+rather than deriving authority from a team title or retaining only its revision.
+The reference requires an active persistent_worker and canonical non-nil native
+thread UUIDs. Extra fields, incomplete references and unsafe revisions are rejected.
+
+Dispatch checks the saved specialist/project/thread/Supervisor affiliation before
+side effects. It pins the same reference into the immutable remote request. A
+removed, replaced or rebound reference cannot retry an old request after a lost
+acknowledgment. New one-shot workers inherit settings without the Parent enrollment.
+
+Each source operation rereads the saved Parent and compares the full reference
+before admission. The native binding keeps the actual Parent UUID in the existing
+`sourceSupervisorThreadId` field; it never replaces it with the Root Supervisor
+UUID. Native private enrollment and current history remain authoritative at issue,
+claim, revalidation and renewal.
+
+The SQLite intent, native receipt and typed model permit preserve this same full
+reference. Request/binding disagreement and a receipt issued for a different Owner
+are rejected. Native renewal and revalidation after forwarding must return the
+unchanged complete binding before a model response can be published. Cleanup
+continues with the original exact receipt after retirement.
+
+Owner enrollment/revocation commands and installed acceptance remain separate.
+This consumer enables no autonomous-worktree harness policy mode and grants no
+host-secret access or unrestricted provider permissions.
+
+## Isolated Git metadata custody
+
+An executor confined to its workspace cannot use a linked worktree's shared
+Git administration directory outside that workspace. The native helper now
+supports publication and rejected-start quarantine of a prepared checkout
+whose own `.git` directory is inside it. Publication requires the captured
+directory and Git metadata identities, stays beside the prepared checkout,
+and never replaces an existing destination, including an empty directory.
+Symlink ancestors, replaced identities, `commondir`, and object alternates
+are rejected. The caller must persist the capture before publication and
+verify that same capture on recovery; a path alone does not prove custody.
+
+The default linked-worktree capture and automatic removal are unchanged:
+they never adopt a standalone/manual repository. Isolated captures require
+an explicit kind and cannot use automatic recursive removal. On a rejected
+start, the rollback API can receive the original persisted custody; it
+quarantines checkout and private Git metadata together, records recovery
+locations, retains late writes, and never deletes a ref from the source
+project. A failed native response reports candidate recovery paths only.
+
+For a remote request carrying the autonomous-worktree policy reference, the
+receiver now allocates a checkout with private Git metadata. It saves an immutable
+server-derived intent and a destination reservation in SQLite, prepares a sibling
+staging directory, and seeds only the requested commit and its reachable history.
+It copies no source refs, configuration, object alternates or hardlinks. Git
+preparation ignores inherited Git redirections, global/system configuration,
+templates, hooks and filesystem monitors.
+
+The receiver persists the staging directory and private Git metadata identities
+before native exclusive publication. On retry it verifies those original
+identities at either the staging or destination path, together with the unchanged
+HEAD, worker branch and clean checkout. A lost publication acknowledgement creates
+no second checkout. Foreign, replaced or missing directories are rejected and
+retained. Rejected-start rollback receives the same original custody; accepted
+create/turn receipts still reconcile without a second worker. Requests without
+the policy retain the existing linked-worktree path.
+
+Local delegation uses the same private-repository allocator. The source-server
+broker derives the repository from the saved project, checks the current remote,
+requires a clean tracked/untracked checkout and resolves the parent's exact commit.
+Ignored dependency and cache files are not copied. It chooses the destination through
+server worktree storage and hashes the saved project/team policy, parent, signed task
+digest, model selection, capabilities and runtime modes into the immutable allocation
+intent. This digest detects substitutions; it does not grant native execution authority.
+A missing allocator or unavailable original rollback capture fails before thread
+creation. Policy-free local workers retain the existing linked-worktree path.
+
+This allocation and custody receipt is a prerequisite, not a sandbox witness,
+an enrolled native Parent or an enabled provider policy. Every autonomous-worktree
+provider mode remains unsupported; whole execution containment, native authority
+and installed GPU acceptance are still required.
+
+## Private worker model IPC
+
+The target source setup requests a private model socket when a remote request
+carries an execution-policy reference. Policy-free requests keep their existing
+TCP loopback transport. On Linux, the extra endpoint uses the same request handler,
+pinned model, API key and fresh source admission as loopback. It is not a second
+account route or a native execution permit.
+
+The socket is private to the service UID and is reached through the original
+directory descriptor under /proc. A namespace launcher can mount only this
+endpoint without exposing the host network. Original directory/socket identities
+are captured from the filesystem. Rename or replacement of the directory does
+not redirect the listener or make shutdown recursively remove replacement data.
+Revocation aborts requests and closes both endpoints.
+
+No provider is switched to this endpoint yet: the namespace-side bridge, complete
+CLI/file/MCP enforcement and native team admission remain required before an
+autonomous-worktree mode can be supported. Non-Linux hosts reject private IPC
+explicitly. This transport component is not installed G2 acceptance.
+
+## Model bridge inside the worker network namespace
+
+The native helper's `--worker-model-bridge` command binds a loopback endpoint
+inside an already created Linux network namespace, forwards bytes to the
+captured Unix model socket, and supervises one CLI child. It rejects the original
+service network namespace and a changed, non-private or foreign socket before
+starting the CLI. HTTP headers and streaming bytes pass through without protocol
+translation or account selection. At most two connections and bounded relay
+buffers are retained. The bridge closes with its child and preserves its exit code.
+
+Private native profiles use the namespace loopback address during initial
+preparation and fresh source admission at start or recovery. Regenerated profile
+files, provider environment and the common source URL retain that endpoint;
+profiles without private IPC retain the host endpoint. The namespace launcher must mount the
+captured socket at the fixed private path and pass the captured parent network
+identity. The bridge is not that launcher, an Owner/team permit or a filesystem/
+MCP boundary. Drivers still reject autonomous-worktree; no support or installed
+G2 acceptance is claimed from this component alone.
+
+## Captured process launch
+
+The native `--worker-namespace-launch` entry creates the Linux filesystem,
+PID, user, IPC, UTS and network namespaces before the CLI starts. The server
+supplies the original private-checkout and Git identities, private profile,
+model socket/network capture and captured runtime files or verified bundles. It
+mounts the original checkout at its original path, keeps Git metadata inside
+it, mounts only the assigned profile for writable harness state, and exposes
+the captured runtime files and system /usr read only. The root is read only;
+temporary files remain inside the namespace.
+
+Mounts use captured descriptors. The helper rejects replaced identities,
+symlink directory ancestors, shared Git metadata, non-private profiles and an
+unregistered executable. Both native entries close inherited descriptors
+before the CLI runs, including descriptors used to establish mounts. This
+prevents an open host directory from carrying authority around the filesystem
+boundary. The launcher replaces itself with the container supervisor; CLI
+stdin/stdout and exit status remain on the existing process channels.
+
+The common ACP runtime consumes an internal `namespaceCapture` option before
+its real spawn. The option requires original isolated Git custody, an exact
+cwd, a resolved executable and the source-only environment. It does not come
+from a client config, a runtimeMode flag or a project policy reference.
+
+Namespace launches reject MCP servers until their actions can be confined.
+For a captured namespace, the common ACP runtime advertises filesystem and
+terminal support and installs its own confined handlers. Each operation starts
+the original helper in a fresh namespace with the same original checkout,
+Git, profile, socket and runtime checks. Registered daemon handlers cannot
+replace these handlers. Requests must belong to the active ACP session.
+
+Text operations accept absolute paths inside the checkout, bound UTF-8 input
+and output to 4 MiB, and reject special files and outside symlinks. Reads reject
+multiply linked files; writes atomically replace the directory entry so a
+hard link cannot mutate a foreign inode. Terminal cwd stays inside the checkout.
+Terminal IDs belong to this runtime, retain at most 1 MiB each, and preserve
+live output and actual exit codes. At most four terminals remain unreleased;
+their maximum lifetime is ten minutes. Release and runtime teardown close
+only their owned process scopes, including namespace children.
+
+This is a process-boundary component, not native execution admission. Verified
+runtime/profile capture production and recovery, actual Owner/team authority,
+provider-specific producers, and confined MCP actions
+are still required. No supported autonomous-worktree mode or installed G2
+acceptance is claimed. The retained Linux fixture runs actual file edits,
+compilation, Git commit and streamed HTTP over private model IPC; it uses no
+real provider account or model.
+The ACP fixture additionally exercises two turns of client-mediated read/edit/
+build/Git operations, output truncation, kill/release, and denial of host paths.
+
+### Original private native profile custody
+
+The Source route now creates each private-IPC native profile in a fresh private
+child of its configured profile root. It opens the original root and child
+directories, populates the profile through the held child descriptor, and
+records the child's original device/inode. Existing profiles and config files
+in the root are not adopted or overwritten. A renamed root or profile cannot
+redirect writes containing the scoped Source key.
+
+Source admission checks the original root and profile identities, canonical
+paths, owner, and private permissions both before and after the Source request.
+Provider start and recovery consume that admission and receive its original
+profile capture. Cached Source-route setup uses the configured root for its
+immutable comparison; it must still pass original-profile verification. Route
+revocation closes the descriptor without recursively deleting profiles or
+following a replacement pathname.
+
+This capture belongs to the current server-owned Source route. It is not a
+persisted Owner/team execution grant, a durable profile-recovery record, or an
+executable-runtime provenance record. A new route creates a fresh profile;
+a later G2 recovery producer must retain and validate its original custody
+rather than adopt an old directory. Legacy TCP profiles keep their existing
+behavior. Public autonomous-worktree modes remain unavailable until the
+authority, runtime, confined MCP/tools, and recovery contracts are implemented.
+
+### Greppy runtime capture and original allocation
+
+The Greppy adapter now projects its namespace from the original isolated-worktree
+journal receipt. Worker, project, request digest and destination must match; the
+published checkout retains the recorded root and private Git inode identities.
+A missing receipt, changed digest or substituted checkout does not acquire a new
+capture. Provider-instance construction retains the server's journal/launcher
+context for later session starts and hot reload.
+
+The actual Greppy ACP factory resolves the configured executable through absolute
+server PATH entries, captures the canonical regular executable and runs that path
+through the namespace launcher. ELF executables and single-file scripts with a
+direct system ELF interpreter are supported. A self-contained Node CLI using
+`#!/usr/bin/env node` resolves and captures the server-selected ELF interpreter,
+then invokes that interpreter with the original script and unchanged CLI arguments.
+An explicit `node /absolute/cli.mjs` invocation additionally captures the readable
+entry file. Both file identities are retained in the original runtime journal.
+Only the registered files are mounted, never their host profile or parent package
+directory. The kernel rechecks those original inode identities before execution.
+
+This is single-file runtime production, not a multi-file package installer.
+Relative entries, eval/module-loader flags, flagged env shebangs, interpreter
+chains and privileged runtime files are rejected. Multi-file package dependencies,
+other env interpreters and confined MCP still require their own verified producers.
+There is no host-spawn fallback or runtime fetch from npm/GitHub.
+
+The Linux integration uses the real Greppy adapter and factory with a protocol
+fixture: two turns read/edit/build and create two Git commits through confined
+tools; missing/changed receipts and root replacement fail. It does not use a real
+model/account and is not installed-product or native Owner/team acceptance.
+Public supported policy modes remain empty. Other harness runtime bundles,
+confined MCP, native admission and installed multi-harness acceptance remain open.
+
+### Fresh Source admission for confined tools
+
+Namespace runtime construction requires the original Source admission callback
+and checks it before any CLI spawn. Greppy retains the same Source object that
+produced the original allocation/profile capture. Replacement or revocation of
+that route is rejected before and after each Source request; no new route is adopted.
+The callback is a live server function and is never included in the native capture.
+
+Every read, write, terminal creation and terminal-output/exit read revalidates
+Source admission. Running terminals additionally revalidate every ten seconds,
+within their existing ten-minute lifetime. A failed or timed-out check latches
+that session's denial and closes its owned terminals. The check has a ten-second
+bound and aborts its own Source HTTP request. Session teardown still closes the
+same scopes. Kill/release remain available for the authorized ACP session after
+Source authority has expired; cleanup does not mint or extend admission.
+
+Kernel integration fixtures exercise expiry, local route revocation, independent
+running-terminal revalidation and cleanup after expiry through the actual Greppy
+adapter/factory. They use no real native Owner/account/model. Native Parent/team
+enrollment, complete MCP/runtime enforcement and installed multi-harness acceptance
+remain open; public supported autonomous-worktree modes remain empty.
+
+### Source admission during the CLI lifetime
+
+The captured ACP CLI additionally revalidates its original Source every ten
+seconds even while a prompt is pending or the CLI is idle. A failed check closes
+the dedicated process scope, including the CLI, ACP transport and owned tool
+children. The check retains its ten-second timeout and aborts the original
+request on timeout or teardown. The guard runs outside that scope, so closing
+the process cannot interrupt its own cleanup. It stops when the original CLI
+exits and never restarts or adopts another process.
+
+Checks are serialized and the first failure is retained for the session.
+Source loss also fails a pending prompt instead of reporting a successful
+cancellation. Subsequent starts and prompts fail with that Source-admission error; concurrent
+tool/terminal checks cannot extend a rejected admission. Ordinary sessions have
+no lifetime guard. This does not enable autonomous-worktree, enroll a native
+Parent or supply confined MCP or other harness runtime bundles.
+
+## Source profile and runtime recovery
+
+For a policy-bearing native Source profile, the target reserves a SQLite record
+for the immutable worker/request digest, Source and target environments, harness,
+selected Source model and profile root. It records the original root and private
+child identities before publishing scoped configuration. A restart reopens only
+those same directories, retains harness session files and regenerates configuration
+with a new ephemeral Source-route key. It reads no old account credentials or
+installed application profile.
+
+Recovery requires fresh Source admission before opening or changing the profile.
+Missing/replaced directories, symlinked nested HOME/XDG paths and non-private
+ownership or permissions are rejected. Configuration replacement uses the
+original directory descriptor and an exclusive staged file, so it cannot write
+through a replacement path, symlink or hard link. Interrupted initialization
+after a persisted capture can resume that original empty directory.
+
+The actual Greppy namespace factory records its configured executable and runtime
+file identities before its first launch. Subsequent starts compare with the same
+immutable record, including after SQLite reopens. A replaced binary or interpreter
+fails before spawning and is not enrolled by observing its new path. Runtime
+upgrades require an explicit new allocation. A recovered route creates fresh
+private model IPC under current Source authority; old process-dependent socket
+paths and capabilities are not revived.
+
+This local journal is process custody, not native Owner/team authorization.
+Other provider launchers still need their runtime producers. Supported policy
+modes remain empty. Full server/process recovery with a real model in the installed
+product remains an acceptance requirement.
+
+## Claude SDK admission before process start
+
+For a Source route with private model IPC, the Claude adapter uses the actual SDK
+0.3.170 spawn hook. It returns the required synchronous process handle while
+Source admission and runtime journal capture complete asynchronously. SDK stdin
+and EOF are retained until the child starts; stdout, stderr, error events, exit
+codes and cancellation retain the process interface. A cancellation during
+admission prevents even a late successful admission from creating a child.
+
+Every SDK spawn revalidates the original Source, captures its concrete executable
+and supported single-file interpreter, persists those original runtime identities,
+and revalidates Source again before invoking the native namespace launcher. A
+missing journal, changed runtime, expired Source or unsupported runtime returns
+an error without a host fallback. The original private profile is used and the
+host attachment directory is not granted. A query override or a host MCP endpoint
+is explicitly unsupported on this path until a confined MCP server is available.
+
+Policy-free Claude sessions retain their existing process launch. This hook does
+not enable an autonomous-worktree policy mode, prove native Parent authority or
+establish installed real-model acceptance.

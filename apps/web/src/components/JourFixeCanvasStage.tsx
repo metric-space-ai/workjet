@@ -9,6 +9,8 @@ export interface JourFixeCanvasStageProps {
   readonly document: SlideDocument;
   readonly slideId: string;
   readonly mode: "present" | "edit";
+  /** Folge dem App-Schema: Tafel im Dunklen, Papier im Hellen. */
+  readonly theme?: "light" | "dark";
   /** Edit mode only: the slide's scene after each change. */
   readonly onSceneChange: (scene: CanvasScene) => void;
   /** Edit mode only: reads the editor's scene immediately (see `SlideCanvas`). */
@@ -25,6 +27,7 @@ export default function JourFixeCanvasStage({
   document,
   slideId,
   mode,
+  theme = "light",
   onSceneChange,
   captureRef,
 }: JourFixeCanvasStageProps) {
@@ -61,7 +64,7 @@ export default function JourFixeCanvasStage({
           slide={slide}
           assets={document.assets}
           mode={mode}
-          theme="light"
+          theme={theme}
           langCode="en"
           onSceneChange={onSceneChange}
           captureRef={captureRef}
@@ -70,22 +73,22 @@ export default function JourFixeCanvasStage({
       ) : (
         <div
           role="status"
-          className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-[#52525b]"
+          className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-[#52525b] dark:text-[#a8a79f]"
         >
           {loadError ? (
             <div className="grid justify-items-center gap-3">
-              <p>The slide canvas could not load: {loadError}</p>
+              <p>Folie nicht geladen: {loadError}</p>
               <Button
                 size="sm"
                 variant="outline"
-                className="border-[#d4d4d8] bg-white text-[#18181b] hover:bg-white"
+                className="border-[#d4d4d8] bg-white text-[#18181b] hover:bg-white dark:border-[#3f3e3a] dark:bg-[#232220] dark:text-[#eceae3] dark:hover:bg-[#232220]"
                 onClick={() => setAttempt((count) => count + 1)}
               >
-                Try again
+                Erneut versuchen
               </Button>
             </div>
           ) : (
-            "Loading the slide…"
+            "Folie wird geladen …"
           )}
         </div>
       )}

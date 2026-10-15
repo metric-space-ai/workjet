@@ -43,6 +43,15 @@ describe("project team role prompts", () => {
     expect(prompt).toContain("Do not maintain your own mini-kanban");
     expect(prompt).toContain("Take times, counts and status from measurements or logs");
     expect(prompt).toContain("self-contained order");
+    expect(prompt).toContain("goal, acceptance criterion, boundaries and result format");
+    expect(prompt).toContain("code, research, deck or report creation, tests and data maintenance");
+    expect(prompt).toContain("more than a few minutes or require many tool calls, delegate it");
+    expect(prompt).toContain("Keep your own work to short reading and review steps");
+    expect(prompt).toContain("Owner-approved models and validated routes");
+    expect(prompt).toContain("Grok for regular-meeting preparation or Codex for code");
+    expect(prompt).toContain("Commission a one-shot worker to prepare the next regular meeting");
+    expect(prompt).toContain("Check each worker result against its assigned acceptance criterion");
+    expect(prompt).toContain("before reporting it as done");
     expect(prompt).toContain("Verify the installed/deployed result afterwards");
     expect(prompt).not.toContain("action update");
     expect(prompt).not.toContain("Stop after submission");
@@ -54,7 +63,9 @@ describe("project team role prompts", () => {
     expect(prompt).toContain("Perform substantive work yourself");
     expect(prompt).toContain("before any other work");
     expect(prompt).toContain("workjet_worker_kanban with action update exactly once");
-    expect(prompt).toContain("as a slide-engine document");
+    expect(prompt).toContain("worker mini-kanban");
+    expect(prompt).not.toContain("slide-engine");
+    expect(prompt).toContain("Never treat a missing tool as a precondition or blocker");
     expect(prompt).toContain("owner, evidence, commit/PR link and next trigger");
     expect(prompt).toContain("registry and open PRs");
     expect(prompt).toContain("Compaction is not completion");
@@ -70,7 +81,8 @@ describe("project team role prompts", () => {
     const prompt = compile(teams[2]!);
     expect(prompt).toContain("Your durable parent thread is parent.");
     expect(prompt).toContain("Do not commission or spawn other workers");
-    expect(prompt).toContain("Open exactly one pull request");
+    expect(prompt).toContain("Open exactly one pull request for this package");
+    expect(prompt).toContain("End this run by submitting the pull request");
     expect(prompt).toContain("Stop after submission");
     expect(prompt).toContain("Workjet owns automatic archival");
     expect(prompt).not.toContain("workjet_worker_kanban");

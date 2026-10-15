@@ -1,6 +1,6 @@
 import { CommandId, EnvironmentId, ProjectId, WorkjetComputerId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { resolveNativeProjectOpening } from "./nativeProjectOpening";
+import { nativeOpenAttemptKey, resolveNativeProjectOpening } from "./nativeProjectOpening";
 import { buildProjectGallery } from "./projectOverview";
 
 const project = { id: ProjectId.make("18dfe3f3-9703-41ac-9b56-254656e47822"), title: "greppy.xyz" };
@@ -141,5 +141,16 @@ describe("opening an existing native project", () => {
         ],
       }),
     ).toEqual({ _tag: "create", environmentId, projectId: project.id, title: project.title });
+  });
+});
+
+describe("automatic native opening (#492)", () => {
+  it("retries once the local environment becomes connected after startup", () => {
+    const beforeBackend = nativeOpenAttemptKey("welsch", project.id, null, undefined);
+    const connecting = nativeOpenAttemptKey("welsch", project.id, environmentId, "connecting");
+    const connected = nativeOpenAttemptKey("welsch", project.id, environmentId, "connected");
+    expect(connecting).toBe(beforeBackend);
+    expect(connected).not.toBe(beforeBackend);
+    expect(nativeOpenAttemptKey("welsch", project.id, environmentId, "connected")).toBe(connected);
   });
 });

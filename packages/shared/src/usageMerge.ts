@@ -35,6 +35,7 @@ export interface ModelTotals {
   readonly costUsd: number;
   readonly totalTokens: number;
   readonly records: number;
+  readonly unpricedRecords: number;
   readonly costShare: number;
 }
 
@@ -79,6 +80,12 @@ export interface MergedUsage {
   readonly duplicateSources: readonly string[];
   readonly contributingEnvironments: readonly EnvironmentId[];
   readonly staleEnvironments: readonly EnvironmentId[];
+  readonly projectThreads?: readonly {
+    projectId: string;
+    threadId: string;
+    role: string;
+    totalTokens: number;
+  }[];
 }
 
 /**
@@ -89,7 +96,7 @@ export interface MergedUsage {
  * home path, which is every Mac in a fleet, from collapsing into one source and
  * having one of them silently dropped.
  */
-function fingerprintKey(fingerprint: UsageSourceFingerprint): string {
+export function usageSourceFingerprintKey(fingerprint: UsageSourceFingerprint): string {
   return [
     fingerprint.hostId,
     fingerprint.provider,
@@ -119,7 +126,7 @@ function claimSources(environments: readonly EnvironmentUsage[]): {
   for (const environment of ordered) {
     for (const source of environment.summary.sources) {
       if (source.status === "missing") continue;
-      const key = fingerprintKey(source.fingerprint);
+      const key = usageSourceFingerprintKey(source.fingerprint);
       if (ownerByFingerprint.has(key)) {
         duplicates.push(`${environment.label}: ${source.fingerprint.resolvedHomePath}`);
         continue;
@@ -140,7 +147,7 @@ function ownedContribution(
   let sessions = 0;
   for (const source of environment.summary.sources) {
     if (source.status === "missing") continue;
-    const key = fingerprintKey(source.fingerprint);
+    const key = usageSourceFingerprintKey(source.fingerprint);
     if (ownerByFingerprint.get(key) === environment.environmentId) {
       ownedProviders.add(source.fingerprint.provider);
       // Distinct within a directory. Summing per-bucket session counts instead
@@ -149,7 +156,11 @@ function ownedContribution(
     }
   }
   return {
-    buckets: environment.summary.buckets.filter((bucket) => ownedProviders.has(bucket.provider)),
+    buckets: environment.summary.buckets.filter((bucket) =>
+      bucket.sourceKey === undefined
+        ? ownedProviders.has(bucket.provider)
+        : ownerByFingerprint.get(bucket.sourceKey) === environment.environmentId,
+    ),
     sessions,
   };
 }
@@ -232,7 +243,13 @@ export function mergeUsage(
   >();
   const modelAccumulator = new Map<
     string,
-    { provider: UsageProviderKind; costUsd: number; totalTokens: number; records: number }
+    {
+      provider: UsageProviderKind;
+      costUsd: number;
+      totalTokens: number;
+      records: number;
+      unpricedRecords: number;
+    }
   >();
   const dailyAccumulator = new Map<
     string,
@@ -253,6 +270,10 @@ export function mergeUsage(
     }
   >();
   const contributingEnvironments: EnvironmentId[] = [];
+  const projectThreads = new Map<
+    string,
+    { projectId: string; threadId: string; role: string; totalTokens: number }
+  >();
 
   for (const environment of current) {
     const { buckets, sessions: environmentSessions } = ownedContribution(
@@ -264,6 +285,16 @@ export function mergeUsage(
 
     for (const bucket of buckets) {
       const tokens = bucketTokens(bucket);
+      if (bucket.projectId && bucket.threadId) {
+        const key = `${bucket.projectId}:${bucket.threadId}`;
+        const thread = projectThreads.get(key) ?? {
+          projectId: bucket.projectId,
+          threadId: bucket.threadId,
+          role: bucket.role ?? "standard",
+          totalTokens: 0,
+        };
+        projectThreads.set(key, { ...thread, totalTokens: thread.totalTokens + tokens });
+      }
 
       costUsd += bucket.costUsd;
       cacheSavingsUsd += bucket.cacheSavingsUsd;
@@ -292,10 +323,12 @@ export function mergeUsage(
         costUsd: 0,
         totalTokens: 0,
         records: 0,
+        unpricedRecords: 0,
       };
       model.costUsd += bucket.costUsd;
       model.totalTokens += tokens;
       model.records += bucket.records;
+      model.unpricedRecords += bucket.unpricedRecords;
       modelAccumulator.set(modelKey, model);
 
       const day = dailyAccumulator.get(bucket.day) ?? {
@@ -353,6 +386,7 @@ export function mergeUsage(
       costUsd: totals.costUsd,
       totalTokens: totals.totalTokens,
       records: totals.records,
+      unpricedRecords: totals.unpricedRecords,
       costShare: costUsd === 0 ? 0 : totals.costUsd / costUsd,
     }))
     .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens);
@@ -391,6 +425,7 @@ export function mergeUsage(
         records === 0 ? 0 : (records - providerReportedRecords - unpricedRecords) / records,
       cacheSavingsUsd,
     },
+    projectThreads: [...projectThreads.values()],
     duplicateSources: duplicates,
     contributingEnvironments,
     staleEnvironments,

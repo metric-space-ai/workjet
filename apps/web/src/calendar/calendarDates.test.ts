@@ -2,7 +2,15 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   addDays,
   addMonths,
+  calendarLocale,
+  formatClockTime,
+  formatDateKey,
+  formatDateKeyRange,
+  formatHourLabel,
   instantOf,
+  isoWeekNumber,
+  localeWeekStart,
+  resolveWeekStart,
   isoWeekday,
   monthGrid,
   startOfWeek,
@@ -81,5 +89,89 @@ describe("weekly rules", () => {
       "2026-10-19",
       "2026-10-26",
     ]);
+  });
+});
+
+describe("calendar formatting (de-DE)", () => {
+  // 2026-10-12 13:00 UTC
+  const oneOClock = Date.UTC(2026, 9, 12, 13, 0);
+  // ICU separates range halves and AM/PM with (narrow) thin spaces.
+  const plain = (text: string) => text.replace(/[\u2009\u202f]/g, " ");
+
+  it("writes German month and weekday names regardless of the browser locale", () => {
+    expect(formatDateKey("2026-10-12", { month: "long", year: "numeric" })).toBe("Oktober 2026");
+    expect(formatDateKey("2026-10-12", { weekday: "short" })).toBe("Mo");
+    expect(formatDateKey("2026-10-12", { weekday: "narrow" })).toBe("M");
+  });
+
+  it("formats week ranges the German way", () => {
+    expect(plain(formatDateKeyRange("2026-10-12", "2026-10-18"))).toBe("12.–18. Okt. 2026");
+    expect(plain(formatDateKeyRange("2026-10-26", "2026-11-01"))).toBe("26. Okt. – 1. Nov. 2026");
+    expect(plain(formatDateKeyRange("2026-12-28", "2027-01-03"))).toBe(
+      "28. Dez. 2026 – 3. Jan. 2027",
+    );
+  });
+
+  it("uses 24-hour times by default and 12-hour only on request", () => {
+    expect(formatClockTime(oneOClock, "locale", "UTC")).toBe("13:00");
+    expect(formatClockTime(oneOClock, "24-hour", "UTC")).toBe("13:00");
+    expect(formatClockTime(Date.UTC(2026, 9, 12, 9, 5), "locale", "UTC")).toBe("09:05");
+    expect(plain(formatClockTime(oneOClock, "12-hour", "UTC"))).toBe("1:00 PM");
+    expect(formatHourLabel(9)).toBe("09:00");
+    expect(formatHourLabel(13, "24-hour")).toBe("13:00");
+    expect(plain(formatHourLabel(13, "12-hour"))).toBe("1 PM");
+  });
+
+  it("starts weeks on Sunday when asked", () => {
+    expect(startOfWeek("2026-10-14", "sunday")).toBe("2026-10-11");
+    expect(startOfWeek("2026-10-11", "sunday")).toBe("2026-10-11");
+    expect(monthGrid("2026-02-01", "sunday")[0]).toBe("2026-02-01");
+    expect(monthGrid("2026-10-01", "sunday")[0]).toBe("2026-09-27");
+  });
+
+  it("numbers calendar weeks per ISO 8601", () => {
+    expect(isoWeekNumber("2026-10-12")).toBe(42);
+    expect(isoWeekNumber("2027-01-01")).toBe(53);
+    expect(isoWeekNumber("2026-01-01")).toBe(1);
+    expect(isoWeekNumber("2024-12-30")).toBe(1);
+  });
+});
+
+describe("calendar locale follows the UI language", () => {
+  const plain = (text: string) => text.replace(/[\u2009\u202f]/g, " ");
+  const oneOClock = Date.UTC(2026, 9, 12, 13, 0);
+
+  it("maps UI languages to locales, keeping a matching browser region", () => {
+    expect(calendarLocale("de")).toBe("de-DE");
+    expect(calendarLocale("de", "en-US")).toBe("de-DE");
+    expect(calendarLocale("de", "de-AT")).toBe("de-AT");
+    expect(calendarLocale("en")).toBe("en-US");
+    expect(calendarLocale("en", "en-GB")).toBe("en-GB");
+    expect(calendarLocale("fr")).toBe("fr");
+  });
+
+  it("derives week start from the locale unless overridden", () => {
+    expect(localeWeekStart("de-DE")).toBe("monday");
+    expect(localeWeekStart("en-GB")).toBe("monday");
+    expect(localeWeekStart("en-US")).toBe("sunday");
+    expect(resolveWeekStart("locale", "en-US")).toBe("sunday");
+    expect(resolveWeekStart("monday", "en-US")).toBe("monday");
+  });
+
+  it("formats English locales their own way", () => {
+    expect(formatDateKey("2026-10-12", { month: "long", year: "numeric" }, "en-US")).toBe(
+      "October 2026",
+    );
+    expect(plain(formatDateKeyRange("2026-10-12", "2026-10-18", "en-US"))).toBe(
+      "Oct 12 – 18, 2026",
+    );
+    expect(plain(formatClockTime(oneOClock, "locale", "UTC", "en-US"))).toBe("1:00 PM");
+    expect(formatClockTime(oneOClock, "locale", "UTC", "en-GB")).toBe("13:00");
+    expect(formatClockTime(oneOClock, "24-hour", "UTC", "en-US")).toBe("13:00");
+    expect(plain(formatClockTime(oneOClock, "12-hour", "UTC", "de-DE"))).toMatch(
+      /^1:00 (PM|nachm\.)$/,
+    );
+    expect(plain(formatHourLabel(13, "locale", "en-US"))).toBe("1 PM");
+    expect(formatHourLabel(13, "locale", "en-GB")).toBe("13:00");
   });
 });

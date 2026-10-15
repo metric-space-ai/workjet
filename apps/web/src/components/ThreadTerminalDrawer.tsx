@@ -30,7 +30,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { type TerminalContextSelection } from "~/lib/terminalContext";
@@ -386,7 +386,10 @@ export function TerminalViewport({
         hasHandledExitRef.current = false;
       } else if (shouldHandleTerminalExit(status, synchronized, hasHandledExitRef.current)) {
         hasHandledExitRef.current = true;
-        writeSystemMessage(terminal, status === "closed" ? "Terminal closed" : "Process exited");
+        writeSystemMessage(
+          terminal,
+          status === "closed" ? "Terminal geschlossen" : "Prozess beendet",
+        );
         window.setTimeout(() => {
           if (hasHandledExitRef.current) {
             handleSessionExited();
@@ -536,8 +539,8 @@ export function TerminalViewport({
         const clicked = await localApi.contextMenu
           .show(
             [
-              { id: "add-to-chat", label: "Add to chat" },
-              { id: "copy", label: "Copy" },
+              { id: "add-to-chat", label: "Zum Chat hinzufügen" },
+              { id: "copy", label: "Kopieren" },
             ],
             nextAction.position,
           )
@@ -564,7 +567,7 @@ export function TerminalViewport({
               if (activeTerminal) {
                 writeSystemMessage(
                   activeTerminal,
-                  error instanceof Error ? error.message : "Unable to copy terminal selection",
+                  error instanceof Error ? error.message : "Kopieren fehlgeschlagen",
                 );
               }
             }
@@ -608,7 +611,7 @@ export function TerminalViewport({
         if (navigationData !== null) {
           event.preventDefault();
           event.stopPropagation();
-          void sendTerminalInput(navigationData, "Failed to move cursor");
+          void sendTerminalInput(navigationData, "Cursor nicht bewegt");
           return false;
         }
 
@@ -616,14 +619,14 @@ export function TerminalViewport({
         if (deleteData !== null) {
           event.preventDefault();
           event.stopPropagation();
-          void sendTerminalInput(deleteData, "Failed to delete terminal input");
+          void sendTerminalInput(deleteData, "Löschen fehlgeschlagen");
           return false;
         }
 
         if (!isTerminalClearShortcut(event)) return true;
         event.preventDefault();
         event.stopPropagation();
-        void sendTerminalInput("\u000c", "Failed to clear terminal");
+        void sendTerminalInput("\u000c", "Leeren fehlgeschlagen");
         return false;
       }
 
@@ -633,14 +636,14 @@ export function TerminalViewport({
         if (!latestTerminal) return;
         if (/^https?:\/\//u.test(text)) {
           if (!localApi) {
-            writeSystemMessage(latestTerminal, "Opening links is unavailable in this browser.");
+            writeSystemMessage(latestTerminal, "Links öffnen nicht möglich");
             return;
           }
           const fallbackToBrowser = () => {
             void localApi.shell.openExternal(text).catch((error: unknown) => {
               writeSystemMessage(
                 latestTerminal,
-                error instanceof Error ? error.message : "Unable to open link",
+                error instanceof Error ? error.message : "Link nicht geöffnet",
               );
             });
           };
@@ -663,7 +666,7 @@ export function TerminalViewport({
           const error = squashAtomCommandFailure(result);
           writeSystemMessage(
             latestTerminal,
-            error instanceof Error ? error.message : "Unable to open path",
+            error instanceof Error ? error.message : "Pfad nicht geöffnet",
           );
         })();
       }
@@ -674,7 +677,7 @@ export function TerminalViewport({
           if (!activeTerminal) return;
           writeSystemMessage(
             activeTerminal,
-            error instanceof Error ? error.message : "Unable to copy terminal selection",
+            error instanceof Error ? error.message : "Kopieren fehlgeschlagen",
           );
         });
       }
@@ -686,7 +689,7 @@ export function TerminalViewport({
           const error = squashAtomCommandFailure(result);
           writeSystemMessage(
             terminal,
-            error instanceof Error ? error.message : "Terminal write failed",
+            error instanceof Error ? error.message : "Schreiben fehlgeschlagen",
           );
         })();
       }
@@ -774,9 +777,8 @@ export function TerminalViewport({
         setupTerminal?.dispose();
         setupTerminal = null;
         if (cancelled) return;
-        const message =
-          error instanceof Error ? error.message : "Unable to initialize libghostty-vt";
-        mount.textContent = `${message} — close and reopen the terminal to retry.`;
+        const message = error instanceof Error ? error.message : "Terminal-Start fehlgeschlagen";
+        mount.textContent = message;
       });
 
     return () => {
@@ -905,23 +907,21 @@ interface TerminalActionButtonProps {
 
 function TerminalActionButton({ label, className, onClick, children }: TerminalActionButtonProps) {
   return (
-    <Popover>
-      <PopoverTrigger
-        openOnHover
+    <Tooltip>
+      <TooltipTrigger
         render={<button type="button" className={className} onClick={onClick} aria-label={label} />}
       >
         {children}
-      </PopoverTrigger>
-      <PopoverPopup
-        tooltipStyle
+      </TooltipTrigger>
+      <TooltipPopup
         side="bottom"
         sideOffset={6}
         align="center"
         className="pointer-events-none select-none"
       >
         {label}
-      </PopoverPopup>
-    </Popover>
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -1129,21 +1129,21 @@ export default function ThreadTerminalDrawer({
     [cwd, runtimeEnv, terminalLaunchLocationsById, worktreePath],
   );
   const splitTerminalActionLabel = hasReachedSplitLimit
-    ? `Split Terminal Horizontally (max ${MAX_TERMINALS_PER_GROUP} per group)`
+    ? `Horizontal teilen (max. ${MAX_TERMINALS_PER_GROUP})`
     : splitShortcutLabel
-      ? `Split Terminal Horizontally (${splitShortcutLabel})`
-      : "Split Terminal Horizontally";
+      ? `Horizontal teilen (${splitShortcutLabel})`
+      : "Horizontal teilen";
   const splitTerminalVerticalActionLabel = hasReachedSplitLimit
-    ? `Split Terminal Vertically (max ${MAX_TERMINALS_PER_GROUP} per group)`
+    ? `Vertikal teilen (max. ${MAX_TERMINALS_PER_GROUP})`
     : splitVerticalShortcutLabel
-      ? `Split Terminal Vertically (${splitVerticalShortcutLabel})`
-      : "Split Terminal Vertically";
+      ? `Vertikal teilen (${splitVerticalShortcutLabel})`
+      : "Vertikal teilen";
   const newTerminalActionLabel = newShortcutLabel
-    ? `New Terminal (${newShortcutLabel})`
-    : "New Terminal";
+    ? `Neues Terminal (${newShortcutLabel})`
+    : "Neues Terminal";
   const closeTerminalActionLabel = closeShortcutLabel
-    ? `Close Terminal (${closeShortcutLabel})`
-    : "Close Terminal";
+    ? `Terminal schließen (${closeShortcutLabel})`
+    : "Terminal schließen";
   const onSplitTerminalAction = useCallback(() => {
     if (hasReachedSplitLimit) return;
     onSplitTerminal();
@@ -1278,7 +1278,7 @@ export default function ThreadTerminalDrawer({
           />
         ) : null}
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm text-muted-foreground">
-          <p>No terminal sessions for this thread yet.</p>
+          <p>Noch keine Terminals</p>
           <button
             type="button"
             className="rounded-md border border-border/80 bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
@@ -1512,7 +1512,7 @@ export default function ThreadTerminalDrawer({
                           }`}
                           onClick={() => onActiveTerminalChange(groupActiveTerminalId)}
                         >
-                          Group {groupIndex + 1}
+                          Gruppe {groupIndex + 1}
                         </button>
                       )}
 
@@ -1547,9 +1547,8 @@ export default function ThreadTerminalDrawer({
                                 </span>
                               </button>
                               {normalizedTerminalIds.length > 1 && (
-                                <Popover>
-                                  <PopoverTrigger
-                                    openOnHover
+                                <Tooltip>
+                                  <TooltipTrigger
                                     render={
                                       <button
                                         type="button"
@@ -1560,17 +1559,16 @@ export default function ThreadTerminalDrawer({
                                     }
                                   >
                                     <XIcon className="size-2.5" />
-                                  </PopoverTrigger>
-                                  <PopoverPopup
-                                    tooltipStyle
+                                  </TooltipTrigger>
+                                  <TooltipPopup
                                     side="bottom"
                                     sideOffset={6}
                                     align="center"
                                     className="pointer-events-none select-none"
                                   >
                                     {closeTerminalLabel}
-                                  </PopoverPopup>
-                                </Popover>
+                                  </TooltipPopup>
+                                </Tooltip>
                               )}
                             </div>
                           );

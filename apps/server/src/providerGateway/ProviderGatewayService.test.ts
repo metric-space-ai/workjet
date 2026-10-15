@@ -77,16 +77,37 @@ const testSecrets = ServerSecretStore.ServerSecretStore.of({
 const runGateway = <A, E>(
   platform: ProviderGatewayPlatform,
   use: (gateway: ProviderGatewayServiceShape) => Effect.Effect<A, E>,
-  options: { readonly startupTimeoutMs?: number; readonly shutdownTimeoutMs?: number } = {},
+  options: {
+    readonly startupTimeoutMs?: number;
+    readonly shutdownTimeoutMs?: number;
+    readonly testSecret?: string;
+  } = {},
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const gateway = yield* make({ platform, executable: "/gateway-host", ...options });
+      const gateway = yield* make({
+        platform,
+        executable: "/gateway-host",
+        ...(options.startupTimeoutMs === undefined
+          ? {}
+          : { startupTimeoutMs: options.startupTimeoutMs }),
+        ...(options.shutdownTimeoutMs === undefined
+          ? {}
+          : { shutdownTimeoutMs: options.shutdownTimeoutMs }),
+      });
       return yield* use(gateway);
     }),
   ).pipe(
     Effect.provideService(ServerConfig.ServerConfig, testConfig),
-    Effect.provideService(ServerSecretStore.ServerSecretStore, testSecrets),
+    Effect.provideService(
+      ServerSecretStore.ServerSecretStore,
+      options.testSecret === undefined
+        ? testSecrets
+        : ServerSecretStore.ServerSecretStore.of({
+            ...testSecrets,
+            get: () => Effect.succeed(Option.some(new TextEncoder().encode(options.testSecret!))),
+          }),
+    ),
     Effect.runPromise,
   );
 
@@ -192,6 +213,222 @@ describe("ProviderGatewayService", () => {
     expect(result.reason).toBeNull();
     expect(probes).toBe(1);
     expect(JSON.stringify(result)).not.toContain("provider-secret");
+  });
+
+  it.each(["xai", "minimax"] as const)(
+    "reads the authenticated %s API-key model list without persisting credentials",
+    async (provider) => {
+      const harness = readyHarness();
+      const configured = JSON.stringify({
+        ...JSON.parse(configuration),
+        defaultProvider: provider,
+        accounts: [
+          {
+            id: `${provider}-primary`,
+            label: provider,
+            provider,
+            enabled: true,
+            models: ["configured-model"],
+            apiKeySecret: { scope: "workjet-provider-gateway", name: `${provider}.key` },
+          },
+        ],
+      });
+      let probes = 0;
+      const result = await runGateway(
+        {
+          ...harness.platform,
+          readText: async () => configured,
+          discoverApiKeyModels: async (actualProvider, token, preferredBaseUrl, signal) => {
+            expect(actualProvider).toBe(provider);
+            expect(token).toBe("provider-secret");
+            expect(preferredBaseUrl).toBeUndefined();
+            expect(signal).toBeDefined();
+            probes += 1;
+            return { upstreamBaseUrl: "https://fixed.example/v1", models: ["live-model"] };
+          },
+        },
+        (gateway) =>
+          Effect.gen(function* () {
+            yield* gateway.start();
+            const writesBefore = [...harness.writes];
+            const models = yield* gateway.accountModels({
+              accountId: WorkjetGatewayAccountId.make(`${provider}-primary`),
+            });
+            expect(harness.writes).toEqual(writesBefore);
+            return models;
+          }),
+      );
+      expect(result.state).toBe("observed");
+      expect(result.modelIds).toEqual(["live-model"]);
+      expect(probes).toBe(1);
+      expect(JSON.stringify(result)).not.toContain("provider-secret");
+    },
+  );
+
+  it("reads a Codex account's authenticated list with both tokens kept in memory", async () => {
+    const harness = readyHarness();
+    const configured = JSON.stringify({
+      ...JSON.parse(configuration),
+      defaultProvider: "codex",
+      accounts: [
+        {
+          id: "codex-primary",
+          label: "Codex",
+          provider: "codex",
+          enabled: true,
+          models: ["configured-model"],
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: "codex.access" },
+          idTokenSecret: { scope: "workjet-provider-gateway", name: "codex.id" },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "codex.refresh" },
+        },
+      ],
+    });
+    let probes = 0;
+    const result = await runGateway(
+      {
+        ...harness.platform,
+        readText: async () => configured,
+        discoverCodexModels: async (accessToken, idToken) => {
+          expect(accessToken).toBe("provider-secret");
+          expect(idToken).toBe("provider-secret");
+          probes += 1;
+          return ["live-model"];
+        },
+      },
+      (gateway) =>
+        Effect.gen(function* () {
+          yield* gateway.start();
+          const writesBefore = [...harness.writes];
+          const models = yield* gateway.accountModels({
+            accountId: WorkjetGatewayAccountId.make("codex-primary"),
+          });
+          expect(harness.writes).toEqual(writesBefore);
+          return models;
+        }),
+    );
+    expect(result.state).toBe("observed");
+    expect(result.modelIds).toEqual(["live-model"]);
+    expect(probes).toBe(1);
+    expect(JSON.stringify(result)).not.toContain("provider-secret");
+  });
+
+  it("accepts long OAuth tokens that exceed the API-key length limit", async () => {
+    const harness = readyHarness();
+    const oauthToken = "a".repeat(1024);
+    const result = await runGateway(
+      {
+        ...harness.platform,
+        discoverCodexModels: async (accessToken, idToken) => {
+          expect(accessToken).toBe(oauthToken);
+          expect(idToken).toBe(oauthToken);
+          return ["live-model"];
+        },
+      },
+      (gateway) =>
+        Effect.gen(function* () {
+          yield* gateway.start();
+          return yield* gateway.accountModels({
+            accountId: WorkjetGatewayAccountId.make("codex-primary"),
+          });
+        }),
+      { testSecret: oauthToken },
+    );
+    expect(result.state).toBe("observed");
+    expect(result.modelIds).toEqual(["live-model"]);
+    expect(JSON.stringify(result)).not.toContain(oauthToken);
+  });
+
+  it.each(["kimi", "zai"] as const)(
+    "reads the authenticated %s model list for the exact stored plan without inference",
+    async (provider) => {
+      const harness = readyHarness();
+      const origin =
+        provider === "kimi" ? "https://api.moonshot.ai/v1" : "https://api.z.ai/api/coding/paas/v4";
+      const configured = JSON.stringify({
+        ...JSON.parse(configuration),
+        defaultProvider: provider,
+        accounts: [
+          {
+            id: `${provider}-primary`,
+            label: provider,
+            provider,
+            enabled: true,
+            models: ["configured-model"],
+            upstreamBaseUrl: origin,
+            apiKeySecret: { scope: "workjet-provider-gateway", name: `${provider}.key` },
+          },
+        ],
+      });
+      let probes = 0;
+      const result = await runGateway(
+        {
+          ...harness.platform,
+          readText: async () => configured,
+          discoverKimiModels: async (token, preferredBaseUrl) => {
+            expect(token).toBe("provider-secret");
+            expect(preferredBaseUrl).toBe(origin);
+            probes += 1;
+            return ["live-model"];
+          },
+          discoverZaiModels: async (token, preferredBaseUrl) => {
+            expect(token).toBe("provider-secret");
+            expect(preferredBaseUrl).toBe(origin);
+            probes += 1;
+            return ["live-model"];
+          },
+        },
+        (gateway) =>
+          Effect.gen(function* () {
+            yield* gateway.start();
+            const writesBefore = [...harness.writes];
+            const models = yield* gateway.accountModels({
+              accountId: WorkjetGatewayAccountId.make(`${provider}-primary`),
+            });
+            expect(harness.writes).toEqual(writesBefore);
+            return models;
+          }),
+      );
+      expect(result.state).toBe("observed");
+      expect(result.modelIds).toEqual(["live-model"]);
+      expect(probes).toBe(1);
+      expect(JSON.stringify(result)).not.toContain("provider-secret");
+    },
+  );
+
+  it("does not export a Kimi account without an exact stored plan URL", async () => {
+    const harness = readyHarness();
+    const configured = JSON.stringify({
+      ...JSON.parse(configuration),
+      defaultProvider: "kimi",
+      accounts: [
+        {
+          id: "kimi-primary",
+          label: "Kimi",
+          provider: "kimi",
+          enabled: true,
+          models: ["configured-model"],
+          apiKeySecret: { scope: "workjet-provider-gateway", name: "kimi.key" },
+        },
+      ],
+    });
+    const result = await runGateway(
+      {
+        ...harness.platform,
+        readText: async () => configured,
+        discoverKimiModels: async () => {
+          throw new Error("must not probe without an exact plan");
+        },
+      },
+      (gateway) =>
+        Effect.gen(function* () {
+          yield* gateway.start();
+          return yield* gateway.accountModels({
+            accountId: WorkjetGatewayAccountId.make("kimi-primary"),
+          });
+        }),
+    );
+    expect(result.reason).toBe("provider-unsupported");
+    expect(result.modelIds).toEqual([]);
   });
 
   it("discards a live-list completion if the exact account changes during discovery", async () => {

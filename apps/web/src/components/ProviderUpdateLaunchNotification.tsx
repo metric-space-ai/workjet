@@ -1,11 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
-import { DownloadIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useBusinessOsScopedEnvironments } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
-import { ProviderUpdateEnvironmentRows } from "./ProviderUpdateEnvironmentRows";
 import { useLocalEnvironmentUpdateGroups } from "./ProviderUpdateLaunchNotification.environments";
 import {
   collectProviderUpdateCandidates,
@@ -14,7 +12,6 @@ import {
   localEnvironmentUpdateNotificationKey,
 } from "./ProviderUpdateLaunchNotification.logic";
 import { ProviderUpdatePrimaryNotification } from "./ProviderUpdatePrimaryNotification";
-import { stackedThreadToast, toastManager } from "./ui/toast";
 
 /**
  * True when a desktop-local secondary backend (the parallel WSL backend) is
@@ -33,63 +30,33 @@ function useHasLocalSecondaryEnvironment(): boolean {
 }
 
 /**
- * The provider update popover. With a WSL backend present it splits the update
- * trigger per environment; without one (the common case) it falls back to the
- * single-prompt flow so non-WSL users see no change.
+ * Provider updates with a local secondary backend (WSL) live in Settings ›
+ * Harnesses; the launch hint is the dense header chip below, not a toast.
+ * Without a secondary (the common case) the single-prompt flow updates in place.
  */
 export function ProviderUpdateLaunchNotification() {
   const hasLocalSecondary = useHasLocalSecondaryEnvironment();
 
-  return hasLocalSecondary ? (
-    <ProviderUpdateEnvironmentsNotification />
-  ) : (
-    <ProviderUpdatePrimaryNotification />
-  );
+  return hasLocalSecondary ? null : <ProviderUpdatePrimaryNotification />;
 }
 
-const seenProviderUpdateNotificationKeys = new Set<string>();
-type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
-
-// While a local backend (e.g. WSL) is still connecting, defer the popover so it
+// While a local backend (e.g. WSL) is still connecting, defer the chip so it
 // reflects every environment. Cap the wait so a stuck or failed backend can't
 // suppress the primary's updates indefinitely.
 const SETTLING_GRACE_MS = 30_000;
 
-function ProviderUpdateEnvironmentsNotification() {
-  const navigate = useNavigate();
+function useProviderUpdateChipView(): {
+  readonly title: string;
+  readonly notificationKey: string;
+} | null {
   const { groups, isAnySettling } = useLocalEnvironmentUpdateGroups();
-  const { dismissedNotificationKeys, dismissNotificationKey } =
-    useDismissedProviderUpdateNotificationKeys();
-
-  const activeToastRef = useRef<{
-    readonly toastId: ProviderUpdateToastId;
-    readonly key: string;
-  } | null>(null);
-  const notificationKeyRef = useRef<string | null>(null);
-  // Whether the user has triggered an update from the current toast. Until they
-  // do, the prompt is replaced when the available updates change; afterward it
-  // is kept so in-progress rows are not torn down.
-  const hasInteractedRef = useRef(false);
-
-  // Close our prompt if this flow unmounts (e.g. the WSL backend is disabled
-  // and we fall back to the single-prompt flow).
-  useEffect(() => {
-    return () => {
-      if (activeToastRef.current !== null) {
-        toastManager.close(activeToastRef.current.toastId);
-        activeToastRef.current = null;
-      }
-    };
-  }, []);
+  const { dismissedNotificationKeys } = useDismissedProviderUpdateNotificationKeys();
 
   const updateGroups = useMemo(() => environmentGroupsWithUpdates(groups), [groups]);
   const notificationKey = useMemo(() => localEnvironmentUpdateNotificationKey(groups), [groups]);
-  useEffect(() => {
-    notificationKeyRef.current = notificationKey;
-  }, [notificationKey]);
 
   // Title summarizes the distinct providers on offer across all environments;
-  // the per-environment detail lives in the popover body.
+  // the per-environment detail lives in Settings › Harnesses.
   const candidateUnion = useMemo(
     () => collectProviderUpdateCandidates(updateGroups.flatMap((group) => group.candidates)),
     [updateGroups],
@@ -107,92 +74,74 @@ function ProviderUpdateEnvironmentsNotification() {
   }, [isAnySettling]);
   const isGated = isAnySettling && !settleGraceElapsed;
 
-  const openProviderSettings = useCallback(() => {
-    const active = activeToastRef.current;
-    if (active !== null) {
-      toastManager.close(active.toastId);
-      activeToastRef.current = null;
-    }
-    void navigate({ to: "/settings/harnesses" });
-  }, [navigate]);
+  if (notificationKey === null || isGated || dismissedNotificationKeys.has(notificationKey)) {
+    return null;
+  }
 
-  useEffect(() => {
-    // Whether a fresh prompt can actually be shown for the current update set.
-    const canShowPrompt =
-      notificationKey !== null &&
-      !isGated &&
-      !dismissedNotificationKeys.has(notificationKey) &&
-      !seenProviderUpdateNotificationKeys.has(notificationKey);
-
-    // Close a prompt the user hasn't acted on yet when the available updates
-    // change: when they clear entirely (key null) so the toast doesn't linger,
-    // and when a fresh set is ready to replace it. Keep it only while a backend
-    // is re-settling (updates still exist, just gated) — and once an update is
-    // in progress, so its rows survive.
-    const active = activeToastRef.current;
-    if (
-      active &&
-      active.key !== notificationKey &&
-      !hasInteractedRef.current &&
-      (notificationKey === null || !isGated)
-    ) {
-      toastManager.close(active.toastId);
-      activeToastRef.current = null;
-    }
-
-    if (!notificationKey || !canShowPrompt || activeToastRef.current !== null) {
-      return;
-    }
-
-    seenProviderUpdateNotificationKeys.add(notificationKey);
-    hasInteractedRef.current = false;
-
-    const dismissPrompt = () => {
-      // Dismiss whatever set is still on offer at close time, so the popover
-      // does not re-pop for updates the user just declined.
-      const liveKey = notificationKeyRef.current;
-      if (liveKey) {
-        dismissNotificationKey(liveKey);
-      }
-      activeToastRef.current = null;
-    };
-
-    const toastId = toastManager.add(
-      stackedThreadToast({
-        type: "warning",
-        title: getProviderUpdateInitialToastView({
-          updateProviders: candidateUnion,
-          oneClickProviders: candidateUnion,
-        }).title,
-        description: (
-          <ProviderUpdateEnvironmentRows
-            onInteract={() => {
-              hasInteractedRef.current = true;
-            }}
-          />
-        ),
-        timeout: 0,
-        actionProps: {
-          children: "Settings",
-          onClick: openProviderSettings,
-        },
-        actionVariant: "outline",
-        data: {
-          hideCopyButton: true,
-          leadingIcon: <DownloadIcon aria-hidden="true" className="size-4 text-success" />,
-          onClose: dismissPrompt,
-        },
-      }),
-    );
-    activeToastRef.current = { toastId, key: notificationKey };
-  }, [
+  return {
+    title: getProviderUpdateInitialToastView({
+      updateProviders: candidateUnion,
+      oneClickProviders: candidateUnion,
+    }).title,
     notificationKey,
-    isGated,
-    candidateUnion,
-    dismissedNotificationKeys,
-    dismissNotificationKey,
-    openProviderSettings,
-  ]);
+  };
+}
 
-  return null;
+/**
+ * Dichter Chip in der Kopfzeile statt Toast (Muster: SlowRpcRequestChip):
+ * „Codex 0.162.1 verfügbar“. Klick öffnet Einstellungen › Harnesses; × merkt
+ * die Ablehnung wie bisher über die verwahrten Schlüssel.
+ */
+export function ProviderUpdateHeaderChip() {
+  const hasLocalSecondary = useHasLocalSecondaryEnvironment();
+  return hasLocalSecondary ? <ProviderUpdateEnvironmentsChip /> : null;
+}
+
+function ProviderUpdateEnvironmentsChip() {
+  const navigate = useNavigate();
+  const { dismissNotificationKey } = useDismissedProviderUpdateNotificationKeys();
+  const view = useProviderUpdateChipView();
+  if (view === null) return null;
+  return (
+    <ProviderUpdateChipView
+      title={view.title}
+      onOpen={() => void navigate({ to: "/settings/harnesses" })}
+      onDismiss={() => dismissNotificationKey(view.notificationKey)}
+    />
+  );
+}
+
+/** Reine Darstellung des Kopfzeilen-Chips, auch für die Fixture nutzbar. */
+export function ProviderUpdateChipView({
+  title,
+  onOpen,
+  onDismiss,
+}: {
+  readonly title: string;
+  readonly onOpen: () => void;
+  readonly onDismiss: () => void;
+}) {
+  return (
+    <span
+      className="no-drag inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 pl-2 pr-1 py-0.5 text-[11px] whitespace-nowrap text-amber-400"
+      data-workjet-provider-update=""
+    >
+      <button
+        type="button"
+        className="hover:text-amber-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        title="Einstellungen › Harnesses"
+        onClick={onOpen}
+      >
+        {title}
+      </button>
+      <button
+        type="button"
+        aria-label="Schließen"
+        className="rounded-full px-1 text-amber-400/70 hover:text-amber-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={onDismiss}
+      >
+        ×
+      </button>
+    </span>
+  );
 }

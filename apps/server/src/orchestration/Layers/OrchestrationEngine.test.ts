@@ -132,7 +132,90 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
-  it("archives a closed worker from a native receipt while retaining its source and fences later starts", async () => {
+  it("rejects stale automatic config saves without overwriting concurrent settings", async () => {
+    const system = await createOrchestrationSystem();
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("rotation-project"),
+          projectId: ProjectId.make("rotation-project"),
+          title: "Rotation",
+          workspaceRoot: "/fixture/rotation",
+          createdAt: now(),
+        }),
+      );
+      const thread = (await system.readModel()).threads[0]!;
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("retained-history"),
+          threadId: thread.id,
+          message: {
+            messageId: MessageId.make("retained-message"),
+            role: "user",
+            text: "Existing conversation",
+            attachments: [],
+          },
+          runtimeMode: thread.runtimeMode,
+          interactionMode: thread.interactionMode,
+          createdAt: now(),
+        }),
+      );
+      const messages = (await system.readModel()).threads[0]!.messages;
+      const updated = { ...thread.workjetConfig, managedInstructions: "New owner settings" };
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make("owner-update"),
+          threadId: thread.id,
+          workjetConfig: updated,
+          createdAt: now(),
+        }),
+      );
+      const stale = await system.run(
+        system.engine
+          .dispatch(
+            {
+              type: "thread.workjet-config.set",
+              commandId: CommandId.make("stale-rotation"),
+              threadId: thread.id,
+              workjetConfig: thread.workjetConfig,
+              createdAt: now(),
+            },
+            { expectedWorkjetConfig: thread.workjetConfig },
+          )
+          .pipe(Effect.flip),
+      );
+      expect(stale).toMatchObject({
+        _tag: "OrchestrationCommandInvariantError",
+        detail: expect.stringContaining("settings changed"),
+      });
+      expect((await system.readModel()).threads[0]?.workjetConfig.managedInstructions).toBe(
+        "New owner settings",
+      );
+      await system.run(
+        system.engine.dispatch(
+          {
+            type: "thread.workjet-config.set",
+            commandId: CommandId.make("current-rotation"),
+            threadId: thread.id,
+            workjetConfig: { ...updated, managedInstructions: "Saved current settings" },
+            createdAt: now(),
+          },
+          { expectedWorkjetConfig: updated },
+        ),
+      );
+      expect((await system.readModel()).threads[0]?.workjetConfig.managedInstructions).toBe(
+        "Saved current settings",
+      );
+      expect((await system.readModel()).threads[0]?.messages).toEqual(messages);
+    } finally {
+      await system.dispose();
+    }
+  });
+
+  it("archives a submitted open PR while retaining worker source and fencing later starts", async () => {
     const environmentId = EnvironmentId.make("worker-pr-environment");
     const system = await createOrchestrationSystem(environmentId);
     const projectId = ProjectId.make("worker-pr-project");
@@ -196,13 +279,58 @@ describe("OrchestrationEngine", () => {
           }),
         );
       // A renderer-supplied PR in config is not native evidence.
+      let unverifiedStop = false;
+      expect(
+        await system.run(
+          system.engine.runWorkerRetirementIfSubmitted(
+            workerId,
+            Effect.sync(() => {
+              unverifiedStop = true;
+              return true;
+            }),
+          ),
+        ),
+      ).toBe(false);
+      expect(unverifiedStop).toBe(false);
       await expect(archive("worker-pr-no-native-proof")).rejects.toThrow();
+      const startAcknowledged = await system.run(Deferred.make<void>());
+      const allowStartAck = await system.run(Deferred.make<void>());
+      let providerLive = false;
+      const starting = system.run(
+        system.engine.runTurnStartIfActive(
+          workerId,
+          Effect.gen(function* () {
+            yield* Deferred.succeed(startAcknowledged, undefined);
+            yield* Deferred.await(allowStartAck);
+            providerLive = true;
+          }),
+        ),
+      );
+      await system.run(Deferred.await(startAcknowledged));
       await system.run(system.sql`
         INSERT INTO workjet_worker_pull_requests
           (thread_id, worktree_path, branch_ref, provider, pr_number, pr_url, head_oid, state)
         VALUES (${workerId}, ${worktreePath}, ${branch}, 'github', 7, ${pullRequest.url},
-          ${"a".repeat(40)}, 'closed')
+          ${"a".repeat(40)}, 'open')
       `);
+      let retirementRan = false;
+      const retiring = system.run(
+        system.engine.runWorkerRetirementIfSubmitted(
+          workerId,
+          Effect.sync(() => {
+            expect(providerLive).toBe(true);
+            providerLive = false;
+            retirementRan = true;
+            return true;
+          }),
+        ),
+      );
+      await system.run(Effect.yieldNow);
+      expect(retirementRan).toBe(false);
+      await system.run(Deferred.succeed(allowStartAck, undefined));
+      expect(await starting).toBe(true);
+      expect(await retiring).toBe(true);
+      expect(providerLive).toBe(false);
       await expect(archive("worker-pr-execution-not-stopped")).rejects.toThrow();
       const start = () =>
         system.run(
@@ -221,7 +349,18 @@ describe("OrchestrationEngine", () => {
             createdAt: now(),
           }),
         );
-      await expect(start()).rejects.toThrow("pull request is complete");
+      await expect(start()).rejects.toThrow("submitted");
+      let sent = false;
+      const admitted = await system.run(
+        system.engine.runTurnStartIfActive(
+          workerId,
+          Effect.sync(() => {
+            sent = true;
+          }),
+        ),
+      );
+      expect(admitted).toBe(false);
+      expect(sent).toBe(false);
       await system.run(system.sql`
         UPDATE workjet_worker_pull_requests SET execution_stopped = 1, branch_ref = 'foreign'
         WHERE thread_id = ${workerId}
@@ -244,7 +383,7 @@ describe("OrchestrationEngine", () => {
             threadId: workerId,
           }),
         ),
-      ).rejects.toThrow("pull request is complete");
+      ).rejects.toThrow("submitted");
     } finally {
       await system.dispose();
     }
@@ -1127,7 +1266,7 @@ describe("OrchestrationEngine", () => {
     }
   });
 
-  it("bootstraps command handling from persisted projections without reading the full snapshot", async () => {
+  it("keeps startup light and checks persisted history when continuing on another computer", async () => {
     let nextSequence = 8;
     const eventStore: OrchestrationEventStoreShape = {
       append: (event) =>
@@ -1188,7 +1327,20 @@ describe("OrchestrationEngine", () => {
           settledOverride: null,
           settledAt: null,
           deletedAt: null,
-          messages: [],
+          snoozedUntil: null,
+          snoozedAt: null,
+          messages: [
+            {
+              id: asMessageId("persisted-bootstrap-message"),
+              role: "user" as const,
+              text: "A decision already stored before startup",
+              attachments: [],
+              streaming: false,
+              turnId: null,
+              createdAt: "2026-03-03T00:00:03.000Z",
+              updatedAt: "2026-03-03T00:00:03.000Z",
+            },
+          ],
           proposedPlans: [],
           activities: [],
           checkpoints: [],
@@ -1242,7 +1394,7 @@ describe("OrchestrationEngine", () => {
           listDeletedWorkerWorktreeCleanupThreadIds: () => Effect.succeed([]),
           getFullThreadDiffContext: () => Effect.succeed(Option.none()),
           getThreadShellById: () => Effect.succeed(Option.none()),
-          getThreadDetailById: () => Effect.succeed(Option.none()),
+          getThreadDetailById: () => Effect.succeed(Option.some(projectionSnapshot.threads[0]!)),
           isThreadTurnTerminal: () => Effect.succeed(false),
           getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
@@ -1275,6 +1427,44 @@ describe("OrchestrationEngine", () => {
     );
 
     expect(result.sequence).toBe(8);
+    expect(await runtime.runPromise(engine.latestSequence)).toBe(8);
+    expect(fullSnapshotReadCount).toBe(0);
+
+    const failure = await runtime.runPromise(
+      engine
+        .dispatch({
+          type: "thread.continuation.import",
+          commandId: CommandId.make("bootstrap-conflicting-computer"),
+          threadId: ThreadId.make("thread-bootstrap"),
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          createThread: {
+            projectId: asProjectId("project-bootstrap"),
+            title: "Bootstrap Thread",
+            modelSelection: projectionSnapshot.threads[0]!.modelSelection,
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+            branch: null,
+            worktreePath: null,
+            createdAt: now(),
+          },
+          messages: [
+            {
+              messageId: asMessageId("persisted-bootstrap-message"),
+              role: "user",
+              text: "Conflicting source decision",
+              createdAt: now(),
+            },
+          ],
+          createdAt: now(),
+        })
+        .pipe(Effect.flip),
+    );
+    expect(failure).toMatchObject({
+      _tag: "OrchestrationCommandInvariantError",
+      detail: expect.stringContaining("conflicting conversation history"),
+    });
     expect(await runtime.runPromise(engine.latestSequence)).toBe(8);
     expect(fullSnapshotReadCount).toBe(0);
 
@@ -1312,7 +1502,18 @@ describe("OrchestrationEngine", () => {
           model: "gpt-5-codex",
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: {
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          team: {
+            role: "specialist",
+            threadId: ThreadId.make("thread-1"),
+            projectId: asProjectId("project-1"),
+            parentThreadId: (await system.readModel()).threads[0]!.id,
+            domain: "test",
+            goal: "Retain deterministic read model",
+            createdAt,
+          },
+        },
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -2025,7 +2226,22 @@ describe("OrchestrationEngine", () => {
           model: "gpt-5-codex",
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: {
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          team: {
+            role: "specialist",
+            threadId: ThreadId.make("thread-atomic"),
+            projectId: asProjectId("project-atomic"),
+            parentThreadId: ThreadId.make(
+              (await runtime.runPromise(Stream.runCollect(engine.readEvents(0)))).find(
+                (event) => event.type === "thread.created",
+              )!.aggregateId,
+            ),
+            domain: "test",
+            goal: "Retain atomic projection rollback",
+            createdAt,
+          },
+        },
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -2064,7 +2280,7 @@ describe("OrchestrationEngine", () => {
     ]);
 
     const retryResult = await runtime.runPromise(engine.dispatch(turnStartCommand));
-    expect(retryResult.sequence).toBe(5);
+    expect(retryResult.sequence).toBe(6);
 
     const eventsAfterRetry = await runtime.runPromise(
       Stream.runCollect(engine.readEvents(0)).pipe(
@@ -2075,12 +2291,13 @@ describe("OrchestrationEngine", () => {
       "project.created",
       "thread.created", // durable supervisor
       "thread.created",
+      "thread.workjet-config-set", // persistent goal initializes atomically with the first turn
       "thread.message-sent",
       "thread.turn-start-requested",
     ]);
     expect(
       eventsAfterRetry.filter((event) => event.commandId === turnStartCommand.commandId),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
 
     await runtime.dispose();
   });

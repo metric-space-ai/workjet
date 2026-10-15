@@ -170,6 +170,8 @@ export const WorkjetSupervisorJournal = Schema.Struct({
     Schema.Literals([
       "invalid_input",
       "not_active",
+      "instance_disabled",
+      "instance_removed",
       "launch_failed",
       "authentication_required",
       "unsupported",

@@ -1,9 +1,19 @@
-import type { WorkjetWorkerProfile } from "@workjet/contracts";
+import {
+  WorkjetLumaInstanceConfiguration as WorkjetLumaInstanceConfigurationSchema,
+  WorkjetLumaTarget as WorkjetLumaTargetSchema,
+  type WorkjetWorkerProfile,
+  type WorkjetLumaTarget,
+} from "@workjet/contracts";
+import { Schema } from "effect";
+
+type WorkjetLumaInstanceConfiguration = typeof WorkjetLumaInstanceConfigurationSchema.Type;
+import { useEffect, useMemo } from "react";
+import { OptionSelect } from "./ui/option-select";
 import { useBusinessOsCodeScope } from "../businessOsCodeScope";
 import { usePrimaryEnvironment } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
-import { ctoxConnectionMatchesSelectedInstance } from "../workjetCtoxConnections";
+import { lumaConnectionForInstance } from "../workjetCtoxConnections";
 import { workjetHarnessDisplayLabel } from "./settings/WorkjetWorkerEditor";
 
 export type LumaFieldProps = {
@@ -13,10 +23,52 @@ export type LumaFieldProps = {
   readonly disabled: boolean;
 };
 
+/**
+ * Lokaler Zwischenspeicher der zuletzt bekannten Supervisor-Lumas je Instanz.
+ * Ein langsamer oder gescheiterter Abruf zeigt nie eine leere Liste, sondern
+ * diesen Stand; ein erfolgreicher Abruf überschreibt ihn.
+ */
+const LUMA_CACHE_PREFIX = "workjet.supervisor-lumas.v1:";
+
+const CachedSupervisorLumasSchema = Schema.Struct({
+  instanceName: Schema.NullOr(Schema.String),
+  target: Schema.NullOr(WorkjetLumaTargetSchema),
+  configuration: Schema.NullOr(WorkjetLumaInstanceConfigurationSchema),
+});
+type CachedSupervisorLumas = typeof CachedSupervisorLumasSchema.Type;
+
+export function readCachedSupervisorLumas(instanceId: string | null): CachedSupervisorLumas | null {
+  if (instanceId === null || typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(LUMA_CACHE_PREFIX + instanceId);
+    if (raw === null) return null;
+    return Schema.decodeUnknownSync(CachedSupervisorLumasSchema)(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedSupervisorLumas(instanceId: string, value: CachedSupervisorLumas): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(LUMA_CACHE_PREFIX + instanceId, JSON.stringify(value));
+  } catch {
+    // Ein voller oder gesperrter Speicher darf die Leiste nie stören.
+  }
+}
+
 /** The local server is only transport; profiles belong to the selected native instance. */
-function useProjectSupervisorLumas(): {
+export function useProjectSupervisorLumas(boundSource?: {
+  readonly connectionId: string;
+  readonly instanceId?: string;
+}): {
+  readonly instanceId: string | null;
+  readonly instanceName: string | null;
+  readonly target: WorkjetLumaTarget | null;
   readonly phase: "loading" | "ready" | "unavailable";
   readonly profiles: readonly WorkjetWorkerProfile[];
+  /** Live gelesene oder zuletzt bekannte Instanz-Konfiguration. */
+  readonly configuration: WorkjetLumaInstanceConfiguration | null;
 } {
   const scope = useBusinessOsCodeScope();
   const environment = usePrimaryEnvironment();
@@ -28,22 +80,14 @@ function useProjectSupervisorLumas(): {
           input: {},
         }),
   );
-  const matches =
-    scope.phase === "ready"
-      ? (connections.data?.connections ?? []).filter(
-          (connection) =>
-            connection.status === "ready" &&
-            ctoxConnectionMatchesSelectedInstance(connection, scope.presentationInstanceId),
-        )
-      : [];
   const connection =
-    matches.length === 1
-      ? matches[0]
-      : matches.find(
-          (entry) =>
-            entry.connectionId ===
-            `ctox-dev:${scope.presentationInstanceId?.replace(/^managed:/, "")}`,
-        );
+    scope.phase === "ready"
+      ? lumaConnectionForInstance(
+          connections.data?.connections ?? [],
+          scope.presentationInstanceId,
+          boundSource,
+        )
+      : undefined;
   const snapshot = useEnvironmentQuery(
     connection === undefined || environment === null || scope.phase !== "ready"
       ? null
@@ -52,15 +96,49 @@ function useProjectSupervisorLumas(): {
           input: { connectionId: connection.connectionId, instanceId: connection.instanceId },
         }),
   );
+  const liveReady = scope.phase === "ready" && connection !== undefined && snapshot.data !== null;
+  const liveConfiguration = liveReady ? (snapshot.data?.configuration ?? null) : null;
+  const liveTarget = connection
+    ? { connectionId: connection.connectionId, instanceId: connection.instanceId }
+    : null;
+  const liveInstanceId = scope.presentationInstanceId;
+  const liveInstanceName = connection?.displayName ?? null;
+  useEffect(() => {
+    if (!liveReady || liveInstanceId === null || liveTarget === null) return;
+    writeCachedSupervisorLumas(liveInstanceId, {
+      instanceName: liveInstanceName,
+      target: liveTarget,
+      configuration: liveConfiguration,
+    });
+  }, [liveReady, liveInstanceId, liveInstanceName, liveTarget, liveConfiguration]);
+  const cached = useMemo(
+    () => readCachedSupervisorLumas(liveInstanceId),
+    // Bei jedem erfolgreichen Live-Abruf neu einlesen, damit die Anzeige sofort folgt.
+    [liveInstanceId, liveReady, snapshot.data],
+  );
   const phase =
     scope.phase === "resolving" || connections.isPending || snapshot.isPending
       ? "loading"
-      : scope.phase === "ready" && connection !== undefined && snapshot.data !== null
+      : liveReady
         ? "ready"
         : "unavailable";
+  if (!liveReady && cached !== null) {
+    return {
+      instanceId: liveInstanceId,
+      instanceName: cached.instanceName,
+      target: cached.target,
+      phase: "ready",
+      profiles: cached.configuration?.workerProfiles ?? [],
+      configuration: cached.configuration,
+    };
+  }
   return {
+    instanceId: liveInstanceId,
+    instanceName: liveInstanceName,
+    target: liveTarget,
     phase,
-    profiles: phase === "ready" ? (snapshot.data?.configuration?.workerProfiles ?? []) : [],
+    profiles: liveReady ? (liveConfiguration?.workerProfiles ?? []) : [],
+    configuration: liveConfiguration,
   };
 }
 
@@ -86,10 +164,10 @@ export function ProjectSupervisorLumaSummaryView({
   return (
     <span title={selected?.computerId}>
       {selected
-        ? `Configured · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
+        ? `Konfiguriert · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
         : phase === "loading"
-          ? "Loading configured Luma…"
-          : "Configured Luma unavailable"}
+          ? "Luma wird geladen …"
+          : "Luma nicht verfügbar"}
     </span>
   );
 }
@@ -108,34 +186,31 @@ export function ProjectSupervisorLumaSelect({
   const selected = profiles.find((profile) => profile.id === value);
   return (
     <div className="grid min-w-0 gap-1">
-      <select
+      <OptionSelect
         id={id}
         aria-label="Supervisor Luma"
-        className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+        className="w-auto"
         value={value ?? ""}
         disabled={disabled || phase !== "ready"}
-        onChange={(event) => onChange(event.target.value || null)}
-      >
-        <option value="">Current instance default</option>
-        {value !== null && selected === undefined && (
-          <option value={value}>Saved Luma unavailable · {value}</option>
-        )}
-        {profiles.map((profile) => (
-          <option key={profile.id} value={profile.id}>
-            {profile.name}
-          </option>
-        ))}
-      </select>
+        options={[
+          { value: "", label: "Instanz-Standard" },
+          ...(value !== null && selected === undefined
+            ? [{ value, label: `Gespeicherte Luma fehlt · ${value}` }]
+            : []),
+          ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
+        ]}
+        onValueChange={(next) => onChange(next || null)}
+      />
       <span className="break-words text-xs text-muted-foreground" role="status">
         {phase === "loading"
-          ? "Loading instance Lumas…"
+          ? "Lumas werden geladen …"
           : phase === "unavailable"
-            ? "Instance Lumas are unavailable. The saved selection is retained."
+            ? "Lumas nicht verfügbar · Auswahl bleibt"
             : selected
-              ? `Configured · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId} · ${selected.computerId}`
+              ? `Konfiguriert · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId} · ${selected.computerId}`
               : value !== null
-                ? "The saved Luma is not in this instance’s current configuration."
-                : "Uses the existing instance default. Choose a Luma in Settings to configure its route."}
+                ? "Luma fehlt in dieser Instanz"
+                : "Instanz-Standard"}
       </span>
     </div>
   );

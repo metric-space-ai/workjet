@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { OptionSelect } from "../ui/option-select";
 import {
   CommandId,
   type WorkjetThreadConfig,
@@ -56,7 +57,7 @@ export function NativePrivateChatControl(props: {
     pending.current = true;
     setBusy(true);
     try {
-      if (!isCurrent()) throw new Error("The selected project changed. Reopen its draft.");
+      if (!isCurrent()) throw new Error("Projekt gewechselt, Entwurf neu öffnen");
       // Synchronously persist before any native request; rehydrated retries reuse both IDs.
       const intent = captured.prepareIntent({
         instanceId: captured.instanceId,
@@ -88,8 +89,8 @@ export function NativePrivateChatControl(props: {
       if (live.current)
         toastManager.add({
           type: "error",
-          title: "Could not open the Luma chat",
-          description: error instanceof Error ? error.message : "CTOX did not confirm the chat.",
+          title: "Luma-Chat nicht geöffnet",
+          description: error instanceof Error ? error.message : "Keine Bestätigung von CTOX",
         });
     } finally {
       pending.current = false;
@@ -98,20 +99,18 @@ export function NativePrivateChatControl(props: {
   };
   return (
     <div className="flex flex-wrap items-center gap-1">
-      <select
-        aria-label="Private chat connection"
+      <OptionSelect
+        aria-label="Verbindung für privaten Chat"
+        className="w-auto max-w-48"
         value={props.connectionId ?? ""}
+        placeholder="Verbindung wählen"
         disabled={busy}
-        onChange={(event) => props.onSelectConnection(event.target.value)}
-        className="max-w-48 rounded border bg-background px-2 py-1 text-xs"
-      >
-        <option value="">Choose connection</option>
-        {props.connections.map((connection) => (
-          <option key={connection.connectionId} value={connection.connectionId}>
-            {connection.label}
-          </option>
-        ))}
-      </select>
+        options={props.connections.map((connection) => ({
+          value: connection.connectionId,
+          label: connection.label,
+        }))}
+        onValueChange={props.onSelectConnection}
+      />
       <Button
         type="button"
         size="sm"
@@ -119,7 +118,7 @@ export function NativePrivateChatControl(props: {
         disabled={busy || props.connectionId === null}
         onClick={() => void open(false)}
       >
-        {busy ? "Opening…" : "Open Luma chat"}
+        {busy ? "Wird geöffnet …" : "Luma-Chat öffnen"}
       </Button>
       <Button
         type="button"
@@ -128,10 +127,10 @@ export function NativePrivateChatControl(props: {
         disabled={busy || props.connectionId === null}
         onClick={() => void open(true)}
       >
-        New private chat
+        Neuer privater Chat
       </Button>
       {props.connectionId === null ? (
-        <span className="text-xs text-muted-foreground">Choose a ready CTOX connection.</span>
+        <span className="text-xs text-muted-foreground">Keine Verbindung gewählt</span>
       ) : null}
     </div>
   );

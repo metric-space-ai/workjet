@@ -1,6 +1,6 @@
 {
   "name": "@workjet/web",
-  "version": "0.0.72",
+  "version": "0.0.101-pre",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,3 +1,5 @@
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
+import { prepareWorkerSourceNamespace } from "../../workjet/WorkerSourceNamespace.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 
@@ -18,6 +20,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+
 import * as Exit from "effect/Exit";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -111,12 +114,14 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
   config: GreppySettings,
   options: {
     readonly instanceId: ProviderInstanceId;
+    readonly dispatchPromptInBackground?: boolean;
     readonly resolveSessionEnvironment: (
       model?: string,
     ) => Effect.Effect<NodeJS.ProcessEnv, ProviderAdapterError>;
   },
 ) {
   const crypto = yield* Crypto.Crypto;
+  const namespaceContext = yield* Effect.context<never>();
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const lock = yield* Semaphore.make(1);
@@ -218,7 +223,12 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
           return yield* requestError("startSession", "Choose a model for the Greppy gateway.");
         const previous = sessions.get(input.threadId);
         if (previous) yield* stop(previous);
-        const environment = yield* options.resolveSessionEnvironment(model);
+        const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
+        const namespaceCapture = yield* prepareWorkerSourceNamespace(input, PROVIDER).pipe(
+          Effect.provideContext(namespaceContext),
+        );
+        const environment =
+          sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment(model));
         if (plainHttpEndpoint(environment.GREPPY_ENDPOINT || config.endpoint) === null) {
           return yield* requestError(
             "startSession",
@@ -238,21 +248,37 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
             "This Greppy session uses an older transport and cannot be resumed through ACP.",
           );
         }
+        const mcpSession = readMcpProviderSession(input.threadId);
         const acp = yield* makeGreppyAcpRuntime({
+          mcpServers: mcpSession
+            ? [
+                {
+                  type: "http",
+                  name: "workjet",
+                  url: mcpSession.endpoint,
+                  headers: [{ name: "Authorization", value: mcpSession.authorizationHeader }],
+                },
+              ]
+            : [],
           config,
           environment,
           model,
           spawner,
           cwd: input.cwd,
           clientInfo: { name: "workjet", version: "1" },
-          clientCapabilities: {},
+          clientCapabilities: namespaceCapture
+            ? { fs: { readTextFile: true, writeTextFile: true }, terminal: true }
+            : {},
+          ...(namespaceCapture ? { namespaceCapture } : {}),
           ...(resumeSessionId ? { resumeSessionId } : {}),
           onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
         }).pipe(
           Effect.provideService(Scope.Scope, scope),
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>
-            mapAcpToAdapterError(PROVIDER, input.threadId, "session/start", cause),
+            cause._tag === "WorkerNamespaceRuntimeError"
+              ? requestError("startSession", cause.issue)
+              : mapAcpToAdapterError(PROVIDER, input.threadId, "session/start", cause),
           ),
           Effect.onError(() => Scope.close(scope, Exit.void)),
         );
@@ -480,7 +506,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
         }),
       );
       const { ctx, turnId } = prepared;
-      return yield* Effect.gen(function* () {
+      const completePrompt = Effect.gen(function* () {
         const selected =
           input.modelSelection?.instanceId === options.instanceId
             ? input.modelSelection.model.trim()
@@ -576,6 +602,11 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
           ),
         ),
       );
+      if (options.dispatchPromptInBackground) {
+        yield* completePrompt.pipe(Effect.ignore, Effect.forkIn(ctx.scope));
+        return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
+      }
+      return yield* completePrompt;
     });
   const interruptTurn: ProviderAdapterShape<ProviderAdapterError>["interruptTurn"] = (
     threadId,

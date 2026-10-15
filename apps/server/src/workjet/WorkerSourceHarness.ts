@@ -1,8 +1,29 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off -- Bounded Node loopback adapter for the external Codex process; source identity is schema validated and scoped by its owning Effect service.
 import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import {
+  makeWorkerSourceModelSocket,
+  type WorkerSourceModelSocketDescription,
+} from "./WorkerSourceModelSocket.ts";
+import {
+  workerSourceNativeProfile,
+  type WorkerSourceNativeProfile,
+} from "./WorkerSourceNativeProfile.ts";
+import { WORKER_MODEL_NAMESPACE_BASE_URL } from "./WorkerModelNamespaceBridge.ts";
+import {
+  makeWorkerSourcePrivateProfile,
+  type WorkerSourcePrivateProfile,
+} from "./WorkerSourcePrivateProfile.ts";
+import type { WorkerNamespaceFileCapture } from "./WorkerNamespaceSpawn.ts";
+import type {
+  WorkerSourceProfileCustody,
+  WorkerSourceRuntimeCustody,
+} from "./WorkerSourceCustodyStore.ts";
 import { Schema } from "effect";
-import { WorkjetComputerInventory, type RemoteWorkerHarness } from "@workjet/contracts";
+import { WorkjetComputerInventory, RemoteWorkerHarness } from "@workjet/contracts";
+import type { WorkerSubmission } from "./WorkerSubmission.ts";
 
 const Route = Schema.Struct({
   sourceEnvironmentId: Schema.NonEmptyString,
@@ -14,7 +35,14 @@ const Route = Schema.Struct({
 });
 export type WorkerSourceHarnessRoute = typeof Route.Type;
 const Request = Schema.Struct({ model: Schema.String, stream: Schema.optional(Schema.Boolean) });
-const Reply = Schema.Struct({ requestJson: Schema.String });
+const Reply = Schema.Struct({
+  requestJson: Schema.String,
+  contentType: Schema.optionalKey(Schema.Literals(["application/json", "text/event-stream"])),
+});
+const nativeProtocols = {
+  "/v1/messages": "messages",
+  "/v1/chat/completions": "chat-completions",
+} as const;
 const Response = Schema.Struct({ id: Schema.String, output: Schema.Array(Schema.Unknown) });
 const MessagesResponse = Schema.Struct({
   id: Schema.String,
@@ -79,6 +107,10 @@ function writeMessagesStream(res: NodeHttp.ServerResponse, body: unknown): void 
 }
 
 export interface WorkerSourceHarness {
+  readonly nativeProfile?: WorkerSourceNativeProfile;
+  readonly nativeProfileCapture?: WorkerNamespaceFileCapture;
+  readonly captureRuntime?: (capture: WorkerSourceRuntimeCustody) => Promise<void>;
+  readonly modelSocket?: WorkerSourceModelSocketDescription;
   readonly isRevoked: () => boolean;
   readonly identity: Readonly<
     Pick<
@@ -86,16 +118,20 @@ export interface WorkerSourceHarness {
       "sourceEnvironmentId" | "targetEnvironmentId" | "requestId" | "requestDigest"
     >
   >;
-  readonly admit: () => Promise<void>;
+  readonly admit: (signal?: AbortSignal) => Promise<void>;
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly model: string;
   readonly harness: RemoteWorkerHarness;
   readonly revoke: () => Promise<void>;
-  readonly retire: () => Promise<void>;
+  readonly retire: (
+    submission?: WorkerSubmission,
+    persistStopped?: () => Promise<void>,
+  ) => Promise<void>;
 }
 const workers = new Map<string, WorkerSourceHarness>();
 const installedRoutes = new Map<string, WorkerSourceHarnessRoute>();
+const installedProfileRoots = new Map<string, string>();
 export const readWorkerSourceHarness = (threadId: string) => workers.get(threadId);
 
 /** Install before starting the owned worker; revoke with its source connection. */
@@ -106,12 +142,28 @@ export async function installWorkerSourceRoute(
     readonly targetEnvironmentId: string;
     readonly requestDigest: string;
     readonly modelId: string;
+    readonly modelSocketRoot?: string;
     readonly harness?: RemoteWorkerHarness;
+    readonly captureRuntime?: (capture: WorkerSourceRuntimeCustody) => Promise<void>;
+    readonly nativeProfile?: {
+      readonly harness: WorkerSourceNativeProfile["harness"];
+      readonly directory: string;
+      readonly persistence?: {
+        readonly original: WorkerSourceProfileCustody | null;
+        readonly capture: (custody: WorkerSourceProfileCustody) => Promise<void>;
+      };
+    };
   },
 ): Promise<WorkerSourceHarness> {
   const route = Object.freeze(Schema.decodeUnknownSync(Route)(input));
-  const pin = Object.freeze({ ...installation, harness: installation.harness ?? "codex-cli" });
+  const pin = Object.freeze({
+    ...installation,
+    harness: Schema.decodeUnknownSync(RemoteWorkerHarness)(
+      installation.harness ?? installation.nativeProfile?.harness ?? "codex-cli",
+    ),
+  });
   if (
+    (pin.nativeProfile !== undefined && pin.nativeProfile.harness !== pin.harness) ||
     threadId !== route.requestId ||
     route.targetEnvironmentId !== pin.targetEnvironmentId ||
     route.requestDigest !== pin.requestDigest ||
@@ -135,7 +187,10 @@ export async function installWorkerSourceRoute(
       original.capability !== route.capability ||
       original.port !== route.port ||
       existing.model !== pin.modelId ||
-      existing.harness !== pin.harness
+      existing.harness !== pin.harness ||
+      existing.modelSocket?.root !== pin.modelSocketRoot ||
+      existing.nativeProfile?.harness !== pin.nativeProfile?.harness ||
+      installedProfileRoots.get(threadId) !== pin.nativeProfile?.directory
     )
       throw new Error("Worker source route substitution or revocation");
     await existing.admit();
@@ -145,11 +200,13 @@ export async function installWorkerSourceRoute(
   const active = new Set<AbortController>();
   let revoked = false;
   let busy = false;
+  let privateProfile: WorkerSourcePrivateProfile | undefined;
   const source = async (
-    operation: "admit" | "infer" | "retire" | "computers",
+    operation: "admit" | "infer" | "retire" | "retirementAck" | "computers",
     payload: unknown,
     signal: AbortSignal,
   ) => {
+    if (operation === "admit") await privateProfile?.verify();
     const response = await fetch(`http://127.0.0.1:${route.port}/worker-source`, {
       method: "POST",
       signal,
@@ -164,22 +221,38 @@ export async function installWorkerSourceRoute(
       }),
     });
     if (!response.ok) throw new Error("Source worker authority rejected request");
-    return response.json() as Promise<unknown>;
+    const result: unknown = await response.json();
+    if (operation === "admit") await privateProfile?.verify();
+    return result;
   };
-  const server: NodeHttp.Server = NodeHttp.createServer(async (req, res) => {
+  const onRequest: NodeHttp.RequestListener = async (req, res) => {
     const messages = pin.harness === "claude-code";
     const authenticated =
       req.headers.authorization !== undefined
         ? req.headers.authorization === `Bearer ${apiKey}`
-        : messages && req.headers["x-api-key"] === apiKey;
+        : req.headers["x-api-key"] === apiKey;
     if (revoked || !authenticated) {
       res.writeHead(403).end();
       return;
     }
-    const inventory = req.method === "GET" && req.url === "/v1/workjet/computers";
+    const requestPath = new URL(req.url || "/", "http://127.0.0.1").pathname;
+    // Existing Claude routes remain pinned to Messages; native profiles opt in to translation.
+    const legacyMessages = messages && pin.nativeProfile === undefined;
+    const protocol =
+      requestPath === "/v1/messages" && !legacyMessages
+        ? nativeProtocols["/v1/messages"]
+        : requestPath === "/v1/chat/completions" && !legacyMessages
+          ? nativeProtocols["/v1/chat/completions"]
+          : undefined;
+    const inventory = req.method === "GET" && requestPath === "/v1/workjet/computers";
+    const models = req.method === "GET" && requestPath === "/v1/models";
     if (
       !inventory &&
-      (req.method !== "POST" || req.url !== (messages ? "/v1/messages" : "/v1/responses"))
+      !models &&
+      (req.method !== "POST" ||
+        ((legacyMessages || requestPath !== "/v1/responses") &&
+          !(messages && requestPath === "/v1/messages") &&
+          protocol === undefined))
     ) {
       res.writeHead(404).end();
       return;
@@ -200,14 +273,20 @@ export async function installWorkerSourceRoute(
     };
     res.on("close", disconnect);
     try {
-      if (inventory) {
+      if (inventory || models) {
         await source("admit", {}, controller.signal);
-        const response = Schema.decodeUnknownSync(WorkjetComputerInventory)(
-          await source("computers", {}, controller.signal),
-        );
+        const response = inventory
+          ? Schema.decodeUnknownSync(WorkjetComputerInventory)(
+              await source("computers", {}, controller.signal),
+            )
+          : {
+              object: "list",
+              data: [{ id: pin.modelId, object: "model", owned_by: "workjet-source" }],
+            };
         if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
         const body = JSON.stringify(response);
-        if (Buffer.byteLength(body) > 64 * 1024) throw new Error("Worker inventory too large");
+        if (Buffer.byteLength(body) > 64 * 1024)
+          throw new Error("Worker catalog or inventory too large");
         res
           .writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
           .end(body);
@@ -228,18 +307,31 @@ export async function installWorkerSourceRoute(
         await source(
           "infer",
           {
-            requestJson: JSON.stringify({ ...(json as Record<string, unknown>), stream: false }),
+            ...(protocol === undefined ? {} : { protocol }),
+            requestJson:
+              protocol === undefined
+                ? JSON.stringify({ ...(json as Record<string, unknown>), stream: false })
+                : JSON.stringify(json),
           },
           controller.signal,
         ),
       );
+      if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
+      if (protocol !== undefined) {
+        const expected = request.stream ? "text/event-stream" : "application/json";
+        if (reply.contentType !== expected || Buffer.byteLength(reply.requestJson) > 1024 * 1024)
+          throw new Error("Invalid native worker response");
+        res
+          .writeHead(200, { "content-type": expected, "cache-control": "no-store" })
+          .end(reply.requestJson);
+        return;
+      }
       const result = JSON.parse(reply.requestJson);
       if (messages) {
         const message = Schema.decodeUnknownSync(MessagesResponse)(result);
         if (message.model !== pin.modelId)
           throw new Error("Worker response model differs from source permit");
       } else Schema.decodeUnknownSync(Response)(result);
-      if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
       if (request.stream && messages) {
         writeMessagesStream(res, result);
       } else if (request.stream) {
@@ -265,7 +357,8 @@ export async function installWorkerSourceRoute(
       busy = false;
       res.off("close", disconnect);
     }
-  });
+  };
+  const server = NodeHttp.createServer(onRequest);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -275,7 +368,68 @@ export async function installWorkerSourceRoute(
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Worker loopback did not bind");
+  const baseUrl = `http://127.0.0.1:${address.port}/v1`;
+  let nativeProfile: WorkerSourceNativeProfile | undefined;
+  let modelSocket: Awaited<ReturnType<typeof makeWorkerSourceModelSocket>> | undefined;
+  try {
+    if (pin.nativeProfile?.persistence) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        await source("admit", {}, controller.signal);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    if (pin.modelSocketRoot !== undefined)
+      modelSocket = await makeWorkerSourceModelSocket(pin.modelSocketRoot, onRequest);
+    if (pin.nativeProfile) {
+      const create = (directory: string) =>
+        workerSourceNativeProfile({
+          harness: pin.nativeProfile!.harness,
+          directory,
+          model: pin.modelId,
+          baseUrl: modelSocket === undefined ? baseUrl : WORKER_MODEL_NAMESPACE_BASE_URL,
+          apiKey,
+        });
+      if (modelSocket !== undefined) {
+        privateProfile = await makeWorkerSourcePrivateProfile(
+          pin.nativeProfile.directory,
+          create,
+          pin.nativeProfile.persistence,
+        );
+        nativeProfile = privateProfile.profile;
+      } else {
+        nativeProfile = create(pin.nativeProfile.directory);
+        await NodeFSP.mkdir(nativeProfile.directory, { recursive: true, mode: 0o700 });
+        for (const directory of [
+          nativeProfile.environment.HOME,
+          nativeProfile.environment.XDG_CONFIG_HOME,
+          nativeProfile.environment.XDG_DATA_HOME,
+          nativeProfile.environment.XDG_CACHE_HOME,
+          NodePath.join(nativeProfile.directory, "sessions"),
+        ]) {
+          await NodeFSP.mkdir(directory!, { recursive: true, mode: 0o700 });
+        }
+        for (const file of nativeProfile.files) {
+          const destination = NodePath.join(nativeProfile.directory, file.name);
+          await NodeFSP.writeFile(destination + ".stage", file.content, { mode: 0o600 });
+          await NodeFSP.rename(destination + ".stage", destination);
+        }
+      }
+    }
+  } catch {
+    await privateProfile?.close();
+    await modelSocket?.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw new Error("Worker source native profile could not be prepared");
+  }
   const harness: WorkerSourceHarness = {
+    ...(nativeProfile ? { nativeProfile } : {}),
+    ...(privateProfile ? { nativeProfileCapture: privateProfile.capture } : {}),
+    ...(pin.captureRuntime ? { captureRuntime: pin.captureRuntime } : {}),
+    ...(modelSocket ? { modelSocket: modelSocket.description } : {}),
     isRevoked: () => revoked,
     identity: Object.freeze({
       sourceEnvironmentId: route.sourceEnvironmentId,
@@ -283,31 +437,43 @@ export async function installWorkerSourceRoute(
       requestId: route.requestId,
       requestDigest: route.requestDigest,
     }),
-    admit: async () => {
+    admit: async (signal) => {
       if (revoked) throw new Error("Worker route revoked");
+      if (signal?.aborted) throw new Error("Worker source admission interrupted");
       const controller = new AbortController();
+      const abort = () => controller.abort();
+      signal?.addEventListener("abort", abort, { once: true });
       active.add(controller);
       const timeout = setTimeout(() => controller.abort(), 15_000);
       try {
         await source("admit", {}, controller.signal);
       } finally {
         clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
         active.delete(controller);
       }
     },
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    baseUrl,
     apiKey,
     model: pin.modelId,
     harness: pin.harness,
-    retire: async () => {
+    retire: async (submission, persistStopped) => {
+      if (submission && !persistStopped) throw new Error("Missing durable worker stop");
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);
       try {
-        const response = await source("retire", {}, controller.signal);
+        const response = await source("retire", submission ?? {}, controller.signal);
         Schema.decodeUnknownSync(Schema.Struct({ retired: Schema.Literal(true) }))(response);
-      } finally {
-        clearTimeout(timeout);
+        await persistStopped?.();
         await harness.revoke();
+        try {
+          await source("retirementAck", submission ?? {}, controller.signal);
+        } catch {
+          // The persisted stopped receipt still recovers archival; source expiry bounds cleanup.
+        }
+      } finally {
+        // Preserve this route on a lost/failed source acknowledgement so retirement can retry.
+        clearTimeout(timeout);
       }
     },
     revoke: async () => {
@@ -315,11 +481,13 @@ export async function installWorkerSourceRoute(
       for (const controller of active) controller.abort();
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();
-      await closed;
+      await Promise.all([closed, modelSocket?.close(), privateProfile?.close()]);
       // Keep the revoked tombstone: restart must fail closed, never use target auth.
     },
   };
   workers.set(threadId, harness);
   installedRoutes.set(threadId, route);
+  if (pin.nativeProfile !== undefined)
+    installedProfileRoots.set(threadId, pin.nativeProfile.directory);
   return harness;
 }

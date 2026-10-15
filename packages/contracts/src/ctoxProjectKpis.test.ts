@@ -156,3 +156,30 @@ describe("full native KPI snapshot transport", () => {
     }
   });
 });
+
+describe("manual KPI refresh contract (#502)", () => {
+  it("takes only a project and returns per-KPI refresh status", () => {
+    const request = { action: "project.kpis.refresh", commandId: "c", projectId: "p" };
+    expect(decodeRequest(request)).toEqual(request);
+    expect(() => decodeRequest({ ...request, prompts: [] })).toThrow();
+    const response = {
+      action: "project.kpis.refresh",
+      commandId: "c",
+      projectId: "p",
+      contract: "ctox.workjet.project_kpis.v1",
+      kpis: { project_id: "p", revision: 1, items: [] },
+      refresh: {
+        completed: false,
+        reasonCode: "time_limit",
+        items: [{ kpiId: "kpi-1", status: "blocked", reasonCode: "resolving" }],
+      },
+    };
+    expect(decodeResponse(response)).toEqual(response);
+    expect(() =>
+      decodeResponse({
+        ...response,
+        refresh: { completed: true, items: [{ kpiId: "kpi-1", status: "ready" }] },
+      }),
+    ).toThrow();
+  });
+});

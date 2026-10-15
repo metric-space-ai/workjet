@@ -97,7 +97,7 @@ describe("native meeting room session", () => {
       .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
       .mockImplementation(async (_, request) => reply(request));
     const session = new JourFixeNativeSession("instance-1", project, () => true, control);
-    await expect(session.text(snapshot, "Owner message")).rejects.toThrow("not been confirmed");
+    await expect(session.text(snapshot, "Owner message")).rejects.toThrow("nicht bestätigt");
     await session.text({ ...snapshot, revision: 99 }, "Owner message");
     expect(control.mock.calls[1]![1]).toEqual(control.mock.calls[0]![1]);
     expect(control.mock.calls[0]![1]).toMatchObject({
@@ -116,8 +116,15 @@ describe("native meeting room session", () => {
       .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
       .mockImplementation(async (_, request) => reply(request));
     const session = new JourFixeNativeSession("instance-1", project, () => true, control);
-    await expect(session.end(native.id, 3)).rejects.toThrow("timeout");
-    await session.end(native.id, 3);
+    vi.useFakeTimers();
+    try {
+      const ending = session.end(native.id, 3);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect((await ending).meeting?.revision).toBe(4);
+      expect(session.hasPendingChange()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(control.mock.calls.map((call) => call[1].action)).toEqual([
       "project.jour_fixe.meeting.end",
       "project.jour_fixe.meeting.read",
@@ -130,8 +137,47 @@ describe("native meeting room session", () => {
       .mockResolvedValue({ _tag: "failed", code: "timeout" });
     const session = new JourFixeNativeSession("instance-1", project, () => true, control);
     await expect(session.end(native.id, 3)).rejects.toThrow();
-    await expect(session.text(snapshot, "different")).rejects.toThrow("Retry the unconfirmed");
+    await expect(session.text(snapshot, "different")).rejects.toThrow("unbestätigte Änderung");
     expect(control).toHaveBeenCalledTimes(1);
+  });
+  it("retries an unconfirmed change silently on the 5/10/20/30 s schedule until the deadline", async () => {
+    const control = vi
+      .fn<typeof requestWorkjetProjectControl>()
+      .mockResolvedValue({ _tag: "failed", code: "timeout" });
+    const session = new JourFixeNativeSession("instance-1", project, () => true, control);
+    await expect(session.end(native.id, 3)).rejects.toThrow();
+    vi.useFakeTimers();
+    try {
+      const retrying = session.retryPendingUntilConfirmed({
+        deadline: Date.now() + 40_000,
+      });
+      const assertion = expect(retrying).rejects.toThrow("timeout");
+      // Der letzte Schlaf endet erst bei 65 s; erst dann greift die Frist.
+      await vi.advanceTimersByTimeAsync(70_000);
+      await assertion;
+      // Versuche bei 0, 5, 15 und 35 s; danach ist die Frist abgelaufen.
+      expect(control).toHaveBeenCalledTimes(1 + 4);
+      expect(session.hasPendingChange()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("confirms an unconfirmed change on a later scheduled retry without a new write", async () => {
+    const control = vi
+      .fn<typeof requestWorkjetProjectControl>()
+      .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
+      .mockImplementation(async (_, request) => reply(request));
+    const session = new JourFixeNativeSession("instance-1", project, () => true, control);
+    await expect(session.end(native.id, 3)).rejects.toThrow("nicht bestätigt");
+    const confirmed = await session.retryPendingUntilConfirmed({ deadline: Date.now() + 60_000 });
+    expect(confirmed.meeting?.revision).toBe(4);
+    expect(session.hasPendingChange()).toBe(false);
+    expect(control.mock.calls.map((call) => call[1].action)).toEqual([
+      "project.jour_fixe.meeting.end",
+      "project.jour_fixe.meeting.end",
+      "project.jour_fixe.meeting.read",
+    ]);
+    expect(control.mock.calls[1]![1]).toEqual(control.mock.calls[0]![1]);
   });
   it("keeps a pin's native operation, comment ID and deck anchor when retrying uncertain delivery", async () => {
     const control = vi
@@ -147,9 +193,7 @@ describe("native meeting room session", () => {
       x: 0.25,
       y: 0.75,
     };
-    await expect(session.comment(draft, "Inspect this claim")).rejects.toThrow(
-      "not been confirmed",
-    );
+    await expect(session.comment(draft, "Inspect this claim")).rejects.toThrow("nicht bestätigt");
     await session.retryPending();
     expect(control.mock.calls[1]![1]).toEqual(control.mock.calls[0]![1]);
     expect(control.mock.calls[0]![1]).toMatchObject({
@@ -302,7 +346,7 @@ describe("native meeting room session", () => {
       });
     const session = new JourFixeNativeSession("instance-1", project, () => true, control);
     await expect(session.confirm(native.id, 3, native.todos!.revision, 0)).rejects.toThrow(
-      "goal snapshot",
+      "Zielstand",
     );
     expect(session.hasPendingChange()).toBe(true);
     await session.retryPending();
@@ -322,13 +366,35 @@ describe("native meeting room session", () => {
         return reply(request);
       });
     const session = new JourFixeNativeSession("instance-1", project, () => current, control);
-    await expect(session.read()).rejects.toThrow("scope changed");
+    await expect(session.read()).rejects.toThrow("Terminbereich");
   });
   it("rejects a read of another meeting even from the selected guest", async () => {
     const control = vi
       .fn<typeof requestWorkjetProjectControl>()
       .mockImplementation(async (_, request) => reply(request));
     const session = new JourFixeNativeSession("instance-1", project, () => true, control);
-    await expect(session.read("foreign")).rejects.toThrow("not confirmed");
+    await expect(session.read("foreign")).rejects.toThrow("nicht bestätigt");
   });
+});
+
+it("shares simultaneous meeting loads and cancels retries when the room closes", async () => {
+  vi.useFakeTimers();
+  try {
+    const control = vi
+      .fn<typeof requestWorkjetProjectControl>()
+      .mockResolvedValue({ _tag: "failed", code: "timeout" });
+    const session = new JourFixeNativeSession("instance", project, () => true, control);
+    const controller = new AbortController();
+    const first = session.read(undefined, controller.signal);
+    const second = session.read(undefined, controller.signal);
+    expect(first).toBe(second);
+    const rejected = first.catch((error) => error);
+    await vi.advanceTimersByTimeAsync(1);
+    controller.abort();
+    expect(await rejected).toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(control).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+  }
 });

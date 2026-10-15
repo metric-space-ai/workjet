@@ -2,6 +2,46 @@
 import { assert, describe, expect, it } from "@effect/vitest";
 import { openWorkerSourceChannel, type WorkerSourceRoute } from "./RemoteWorkerSourceChannel.ts";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
+it("replays a lost retirement acknowledgement without inference or a second source mutation", async () => {
+  const channel = await openWorkerSourceChannel();
+  let retired = false;
+  let calls = 0;
+  const route = channel.issue({
+    ...identity,
+    requestId: "lost-terminal-ack",
+    expiresAtMs: Date.now() + 60_000,
+    onRetired: () => {
+      retired = true;
+    },
+    invoke: async (operation) => {
+      assert.equal(operation, "retire");
+      calls++;
+      return { retired: true };
+    },
+  });
+  const payload = { pullRequest: { number: 305 }, headOid: "a".repeat(40) };
+  const invoke = (operation: string, value = payload) =>
+    post(route, { requestId: route.requestId, operation, payload: value });
+  try {
+    const first = await invoke("retire");
+    await first.body?.cancel();
+    assert.equal(retired, false);
+    const replay = await invoke("retire");
+    assert.equal(replay.status, 200);
+    assert.deepEqual(await replay.json(), { retired: true });
+    assert.equal((await invoke("infer")).status, 400);
+    assert.equal((await invoke("retire", { ...payload, headOid: "b".repeat(40) })).status, 400);
+    assert.equal(calls, 1);
+    assert.equal(retired, false);
+    const confirmation = await invoke("retirementAck");
+    assert.equal(confirmation.status, 200);
+    await confirmation.json();
+    assert.equal(retired, true);
+    assert.equal((await invoke("retire")).status, 401);
+  } finally {
+    await channel.close();
+  }
+});
 it("terminal retirement revokes the source capability after its acknowledgement", async () => {
   const channel = await openWorkerSourceChannel();
   let finished!: () => void;

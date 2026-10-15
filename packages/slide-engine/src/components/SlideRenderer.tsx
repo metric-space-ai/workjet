@@ -14,14 +14,14 @@ import type {
 export type SlideRendererProps = {
   slide: SlideNode;
   aspect?: SlideAspect;
-  assets?: SlideAssetCollection;
-  renderAsset?: SlideAssetRenderer;
-  resolveAssetUrl?: SlideAssetUrlResolver;
+  assets?: SlideAssetCollection | undefined;
+  renderAsset?: SlideAssetRenderer | undefined;
+  resolveAssetUrl?: SlideAssetUrlResolver | undefined;
   slideNumber?: number;
   slideCount?: number;
   showSlideNumber?: boolean;
-  selectedBlockId?: string;
-  onBlockSelect?: (selection: SlideBlockSelection) => void;
+  selectedBlockId?: string | undefined;
+  onBlockSelect?: ((selection: SlideBlockSelection) => void) | undefined;
   className?: string;
   style?: CSSProperties;
 };

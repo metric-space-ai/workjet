@@ -68,7 +68,7 @@ function control(input: SessionImportBrowserProps, label: string) {
 }
 
 describe("conversation import browser controls", () => {
-  it("keeps history without folder metadata selectable and explains its origin", () => {
+  it("keeps history without folder metadata selectable and marks its origin", () => {
     const unknown = { ...candidate, workspaceRoot: null, workspaceAvailable: false };
     const input = {
       ...props(),
@@ -76,24 +76,19 @@ describe("conversation import browser controls", () => {
       preview: unknown,
     };
     const tree = SessionImportBrowser(input);
+    expect(visitElements(tree, (node) => node.props.children === "—")).not.toBeNull();
     expect(
-      visitElements(tree, (node) => node.props.children === "No recorded folder"),
-    ).toBeDefined();
-    expect(
-      visitElements(
-        tree,
-        (node) =>
-          node.props.children ===
-          "The source app did not record a folder. Choose a destination project for this conversation.",
-      ),
-    ).toBeDefined();
-    (control(input, `Select ${unknown.title}`).onCheckedChange as (value: boolean) => void)(true);
+      visitElements(tree, (node) => node.props.children === "Kein Ordner erfasst"),
+    ).not.toBeNull();
+    (control(input, `${unknown.title} auswählen`).onCheckedChange as (value: boolean) => void)(
+      true,
+    );
     expect(input.onSelect).toHaveBeenCalledWith(unknown, true);
   });
 
   it("selects every matching page and disables selection while a query or operation is pending", () => {
     const input = props();
-    (control(input, "Select all matching conversations").onClick as () => void)();
+    (control(input, "Alle Treffer wählen").onClick as () => void)();
     expect(input.onSelectAll).toHaveBeenCalledOnce();
     expect(input.onSelect).not.toHaveBeenCalled();
     for (const state of [
@@ -101,17 +96,17 @@ describe("conversation import browser controls", () => {
       { readOnly: true },
       { progress: "Selecting conversations…" },
     ])
-      expect(control({ ...input, ...state }, "Select all matching conversations").disabled).toBe(
-        true,
-      );
+      expect(control({ ...input, ...state }, "Alle Treffer wählen").disabled).toBe(true);
   });
 
   it("opens a preview independently from selecting the conversation", () => {
     const input = props();
-    (control(input, `Preview ${candidate.title}`).onClick as () => void)();
+    (control(input, `Vorschau ${candidate.title}`).onClick as () => void)();
     expect(input.onPreview).toHaveBeenCalledWith(candidate);
     expect(input.onSelect).not.toHaveBeenCalled();
-    (control(input, `Select ${candidate.title}`).onCheckedChange as (value: boolean) => void)(true);
+    (control(input, `${candidate.title} auswählen`).onCheckedChange as (value: boolean) => void)(
+      true,
+    );
     expect(input.onSelect).toHaveBeenCalledWith(candidate, true);
   });
   it("keeps off-page selection visible and requires an explicit destination", () => {
@@ -125,25 +120,33 @@ describe("conversation import browser controls", () => {
       (node) => node.props["data-workjet-action"] === "session-import.confirm",
     );
     expect(confirm?.props.disabled).toBe(true);
-    expect(control(input, "Destination project").value).toBe("");
+    expect(control(input, "Zielprojekt").value).toBe("");
   });
   it("supports existing and new destination projects through the same visible selector", () => {
     const input = props();
-    (
-      control(input, "Destination project").onChange as (event: {
-        target: { value: string };
-      }) => void
-    )({ target: { value: "new" } });
+    (control(input, "Zielprojekt").onValueChange as (value: string) => void)("new");
     expect(input.onDestinationChange).toHaveBeenCalledWith("new");
-    expect(control({ ...input, destination: "new" }, "Project name")).toBeDefined();
-    expect(control({ ...input, destination: "new" }, "Project folder")).toBeDefined();
+    expect(control({ ...input, destination: "new" }, "Projektname")).toBeDefined();
+    expect(control({ ...input, destination: "new" }, "Projektordner")).toBeDefined();
   });
-  it("disables writes for read-only connections and holds the dialog during an import", () => {
+  it("disables writes for read-only connections and holds the inline section during an import", () => {
     const input = { ...props(), readOnly: true, progress: "Importing 1–20 of 40…" };
-    expect(control(input, `Select ${candidate.title}`).disabled).toBe(true);
-    expect(control(input, "Destination project").disabled).toBe(true);
-    const root = SessionImportBrowser(input);
-    (root.props.onOpenChange as (open: boolean) => void)(false);
+    expect(control(input, `${candidate.title} auswählen`).disabled).toBe(true);
+    expect(control(input, "Zielprojekt").disabled).toBe(true);
+    const close = control(input, "Schließen");
+    expect(close.disabled).toBe(true);
+    (close.onClick as () => void)();
     expect(input.onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("renders inline instead of a dialog and closes through its own button", () => {
+    const input = props();
+    const root = SessionImportBrowser(input);
+    expect(root?.type).toBe("div");
+    expect(root?.props["data-workjet-action"]).toBe("session-import.browser");
+    expect(visitElements(root, (node) => node.props["role"] === "dialog")).toBeNull();
+    (control(input, "Schließen").onClick as () => void)();
+    expect(input.onOpenChange).toHaveBeenCalledWith(false);
+    expect(SessionImportBrowser({ ...input, open: false })).toBeNull();
   });
 });

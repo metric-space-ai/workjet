@@ -3,11 +3,12 @@ import type { NativeSupervisorScope } from "../../nativeSupervisorComposer";
 import { readSupervisorRoute, type SupervisorRouteState } from "../../workjetSupervisorRoute";
 export function useSupervisorRouteDisplay(
   scope: NativeSupervisorScope | null,
+  refreshKey: string = "",
 ): SupervisorRouteState | null {
   const instanceId = scope?.instanceId,
     projectId = scope?.projectId,
     threadId = scope?.threadId;
-  const key = scope ? JSON.stringify([instanceId, projectId, threadId]) : null;
+  const key = scope ? JSON.stringify([instanceId, projectId, threadId, refreshKey]) : null;
   const [snapshot, setSnapshot] = useState<{ key: string; value: SupervisorRouteState } | null>(
     null,
   );

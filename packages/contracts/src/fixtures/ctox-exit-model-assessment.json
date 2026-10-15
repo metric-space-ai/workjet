@@ -1,0 +1,117 @@
+{
+  "contract": "ctox.workjet.exit_model.v1",
+  "project_id": "project",
+  "run_id": "exit_run_4cf8b75f13795fa4b59bf7d3cf0781b6b39ee60e1a47d92152528aba8bb11bfd",
+  "as_of": "2026-10-08",
+  "exit_date": "2031-10-08",
+  "refresh_due": "2026-11-08",
+  "status": "provisional",
+  "missing_inputs": [],
+  "findings": [
+    {
+      "code": "evidence_not_independently_verified",
+      "message": "Source references and researcher assumptions are retained; their economic support has not been independently reviewed. This finite model is provisional."
+    }
+  ],
+  "sources": [
+    {
+      "id": "fixture",
+      "reference": "test fixture only; not a real project",
+      "observed_at": "2026-10-08",
+      "valid_until": "2026-12-31",
+      "kind": "assumed"
+    }
+  ],
+  "plan_summary": {
+    "mode": "committed_plan",
+    "comparison_mode": "equal_resources",
+    "confirmed": true,
+    "budget_eur": 0.0,
+    "hours_per_week": 20.0,
+    "assumptions": ["Fictitious test values"]
+  },
+  "result": {
+    "expected_exit_equity_eur": 8050.0,
+    "sale_probability": 1.0,
+    "expected_price_given_sale_eur": 8050.0,
+    "probability_zero_proceeds": 0.0,
+    "p10_eur": 8050.0,
+    "p50_eur": 8050.0,
+    "p90_eur": 8050.0
+  },
+  "scenarios": [
+    {
+      "state": "technical_failure",
+      "probability": 0.0,
+      "sale_probability": 0.0,
+      "equity_price_eur": 0.0,
+      "contribution_eur": 0.0
+    },
+    {
+      "state": "constant",
+      "probability": 1.0,
+      "sale_probability": 1.0,
+      "equity_price_eur": 8050.0,
+      "contribution_eur": 8050.0
+    }
+  ],
+  "history": [
+    {
+      "run_id": "exit_run_4cf8b75f13795fa4b59bf7d3cf0781b6b39ee60e1a47d92152528aba8bb11bfd",
+      "as_of": "2026-10-08",
+      "exit_date": "2031-10-08",
+      "status": "provisional",
+      "result": {
+        "expected_exit_equity_eur": 8050.0,
+        "sale_probability": 1.0,
+        "expected_price_given_sale_eur": 8050.0,
+        "probability_zero_proceeds": 0.0,
+        "p10_eur": 8050.0,
+        "p50_eur": 8050.0,
+        "p90_eur": 8050.0
+      },
+      "missing_inputs": []
+    },
+    {
+      "run_id": "exit_run_966382dfe3f0f0502f4a0858a8696f43cf0fc2a8205ace155d354428a554c195",
+      "as_of": "2026-10-08",
+      "exit_date": "2031-10-08",
+      "status": "researching",
+      "result": null,
+      "missing_inputs": ["confirmed_60_month_resource_plan", "researched_inputs"]
+    }
+  ],
+  "engine_version": "finite-saas-1",
+  "currency": "EUR",
+  "basis": "100_percent_equity_before_fees_and_personal_tax",
+  "compiled_parameters_hash": "49589a9bfcd907b262084dc36014b2c6b0bcb557c6f40c6c46efdba69ffc4cea",
+  "diagnostics": [
+    {
+      "state": "technical_failure",
+      "probability": 0.0,
+      "sale_probability": 0.0,
+      "equity_price_eur": 0.0,
+      "source_ids": ["fixture"],
+      "ev_eur": 0.0,
+      "excess_cash_eur": 0.0,
+      "funding_eur": 0.0,
+      "cash_failure_month": null
+    },
+    {
+      "state": "constant",
+      "probability": 1.0,
+      "sale_probability": 1.0,
+      "equity_price_eur": 8050.0,
+      "source_ids": ["fixture"],
+      "ev_eur": 2400.0,
+      "excess_cash_eur": 6100.0,
+      "funding_eur": 0.0,
+      "cash_failure_month": null
+    }
+  ],
+  "resource_proposal": {
+    "hours_per_week": 20.0,
+    "monthly_budget_eur": 300.0,
+    "comparison_mode": "equal_resources"
+  }
+}

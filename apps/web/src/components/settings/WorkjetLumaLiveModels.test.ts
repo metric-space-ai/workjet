@@ -52,13 +52,13 @@ describe("Claude Luma live account choice", () => {
       expect(() => assertLumaLiveModelChoice(draft, null, account, candidate)).toThrow();
     expect(() =>
       assertLumaLiveModelChoice(draft, null, { ...account, enabled: false }, catalog),
-    ).toThrow("Enable");
+    ).toThrow("aktivieren");
     expect(() =>
       assertLumaLiveModelChoice(draft, null, { ...account, modelIds: [] }, catalog),
-    ).toThrow("Settings → Models");
+    ).toThrow("Einstellungen → Modelle");
     expect(() =>
       assertLumaLiveModelChoice(draft, null, { ...account, excludedModelIds: [model] }, catalog),
-    ).toThrow("Settings → Models");
+    ).toThrow("Einstellungen → Modelle");
   });
   it("preserves unchanged saved choices during an outage without authorizing a new route", () => {
     const prior = saveWorkjetWorkerDraft(draft);
@@ -67,6 +67,6 @@ describe("Claude Luma live account choice", () => {
     ).not.toThrow();
     expect(() =>
       assertLumaLiveModelChoice({ ...draft, llmRouteId: "new-route" }, prior, account, null),
-    ).toThrow("Refresh");
+    ).toThrow("aktualisieren");
   });
 });

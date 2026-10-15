@@ -90,8 +90,8 @@ export function requireProjectTeamOwnership(input: {
     return fail("Project team membership must match its persisted thread and project.");
   }
   if (team.role === "supervisor") {
-    if (config.role !== "orchestrator")
-      return fail("A project supervisor must have the orchestrator role.");
+    if (config.role === "worker")
+      return fail("A one-shot worker cannot become a project supervisor.");
     const existing = readModel.threads.some(
       (thread) =>
         thread.id !== threadId &&
@@ -114,8 +114,8 @@ export function requireProjectTeamOwnership(input: {
     return fail("The project team parent must be an active thread in the same project.");
   }
   if (team.role === "specialist") {
-    if (config.role !== "orchestrator" || parentTeam?.role !== "supervisor") {
-      return fail("A specialist must be an orchestrator owned by the project supervisor.");
+    if (config.role === "worker" || parentTeam?.role !== "supervisor") {
+      return fail("A Persistent Worker must be owned by the project supervisor.");
     }
     if (
       readModel.threads.some((thread) => {
@@ -174,7 +174,7 @@ export function requireProjectTeamLifecycle(input: {
     (thread.deletedAt === null || !input.workerCleanupComplete)
   ) {
     return fail(
-      "A project worker requires completed merge cleanup or a native terminal-PR receipt with stopped execution.",
+      "A One-Shot Worker requires a verified submitted PR with stopped execution or completed merge cleanup.",
     );
   }
   if (

@@ -16,6 +16,7 @@ export function NativeSupervisorConversation(props: {
   readonly disabled: boolean;
   readonly onReset: () => void;
   readonly onNext: () => void;
+  readonly onRetrySend?: (() => void) | undefined;
 }) {
   const { journal } = props;
   const finalText =
@@ -29,7 +30,7 @@ export function NativeSupervisorConversation(props: {
   return (
     <section
       className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6 text-sm"
-      aria-label="Supervisor conversation"
+      aria-label="Supervisor-Unterhaltung"
     >
       <p className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-muted/50 px-4 py-3">
         {journal.intent.goal}
@@ -37,12 +38,12 @@ export function NativeSupervisorConversation(props: {
       {journal.inputs?.map((entry) => (
         <article
           key={entry.intent.commandId}
-          aria-label="Owner task context"
+          aria-label="Kontext vom Owner"
           className="ml-auto max-w-[85%] rounded-xl bg-muted/50 px-4 py-3"
         >
           <p className="whitespace-pre-wrap break-words">{entry.intent.body}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {entry.receipt ? "Saved for the task’s next step" : "Context receipt pending"}
+            {entry.receipt ? "Gespeichert" : "Unbestätigt"}
           </p>
         </article>
       ))}
@@ -51,53 +52,31 @@ export function NativeSupervisorConversation(props: {
         .map((reply) => (
           <article
             key={reply.id}
-            aria-label={reply.phase === "commentary" ? "Supervisor commentary" : "Supervisor reply"}
+            aria-label={
+              reply.phase === "commentary" ? "Supervisor-Kommentar" : "Supervisor-Antwort"
+            }
           >
             <p className="mb-2 text-xs text-muted-foreground">
-              {reply.phase === "commentary" ? "Supervisor · Progress" : "Supervisor"}
+              {reply.phase === "commentary" ? "Supervisor · Fortschritt" : "Supervisor"}
             </p>
             <SupervisorMarkdown text={reply.text} />
             {(reply.truncated || reply.incomplete) && (
               <p role="status" className="mt-1 text-xs text-muted-foreground">
-                {reply.incomplete
-                  ? "Reply incomplete. Reload execution history."
-                  : "Stream excerpt truncated; the final task result is authoritative."}
+                {reply.incomplete ? "Antwort unvollständig" : "Auszug gekürzt"}
               </p>
             )}
           </article>
         ))}
       {finalText && finalText !== publicAnswer && (
-        <article aria-label="Supervisor final result">
+        <article aria-label="Endergebnis">
           <p className="mb-2 text-xs text-muted-foreground">Supervisor</p>
           <SupervisorMarkdown text={finalText} />
         </article>
       )}
       {journal.turn?.resultTruncated && (
-        <p className="text-xs text-muted-foreground">Result truncated</p>
+        <p className="text-xs text-muted-foreground">Ergebnis gekürzt</p>
       )}
       <div className="text-xs text-muted-foreground">
-        <p>
-          {journal.turn
-            ? `${journal.turn.status} · Attempt ${journal.turn.attempt}`
-            : "Waiting for CTOX receipt"}
-        </p>
-        {journal.turn?.taskId && (
-          <details className="mt-1">
-            <summary>Task details</summary>
-            <p>Task {journal.turn.taskId}</p>
-            <p>Command {journal.turn.commandId}</p>
-          </details>
-        )}
-        {props.page && props.page.public_text_supported !== true && (
-          <p role="status" className="mt-1">
-            Live reply text is unavailable on this connection. Task history is still available.
-          </p>
-        )}
-        {props.historyLimited && (
-          <p role="status" className="mt-1">
-            Reply history limit reached. Reload from the start to recover retained text.
-          </p>
-        )}
         <NativeSupervisorExecutionDetails
           page={props.page}
           error={props.error}
@@ -106,16 +85,27 @@ export function NativeSupervisorConversation(props: {
           onNext={props.onNext}
         />
       </div>
-      {journal.submission === "not-submitted" && (
+      {journal.submission === "not-submitted" && !canResumeSupervisorJournal(journal, null) && (
         <p role="status" className="text-xs text-muted-foreground">
-          {canResumeSupervisorJournal(journal, null)
-            ? "Waiting for the task receipt"
-            : `Not sent: ${journal.submissionError}`}
+          Nicht gesendet
+          {props.onRetrySend ? (
+            <>
+              {" · "}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={props.disabled}
+                onClick={props.onRetrySend}
+              >
+                Erneut senden
+              </button>
+            </>
+          ) : null}
         </p>
       )}
       {journal.turn?.errorMessage && (
         <p role="alert" className="text-destructive">
-          {journal.turn.errorCode}: {journal.turn.errorMessage}
+          {journal.turn.errorMessage}
         </p>
       )}
     </section>

@@ -8,10 +8,10 @@ import {
 } from "../../themePalette";
 
 /**
- * The theme editor lives above the router so a draft survives navigation: the
- * palette is painted on the live app, and judging it means browsing the app
- * while the editor stays open. Themes are referenced by id because the stored
- * definitions change underneath an open session (an edit, an import).
+ * Die Editor-Sitzung liegt im Store, damit auch ein Befehl (Befehlspalette)
+ * den Editor öffnen kann; gerendert wird er inline auf der Seite Darstellung.
+ * Themes are referenced by id because the stored definitions change
+ * underneath an open session (an edit, an import).
  */
 export type ThemeEditorSessionInput = {
   /** Set when editing an installed theme; null creates a new one. */

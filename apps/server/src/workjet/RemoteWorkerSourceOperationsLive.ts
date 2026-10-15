@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import {
+  canCoordinateWorkjet,
+  sameWorkjetParentTeamBinding,
+  workjetParentBindingMatchesTeam,
   RemoteWorkerDispatchError,
   WorkjetGatewayAdmissionInput,
   WorkjetGatewayInferenceInput,
+  WorkjetGatewayInferenceProtocol,
   WorkjetComputerId,
   WorkjetConnectionId,
   type RemoteWorkerRequest,
@@ -30,16 +34,27 @@ import { makeRemoteWorkerSourceAuthority } from "./RemoteWorkerSourceAuthority.t
 import { RemoteWorkerSourceOperations } from "./RemoteWorkerConnectionBootstrap.ts";
 import { RemoteWorkerComputerEnrollment } from "./RemoteWorkerComputerEnrollment.ts";
 import { computerInventory } from "./computerInventory.ts";
+import { reportRemoteWorkerSubmission } from "./WorkerSubmission.ts";
+import { retainRemoteWorkerOutcome } from "./RemoteWorkerOutcome.ts";
+import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
+import { WorkerPullRequestStore } from "./WorkerPullRequestStore.ts";
+import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 import { makeCtoxLumaConfigurationClient } from "./ctox/CtoxLumaConfigurationClient.ts";
 import { makeCtoxLumaConfigurationRpc } from "./ctox/CtoxLumaConfigurationRpc.ts";
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "computer-unavailable" });
 const InferPayload = Schema.Struct({
+  protocol: Schema.optionalKey(WorkjetGatewayInferenceProtocol),
   requestJson: Schema.String.check(Schema.isMaxLength(256 * 1024)),
 });
 
 export const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment;
+  const broker = yield* RemoteWorkerBroker;
+  const pullRequests = yield* WorkerPullRequestStore;
+  const engine = yield* OrchestrationEngineService;
+  const sourceControl = yield* Effect.serviceOption(SourceControlProviderRegistry);
   const settings = yield* ServerSettingsService;
   const query = yield* ProjectionSnapshotQuery;
   const bindings = yield* CtoxThreadBindingSource;
@@ -74,10 +89,25 @@ export const make = Effect.gen(function* () {
       parent.deletedAt !== null ||
       parent.archivedAt !== null ||
       parent.projectId !== request.project.id ||
-      parent.workjetConfig.role !== "orchestrator" ||
+      !canCoordinateWorkjet(parent.workjetConfig) ||
       request.enabledCapabilityIds.some(
         (id) => !parent.workjetConfig.enabledCapabilityIds.includes(id),
       )
+    )
+      return yield* failure();
+    const currentParentBinding =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.parentTeamBinding : undefined;
+    const currentTeam =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
+    if (
+      !sameWorkjetParentTeamBinding(currentParentBinding, request.parentTeamBinding) ||
+      !workjetParentBindingMatchesTeam(
+        currentParentBinding,
+        currentTeam,
+        parent.projectId,
+        parent.id,
+      ) ||
+      (currentParentBinding !== undefined && request.parentTeamRole !== "specialist")
     )
       return yield* failure();
     const source = yield* bindings.fromStartConfig(parent.workjetConfig);
@@ -148,6 +178,12 @@ export const make = Effect.gen(function* () {
             repositoryUrl: request.project.repository.locator.remoteUrl,
             repositoryHead: request.revision,
             workspaceKey: request.requestId,
+            ...(request.executionPolicy === undefined
+              ? {}
+              : { executionPolicy: request.executionPolicy }),
+            ...(request.parentTeamBinding === undefined
+              ? {}
+              : { parentTeamBinding: request.parentTeamBinding }),
             credentialRef: selected.credentialRef,
             providerRef: selected.providerRef,
             modelRef: selected.modelRef,
@@ -164,6 +200,29 @@ export const make = Effect.gen(function* () {
       Effect.runPromise(
         Effect.gen(function* () {
           if (operation === "retire") {
+            if (payload && typeof payload === "object" && "pullRequest" in payload) {
+              if (Option.isNone(sourceControl)) return yield* failure();
+              yield* reportRemoteWorkerSubmission(request, payload).pipe(
+                Effect.provideService(ServerEnvironment, environment),
+                Effect.provideService(ProjectionSnapshotQuery, query),
+                Effect.provideService(OrchestrationEngineService, engine),
+                Effect.provideService(SourceControlProviderRegistry, sourceControl.value),
+              );
+              if (
+                typeof payload === "object" &&
+                payload !== null &&
+                "pullRequest" in payload &&
+                (payload.pullRequest as { provider?: unknown })?.provider === "github"
+              ) {
+                // Retirement is cleanup; current source authority is re-read by the native publisher.
+                yield* retainRemoteWorkerOutcome(request, payload).pipe(
+                  Effect.provideService(ProjectionSnapshotQuery, query),
+                  Effect.provideService(RemoteWorkerBroker, broker),
+                  Effect.provideService(WorkerPullRequestStore, pullRequests),
+                  Effect.provideService(SourceControlProviderRegistry, sourceControl.value),
+                );
+              }
+            }
             yield* authority.revoke(request);
             return { retired: true };
           }
@@ -198,7 +257,7 @@ export const make = Effect.gen(function* () {
           ).pipe(Effect.mapError(failure));
           const inferenceInput = yield* Schema.decodeUnknownEffect(WorkjetGatewayInferenceInput)({
             ...admitted,
-            requestJson: input.requestJson,
+            ...input,
           }).pipe(Effect.mapError(failure));
           return yield* inference.infer(inferenceInput).pipe(Effect.mapError(failure));
         }),

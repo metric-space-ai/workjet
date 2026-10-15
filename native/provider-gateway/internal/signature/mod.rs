@@ -28,7 +28,8 @@ pub use claude::{
 };
 
 pub use claude_messages_sanitize::{
-    sanitize_claude_messages_for_claude_upstream, ClaudeSignatureSanitizeReport,
+    normalize_claude_empty_message_text, sanitize_claude_messages_for_claude_upstream,
+    ClaudeSignatureSanitizeReport,
 };
 pub use claude_validation::{
     has_claude_thinking_signature_prefix, has_decodable_claude_thinking_signature,

@@ -4,6 +4,7 @@ import {
   EnvironmentId,
   ProjectId,
   WorkjetComputerId,
+  DEFAULT_MEETING_PREPARATION_CONFIGURATION,
   type ProjectOverview,
 } from "@workjet/contracts";
 import {
@@ -14,6 +15,7 @@ import {
   resolveGalleryProjectHistory,
   resolveGalleryProjectOverview,
   visibleGalleryProjects,
+  websiteDraftChange,
   type GalleryLocalProject,
 } from "./projectOverview";
 const local = (
@@ -35,6 +37,25 @@ const local = (
         },
 });
 describe("real project overview", () => {
+  it("retains saved meeting preparation while unrelated overview data changes", () => {
+    const saved: ProjectOverview = {
+      websiteUrl: null,
+      slots: [null, null, null],
+      meetingPreparation: {
+        ...DEFAULT_MEETING_PREPARATION_CONFIGURATION,
+        enabled: false,
+        leadMinutes: [720, 60],
+      },
+    };
+    const draft = overviewDraft(saved);
+    draft.websiteUrl = "https://ctox.dev";
+    const updated = decodeOverviewDraft(draft);
+    expect(updated.meetingPreparation).toEqual(saved.meetingPreparation);
+    expect(updated.websiteUrl).toBe("https://ctox.dev");
+    expect(
+      decodeOverviewDraft(overviewDraft({ websiteUrl: null, slots: [null, null, null] })),
+    ).not.toHaveProperty("meetingPreparation");
+  });
   it("uses only domain-shaped titles for an unsaved overview and preserves saved clearing", () => {
     const card = {
       key: "a:native",
@@ -57,13 +78,78 @@ describe("real project overview", () => {
     ]) {
       expect(resolveGalleryProjectOverview({ ...card, title }).websiteUrl).toBeNull();
     }
-    const saved: ProjectOverview = { websiteUrl: null, slots: [null, null, null] };
+    const saved: ProjectOverview = {
+      websiteUrl: null,
+      websiteUrlCleared: true,
+      slots: [null, null, null],
+    };
     expect(
       resolveGalleryProjectOverview({
         ...card,
         local: { ...local("native", "a"), overview: saved },
       }),
     ).toBe(saved);
+  });
+
+  it("treats an unmarked null website from automatic syncs as never set and falls back to the domain", () => {
+    const card = {
+      key: "a:kunstmen",
+      id: "kunstmen",
+      title: "kunstmen.com",
+      local: null,
+      native: true,
+    };
+    const automatic: ProjectOverview = {
+      tokenBudget: { limitBillions: null, revision: 0, jourFixe: null },
+      websiteUrl: null,
+      slots: [null, null, null],
+    };
+    expect(
+      resolveGalleryProjectOverview({
+        ...card,
+        local: { ...local("kunstmen", "a"), overview: automatic },
+      }),
+    ).toEqual({ ...automatic, websiteUrl: "https://kunstmen.com" });
+    // Non-domain titles keep a null website; the fallback only covers domains.
+    expect(
+      resolveGalleryProjectOverview({
+        ...card,
+        title: "Milton Ticket",
+        local: { ...local("milton", "a"), overview: automatic },
+      }).websiteUrl,
+    ).toBeNull();
+  });
+
+  it("keeps a website cleared in the editor empty and drops the marker once a URL is entered", () => {
+    const draft = overviewDraft({ websiteUrl: "https://example.org", slots: [null, null, null] });
+    const cleared = decodeOverviewDraft(websiteDraftChange(draft, "  "));
+    expect(cleared).toEqual({
+      websiteUrl: null,
+      websiteUrlCleared: true,
+      slots: [null, null, null],
+    });
+    // The explicit marker survives later unrelated edits.
+    const reopened = overviewDraft(cleared);
+    expect(decodeOverviewDraft(reopened)).toEqual(cleared);
+    // Entering a URL again removes the marker.
+    expect(decodeOverviewDraft(websiteDraftChange(reopened, "https://example.org"))).toEqual({
+      websiteUrl: "https://example.org",
+      slots: [null, null, null],
+    });
+    // Clearing suppresses the domain fallback; an untouched empty field does not mark a clear.
+    const card = {
+      key: "a:example",
+      id: "example",
+      title: "example.org",
+      local: { ...local("example", "a"), overview: cleared },
+      native: false,
+    };
+    expect(resolveGalleryProjectOverview(card).websiteUrl).toBeNull();
+    const untouchable = overviewDraft({ websiteUrl: null, slots: [null, null, null] });
+    expect(decodeOverviewDraft(untouchable)).toEqual({
+      websiteUrl: null,
+      slots: [null, null, null],
+    });
   });
 
   it("uses confirmed CTOX URLs and explicit clearing while preserving local KPI values", () => {
@@ -262,8 +348,9 @@ describe("real project overview", () => {
   });
   it("derives age from actual project time and never invents an unavailable timestamp", () => {
     const now = Date.parse("2026-10-02T02:00:00Z");
-    expect(projectUpdateAge("2026-10-02T00:00:00Z", now)).toBe("2h ago");
-    expect(projectUpdateAge(null, now)).toBe("Not available");
-    expect(projectUpdateAge("invalid", now)).toBe("Not available");
+    expect(projectUpdateAge("2026-10-02T00:00:00Z", now, "en")).toBe("2h ago");
+    expect(projectUpdateAge("2026-10-02T00:00:00Z", now, "de")).toBe("vor 2 Std.");
+    expect(projectUpdateAge(null, now, "en")).toBe("Not available");
+    expect(projectUpdateAge("invalid", now, "en")).toBe("Not available");
   });
 });

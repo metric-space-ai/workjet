@@ -1,0 +1,206 @@
+{
+  "recordedAt": "2026-10-10T02:43:32.272Z",
+  "harness": "Grok CLI / Grok Build",
+  "model": "claude-opus-5-5",
+  "workjetThreadId": "47cdbea2-9169-4bc9-ae90-c19d9d2440a6",
+  "nativeSessionId": "01a123af-06da-7140-9a17-b48c6067597b",
+  "terminal": "ready",
+  "workjetToolCompletions": 20,
+  "errors": [],
+  "runtimeBuild": {
+    "recordedAt": "2026-10-10T02:38:35.223Z",
+    "native": {
+      "binary": "/Volumes/OneTB/dev-artifacts/workjet/harness-proxy-rc-20261009/cargo-target/debug/workjet-provider-gateway-host",
+      "sha256": "7bd4f46f7c62a4ce0150ffb542dc7744ccadf7c67d40d8d04d77ccc4ce674add",
+      "sourceHead": "7b4415a00"
+    },
+    "server": {
+      "entry": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/runtime/apps/server/dist/bin.mjs",
+      "sha256": "d45cc88e4bb796d232563c4a325c1d67864d9f8b022d6dcc26d8b6efa55fea7c",
+      "sourceHead": "6b17cd3b3f6d354829db9cba7e890641c7b7bf88"
+    }
+  },
+  "strictlySequential": true,
+  "nativeResults": [
+    {
+      "index": 1,
+      "callId": "toolu_012F1dxjHPxQ9UU7eBbtR28G",
+      "command": "printf 'PROXY_MATRIX_01\\n'",
+      "output": "PROXY_MATRIX_01\n",
+      "exitCode": 0,
+      "completedAt": 1791600046,
+      "status": "completed"
+    },
+    {
+      "index": 2,
+      "callId": "toolu_013HW22rfhbgF2gCHah2u9H6",
+      "command": "printf 'PROXY_MATRIX_02\\n'",
+      "output": "PROXY_MATRIX_02\n",
+      "exitCode": 0,
+      "completedAt": 1791600048,
+      "status": "completed"
+    },
+    {
+      "index": 3,
+      "callId": "toolu_01NXhRwX7VB1DPdxpmjcfCCa",
+      "command": "printf 'PROXY_MATRIX_03\\n'",
+      "output": "PROXY_MATRIX_03\n",
+      "exitCode": 0,
+      "completedAt": 1791600050,
+      "status": "completed"
+    },
+    {
+      "index": 4,
+      "callId": "toolu_017GBYaaczsaddyqsijdhExS",
+      "command": "printf 'PROXY_MATRIX_04\\n'",
+      "output": "PROXY_MATRIX_04\n",
+      "exitCode": 0,
+      "completedAt": 1791600052,
+      "status": "completed"
+    },
+    {
+      "index": 5,
+      "callId": "toolu_0158H9j6mnps6RTkAZwozF8u",
+      "command": "printf 'PROXY_MATRIX_05\\n'",
+      "output": "PROXY_MATRIX_05\n",
+      "exitCode": 0,
+      "completedAt": 1791600055,
+      "status": "completed"
+    },
+    {
+      "index": 6,
+      "callId": "toolu_01VmY4AxQeiXAox7fuZpvR7r",
+      "command": "printf 'PROXY_MATRIX_06\\n'",
+      "output": "PROXY_MATRIX_06\n",
+      "exitCode": 0,
+      "completedAt": 1791600057,
+      "status": "completed"
+    },
+    {
+      "index": 7,
+      "callId": "toolu_01D25Vg6qpH2XSRinUFAtWN8",
+      "command": "printf 'PROXY_MATRIX_07\\n'",
+      "output": "PROXY_MATRIX_07\n",
+      "exitCode": 0,
+      "completedAt": 1791600058,
+      "status": "completed"
+    },
+    {
+      "index": 8,
+      "callId": "toolu_01KNE7ubA3vnYbr1FhsoQYVb",
+      "command": "printf 'PROXY_MATRIX_08\\n'",
+      "output": "PROXY_MATRIX_08\n",
+      "exitCode": 0,
+      "completedAt": 1791600060,
+      "status": "completed"
+    },
+    {
+      "index": 9,
+      "callId": "toolu_01GtvUdHMAnVgcmuGJGV5x7h",
+      "command": "printf 'PROXY_MATRIX_09\\n'",
+      "output": "PROXY_MATRIX_09\n",
+      "exitCode": 0,
+      "completedAt": 1791600062,
+      "status": "completed"
+    },
+    {
+      "index": 10,
+      "callId": "toolu_01Sh9ajYs9JoE6MpNaTt2XJn",
+      "command": "printf 'PROXY_MATRIX_10\\n'",
+      "output": "PROXY_MATRIX_10\n",
+      "exitCode": 0,
+      "completedAt": 1791600065,
+      "status": "completed"
+    },
+    {
+      "index": 11,
+      "callId": "toolu_01HMY63LJUMqZyJZJxwSCvd5",
+      "command": "printf 'PROXY_MATRIX_11\\n'",
+      "output": "PROXY_MATRIX_11\n",
+      "exitCode": 0,
+      "completedAt": 1791600067,
+      "status": "completed"
+    },
+    {
+      "index": 12,
+      "callId": "toolu_019VwcRJSNoeCHjxomgd1KRj",
+      "command": "printf 'PROXY_MATRIX_12\\n'",
+      "output": "PROXY_MATRIX_12\n",
+      "exitCode": 0,
+      "completedAt": 1791600069,
+      "status": "completed"
+    },
+    {
+      "index": 13,
+      "callId": "toolu_01FcjALGMQDCznj8DcMiwWuk",
+      "command": "printf 'PROXY_MATRIX_13\\n'",
+      "output": "PROXY_MATRIX_13\n",
+      "exitCode": 0,
+      "completedAt": 1791600071,
+      "status": "completed"
+    },
+    {
+      "index": 14,
+      "callId": "toolu_01QuCoeE1Y49dwyrQyh1HxTH",
+      "command": "printf 'PROXY_MATRIX_14\\n'",
+      "output": "PROXY_MATRIX_14\n",
+      "exitCode": 0,
+      "completedAt": 1791600073,
+      "status": "completed"
+    },
+    {
+      "index": 15,
+      "callId": "toolu_01FCJwpvnNJetnVww7QQhk1w",
+      "command": "printf 'PROXY_MATRIX_15\\n'",
+      "output": "PROXY_MATRIX_15\n",
+      "exitCode": 0,
+      "completedAt": 1791600075,
+      "status": "completed"
+    },
+    {
+      "index": 16,
+      "callId": "toolu_0144uXYebvoqwNrF7fqACnaH",
+      "command": "printf 'PROXY_MATRIX_16\\n'",
+      "output": "PROXY_MATRIX_16\n",
+      "exitCode": 0,
+      "completedAt": 1791600077,
+      "status": "completed"
+    },
+    {
+      "index": 17,
+      "callId": "toolu_01YW1cALpJuUoxXg4HT5nZbk",
+      "command": "printf 'PROXY_MATRIX_17\\n'",
+      "output": "PROXY_MATRIX_17\n",
+      "exitCode": 0,
+      "completedAt": 1791600079,
+      "status": "completed"
+    },
+    {
+      "index": 18,
+      "callId": "toolu_01LFHu2p1RwXoVMtxwA8pCnX",
+      "command": "printf 'PROXY_MATRIX_18\\n'",
+      "output": "PROXY_MATRIX_18\n",
+      "exitCode": 0,
+      "completedAt": 1791600081,
+      "status": "completed"
+    },
+    {
+      "index": 19,
+      "callId": "toolu_011tpbfREGGuceo4m5fHf5ja",
+      "command": "printf 'PROXY_MATRIX_19\\n'",
+      "output": "PROXY_MATRIX_19\n",
+      "exitCode": 0,
+      "completedAt": 1791600083,
+      "status": "completed"
+    },
+    {
+      "index": 20,
+      "callId": "toolu_01AXQTD1CuW97AMiJs1MKChT",
+      "command": "printf 'PROXY_MATRIX_20\\n'",
+      "output": "PROXY_MATRIX_20\n",
+      "exitCode": 0,
+      "completedAt": 1791600084,
+      "status": "completed"
+    }
+  ]
+}

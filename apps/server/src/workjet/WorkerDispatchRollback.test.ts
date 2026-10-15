@@ -20,7 +20,10 @@ const identity = {
   adminIno: "3",
 };
 
-const fixture = () => {
+const fixture = (isolated = false) => {
+  const capturedIdentity = isolated
+    ? { ...identity, kind: "isolated" as const, adminPath: input.worktreePath + "/.git" }
+    : identity;
   const calls: string[] = [];
   const state = {
     ino: "2",
@@ -62,11 +65,15 @@ const fixture = () => {
   });
   const remover = Layer.mock(NativeWorkerWorktreeRemover)({
     capture: () =>
-      Effect.sync(() => ({ ...identity, worktreeIno: state.ino, adminIno: state.adminIno })),
+      Effect.sync(() => ({
+        ...capturedIdentity,
+        worktreeIno: state.ino,
+        adminIno: state.adminIno,
+      })),
     quarantineCaptured: (captured) =>
       Effect.gen(function* () {
         // Quarantine uses the original capture, not a post-rejection snapshot.
-        expect(captured).toEqual(identity);
+        expect(captured).toEqual(capturedIdentity);
         calls.push("quarantine-captured");
         if (state.rejectRemoval)
           return yield* new NativeWorkerWorktreeRemovalError({ reason: "identity" });
@@ -88,7 +95,12 @@ const fixture = () => {
         };
       }),
   });
-  return { calls, state, service: make().pipe(Effect.provide(Layer.mergeAll(git, remover))) };
+  return {
+    calls,
+    state,
+    capturedIdentity,
+    service: make().pipe(Effect.provide(Layer.mergeAll(git, remover))),
+  };
 };
 
 it.effect("quarantines the checkout and compare-deletes only its original ref", () =>
@@ -100,6 +112,43 @@ it.effect("quarantines the checkout and compare-deletes only its original ref", 
     const recovery = yield* rollback;
     expect(recovery.recoveryWorktreePath).toBe("/workers/one.workjet-rejected-2");
     expect(test.calls).toEqual(["quarantine-captured", "delete-ref"]);
+  }),
+);
+
+it.effect("quarantines an isolated checkout with its ref and preserves the source repository", () =>
+  Effect.gen(function* () {
+    const test = fixture(true);
+    const service = yield* test.service;
+    const rollback = yield* service.prepare({ ...input, custody: test.capturedIdentity });
+    yield* rollback;
+    expect(test.calls).toEqual(["quarantine-captured"]);
+  }),
+);
+
+it.effect("rejects stale persisted custody before any rejected-start cleanup", () =>
+  Effect.gen(function* () {
+    const test = fixture(true);
+    test.state.adminIno = "9";
+    const service = yield* test.service;
+    expect(
+      yield* service.prepare({ ...input, custody: test.capturedIdentity }).pipe(
+        Effect.match({
+          onFailure: (error) => error.reason,
+          onSuccess: () => "unexpected-success",
+        }),
+      ),
+    ).toBe("changed");
+    expect(
+      yield* service
+        .prepare({ ...input, custody: { ...test.capturedIdentity, worktreePath: "/foreign" } })
+        .pipe(
+          Effect.match({
+            onFailure: (error) => error.reason,
+            onSuccess: () => "unexpected-success",
+          }),
+        ),
+    ).toBe("changed");
+    expect(test.calls).toEqual([]);
   }),
 );
 

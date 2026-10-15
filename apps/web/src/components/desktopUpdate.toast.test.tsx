@@ -1,4 +1,3 @@
-import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DesktopUpdateState } from "@workjet/contracts";
 
@@ -12,30 +11,15 @@ vi.mock("./ui/toast", () => ({
 
 import { showDesktopUpdateDownloadedToast } from "./desktopUpdate.toast";
 
-type ClickableElement = ReactElement<{ readonly onClick?: () => void }>;
+type DownloadedToast = {
+  readonly type?: string;
+  readonly title?: string;
+  readonly description?: unknown;
+  readonly actionProps?: { readonly children?: string; readonly onClick?: () => void };
+};
 
-/** Walks the rendered description, invoking function components, to find the link button. */
-function findReleaseNotesLink(node: ReactNode): ClickableElement | null {
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      const found = findReleaseNotesLink(child);
-      if (found) return found;
-    }
-    return null;
-  }
-  if (!isValidElement(node)) return null;
-  const element = node as ReactElement<{ readonly children?: ReactNode }>;
-  if (element.type === "button") return element as ClickableElement;
-  if (typeof element.type === "function") {
-    const render = element.type as (props: unknown) => ReactNode;
-    return findReleaseNotesLink(render(element.props));
-  }
-  return findReleaseNotesLink(element.props.children);
-}
-
-function getDescription(): ReactNode {
-  const toast = testState.addToast.mock.calls[0]?.[0] as { description?: ReactNode } | undefined;
-  return toast?.description ?? null;
+function getToast(): DownloadedToast | undefined {
+  return testState.addToast.mock.calls[0]?.[0] as DownloadedToast | undefined;
 }
 
 function downloadedState(overrides: Partial<DesktopUpdateState> = {}): DesktopUpdateState {
@@ -64,12 +48,19 @@ describe("showDesktopUpdateDownloadedToast", () => {
     testState.addToast.mockReset();
   });
 
+  it("shows one German line with at most one action and no explanatory sentence", () => {
+    showDesktopUpdateDownloadedToast({ openExternal: vi.fn() }, downloadedState());
+    const toast = getToast();
+    expect(toast?.title).toBe("Update 0.0.30 geladen");
+    expect(toast?.description).toBeUndefined();
+    expect(toast?.actionProps?.children).toBe("Versionshinweise");
+  });
+
   it("opens the downloaded version's release notes", async () => {
     const openExternal = vi.fn().mockResolvedValue(true);
 
     showDesktopUpdateDownloadedToast({ openExternal }, downloadedState());
-    const link = findReleaseNotesLink(getDescription());
-    link?.props.onClick?.();
+    getToast()?.actionProps?.onClick?.();
     await vi.waitFor(() => {
       expect(openExternal).toHaveBeenCalledWith(
         "https://github.com/metric-space-ai/workjet/releases/tag/v0.0.30",
@@ -86,7 +77,7 @@ describe("showDesktopUpdateDownloadedToast", () => {
       { openExternal },
       downloadedState({ downloadedVersion: null }),
     );
-    findReleaseNotesLink(getDescription())?.props.onClick?.();
+    getToast()?.actionProps?.onClick?.();
 
     await vi.waitFor(() => {
       expect(openExternal).toHaveBeenCalledWith(
@@ -95,13 +86,14 @@ describe("showDesktopUpdateDownloadedToast", () => {
     });
   });
 
-  it("omits the link when the updater reports no version at all", () => {
+  it("omits the action when the updater reports no version at all", () => {
     showDesktopUpdateDownloadedToast(
       { openExternal: vi.fn() },
       downloadedState({ availableVersion: null, downloadedVersion: null }),
     );
 
-    expect(findReleaseNotesLink(getDescription())).toBeNull();
+    expect(getToast()?.title).toBe("Update geladen");
+    expect(getToast()?.actionProps).toBeUndefined();
   });
 
   it.each([
@@ -109,12 +101,12 @@ describe("showDesktopUpdateDownloadedToast", () => {
     ["rejects", vi.fn().mockRejectedValue(new Error("open failed"))],
   ])("shows an error when opening release notes %s", async (_description, openExternal) => {
     showDesktopUpdateDownloadedToast({ openExternal }, downloadedState());
-    findReleaseNotesLink(getDescription())?.props.onClick?.();
+    getToast()?.actionProps?.onClick?.();
 
     await vi.waitFor(() => {
       expect(testState.addToast).toHaveBeenLastCalledWith({
         type: "error",
-        title: "Unable to open release notes",
+        title: "Versionshinweise nicht geöffnet",
       });
     });
   });

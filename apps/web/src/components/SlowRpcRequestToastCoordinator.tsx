@@ -1,102 +1,52 @@
-import { useEffect, useRef } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
+import { useClientSettings } from "../hooks/useSettings";
 import { type SlowRpcAckRequest, useSlowRpcAckRequests } from "../rpc/requestLatencyState";
-import { toastManager } from "./ui/toast";
 
-export type SlowRequestLocale = "de" | "en";
-
-export function resolveSlowRequestLocale(language?: string): SlowRequestLocale {
-  const resolved = language ?? globalThis.navigator?.language ?? "en";
-  return resolved.toLowerCase().startsWith("de") ? "de" : "en";
-}
-
-export function describeSlowRequests(
-  requests: ReadonlyArray<SlowRpcAckRequest>,
-  locale: SlowRequestLocale,
-): string {
+/**
+ * Eine Zeile (UI-Vertrag): „2 Anfragen warten länger als 15 s“. Die einzelnen
+ * Anfragen (Rohdaten) gehören in Einstellungen › Diagnose, nicht in einen Toast.
+ */
+export function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>): string {
   const count = requests.length;
   // Thresholds vary per method, so report the smallest one the batch has passed.
   const thresholdSeconds = Math.round(
     Math.min(...requests.map((request) => request.thresholdMs)) / 1000,
   );
-
-  if (locale === "de") {
-    return count === 1
-      ? `1 Anfrage wartet länger als ${thresholdSeconds} s.`
-      : `${count} Anfragen warten länger als ${thresholdSeconds} s.`;
-  }
-  return `${count} request${count === 1 ? "" : "s"} waiting longer than ${thresholdSeconds}s.`;
+  // Zahl und Einheit bleiben bei 420 px zusammen (geschütztes Leerzeichen).
+  return count === 1
+    ? `1 Anfrage wartet länger als ${thresholdSeconds} s`
+    : `${count} Anfragen warten länger als ${thresholdSeconds} s`;
 }
 
-function SlowRequestDetails({
-  requests,
-  locale,
-}: {
-  requests: ReadonlyArray<SlowRpcAckRequest>;
-  locale: SlowRequestLocale;
-}) {
-  return (
-    <ul className="space-y-2.5 text-xs text-muted-foreground">
-      {requests.map((request) => (
-        <li
-          className="min-w-0 border-border/50 border-b pb-2 last:border-b-0 last:pb-0"
-          key={request.requestId}
-        >
-          <div className="wrap-break-word font-medium text-foreground">{request.tag}</div>
-          <div className="mt-0.5 text-[10px] opacity-75">
-            {locale === "de" ? "Gestartet" : "Started"}{" "}
-            {new Date(request.startedAt).toLocaleTimeString(locale === "de" ? "de-DE" : "en-US")}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-export function SlowRpcRequestToastCoordinator() {
+/**
+ * Kleiner Chip in der Kopfzeile statt Toast — reine Diagnose, darum nur im
+ * Entwicklermodus (#574) sichtbar. Die einzige Aktion ist der Klick auf den
+ * Chip; er führt zu Einstellungen › Diagnose.
+ */
+export function SlowRpcRequestChip() {
+  const developerMode = useClientSettings((settings) => settings.developerMode);
   const slowRequests = useSlowRpcAckRequests();
-  const toastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
-  const locale = resolveSlowRequestLocale();
-
-  useEffect(() => {
-    if (slowRequests.length === 0) {
-      if (toastIdRef.current !== null) {
-        toastManager.close(toastIdRef.current);
-        toastIdRef.current = null;
-      }
-      return;
-    }
-
-    const nextToast = {
-      data: {
-        expandableContent: <SlowRequestDetails locale={locale} requests={slowRequests} />,
-        expandableDescriptionTrigger: true,
-        expandableLabels:
-          locale === "de"
-            ? { collapse: "Anfragen ausblenden", expand: "Anfragen anzeigen" }
-            : { collapse: "Hide requests", expand: "Show requests" },
-      },
-      description: describeSlowRequests(slowRequests, locale),
-      timeout: 0,
-      title: locale === "de" ? "Einige Anfragen dauern länger" : "Some requests are slow",
-      type: "warning" as const,
-    };
-
-    if (toastIdRef.current === null) {
-      toastIdRef.current = toastManager.add(nextToast);
-    } else {
-      toastManager.update(toastIdRef.current, nextToast);
-    }
-  }, [locale, slowRequests]);
-
-  useEffect(
-    () => () => {
-      if (toastIdRef.current !== null) {
-        toastManager.close(toastIdRef.current);
-      }
-    },
-    [],
+  const navigate = useNavigate();
+  if (!developerMode || slowRequests.length === 0) return null;
+  return (
+    <button
+      type="button"
+      className="no-drag inline-flex shrink-0 items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] whitespace-nowrap text-amber-400 hover:bg-amber-500/20 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      data-workjet-slow-requests=""
+      title="Einstellungen › Diagnose"
+      onClick={() => void navigate({ to: "/settings/diagnostics" })}
+    >
+      {describeSlowRequests(slowRequests)}
+    </button>
   );
+}
 
+/**
+ * Früher: Toast mit „Diagnose“-Knopf. Der Hinweis ist jetzt der Chip in der
+ * Kopfzeile (SlowRpcRequestChip im WorkjetHeader); diese Hülle bleibt nur,
+ * weil die Wurzel sie noch einhängt.
+ */
+export function SlowRpcRequestToastCoordinator() {
   return null;
 }

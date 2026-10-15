@@ -5,6 +5,33 @@
 use super::convert_openai_responses_request_to_openai_chat_completions;
 use serde_json::{json, Value};
 
+#[test]
+fn empty_instructions_do_not_create_an_empty_system_message() {
+    for instructions in [None, Some(""), Some(" "), Some("Keep the project context.")] {
+        for stream in [false, true] {
+            let mut request = json!({"input":"Hi"});
+            if let Some(instructions) = instructions {
+                request["instructions"] = json!(instructions);
+            }
+            let output = value(convert_openai_responses_request_to_openai_chat_completions(
+                "kimi-for-coding",
+                &serde_json::to_vec(&request).unwrap(),
+                stream,
+            ));
+            let messages = output["messages"].as_array().unwrap();
+            if let Some(text) = instructions.filter(|text| !text.is_empty()) {
+                assert_eq!(messages.len(), 2);
+                assert_eq!(messages[0], json!({"role":"system","content":text}));
+            } else {
+                assert_eq!(messages.len(), 1);
+            }
+            assert_eq!(
+                messages.last().unwrap(),
+                &json!({"role":"user","content":"Hi"})
+            );
+        }
+    }
+}
 fn pretty(raw: &[u8]) -> String {
     let value: Value = serde_json::from_slice(raw).unwrap();
     serde_json::to_string_pretty(&value).unwrap()

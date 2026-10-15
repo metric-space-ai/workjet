@@ -2,6 +2,9 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 import {
   WorkjetNativeProviderAccount,
+  WorkjetNativeModelProbe,
+  WorkjetNativeModelCheckRequest,
+  WorkjetNativeModelCheckResponse,
   WorkjetNativeProviderRequest,
   WorkjetNativeProviderRegistry,
 } from "./workjetNativeProviders.ts";
@@ -43,7 +46,78 @@ const account = {
   effectiveModels: ["claude-opus-5-5"],
   inferenceVerified: false,
 };
+describe("reported native account quota contract", () => {
+  const window = { kind: "five_hour", status: "allowed", resetAtMs: 5000, utilization: 0.25 };
+  const quota = { state: "reported", observedAtMs: 1000, windows: [window] };
+  it("accepts public observations and strips private fields even inside windows", () => {
+    const decoded = decodeAccount({
+      ...account,
+      reportedQuota: {
+        ...quota,
+        generation: "private-fixture",
+        windows: [{ ...window, secret: "private-fixture" }],
+      },
+    });
+    expect(decoded.reportedQuota).toEqual(quota);
+    expect(JSON.stringify(decoded)).not.toContain("private-fixture");
+    expect(
+      decodeAccount({ ...account, reportedQuota: { state: "unknown" } }).reportedQuota,
+    ).toEqual({ state: "unknown" });
+    expect(
+      decodeAccount({
+        ...account,
+        reportedQuota: { state: "unavailable", errorClass: "quota_read_failed" },
+      }).reportedQuota,
+    ).toEqual({ state: "unavailable", errorClass: "quota_read_failed" });
+  });
+  it("rejects invented windows, unsafe timestamps, percentages and upstream error classes", () => {
+    for (const invalid of [
+      { ...quota, windows: [] },
+      { ...quota, windows: [window, window] },
+      { ...quota, windows: [{ ...window, resetAtMs: 999 }] },
+      { ...quota, windows: [{ ...window, resetAtMs: 608_402_000 }] },
+      { ...quota, windows: [{ ...window, utilization: 25 }] },
+      { ...quota, windows: [{ ...window, utilization: NaN }] },
+      { ...quota, observedAtMs: Number.MAX_SAFE_INTEGER + 1 },
+      { ...quota, windows: [{ ...window, kind: "invented" }] },
+      { state: "unavailable", errorClass: "credentials_rejected" },
+    ])
+      expect(() => decodeAccount({ ...account, reportedQuota: invalid })).toThrow();
+  });
+});
 describe("native provider public contract", () => {
+  it("decodes holder capabilities explicitly and keeps older registries read-only", () => {
+    expect(decodeAccount(account).controls).toBeUndefined();
+    expect(
+      decodeAccount({ ...account, controls: { canEnable: true, canRemove: false } }).controls,
+    ).toEqual({ canEnable: true, canRemove: false });
+    expect(() =>
+      decodeAccount({ ...account, controls: { canEnable: "yes", canRemove: true } }),
+    ).toThrow();
+    expect(() => decodeAccount({ ...account, controls: { canEnable: true } })).toThrow();
+  });
+  it("requires both current revisions and a boolean for account lifecycle mutations", () => {
+    const base = {
+      version: 1,
+      operationId: reference.accountId,
+      accountId: reference.accountId,
+      expectedAccountRevision: 3,
+      expectedRevision: 7,
+    };
+    const enable = { ...base, action: "instance.providers.account.enable", enabled: false };
+    const remove = { ...base, action: "instance.providers.account.remove" };
+    expect(decodeRequest(enable)).toEqual(enable);
+    expect(decodeRequest(remove)).toEqual(remove);
+    for (const invalid of [
+      { ...enable, enabled: undefined },
+      { ...enable, enabled: "false" },
+      { ...enable, expectedAccountRevision: 0 },
+      { ...remove, expectedRevision: undefined },
+      { ...remove, expectedRevision: -1 },
+    ])
+      expect(() => decodeRequest(invalid)).toThrow();
+  });
+
   it("retains catalog evidence without promoting it to inference verification", () => {
     const registry = decodeRegistry({
       ok: true,
@@ -90,5 +164,83 @@ describe("native provider public contract", () => {
       { ...base, action: "instance.providers.secret" },
     ])
       expect(() => decodeRequest(invalid)).toThrow();
+  });
+});
+describe("native model probe contract", () => {
+  const modelId = "claude-opus-5-5";
+  const probe = {
+    modelId,
+    checkedAtMs: 1000,
+    elapsedMs: 80,
+    status: "ok",
+    source: "upstream",
+    failure: null,
+    httpStatus: 200,
+    retryAtMs: null,
+  };
+  const decode = Schema.decodeUnknownSync(WorkjetNativeModelProbe);
+  it("requires actual upstream success and strips private response fields", () => {
+    expect(decode({ ...probe, secret: "private" })).toEqual(probe);
+    for (const changes of [
+      { source: "gateway" },
+      { httpStatus: 403 },
+      { httpStatus: null },
+      { failure: "auth" },
+      { retryAtMs: 10000 },
+      { status: "unknown" },
+    ])
+      expect(() => decode({ ...probe, ...changes })).toThrow();
+  });
+  it("retains local cooldown as unavailable and validates real provider failure classes", () => {
+    expect(
+      decode({
+        ...probe,
+        status: "unavailable",
+        source: "gateway",
+        failure: "gateway_cooldown",
+        httpStatus: 503,
+        retryAtMs: 1200,
+      }).failure,
+    ).toBe("gateway_cooldown");
+    expect(() =>
+      decode({ ...probe, status: "unavailable", source: "gateway", failure: "auth" }),
+    ).toThrow();
+    for (const [failure, httpStatus] of [
+      ["auth", 401],
+      ["model_not_found", 404],
+      ["quota_rate_limit", 429],
+      ["provider", 503],
+      ["invalid_response", 200],
+    ]) {
+      expect(decode({ ...probe, status: "failed", failure, httpStatus }).failure).toBe(failure);
+      expect(() =>
+        decode({ ...probe, status: "failed", source: "gateway", failure, httpStatus }),
+      ).toThrow();
+    }
+  });
+  it("keeps older catalogs compatible and stores only one observation per model", () => {
+    expect(decodeAccount(account).modelChecks).toBeUndefined();
+    expect(decodeAccount({ ...account, modelChecks: [probe] }).modelChecks).toEqual([probe]);
+    expect(() => decodeAccount({ ...account, modelChecks: [probe, probe] })).toThrow();
+  });
+  it("correlates public check requests and replies without requiring a project or meeting", () => {
+    const request = {
+      version: 1,
+      operationId: reference.accountId,
+      action: "instance.providers.models.check",
+      accountId: reference.accountId,
+      expectedAccountRevision: 3,
+      modelId,
+    };
+    expect(Schema.decodeUnknownSync(WorkjetNativeModelCheckRequest)(request)).toEqual(request);
+    const response = {
+      version: 1,
+      operationId: request.operationId,
+      action: request.action,
+      accountId: request.accountId,
+      accountRevision: 3,
+      probe,
+    };
+    expect(Schema.decodeUnknownSync(WorkjetNativeModelCheckResponse)(response)).toEqual(response);
   });
 });

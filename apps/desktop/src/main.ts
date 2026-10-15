@@ -29,14 +29,17 @@ import * as CtoxBusinessOsShell from "./ctox/CtoxBusinessOsShell.ts";
 import * as CtoxAccountLifecycle from "./ctox/CtoxAccountLifecycle.ts";
 import * as CtoxNativeIdentityResolver from "./ctox/CtoxNativeIdentityResolver.ts";
 import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
+import * as CtoxControlDevice from "./ctox/CtoxControlDevice.ts";
 import * as CtoxDecisionHubProvisioner from "./ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestWindows from "./ctox/CtoxGuestWindows.ts";
+import * as CtoxInstancePreferences from "./ctox/CtoxInstancePreferences.ts";
 import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
 import * as CtoxSshManagedLaunch from "./ctox/CtoxSshManagedLaunch.ts";
 import * as CtoxShellFleet from "./ctox/CtoxShellFleet.ts";
 import * as CtoxManagedLaunch from "./ctox/CtoxManagedLaunch.ts";
+import * as CtoxKeyRecovery from "./ctox/CtoxKeyRecovery.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
 import * as ElectronCrashReporter from "./electron/ElectronCrashReporter.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
@@ -51,6 +54,7 @@ import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as DesktopApp from "./app/DesktopApp.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
+import * as DesktopKeyRecovery from "./app/DesktopKeyRecovery.ts";
 import * as DesktopClerk from "./app/DesktopClerk.ts";
 import * as DesktopDeepLinkRouter from "./app/DesktopDeepLinkRouter.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
@@ -77,6 +81,7 @@ import * as DesktopShellEnvironment from "./shell/DesktopShellEnvironment.ts";
 import * as DesktopSshEnvironment from "./ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
 import * as DesktopComputerProvisioner from "./provisioning/DesktopComputerProvisioner.ts";
+import * as DesktopComputers from "./computers/DesktopComputers.ts";
 import * as DesktopState from "./app/DesktopState.ts";
 import { resolveDesktopProfileHome } from "./app/DesktopTestProfile.ts";
 import * as DesktopUserDataMigration from "./app/DesktopUserDataMigration.ts";
@@ -171,7 +176,9 @@ const desktopFoundationLayer = Layer.mergeAll(
   DesktopConnectionCatalogStore.layer.pipe(Layer.provideMerge(DesktopSavedEnvironments.layer)),
   DesktopAssets.layer,
   DesktopObservability.layer,
-).pipe(Layer.provideMerge(desktopEnvironmentLayer));
+).pipe(
+  Layer.provideMerge(DesktopKeyRecovery.layer.pipe(Layer.provideMerge(desktopEnvironmentLayer))),
+);
 
 const desktopSshLayer = desktopSshEnvironmentLayer.pipe(
   Layer.provideMerge(DesktopSshPasswordPrompts.layer()),
@@ -200,6 +207,7 @@ const desktopServiceAttachmentLayer = DesktopLocalServiceAttachment.layer.pipe(
   Layer.provideMerge(
     DesktopLocalServiceSession.layer.pipe(Layer.provideMerge(desktopRpcSessionLayer)),
   ),
+  Layer.provideMerge(desktopFoundationLayer),
 );
 
 // Pool layer instantiates the backend factory once for the Windows
@@ -235,7 +243,7 @@ const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
 // The local-daemon launch service resolves its target through the one
 // registry instance, so the registry is provided to (and re-exported by) the
 // merged control layer rather than merged beside it.
-const desktopCtoxControlLayer = Layer.mergeAll(
+const desktopCtoxControlServices = Layer.mergeAll(
   CtoxNativeIdentityResolver.layer(),
   CtoxBusinessOsShell.layer,
   CtoxDevAuth.layer(),
@@ -255,9 +263,15 @@ const desktopCtoxControlLayer = Layer.mergeAll(
               ok: response.ok,
             })),
       },
-    }),
+    }).pipe(Layer.provideMerge(CtoxInstancePreferences.layer)),
   ),
+  Layer.provideMerge(CtoxControlDevice.layer),
   Layer.provideMerge(CtoxElectronSessions.layer),
+  Layer.provideMerge(desktopFoundationLayer),
+);
+
+const desktopCtoxControlLayer = CtoxKeyRecovery.layer.pipe(
+  Layer.provideMerge(desktopCtoxControlServices),
 );
 
 const desktopProvisioningLayer = DesktopComputerProvisioner.layer.pipe(
@@ -290,11 +304,17 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopLinuxUrlHandler.layer,
   DesktopDeepLinkRouter.layer,
   DesktopShellEnvironment.layer,
-  desktopCtoxLayer,
-  desktopCtoxFleetLayer,
-  desktopSshLayer,
-  desktopProvisioningLayer,
 ).pipe(
+  Layer.provideMerge(desktopCtoxLayer),
+  Layer.provideMerge(desktopCtoxFleetLayer),
+  Layer.provideMerge(desktopSshLayer),
+  Layer.provideMerge(desktopProvisioningLayer),
+  Layer.provideMerge(
+    DesktopComputers.layer.pipe(
+      Layer.provideMerge(desktopBackendLayer),
+      Layer.provideMerge(desktopCtoxLayer),
+    ),
+  ),
   // provideMerge, not mergeAll: the application menu resolves the bundle
   // service, and the IPC handler resolves the same instance from the
   // re-exported context.

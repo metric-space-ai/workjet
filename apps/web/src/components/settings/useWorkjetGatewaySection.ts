@@ -118,7 +118,7 @@ export function useWorkjetGatewaySection(
         });
         if (checksFlight.current !== flight) return;
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result))
-          setChecksError("Model checks could not finish. Check the provider connection and retry.");
+          setChecksError("Modellprüfung nicht abgeschlossen.");
         // Check all may adopt a legacy key origin and its verified live IDs.
         if (!continuation) catalogQuery.refresh();
         checksQuery.refresh();
@@ -186,7 +186,7 @@ export function useWorkjetGatewaySection(
     const { pending, deferredCount } = checksQuery.data;
     if (pending.length === 0 && deferredCount === 0) return;
     if (checksQuery.error !== null) {
-      setChecksError("Model check status could not be loaded. Retry the checks.");
+      setChecksError("Prüfstatus nicht geladen.");
       return;
     }
     const pass = checksPass.current;
@@ -200,7 +200,7 @@ export function useWorkjetGatewaySection(
     if (checksPollingDeadline.current === 0)
       checksPollingDeadline.current = Date.now() + 20 * 60_000;
     if (Date.now() >= checksPollingDeadline.current || checksPolls.current >= 600) {
-      setChecksError("Model checks timed out. Retry the checks.");
+      setChecksError("Modellprüfung abgelaufen.");
       return;
     }
     // Only this mounted page owns the timer. Completed observations persist
@@ -435,7 +435,7 @@ export function useWorkjetGatewaySection(
         });
         if (result._tag === "Failure") {
           const message = isAtomCommandInterrupted(result)
-            ? "Change interrupted. Save again."
+            ? "Änderung unterbrochen. Erneut speichern."
             : workjetGatewayFailureDescription(squashAtomCommandFailure(result));
           setAccountErrors((previous) => ({
             ...previous,
@@ -473,7 +473,7 @@ export function useWorkjetGatewaySection(
         if (result._tag === "Failure") {
           setRouting({
             status: "failed",
-            message: "Provider models were not saved. Use IDs from the live catalog and try again.",
+            message: "Modelle nicht gespeichert.",
           });
           return false;
         }
@@ -497,7 +497,7 @@ export function useWorkjetGatewaySection(
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         toastManager.add({
           type: "error",
-          title: "Could not start the provider gateway",
+          title: "Gateway startet nicht",
           description: workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
         });
       }
@@ -552,8 +552,7 @@ export function useWorkjetGatewaySection(
         } catch {
           toastManager.add({
             type: "error",
-            title: "Could not open the provider login",
-            description: "Open the provider login in your browser to finish adding the account.",
+            title: "Anmeldung nicht geöffnet",
           });
         }
 
@@ -683,7 +682,7 @@ export function useWorkjetGatewaySection(
           setAccountErrors((previous) => ({
             ...previous,
             [accountId]: isAtomCommandInterrupted(result)
-              ? "Removal interrupted. Try again."
+              ? "Entfernen unterbrochen."
               : workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
           }));
           return false;

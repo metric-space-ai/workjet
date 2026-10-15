@@ -226,7 +226,10 @@ describe("CTOX managed discovery", () => {
     });
 
     assert.equal(result._tag, "ready");
-    if (result._tag === "ready") assert.equal(result.instances[0]?.id, "managed:tenant_skf");
+    if (result._tag === "ready") {
+      assert.equal(result.instances[0]?.id, "managed:tenant_skf");
+      assert.isTrue(result.sessionVerified);
+    }
     assert.deepEqual(calls, [
       {
         url: "https://accounts.ctox.dev/api/desktop/session-package",

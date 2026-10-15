@@ -23,8 +23,8 @@ export function WorkerProfilePopupEditor(props: WorkerProfilePopupEditorProps) {
     return (
       <p role="status" className="text-sm text-muted-foreground">
         {target.phase === "resolving"
-          ? "Checking the active instance…"
-          : "Luma settings are unavailable for this instance and computer. Check the instance selection in Settings."}
+          ? "Instanz wird geprüft …"
+          : "Luma-Einstellungen nicht verfügbar"}
       </p>
     );
   }
@@ -44,15 +44,12 @@ function ScopedWorkerProfilePopupEditor(props: WorkerProfilePopupEditorProps) {
   ) {
     return (
       <p role="alert" className="text-sm text-muted-foreground">
-        This worker is no longer available in the active instance.
+        Luma nicht mehr verfügbar
       </p>
     );
   }
   return (
     <div>
-      <p className="mb-3 text-xs text-muted-foreground">
-        Worker profile · Saved defaults. Existing chat overrides stay unchanged.
-      </p>
       <WorkjetWorkerEditor
         compact
         worker={worker}
@@ -64,7 +61,7 @@ function ScopedWorkerProfilePopupEditor(props: WorkerProfilePopupEditorProps) {
         onCancel={props.onCancel}
         onSave={async (next) => {
           if (!computers.some((computer) => computer.id === next.computerId)) {
-            throw new Error("Choose a computer belonging to the active instance.");
+            throw new Error("Rechner der aktiven Instanz wählen");
           }
           const exists = configuration.workerProfiles.some((item) => item.id === next.id);
           props.onSavingChange(true);
@@ -85,9 +82,7 @@ function ScopedWorkerProfilePopupEditor(props: WorkerProfilePopupEditorProps) {
               },
             });
             if (result._tag !== "Success") {
-              throw new Error(
-                "The Luma could not be saved. Your draft is still here; check the connection and try again.",
-              );
+              throw new Error("Luma nicht gespeichert");
             }
             props.onSaved(next);
           } finally {

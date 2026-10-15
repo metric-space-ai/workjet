@@ -9,10 +9,13 @@
 import { HostProcessArchitecture, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
@@ -20,6 +23,7 @@ import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
@@ -35,7 +39,8 @@ const TelemetryEnvConfig = Config.all({
   posthogHost: Config.string("WORKJET_POSTHOG_HOST").pipe(
     Config.withDefault("https://us.i.posthog.com"),
   ),
-  enabled: Config.boolean("WORKJET_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
+  // The legacy environment flag can veto consent, but can never grant it.
+  enabled: Config.boolean("WORKJET_TELEMETRY_ENABLED").pipe(Config.option),
   flushBatchSize: Config.number("WORKJET_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.number("WORKJET_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
     Config.withDefault(1_000),
@@ -70,7 +75,25 @@ export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
-  const identifier = yield* getTelemetryIdentifier;
+  const settings = yield* ServerSettingsService;
+  const hasConsent = settings.getSettings.pipe(
+    Effect.map(
+      (current) => current.posthogConsent && !Option.contains(telemetryConfig.enabled, false),
+    ),
+    Effect.orElseSucceed(() => false),
+  );
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const crypto = yield* Crypto.Crypto;
+  // Capture local services now; inspect identities only after consent.
+  const resolveIdentifier = yield* Effect.cached(
+    getTelemetryIdentifier.pipe(
+      Effect.provideService(ServerConfig.ServerConfig, serverConfig),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+      Effect.provideService(Crypto.Crypto, crypto),
+    ),
+  );
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcessPlatform;
@@ -106,7 +129,9 @@ export const make = Effect.gen(function* () {
   const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
     events: ReadonlyArray<BufferedAnalyticsEvent>,
   ) {
-    if (!telemetryConfig.enabled || !identifier) return;
+    if (!(yield* hasConsent)) return;
+    const identifier = yield* resolveIdentifier;
+    if (!identifier) return;
 
     const payload = {
       api_key: telemetryConfig.posthogKey,
@@ -134,6 +159,10 @@ export const make = Effect.gen(function* () {
   });
 
   const flush: AnalyticsService["Service"]["flush"] = Effect.gen(function* () {
+    if (!(yield* hasConsent)) {
+      yield* Ref.set(bufferRef, []);
+      return;
+    }
     while (true) {
       const batch = yield* Ref.modify(bufferRef, (current) => {
         if (current.length === 0) {
@@ -160,7 +189,7 @@ export const make = Effect.gen(function* () {
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
     function* (event, properties) {
-      if (!telemetryConfig.enabled || !identifier) return;
+      if (!(yield* hasConsent)) return;
 
       const enqueueResult = yield* enqueueBufferedEvent(event, properties);
       if (enqueueResult.dropped) {

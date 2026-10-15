@@ -31,7 +31,7 @@ describe("declared versus probed", () => {
     });
 
     expect(view.kind).toBe("declared-but-missing");
-    expect(view.kind === "declared-but-missing" ? view.reason : "").toContain("Not installed");
+    expect(view.kind === "declared-but-missing" ? view.reason : "").toContain("Nicht installiert");
   });
 
   it("flags the harmless direction too: present but switched off", () => {
@@ -96,10 +96,10 @@ describe("reason text", () => {
   it("tells the operator what to DO, and keeps timeout apart from failure", () => {
     // One answered wrongly, the other never answered. The fixes differ, so the
     // texts must not collapse into one.
-    expect(harnessReasonText("not-executable")).toContain("permissions");
-    expect(harnessReasonText("timeout")).toContain("hanging");
-    expect(harnessReasonText("probe-failed")).not.toContain("hanging");
+    expect(harnessReasonText("not-executable")).toContain("Rechte");
+    expect(harnessReasonText("timeout")).toContain("Keine Antwort");
+    expect(harnessReasonText("probe-failed")).not.toContain("Keine Antwort");
     expect(harnessReasonText("executable-not-found")).toContain("PATH");
-    expect(harnessReasonText("unsupported-host")).toContain("operating system");
+    expect(harnessReasonText("unsupported-host")).toContain("System");
   });
 });

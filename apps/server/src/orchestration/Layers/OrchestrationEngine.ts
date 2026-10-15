@@ -4,7 +4,7 @@ import type {
   ProjectId,
   ThreadId,
 } from "@workjet/contracts";
-import { OrchestrationCommand, RemoteWorkerRequest } from "@workjet/contracts";
+import { OrchestrationCommand, RemoteWorkerRequest, WorkjetThreadConfig } from "@workjet/contracts";
 import { make as makeRemoteWorkerStore } from "../../workjet/RemoteWorkerStore.ts";
 import { RemoteWorkerAdmission } from "../../workjet/RemoteWorkerAdmission.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
@@ -63,12 +63,14 @@ const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
   OrchestrationCommandPreviouslyRejectedError,
 );
 const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvariantError);
+const sameWorkjetConfig = Schema.toEquivalence(WorkjetThreadConfig);
 
 interface CommandEnvelope {
   command: OrchestrationCommand;
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
   startedAtMs: number;
   deferWhileBusy?: boolean | undefined;
+  expectedWorkjetConfig?: OrchestrationDispatchOptions["expectedWorkjetConfig"] | undefined;
   workerDelegation?: OrchestrationDispatchOptions["workerDelegation"] | undefined;
   remoteWorkerRequest?: RemoteWorkerRequest | undefined;
   remoteProjectMirror?: true | undefined;
@@ -124,7 +126,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     turnStartFence.withPermits(1)(
       Effect.gen(function* () {
         const thread = commandReadModel.threads.find((item) => item.id === threadId);
-        if (!thread || thread.deletedAt !== null) return false;
+        if (!thread || thread.deletedAt !== null || thread.archivedAt !== null) return false;
         if (goalRevision !== undefined) {
           const goal =
             thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.goal : undefined;
@@ -139,10 +141,36 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           )
             return false;
         }
+        if (thread.workjetConfig.role === "worker") {
+          const submitted = yield* sql<{ readonly threadId: string }>`
+            SELECT thread_id AS "threadId" FROM workjet_worker_pull_requests
+            WHERE thread_id = ${thread.id} AND worktree_path = ${thread.worktreePath}
+              AND branch_ref = ${thread.branch} LIMIT 1
+          `.pipe(Effect.orDie);
+          if (submitted.length > 0) return false;
+        }
         yield* start;
         return true;
       }),
     );
+
+  const runWorkerRetirementIfSubmitted: OrchestrationEngineShape["runWorkerRetirementIfSubmitted"] =
+    (threadId, stop) =>
+      turnStartFence.withPermits(1)(
+        Effect.gen(function* () {
+          const thread = commandReadModel.threads.find((item) => item.id === threadId);
+          if (!thread || thread.deletedAt !== null || thread.workjetConfig.role !== "worker")
+            return false;
+          const receipts = yield* sql<WorkerPullRequestReceipt>`
+          SELECT thread_id AS "threadId", worktree_path AS "worktreePath",
+            branch_ref AS "branchRef", provider, pr_number AS "prNumber", pr_url AS "prUrl",
+            head_oid AS "headOid", state, execution_stopped AS "executionStopped"
+          FROM workjet_worker_pull_requests WHERE thread_id = ${thread.id} LIMIT 1
+        `.pipe(Effect.orDie);
+          if (!receipts.some((receipt) => receiptMatchesThread(receipt, thread))) return false;
+          return yield* stop;
+        }),
+      );
 
   const projectEventsOntoReadModel = (
     baseReadModel: OrchestrationReadModel,
@@ -327,7 +355,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 branch_ref AS "branchRef", provider, pr_number AS "prNumber", pr_url AS "prUrl",
                 head_oid AS "headOid", state, execution_stopped AS "executionStopped"
               FROM workjet_worker_pull_requests WHERE thread_id = ${thread.id}
-                AND state IN ('merged', 'closed') LIMIT 1
+                LIMIT 1
             `;
             workerPullRequestTerminal = receipts.length === 1;
             workerExecutionStopped = receipts.some(
@@ -346,6 +374,18 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           environmentId !== undefined &&
           existingThread?.workjetConfig.role === "worker" &&
           existingThread.workjetConfig.parent.environmentId !== environmentId;
+        if (
+          envelope.expectedWorkjetConfig &&
+          (command.type !== "thread.workjet-config.set" ||
+            !existingThread ||
+            !sameWorkjetConfig(existingThread.workjetConfig, envelope.expectedWorkjetConfig))
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail:
+              "Thread settings changed while reconnecting workers. Reopen the thread to use its current settings.",
+          });
+        }
         if (envelope.remoteWorkerRequest || isRemoteWorker) {
           const requestId = envelope.remoteWorkerRequest?.requestId ?? existingThread!.id;
           const bound = yield* remoteWorkerStore.get("inbound", requestId).pipe(
@@ -420,9 +460,26 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             detail: "Only a target project creation can be a remote mirror.",
           });
         }
+        // Startup keeps the command model small. Computer continuation needs
+        // the complete persisted prefix under this command queue's fence.
+        let decisionReadModel = commandReadModel;
+        if (command.type === "thread.continuation.import" && existingThread) {
+          const detail = yield* projectionSnapshotQuery.getThreadDetailById(command.threadId);
+          if (Option.isNone(detail))
+            return yield* new OrchestrationCommandInvariantError({
+              commandType: command.type,
+              detail: "The destination history could not be read. No history was copied.",
+            });
+          decisionReadModel = {
+            ...commandReadModel,
+            threads: commandReadModel.threads.map((thread) =>
+              thread.id === command.threadId ? detail.value : thread,
+            ),
+          };
+        }
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
-          readModel: commandReadModel,
+          readModel: decisionReadModel,
           environmentId,
           workerCleanupComplete,
           workerPullRequestTerminal,
@@ -642,6 +699,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         result,
         startedAtMs: yield* Clock.currentTimeMillis,
         deferWhileBusy: options?.deferWhileBusy,
+        expectedWorkjetConfig: options?.expectedWorkjetConfig,
         workerDelegation: options?.workerDelegation,
         remoteWorkerRequest: options?.remoteWorkerRequest,
         remoteProjectMirror: options?.remoteProjectMirror,
@@ -653,6 +711,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     readEvents,
     dispatch,
     runTurnStartIfActive,
+    runWorkerRetirementIfSubmitted,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (wsServer, ProviderRuntimeIngestion, CheckpointReactor, etc.)
     // each independently receive all domain events.

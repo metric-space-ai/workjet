@@ -7,8 +7,12 @@ import * as Layer from "effect/Layer";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import { TestClock } from "effect/testing";
 
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
@@ -36,6 +40,85 @@ interface RecordedBatchBody {
 }
 
 it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
+  it.effect("consent can be granted and revoked without uploading queued events", () => {
+    const requests: string[] = [];
+    const httpLayer = Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make((request) =>
+        Effect.sync(() => {
+          requests.push(request.url);
+          return HttpClientResponse.fromWeb(request, new Response("{}"));
+        }),
+      ),
+    );
+    return Effect.gen(function* () {
+      const analytics = yield* AnalyticsService.AnalyticsService;
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* analytics.record("before.consent");
+      yield* settings.updateSettings({ posthogConsent: true });
+      yield* analytics.record("with.consent");
+      yield* analytics.flush;
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0], "https://us.i.posthog.com/batch/");
+      yield* analytics.record("queued.before.revocation");
+      yield* settings.updateSettings({ posthogConsent: false });
+      yield* analytics.flush;
+      yield* analytics.record("after.revocation");
+      yield* TestClock.adjust(2000);
+    }).pipe(
+      Effect.provide(
+        AnalyticsService.layer.pipe(
+          Layer.provideMerge(ServerSettings.layerTest()),
+          Layer.provide(
+            ServerConfig.layerTest(process.cwd(), { prefix: "workjet-offline-telemetry-" }),
+          ),
+          Layer.provide(httpLayer),
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+        ),
+      ),
+      Effect.tap(() => Effect.sync(() => assert.equal(requests.length, 1))),
+    );
+  });
+
+  for (const legacyEnabled of [undefined, true]) {
+    it.effect(`makes no HTTP requests without consent (legacy flag: ${legacyEnabled})`, () => {
+      const requests: string[] = [];
+      const httpLayer = Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.sync(() => {
+            requests.push(request.url);
+            return HttpClientResponse.fromWeb(request, new Response("{}"));
+          }),
+        ),
+      );
+      return Effect.gen(function* () {
+        const analytics = yield* AnalyticsService.AnalyticsService;
+        for (let index = 0; index < 45; index += 1) yield* analytics.record("server.started");
+        yield* analytics.flush;
+        yield* TestClock.adjust(2000);
+      }).pipe(
+        Effect.provide(
+          AnalyticsService.layer.pipe(
+            Layer.provide(ServerSettings.layerTest()),
+            Layer.provide(
+              ServerConfig.layerTest(process.cwd(), { prefix: "workjet-offline-telemetry-" }),
+            ),
+            Layer.provide(httpLayer),
+            Layer.provide(
+              ConfigProvider.layer(
+                ConfigProvider.fromUnknown(
+                  legacyEnabled === undefined ? {} : { WORKJET_TELEMETRY_ENABLED: legacyEnabled },
+                ),
+              ),
+            ),
+          ),
+        ),
+        Effect.tap(() => Effect.sync(() => assert.deepEqual(requests, []))),
+      );
+    });
+  }
+
   it.effect("flush drains all buffered events across multiple batches", () =>
     Effect.gen(function* () {
       const capturedRequests: Array<RecordedBatchRequest> = [];
@@ -43,7 +126,10 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         prefix: "workjet-telemetry-base-",
       });
 
-      const telemetryLayer = AnalyticsService.layer.pipe(Layer.provideMerge(serverConfigLayer));
+      const telemetryLayer = AnalyticsService.layer.pipe(
+        Layer.provide(ServerSettings.layerTest({ posthogConsent: true })),
+        Layer.provideMerge(serverConfigLayer),
+      );
       const configLayer = ConfigProvider.layer(
         ConfigProvider.fromUnknown({
           WORKJET_TELEMETRY_ENABLED: true,

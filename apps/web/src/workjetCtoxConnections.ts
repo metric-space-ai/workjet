@@ -1,5 +1,30 @@
 import type { WorkjetConnectionSummary } from "@workjet/contracts";
 
+/** An explicit source binding wins without widening the selected instance's authority. */
+export function lumaConnectionForInstance(
+  connections: readonly WorkjetConnectionSummary[],
+  selectedInstanceId: string | null,
+  boundSource?: { readonly connectionId: string; readonly instanceId?: string },
+): WorkjetConnectionSummary | undefined {
+  const ready = connections.filter(
+    (connection) =>
+      connection.status === "ready" &&
+      ctoxConnectionMatchesSelectedInstance(connection, selectedInstanceId),
+  );
+  if (boundSource !== undefined)
+    return ready.find(
+      (connection) =>
+        connection.connectionId === boundSource.connectionId &&
+        connection.instanceId === boundSource.instanceId,
+    );
+  return ready.length === 1
+    ? ready[0]
+    : ready.find(
+        (connection) =>
+          connection.connectionId === `ctox-dev:${selectedInstanceId?.replace(/^managed:/, "")}`,
+      );
+}
+
 /** Match a desktop catalog identity without changing the connection's native instance pin. */
 export function ctoxConnectionMatchesSelectedInstance(
   connection: Pick<WorkjetConnectionSummary, "connectionId" | "instanceId" | "source">,

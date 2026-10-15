@@ -1,24 +1,17 @@
 import type { ServerProvider, ServerProviderVersionAdvisory } from "@workjet/contracts";
 
 import { getRelativeTimeState } from "../../timestampFormat";
+import { WORKJET_STATUS_DOT_CLASS, workjetStatusFromProvider } from "../../workjetStatus";
 
 /**
  * Visual treatment for each server-reported provider status. Centralized so
  * the default-driver card and per-instance cards share the same language.
  */
 export const PROVIDER_STATUS_STYLES = {
-  disabled: {
-    dot: "bg-amber-400",
-  },
-  error: {
-    dot: "bg-destructive",
-  },
-  ready: {
-    dot: "bg-success",
-  },
-  warning: {
-    dot: "bg-warning",
-  },
+  disabled: { dot: WORKJET_STATUS_DOT_CLASS[workjetStatusFromProvider("disabled")] },
+  error: { dot: WORKJET_STATUS_DOT_CLASS[workjetStatusFromProvider("error")] },
+  ready: { dot: WORKJET_STATUS_DOT_CLASS[workjetStatusFromProvider("ready")] },
+  warning: { dot: WORKJET_STATUS_DOT_CLASS[workjetStatusFromProvider("warning")] },
 } as const;
 
 export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;
@@ -32,54 +25,31 @@ export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;
  */
 export function getProviderSummary(provider: ServerProvider | undefined) {
   if (!provider) {
-    return {
-      headline: "Checking provider status",
-      detail: "Waiting for the server to report installation and authentication details.",
-    };
+    return { headline: "Wird geprüft", detail: null };
   }
   if (!provider.enabled) {
-    return {
-      headline: "Disabled",
-      detail:
-        provider.message ?? "This provider is installed but disabled for new sessions in Workjet.",
-    };
+    return { headline: "Deaktiviert", detail: provider.message ?? null };
   }
   if (!provider.installed) {
-    return {
-      headline: "Not found",
-      detail: provider.message ?? "CLI not detected on PATH.",
-    };
+    return { headline: "Nicht gefunden", detail: provider.message ?? "Nicht im PATH" };
   }
   if (provider.auth.status === "authenticated") {
     const authLabel = provider.auth.label ?? provider.auth.type;
     return {
-      headline: authLabel ? `Authenticated · ${authLabel}` : "Authenticated",
+      headline: authLabel ? `Angemeldet · ${authLabel}` : "Angemeldet",
       detail: provider.message ?? null,
     };
   }
   if (provider.auth.status === "unauthenticated") {
-    return {
-      headline: "Not authenticated",
-      detail: provider.message ?? null,
-    };
+    return { headline: "Nicht angemeldet", detail: provider.message ?? null };
   }
   if (provider.status === "warning") {
-    return {
-      headline: "Needs attention",
-      detail:
-        provider.message ?? "The provider is installed, but the server could not fully verify it.",
-    };
+    return { headline: "Prüfen", detail: provider.message ?? null };
   }
   if (provider.status === "error") {
-    return {
-      headline: "Unavailable",
-      detail: provider.message ?? "The provider failed its startup checks.",
-    };
+    return { headline: "Nicht verfügbar", detail: provider.message ?? null };
   }
-  return {
-    headline: "Available",
-    detail: provider.message ?? "Installed and ready, but authentication could not be verified.",
-  };
+  return { headline: "Verfügbar", detail: provider.message ?? null };
 }
 
 /**
@@ -97,27 +67,27 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
  */
 export function getProviderRuntimeSummary(provider: ServerProvider | undefined) {
   if (!provider) {
-    return { headline: "Checking runtime", detail: null };
+    return { headline: "Wird geprüft", detail: null };
   }
   if (!provider.enabled) {
-    return { headline: "Disabled", detail: "Not offered for new sessions." };
+    return { headline: "Deaktiviert", detail: null };
   }
   if (!provider.installed) {
-    return { headline: "Not installed", detail: "CLI not detected on PATH." };
+    return { headline: "Nicht installiert", detail: "Nicht im PATH" };
   }
-  return { headline: "Installed", detail: null };
+  return { headline: "Installiert", detail: null };
 }
 
 /**
  * Age of the health check that produced a provider's claim. Rendered next to
- * the claim itself because "Authenticated" without a timestamp is read as a
+ * the claim itself because "Angemeldet" without a timestamp is read as a
  * live fact, and a cached one outlives an expired CLI login.
  */
 export function providerCheckedAgeLabel(checkedAt: string | null | undefined): string {
   const state = getRelativeTimeState(checkedAt ?? null);
-  if (state.status === "missing") return "never checked";
-  if (state.status === "invalid") return "check time unknown";
-  return state.suffix ? `checked ${state.value} ${state.suffix}` : `checked ${state.value}`;
+  if (state.status === "missing") return "nie geprüft";
+  if (state.status === "invalid") return "Prüfzeit unbekannt";
+  return state.suffix ? `geprüft vor ${state.value}` : "gerade geprüft";
 }
 
 /**
@@ -141,16 +111,12 @@ export function getProviderVersionAdvisoryPresentation(
     return null;
   }
 
-  const label = "Update available";
-  const version = advisory.latestVersion;
-  const versionLabel = getProviderVersionLabel(version);
+  // One German status line (UI-Vertrag §2). The server's advisory prose is
+  // an explanation, not a status, so it is not shown.
+  const versionLabel = getProviderVersionLabel(advisory.latestVersion);
 
   return {
-    detail:
-      advisory.message ??
-      (versionLabel
-        ? `${label}: install ${versionLabel}.`
-        : `${label}: install the latest provider version.`),
+    detail: versionLabel ? `Update verfügbar · ${versionLabel}` : "Update verfügbar",
     updateCommand: advisory.updateCommand,
     emphasis: "normal" as const,
   };

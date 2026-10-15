@@ -41,6 +41,7 @@ import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { installWorkerSourceRoute } from "../../workjet/WorkerSourceHarness.ts";
+import { NativeSupervisorSdkJournal } from "../../workjet/NativeSupervisorSdkJournal.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
@@ -165,6 +166,7 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
 function makeHarness(config?: {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: ClaudeAdapterLiveOptions["nativeEventLogger"];
+  readonly createNativeSupervisorSdkJournal?: ClaudeAdapterLiveOptions["createNativeSupervisorSdkJournal"];
   readonly cwd?: string;
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
@@ -183,6 +185,9 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.createNativeSupervisorSdkJournal
+      ? { createNativeSupervisorSdkJournal: config.createNativeSupervisorSdkJournal }
+      : {}),
     createQuery: (input) => {
       createInput = input;
       config?.onCreateQuery?.(input);
@@ -432,6 +437,32 @@ describe("ClaudeAdapter foreign worker source authority", () => {
 });
 
 describe("ClaudeAdapterLive", () => {
+  it.effect("rejects replaceable queries before constructing an original SDK journal", () => {
+    let constructed = false;
+    const harness = makeHarness({
+      createNativeSupervisorSdkJournal: () => {
+        constructed = true;
+        return new NativeSupervisorSdkJournal(async () => {});
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const error = yield* adapter
+        .startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "auto-accept-edits",
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(error, ProviderAdapterValidationError);
+      assert.equal(
+        error.issue,
+        "Original SDK observation requires the actual SDK child; a query override is unsupported.",
+      );
+      assert.isFalse(constructed);
+      assert.isUndefined(harness.getLastCreateQueryInput());
+    }).pipe(Effect.provide(harness.layer));
+  });
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -533,6 +564,12 @@ describe("ClaudeAdapterLive", () => {
         runtimeMode: "full-access",
       });
 
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.allowedTools, [
+        "mcp__workjet__workjet_worker_kanban",
+        "mcp__workjet__workjet_update_goal",
+        "mcp__workjet__workjet_answer_worker",
+      ]);
+      assert.ok(harness.getLastCreateQueryInput()?.options.mcpServers?.workjet);
       assert.deepEqual(harness.getLastCreateQueryInput()?.options.systemPrompt, {
         type: "preset",
         preset: "claude_code",
@@ -2487,6 +2524,20 @@ describe("ClaudeAdapterLive", () => {
         { type: "system", subtype: "plugin_install", session_id: "session", uuid: "pi" },
         { type: "system", subtype: "memory_recall", session_id: "session", uuid: "mr" },
         { type: "system", subtype: "elicitation_complete", session_id: "session", uuid: "ec" },
+        {
+          type: "system",
+          subtype: "per_turn_effort_changed",
+          per_turn_effort_active: false,
+          session_id: "session",
+          uuid: "effort-inactive",
+        },
+        {
+          type: "system",
+          subtype: "per_turn_effort_changed",
+          per_turn_effort_active: true,
+          session_id: "session",
+          uuid: "effort-active",
+        },
         { type: "prompt_suggestion", suggestion: "try this", session_id: "session", uuid: "ps" },
         {
           type: "system",
@@ -4778,6 +4829,43 @@ describe("ClaudeAdapterLive", () => {
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
     );
+  });
+
+  it.effect("routes native MCP elicitation through the shared user-input lifecycle", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+      const elicitation = harness.getLastCreateQueryInput()?.options.onElicitation;
+      assert.ok(elicitation);
+      const response = elicitation(
+        {
+          serverName: "workjet",
+          message: "Which authorised path?",
+          requestedSchema: { type: "object", properties: { path: { type: "string" } } },
+        },
+        { signal: new AbortController().signal },
+      );
+      const requested = yield* Stream.runHead(adapter.streamEvents);
+      assert.equal(requested._tag, "Some");
+      if (requested._tag !== "Some" || requested.value.type !== "user-input.requested")
+        throw new Error("Missing elicitation request");
+      yield* adapter.respondToUserInput(
+        session.threadId,
+        ApprovalRequestId.make(requested.value.requestId!),
+        { path: "Continue" },
+      );
+      yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
+      assert.deepEqual(yield* Effect.promise(() => response), {
+        action: "accept",
+        content: { path: "Continue" },
+      });
+    }).pipe(Effect.provide(harness.layer));
   });
 
   it.effect("routes AskUserQuestion through user-input flow even in full-access mode", () => {

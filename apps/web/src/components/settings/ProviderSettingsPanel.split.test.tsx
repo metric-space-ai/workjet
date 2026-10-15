@@ -9,6 +9,7 @@ const remoteEnvironmentId = EnvironmentId.make("remote");
 
 const environmentState = vi.hoisted(() => ({
   environments: [] as ReadonlyArray<unknown>,
+  isReady: true,
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -32,7 +33,7 @@ vi.mock("react/compiler-runtime", async () => {
 vi.mock("../../state/environments", () => ({
   useBusinessOsScopedEnvironments: () => ({
     environments: environmentState.environments,
-    isReady: true,
+    isReady: environmentState.isReady,
   }),
   usePrimaryEnvironmentId: () => primaryEnvironmentId,
 }));
@@ -55,6 +56,7 @@ describe("harnesses and models are separate surfaces", () => {
   beforeEach(() => {
     hooks.reset();
     environmentState.environments = [environment(primaryEnvironmentId, "This device", true)];
+    environmentState.isReady = true;
   });
 
   function render(sections: "harnesses" | "models") {
@@ -97,5 +99,42 @@ describe("harnesses and models are separate surfaces", () => {
     const panel = render("models");
 
     expect(gatewayOf(panel)?.props.environmentId).toBe(remoteEnvironmentId);
+  });
+
+  const withTitle = (panel: unknown, title: string) =>
+    visitElements(panel, (element) => element.props.title === title);
+
+  // grok-p1-045/-046: a load must end with a retry, and the page must not show
+  // a device block and a model block for the same missing state.
+  it("ends the device load on the harnesses page with a retryable status row", () => {
+    environmentState.environments = [];
+    environmentState.isReady = false;
+    const panel = render("harnesses");
+
+    const loading = withTitle(panel, "Rechner werden geladen");
+    expect(loading).not.toBeNull();
+    expect(typeof loading?.props.onRetry).toBe("function");
+    expect(loading?.props.slowStatus).toBe("Rechner nicht geladen");
+    expect(withTitle(panel, "Rechner")).toBeNull();
+  });
+
+  it("shows the device load only once on the models page", () => {
+    environmentState.environments = [];
+    environmentState.isReady = false;
+    const panel = render("models");
+
+    expect(withTitle(panel, "Rechner werden geladen")).toBeNull();
+    expect(gatewayOf(panel)?.props.devicesLoading).toBe(true);
+    expect(withTitle(panel, "Rechner")).toBeNull();
+  });
+
+  it("states a missing Code computer once on the models page", () => {
+    environmentState.environments = [];
+    const panel = render("models");
+
+    expect(gatewayOf(panel)?.props.environmentId).toBeNull();
+    expect(gatewayOf(panel)?.props.devicesLoading).toBe(false);
+    expect(withTitle(panel, "Kein Rechner")).toBeNull();
+    expect(withTitle(panel, "Rechner")).toBeNull();
   });
 });

@@ -5,5 +5,12 @@
     "types": ["node", "electron"],
     "lib": ["ESNext", "DOM", "esnext.disposable"]
   },
-  "include": ["src", "vite.config.ts", "../../scripts/lib", "../../packages/ssh/src/remoteNode.ts"]
+  "include": [
+    "src",
+    "vite.config.ts",
+    "../../scripts/lib",
+    "../../packages/ssh/src/remoteNode.ts",
+    "../server/src/auth/ServerSecretStore.ts",
+    "../server/src/config.ts"
+  ]
 }

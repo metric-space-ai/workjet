@@ -1,15 +1,23 @@
 import * as Crypto from "effect/Crypto";
+import { ORCHESTRATION_WS_METHODS } from "@workjet/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
-import { createAtomCommandScheduler, createEnvironmentCommand } from "./runtime.ts";
+import {
+  createAtomCommandScheduler,
+  createEnvironmentCommand,
+  createEnvironmentRpcCommand,
+} from "./runtime.ts";
 import {
   type ArchiveThreadInput,
   type CreateThreadInput,
+  type ImportThreadContinuationInput,
+  importThreadContinuation,
   type DeleteThreadInput,
   type InterruptThreadTurnInput,
   type RespondToThreadApprovalInput,
   type RespondToThreadUserInputInput,
   type RevertThreadCheckpointInput,
+  type SetThreadGoalInput,
   type SetThreadInteractionModeInput,
   type SetThreadRuntimeModeInput,
   type SetThreadWorkjetConfigInput,
@@ -31,6 +39,7 @@ import {
   respondToThreadApproval,
   respondToThreadUserInput,
   revertThreadCheckpoint,
+  setThreadGoal,
   setThreadInteractionMode,
   setThreadRuntimeMode,
   setThreadWorkjetConfig,
@@ -51,11 +60,13 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 export type {
   ArchiveThreadInput,
   CreateThreadInput,
+  ImportThreadContinuationInput,
   DeleteThreadInput,
   InterruptThreadTurnInput,
   RespondToThreadApprovalInput,
   RespondToThreadUserInputInput,
   RevertThreadCheckpointInput,
+  SetThreadGoalInput,
   SetThreadInteractionModeInput,
   SetThreadRuntimeModeInput,
   SetThreadWorkjetConfigInput,
@@ -82,6 +93,16 @@ export function createThreadEnvironmentAtoms<R, E>(
       JSON.stringify([environmentId, input.threadId]),
   };
   return {
+    continuationSnapshot: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:thread:continuation-snapshot",
+      tag: ORCHESTRATION_WS_METHODS.getThreadContinuation,
+    }),
+    importContinuation: createEnvironmentCommand(runtime, {
+      label: "environment-data:thread:import-continuation",
+      execute: (input: ImportThreadContinuationInput) => importThreadContinuation(input),
+      scheduler,
+      concurrency,
+    }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:create",
       execute: (input: CreateThreadInput) => createThread(input),
@@ -163,6 +184,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     setInteractionMode: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:set-interaction-mode",
       execute: (input: SetThreadInteractionModeInput) => setThreadInteractionMode(input),
+      scheduler,
+      concurrency,
+    }),
+    setGoal: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:set-goal",
+      execute: (input: SetThreadGoalInput) => setThreadGoal(input),
       scheduler,
       concurrency,
     }),

@@ -9,28 +9,67 @@ import {
 } from "./workjetProjectControl";
 
 describe("project instance failure display", () => {
+  it.each(["instance_disabled", "instance_removed"] as const)(
+    "keeps %s as a quiet state and never falls back to another query",
+    async (code) => {
+      const failure = { _tag: "failed", code } as const;
+      const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+      await expect(listWorkjetProjects("managed:fixture", request)).resolves.toEqual(failure);
+      expect(request).toHaveBeenCalledOnce();
+      expect(describeWorkjetProjectControlFailure(failure, null, "de")).toBe(
+        code === "instance_disabled" ? "Instanz deaktiviert." : "Instanz entfernt.",
+      );
+    },
+  );
+
+  it("answers every language request with the German wording", () => {
+    const failure = { _tag: "failed", code: "instance_disabled" } as const;
+    expect(describeWorkjetProjectControlFailure(failure, null, "en")).toBe("Instanz deaktiviert.");
+    expect(describeWorkjetProjectControlFailure(failure, null)).toBe("Instanz deaktiviert.");
+    expect(
+      describeWorkjetProjectControlFailure({ _tag: "failed", code: "timeout" }, null, "en"),
+    ).toBe("Die Instanz hat nicht rechtzeitig geantwortet.");
+  });
+
   it("distinguishes hosted sign-in from accountless paired authentication", () => {
     const failure = { _tag: "failed", code: "authentication_required" } as const;
-    expect(describeWorkjetProjectControlFailure(failure, "managed:tenant")).toContain(
-      "Sign in to ctox.dev",
+    expect(describeWorkjetProjectControlFailure(failure, "managed:tenant", "en")).toContain(
+      "Bei ctox.dev anmelden",
     );
-    expect(describeWorkjetProjectControlFailure(failure, "paired:tenant")).not.toContain(
+    expect(describeWorkjetProjectControlFailure(failure, "paired:tenant", "en")).not.toContain(
       "ctox.dev",
     );
   });
-  it("shows fixed discovery error and HTTP status", () => {
+  it("explains discovery failure without exposing its raw code", () => {
     expect(
-      describeWorkjetProjectControlFailure({
-        _tag: "failed",
-        code: "guest_failed",
-        discovery: { code: "http_error", httpStatus: 503 },
-      }),
-    ).toContain("http_error (HTTP 503)");
+      describeWorkjetProjectControlFailure(
+        {
+          _tag: "failed",
+          code: "guest_failed",
+          discovery: { code: "http_error", httpStatus: 503 },
+        },
+        null,
+        "en",
+      ),
+    ).toBe("Die Instanz konnte nicht erreicht werden.");
   });
   it("asks for the connected shell update when its action is unsupported", () => {
-    expect(describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" })).toBe(
-      "The connected CTOX instance does not support this action. Update its Business OS shell.",
-    );
+    expect(
+      describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" }, null, "en"),
+    ).toBe("Die Instanz unterstützt diese Aktion noch nicht. Business-OS-Shell aktualisieren.");
+  });
+  it("explains a classified data-plane timeout without showing guest exception text", () => {
+    expect(
+      describeWorkjetProjectControlFailure(
+        {
+          _tag: "failed",
+          code: "guest_failed",
+          diagnostic: { stage: "execute", reason: "request_timeout" },
+        },
+        null,
+        "en",
+      ),
+    ).toBe("Die Datenabfrage hat zu lange gedauert.");
   });
 });
 
@@ -92,6 +131,37 @@ describe("listWorkjetProjects", () => {
     const result = { _tag: "failed", code: "authentication_required" } as const;
     const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
     await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledOnce();
+  });
+});
+
+describe("classified project list failures", () => {
+  it("preserves preparation facts and avoids legacy retries for a failed guest", async () => {
+    const failure = {
+      _tag: "failed",
+      code: "guest_failed",
+      preparation: { stage: "session", reason: "exception" },
+    } as const;
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(failure);
+    expect(request).toHaveBeenCalledOnce();
+    expect(describeWorkjetProjectControlFailure(failure, null, "de")).toContain(
+      "Sitzung vorbereiten",
+    );
+    expect(describeWorkjetProjectControlFailure(failure, null, "en")).toContain(
+      "Sitzung vorbereiten",
+    );
+    expect(describeWorkjetProjectControlFailure(failure, null, "en")).not.toContain("guest_failed");
+  });
+
+  it("does not repeat a known peer failure as two legacy queries", async () => {
+    const failure = {
+      _tag: "failed",
+      code: "guest_failed",
+      diagnostic: { stage: "execute", reason: "peer_unavailable" },
+    } as const;
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(failure);
     expect(request).toHaveBeenCalledOnce();
   });
 });

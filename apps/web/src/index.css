@@ -2430,3 +2430,20 @@ label:has(> select#reasoning-effort) select {
   opacity: 0.3;
   pointer-events: none;
 }
+
+/* Privacy mode (#526). Selector lists mirror src/privacyMode.ts. No hover reveal. */
+:root[data-privacy-mode="on"]
+  :is(
+    [data-sensitive],
+    [data-workjet-project-card],
+    [data-thread-item],
+    [data-testid="sidebar-draft-row"],
+    [data-workjet-action^="project.open.calendar"],
+    [data-slot="command-item"],
+    [data-slot="tooltip-popup"],
+    [data-slot="toast-title"],
+    [data-slot="toast-description"]
+  ):not(:is([data-privacy-scope="reveal"], [data-workjet-project-overview]) *) {
+  filter: blur(6px);
+  user-select: none;
+}

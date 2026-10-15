@@ -9,11 +9,19 @@ import {
   type WorkjetSupervisorTurnIntent,
   type WorkjetSupervisorTurnKind,
 } from "@workjet/contracts";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { OptionSelect } from "../ui/option-select";
+import {
+  cloneElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ComponentProps,
+} from "react";
 import { ArrowUpIcon, PlusIcon } from "lucide-react";
 import { ComposerBar } from "./ComposerBar";
 import { ComposerDictationButton } from "./ComposerDictationButton";
-import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
 import { shouldSubmitComposerOnEnter } from "../../composer-logic";
 import { createPortal } from "react-dom";
@@ -56,8 +64,14 @@ import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
+import { NativeSupervisorRouteControls } from "./NativeSupervisorRouteControls";
+import { NativeSupervisorActualRoute } from "./NativeSupervisorActualRoute";
 import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
-import { supervisorRouteLabel } from "../../workjetSupervisorRoute";
+import { NativeSupervisorConnectionStatus } from "./NativeSupervisorConnectionStatus";
+import type {
+  NativeWorkerSourceControl,
+  WorkerSourceConnectionStatus,
+} from "./NativeWorkerSourceControl";
 
 export function NativeSupervisorComposer(props: {
   readonly scope: NativeSupervisorScope | null;
@@ -67,12 +81,23 @@ export function NativeSupervisorComposer(props: {
   readonly unavailable: boolean;
   readonly saveConfig: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
   readonly conversationTarget?: HTMLElement | null;
-  readonly workerSourceControl?: ReactNode;
+  readonly workerSourceControl?: ReactElement<ComponentProps<typeof NativeWorkerSourceControl>>;
 }) {
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
-  const routeLabel = supervisorRouteLabel(useSupervisorRouteDisplay(props.scope));
+  const [routeSaving, setRouteSaving] = useState(false);
+  const routeState = useSupervisorRouteDisplay(
+    props.scope,
+    JSON.stringify([
+      journal?.turn?.commandId,
+      journal?.turn?.status,
+      journal?.turn?.attempt,
+      routeSaving,
+    ]),
+  );
+  const [routeStatus, setRouteStatus] = useState<string | null>(null);
+  const [workerStatus, setWorkerStatus] = useState<WorkerSourceConnectionStatus | null>(null);
   const [prompt, setPrompt] = useState("");
   const [turnKind, setTurnKind] = useState<WorkjetSupervisorTurnKind>("work");
   const [capabilityRetry, setCapabilityRetry] = useState(0);
@@ -171,6 +196,7 @@ export function NativeSupervisorComposer(props: {
     const saved = journalRef.current;
     if (
       inFlight.current ||
+      (routeSaving && (operation === "send" || operation === "input")) ||
       current.unavailable ||
       target === null ||
       (saved !== null && !supervisorJournalMatchesScope(saved, target))
@@ -227,6 +253,9 @@ export function NativeSupervisorComposer(props: {
           createdAt: new Date().toISOString(),
           ...(turnKind === "conversation" ? { turnKind } : {}),
         };
+        // Optimistisch senden: die Nachricht steht sofort im Verlauf, die
+        // Leiste bleibt frei. Ein endgültiger Fehlschlag steht an der Nachricht.
+        setPrompt((draft) => (draft === prompt ? "" : draft));
         result = await submitWorkjetSupervisorTurn(intent, port);
       } else if (operation === "input" && saved?.turn) {
         const intent = saved.inputs?.find((entry) => entry.receipt === null)?.intent ?? {
@@ -238,7 +267,7 @@ export function NativeSupervisorComposer(props: {
         };
         result = await submitWorkjetSupervisorInput(saved, intent, port);
         if (result._tag === "completed") {
-          setNotice("Context saved for the task’s next step.");
+          setNotice("Kontext gespeichert");
           setPrompt((draft) => (draft === prompt ? "" : draft));
           setInputFor(null);
         }
@@ -269,20 +298,18 @@ export function NativeSupervisorComposer(props: {
             submission: "confirmed",
           });
           // This receipt requests cancellation; it never confirms a worker interrupt.
-          setNotice("Cancellation requested; waiting for the task receipt.");
+          setNotice("Abbruch angefordert");
         } else if (result._tag === "completed")
           throw new Error("The response belongs to a different task.");
       }
       if (journalRef.current?.turn?.terminal) setNotice(null);
       if (result?._tag === "failed") {
         setFailureCode(result.code);
-        setError(describeWorkjetProjectControlFailure(result, target.instanceId));
+        // Laden und Wiederholen laufen still; nur der ausdrückliche Abbruch
+        // meldet sich, weil der Nutzer ihn gerade angefordert hat.
+        if (operation === "cancel")
+          setError(describeWorkjetProjectControlFailure(result, target.instanceId));
       }
-      if (
-        result?._tag === "completed" &&
-        (operation === "send" || prompt.trim() === saved?.intent.goal)
-      )
-        setPrompt((draft) => (operation === "send" && draft === prompt ? "" : draft));
       const confirmed = journalRef.current;
       if (
         (operation === "events" || result?._tag === "completed") &&
@@ -343,24 +370,22 @@ export function NativeSupervisorComposer(props: {
             executionRef.current = next;
             setExecution(next);
             setExecutionError(
-              appended.conflicted
-                ? "Execution history contains conflicting retained events. Reload from the start."
-                : null,
+              appended.conflicted ? "Verlauf widersprüchlich, bitte neu laden" : null,
             );
           } else if (observed._tag === "failed") {
             setExecutionError(
               observed.code === "unsupported"
-                ? "This CTOX version does not provide execution history."
-                : `Execution history unavailable: ${observed.code}. Refresh or load from the start.`,
+                ? "Kein Ausführungsverlauf in dieser CTOX-Version"
+                : `Ausführungsverlauf nicht verfügbar: ${observed.code}`,
             );
           }
         } catch {
-          setExecutionError("Could not save execution history. Refresh to retry.");
+          setExecutionError("Verlauf nicht gespeichert");
         }
       }
     } catch (failure) {
       setFailureCode("local_failed");
-      setError(failure instanceof Error ? failure.message : "Could not confirm the CTOX task.");
+      setError(failure instanceof Error ? failure.message : "CTOX-Aufgabe nicht bestätigt");
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -414,7 +439,7 @@ export function NativeSupervisorComposer(props: {
           setBinding({
             scope,
             pending: false,
-            error: "Could not connect the Supervisor. Retry connection.",
+            error: "Supervisor nicht verbunden",
             authenticationRequired: false,
           });
       });
@@ -429,6 +454,38 @@ export function NativeSupervisorComposer(props: {
     setNewMessageFor(null);
   }, [bindingInstanceId, bindingProjectId, bindingThreadId]);
   const bindingError = bindingMatches ? binding.error : null;
+  // Verbindungsabbrüche und langsame Antworten werden still erneut versucht;
+  // die Leiste zeigt dafür keine Fehlerzeile mehr.
+  const connectionError = failureCode === "authentication_required" ? error : null;
+  const authenticationRequired = Boolean(
+    props.instanceId?.startsWith("managed:") &&
+    ((bindingMatches && binding.authenticationRequired) ||
+      failureCode === "authentication_required" ||
+      journal?.submissionError === "authentication_required" ||
+      workerStatus?.authenticationRequired === true ||
+      props.blockReason?.startsWith("Sign in to ctox.dev") ||
+      props.blockReason?.startsWith("Bei ctox.dev anmelden")),
+  );
+  const connectionStatus = authenticationRequired
+    ? "Bei ctox.dev anmelden"
+    : ((workerStatus?.choice ? workerStatus.message : null) ??
+      (disabled
+        ? (props.blockReason ?? (props.instanceId ? "Projektverbindung nicht verfügbar" : null))
+        : null) ??
+      workerStatus?.message ??
+      connectionError ??
+      routeStatus);
+  // Binding- und Capability-Prüfungen wiederholen sich still, bis sie klappen.
+  useEffect(() => {
+    if (disabled || !bindingMatches || bindingPending || bindingError === null) return;
+    const timer = setTimeout(() => setBindingRetry((value) => value + 1), 8000);
+    return () => clearTimeout(timer);
+  }, [disabled, bindingMatches, bindingPending, bindingError]);
+  useEffect(() => {
+    if (!capabilityMatches || capability?.error == null) return;
+    const timer = setTimeout(() => setCapabilityRetry((value) => value + 1), 8000);
+    return () => clearTimeout(timer);
+  }, [capabilityMatches, capability?.error]);
   useEffect(() => {
     if (
       disabled ||
@@ -466,7 +523,7 @@ export function NativeSupervisorComposer(props: {
       })
       .catch(() => {
         if (!stale)
-          setCapability({ scope: target, response: null, error: "Could not check chat support." });
+          setCapability({ scope: target, response: null, error: "Chat-Prüfung fehlgeschlagen" });
       });
     void readWorkjetSupervisorInputCapabilities(
       target,
@@ -492,7 +549,7 @@ export function NativeSupervisorComposer(props: {
           setInputCapability({
             scope: target,
             response: null,
-            error: "Could not check task context support.",
+            error: "Kontextprüfung fehlgeschlagen",
           });
       });
     return () => {
@@ -578,7 +635,7 @@ export function NativeSupervisorComposer(props: {
       setInputFor(null);
       restored.current = false;
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Could not restore the task.");
+      setError(failure instanceof Error ? failure.message : "Aufgabe nicht wiederhergestellt");
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -605,31 +662,18 @@ export function NativeSupervisorComposer(props: {
           if (execution)
             void run("events", nextWorkjetSupervisorExecutionPageRequest(execution.page));
         }}
+        onRetrySend={() => void run("resume")}
       />
     ) : null;
 
   return (
-    <section className="mx-auto w-full max-w-5xl p-3" aria-label="Supervisor task">
+    <section className="mx-auto w-full max-w-5xl p-3" aria-label="Supervisor-Aufgabe">
       {props.conversationTarget && conversation
         ? createPortal(conversation, props.conversationTarget)
         : null}
       {journal && scopeMatches && !props.conversationTarget && (
         <div className="mb-3 max-h-52 overflow-y-auto text-sm" aria-live="polite">
           <p className="whitespace-pre-wrap break-words">{journal.intent.goal}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {journal.turn
-              ? `${journal.turn.status} · Attempt ${journal.turn.attempt}`
-              : journal.submission === "not-submitted" && !pending
-                ? "Not sent"
-                : "Waiting for CTOX receipt"}
-          </p>
-          {journal.turn?.taskId && (
-            <details className="mt-1 text-xs text-muted-foreground">
-              <summary>Task details</summary>
-              <p>Task {journal.turn.taskId}</p>
-              <p>Command {journal.turn.commandId}</p>
-            </details>
-          )}
           {journal.turn && (
             <NativeSupervisorExecutionDetails
               page={execution?.commandId === journal.turn.commandId ? execution.page : null}
@@ -654,142 +698,143 @@ export function NativeSupervisorComposer(props: {
             />
           )}
           {journal.turn?.resultTruncated && (
-            <p className="text-xs text-muted-foreground">Result truncated</p>
+            <p className="text-xs text-muted-foreground">Ergebnis gekürzt</p>
           )}
           {journal.submission === "not-submitted" && !pending && (
-            <p role="alert" className="text-destructive">
-              CTOX: {journal.submissionError}. You can send a new request.
+            <p role="status" className="text-muted-foreground">
+              Nicht gesendet
+              {" · "}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={disabled || busy}
+                onClick={() => void run("resume")}
+              >
+                Erneut senden
+              </button>
             </p>
           )}
           {journal.turn?.errorMessage && (
             <p role="alert" className="text-destructive">
-              {journal.turn.errorCode}: {journal.turn.errorMessage}
+              {journal.turn.errorMessage}
             </p>
           )}
         </div>
       )}
-      {disabled && (
-        <div
-          role="status"
-          className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-        >
-          <span>{props.blockReason ?? "Confirm the project and CTOX connection to send."}</span>
-          {props.instanceId !== null && (
-            <button
-              type="button"
-              className="underline underline-offset-2 hover:text-foreground"
-              onClick={() => {
-                refreshWorkjetProjectRegistry(props.instanceId);
-                requestLocalProjectRegistrationRetry();
-              }}
-            >
-              Retry connection
-            </button>
-          )}
-        </div>
-      )}
-      {bindingMatches && binding.error && (
-        <div role="alert" className="mb-2 flex items-center gap-2 text-xs text-destructive">
-          <span>{binding.error}</span>
-          <button
-            type="button"
-            className="underline underline-offset-2"
-            disabled={busy || bindingPending}
-            onClick={() => {
-              refreshWorkjetProjectRegistry(props.instanceId);
-              requestLocalProjectRegistrationRetry();
-              setBindingRetry((value) => value + 1);
-            }}
-          >
-            Retry connection
-          </button>
-        </div>
-      )}
+      {props.workerSourceControl &&
+        cloneElement(props.workerSourceControl, {
+          headless: true,
+          onStatusChange: setWorkerStatus,
+        })}
       {notice && (
         <p role="status" className="mb-2 text-xs text-muted-foreground">
           {notice}
         </p>
       )}
-      {error && (
+      {error && !connectionError && !authenticationRequired && (
         <p role="alert" className="mb-2 text-xs text-destructive">
           {error}
         </p>
       )}
-      {props.instanceId?.startsWith("managed:") &&
-        ((bindingMatches && binding.authenticationRequired) ||
-          failureCode === "authentication_required" ||
-          journal?.submissionError === "authentication_required" ||
-          props.blockReason?.startsWith("Sign in to ctox.dev")) && (
-          <button
-            type="button"
-            className="mb-2 text-xs underline underline-offset-2"
-            disabled={busy}
-            onClick={async () => {
-              const bridge = window.desktopBridge?.ctox;
-              if (!bridge || inFlight.current) return;
-              inFlight.current = true;
-              setBusy(true);
-              try {
-                const result = await bridge.login();
-                if (result._tag === "completed") {
-                  refreshWorkjetProjectRegistry(latestProps.current.instanceId);
+      {(connectionStatus || authenticationRequired) && (
+        <NativeSupervisorConnectionStatus
+          message={connectionStatus ?? "Anmeldung erforderlich"}
+          workerStatus={authenticationRequired ? null : workerStatus}
+          recoveryAction={
+            authenticationRequired ? (
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={busy}
+                onClick={async () => {
+                  const bridge = window.desktopBridge?.ctox;
+                  if (!bridge || inFlight.current) return;
+                  inFlight.current = true;
+                  setBusy(true);
+                  try {
+                    const result = await bridge.login();
+                    if (result._tag === "completed") {
+                      refreshWorkjetProjectRegistry(latestProps.current.instanceId);
+                      requestLocalProjectRegistrationRetry();
+                      setError(null);
+                      setFailureCode(null);
+                      setBindingRetry((value) => value + 1);
+                    }
+                  } catch {
+                    setError("CTOX-Anmeldung nicht geöffnet");
+                  } finally {
+                    inFlight.current = false;
+                    setBusy(false);
+                  }
+                }}
+              >
+                Bei ctox.dev anmelden
+              </button>
+            ) : workerStatus?.retry ? (
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={workerStatus.disabled}
+                onClick={workerStatus.retry}
+              >
+                Neu verbinden
+              </button>
+            ) : props.instanceId !== null && disabled ? (
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={busy || bindingPending}
+                onClick={() => {
+                  refreshWorkjetProjectRegistry(props.instanceId);
                   requestLocalProjectRegistrationRetry();
-                  setError(null);
-                  setFailureCode(null);
                   setBindingRetry((value) => value + 1);
-                }
-              } catch {
-                setError("Could not open CTOX sign-in. Retry connection.");
-              } finally {
-                inFlight.current = false;
-                setBusy(false);
-              }
-            }}
-          >
-            Sign in to ctox.dev
-          </button>
-        )}
+                }}
+              >
+                Erneut versuchen
+              </button>
+            ) : null
+          }
+        />
+      )}
       {previousTurns.length > 0 && journal && scopeMatches && (
         <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-          Task history
-          <select
-            aria-label="Supervisor request"
+          Verlauf
+          <OptionSelect
+            aria-label="Supervisor-Anfrage"
+            className="w-auto min-w-0 max-w-full"
             value={journal.intent.commandId}
             disabled={disabled || busy || (pending && !confirmedPending)}
-            onChange={(event) => void selectTask(event.target.value)}
-            className="min-w-0 max-w-full rounded border border-border bg-background px-2 py-1"
-          >
-            {[...previousTurns, journal].map((entry) => (
-              <option key={entry.intent.commandId} value={entry.intent.commandId}>
-                {entry.turn?.status ?? "Waiting for receipt"} · {entry.intent.goal.slice(0, 80)}
-              </option>
-            ))}
-          </select>
+            options={[...previousTurns, journal].map((entry) => ({
+              value: entry.intent.commandId,
+              label: `${entry.turn?.status ?? "Warte auf Bestätigung"} · ${entry.intent.goal.slice(0, 80)}`,
+            }))}
+            onValueChange={(commandId) => void selectTask(commandId)}
+          />
         </label>
       )}
       {unresolvedInput && (
         <p role="status" className="mb-2 text-xs text-muted-foreground">
-          Context receipt pending. Recover the saved message before adding another.
+          Kontext unbestätigt
           <button
             type="button"
             disabled={disabled || busy || !inputSupported}
             className="ml-2 underline"
             onClick={() => void run("input")}
           >
-            Recover context receipt
+            Bestätigung abrufen
           </button>
         </p>
       )}
       {inputting && journal?.turn?.terminal && !unresolvedInput && (
         <p role="status" className="mb-2 text-xs text-muted-foreground">
-          This task has finished. Your context was not sent.
+          Aufgabe beendet, Kontext nicht gesendet
           <button
             type="button"
             className="ml-2 underline"
             disabled={disabled || busy}
             onClick={() => setInputFor(null)}
           >
-            Start a new request
+            Neue Anfrage
           </button>
         </p>
       )}
@@ -798,36 +843,29 @@ export function NativeSupervisorComposer(props: {
           role="status"
           className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
         >
-          <span>
-            Previous request: {journal.turn.status}. A new message starts a separate request; this
-            task stays in Task history.
-          </span>
+          <span>Vorherige Anfrage: {journal.turn.status}</span>
           <button
             type="button"
             disabled={disabled || !inputSupported || unresolvedInput !== undefined}
             className="underline underline-offset-2 disabled:opacity-40"
-            title={
-              inputSupported
-                ? "Add context to this task’s next step"
-                : "Task context is not supported on this connection"
-            }
+            title={inputSupported ? "Kontext ergänzen" : "Nicht unterstützt"}
             onClick={() => {
               setNewMessageFor(null);
               setInputFor(journal.intent.commandId);
             }}
           >
-            Add context to task
+            Kontext ergänzen
           </button>
           {!inputSupported && (
             <span>
-              Same-task context is unavailable on this connection.{" "}
+              Kein Aufgabenkontext{" "}
               <button
                 type="button"
                 className="underline"
                 disabled={disabled || busy}
                 onClick={() => setCapabilityRetry((value) => value + 1)}
               >
-                Check context support
+                Erneut prüfen
               </button>
             </span>
           )}
@@ -837,7 +875,7 @@ export function NativeSupervisorComposer(props: {
               className="underline underline-offset-2"
               onClick={() => setInputFor(null)}
             >
-              Keep waiting
+              Weiter warten
             </button>
           )}
           {!continuing ? (
@@ -850,7 +888,7 @@ export function NativeSupervisorComposer(props: {
                 setNewMessageFor(journal.intent.commandId);
               }}
             >
-              Continue anyway
+              Trotzdem fortfahren
             </button>
           ) : (
             <button
@@ -858,13 +896,13 @@ export function NativeSupervisorComposer(props: {
               className="underline underline-offset-2"
               onClick={() => setNewMessageFor(null)}
             >
-              Keep waiting
+              Weiter warten
             </button>
           )}
         </div>
       )}
       <form
-        aria-label={inputting ? "Add context to current task" : "New Supervisor request"}
+        aria-label={inputting ? "Kontext ergänzen" : "Neue Supervisor-Anfrage"}
         onSubmit={(event) => {
           event.preventDefault();
           if (!bindingPending) void run(inputting ? "input" : "send");
@@ -872,10 +910,8 @@ export function NativeSupervisorComposer(props: {
         className="flex w-full min-w-0 flex-col gap-1"
       >
         <textarea
-          aria-label="Message to Supervisor"
-          placeholder={
-            inputting ? "Add context for this task’s next step …" : "Ask the Supervisor …"
-          }
+          aria-label="Nachricht an Supervisor"
+          placeholder={inputting ? "Kontext ergänzen …" : "Supervisor fragen …"}
           rows={2}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
@@ -899,60 +935,36 @@ export function NativeSupervisorComposer(props: {
             <ComposerControl
               type="button"
               disabled
-              aria-label="Add attachments"
-              title="This supervisor connection accepts text. Attachment support requires a CTOX update."
+              aria-label="Anhänge hinzufügen"
+              title="Anhänge nicht unterstützt"
               className="size-7 justify-center px-0"
             >
               <PlusIcon className="size-4" />
             </ComposerControl>
           }
           worker={
-            <ComposerControl
-              type="button"
-              aria-disabled="true"
-              title="Managed by the project instance. Luma selection requires an instance update."
-            >
-              Supervisor
-            </ComposerControl>
-          }
-          manual={
-            <>
-              <ComposerControl type="button" aria-disabled="true" title={routeLabel.title}>
-                {routeLabel.model}
-              </ComposerControl>
-              <ComposerControl
-                type="button"
-                aria-disabled="true"
-                title={props.instanceId ?? "No connected instance"}
-              >
-                {routeLabel.computer}
-              </ComposerControl>
-            </>
-          }
-          status={
-            <>
-              <SupervisorTurnKindPicker
-                scope={scope}
-                capability={capability}
-                value={turnKind}
-                disabled={disabled || busy || inputting || (pending && !confirmedPending)}
-                onChange={setTurnKind}
-              />
-
-              {props.workerSourceControl}
-            </>
+            <NativeSupervisorRouteControls
+              key={JSON.stringify(props.scope)}
+              scope={props.scope}
+              workerSourceBinding={
+                props.config.schemaVersion === 2
+                  ? props.config.capabilityBindings.find(
+                      (binding) => binding.capabilityId === "ctox-business-os",
+                    )?.target
+                  : undefined
+              }
+              disabled={busy || inputting || routeSaving}
+              onSavingChange={setRouteSaving}
+              onStatusChange={setRouteStatus}
+            />
           }
           settings={
-            <CompactComposerControlsMenu
-              interactionMode="default"
-              showInteractionModeToggle={false}
-              onToggleInteractionMode={() => {}}
-              extraMenuContent={
-                <p className="max-w-64 px-2 py-1 text-xs text-muted-foreground">
-                  The supervisor's context, system prompt, tools and reasoning are managed by its
-                  instance.
-                </p>
-              }
+            <SupervisorTurnKindPicker
+              scope={scope}
+              capability={capability}
+              value={turnKind}
+              disabled={disabled || busy || inputting || (pending && !confirmedPending)}
+              onChange={setTurnKind}
             />
           }
           dictation={
@@ -968,9 +980,10 @@ export function NativeSupervisorComposer(props: {
           actions={
             <button
               type="submit"
-              aria-label="Send to Supervisor"
+              aria-label="An Supervisor senden"
               disabled={
                 disabled ||
+                routeSaving ||
                 busy ||
                 bindingPending ||
                 (!inputting && conversationUnavailable) ||
@@ -986,36 +999,9 @@ export function NativeSupervisorComposer(props: {
           }
         />
       </form>
-      {drafting && busy && (
-        <p role="status" className="mt-1 text-xs text-muted-foreground">
-          Checking the task receipt. You can edit your draft; Send becomes available when this read
-          finishes.
-        </p>
-      )}
-      {capabilityMatches && capability.error && (
-        <p role="status" className="mt-1 text-xs text-muted-foreground">
-          Chat unavailable: {capability.error}{" "}
-          <button
-            type="button"
-            className="underline"
-            disabled={disabled || busy}
-            onClick={() => setCapabilityRetry((value) => value + 1)}
-          >
-            Check support
-          </button>
-        </p>
-      )}
+      <NativeSupervisorActualRoute state={routeState} />
       {journal && (
         <div className="mt-2 flex gap-3 text-xs">
-          <button
-            type="button"
-            disabled={disabled || busy}
-            onClick={() => {
-              void run("resume");
-            }}
-          >
-            Refresh task
-          </button>
           {pending && journal.turn && (
             <button
               type="button"
@@ -1024,7 +1010,7 @@ export function NativeSupervisorComposer(props: {
                 void run("cancel");
               }}
             >
-              Cancel
+              Abbrechen
             </button>
           )}
         </div>

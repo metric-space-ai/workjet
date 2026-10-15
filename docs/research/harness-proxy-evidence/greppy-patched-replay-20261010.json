@@ -1,0 +1,42 @@
+{
+  "recordedAt": "2026-10-10T03:29:37.592Z",
+  "variant": "unmodified-real-greppy-second-request",
+  "requestSha256": "e14d135e12fcee36b797c7155577686ddd43bf27c1ca0595a61454f8fb1c938d",
+  "httpStatus": 200,
+  "upstreamStatus": "200",
+  "errorClass": null,
+  "events": [
+    "message_start",
+    "content_block_start",
+    "ping",
+    "content_block_delta",
+    "content_block_delta",
+    "content_block_delta",
+    "content_block_delta",
+    "content_block_delta",
+    "content_block_delta",
+    "content_block_delta",
+    "content_block_delta",
+    "content_block_delta",
+    "content_block_delta",
+    "content_block_stop",
+    "message_delta",
+    "message_stop"
+  ],
+  "toolNames": ["greppy"],
+  "toolNamesMatchDeclaration": true,
+  "pass": true,
+  "runtimeBuild": {
+    "recordedAt": "2026-10-10T03:26:04.000Z",
+    "native": {
+      "binary": "/Volumes/OneTB/dev-artifacts/workjet/harness-proxy-rc-20261009/cargo-target/debug/workjet-provider-gateway-host",
+      "sha256": "2af374bad09d56f7b3ef730c4b01cc6a7e1daf124b9f707b51e4bbf058c91406",
+      "sourceHead": "6a0940c98"
+    },
+    "server": {
+      "entry": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/runtime/apps/server/dist/bin.mjs",
+      "sha256": "d45cc88e4bb796d232563c4a325c1d67864d9f8b022d6dcc26d8b6efa55fea7c",
+      "sourceHead": "6b17cd3b3f6d354829db9cba7e890641c7b7bf88"
+    }
+  }
+}

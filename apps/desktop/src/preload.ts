@@ -148,6 +148,16 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   clearConnectionCatalog: () => ipcRenderer.invoke(IpcChannels.CLEAR_CONNECTION_CATALOG_CHANNEL),
   recoverConnectionCatalog: () =>
     ipcRenderer.invoke(IpcChannels.RECOVER_CONNECTION_CATALOG_CHANNEL),
+  onConnectionCatalogWarning: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on(IpcChannels.CONNECTION_CATALOG_WARNING_CHANNEL, handler);
+    return () =>
+      ipcRenderer.removeListener(IpcChannels.CONNECTION_CATALOG_WARNING_CHANNEL, handler);
+  },
+  controlComputers: (input) => ipcRenderer.invoke(IpcChannels.COMPUTERS_CONTROL_CHANNEL, input),
+  listComputerSshKeys: () => ipcRenderer.invoke(IpcChannels.COMPUTERS_SSH_KEYS_CHANNEL),
+  assignDetectedComputer: (input) =>
+    ipcRenderer.invoke(IpcChannels.COMPUTERS_ASSIGN_CHANNEL, input),
   discoverSshHosts: () => ipcRenderer.invoke(IpcChannels.DISCOVER_SSH_HOSTS_CHANNEL),
   discoverTailscalePeers: () => ipcRenderer.invoke(IpcChannels.DISCOVER_TAILSCALE_PEERS_CHANNEL),
   ensureSshEnvironment: async (target, options) =>
@@ -236,6 +246,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.MENU_ACTION_CHANNEL, wrappedListener);
     };
   },
+  getSystemLanguages: () => {
+    const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LANGUAGES_CHANNEL);
+    return Array.isArray(result)
+      ? result.filter((entry): entry is string => typeof entry === "string")
+      : [];
+  },
   getWindowFullscreenState: () =>
     ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
   onWindowFullscreenStateChange: (listener) => {
@@ -277,14 +293,20 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   ctox: {
     refresh: () => ipcRenderer.invoke(IpcChannels.CTOX_REFRESH_CHANNEL),
+    setInstanceState: (input) => ipcRenderer.invoke(IpcChannels.CTOX_INSTANCE_STATE_CHANNEL, input),
     login: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGIN_CHANNEL),
+    deviceStatus: () => ipcRenderer.invoke(IpcChannels.CTOX_DEVICE_STATUS_CHANNEL),
+    resetDevice: () => ipcRenderer.invoke(IpcChannels.CTOX_DEVICE_RESET_CHANNEL),
     logout: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGOUT_CHANNEL),
     provisionDecisionHub: (input) =>
       ipcRenderer.invoke(IpcChannels.CTOX_PROVISION_DECISION_HUB_CHANNEL, input),
     disconnectDecisionHub: (input) =>
       ipcRenderer.invoke(IpcChannels.CTOX_DISCONNECT_DECISION_HUB_CHANNEL, input),
-    importInvite: (invite) =>
-      ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_INVITE_CHANNEL, { invite }),
+    importInvite: (invite, replacesInstanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_INVITE_CHANNEL, {
+        invite,
+        ...(replacesInstanceId === undefined ? {} : { replacesInstanceId }),
+      }),
     importManualPairing: (input) =>
       ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_MANUAL_PAIRING_CHANNEL, input),
     removePairedInstance: (instanceId) =>
@@ -297,8 +319,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.CTOX_REMOVE_SSH_MANAGED_INSTANCE_CHANNEL, { instanceId }),
     enterBusinessOsMode: () => ipcRenderer.invoke(IpcChannels.CTOX_ENTER_BUSINESS_OS_MODE_CHANNEL),
     exitBusinessOsMode: () => ipcRenderer.invoke(IpcChannels.CTOX_EXIT_BUSINESS_OS_MODE_CHANNEL),
-    activate: (instanceId, bounds) =>
-      ipcRenderer.invoke(IpcChannels.CTOX_ACTIVATE_CHANNEL, { instanceId, bounds }),
+    activate: (instanceId, bounds, repair) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_ACTIVATE_CHANNEL, {
+        instanceId,
+        bounds,
+        ...(repair === true ? { repair } : {}),
+      }),
     ensurePooled: (instanceId) =>
       ipcRenderer.invoke(IpcChannels.CTOX_ENSURE_POOLED_CHANNEL, {
         instanceId,

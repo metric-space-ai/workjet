@@ -37,10 +37,9 @@ function ConnectCliAuthMessage({
 }
 
 const invalidLinkMessage = {
-  eyebrow: "Authorization request",
-  title: "This connect link is incomplete",
-  description:
-    "The link is missing its authorization request. Re-run `workjet connect` in your terminal and open the freshly printed URL.",
+  eyebrow: "Autorisierung",
+  title: "Link unvollständig",
+  description: "workjet connect erneut ausführen",
 } as const;
 
 /**
@@ -88,16 +87,10 @@ export function ConnectCliAuthorizeSurface() {
     <AuthSurfaceShell>
       <ConnectCliAuthMessage
         eyebrow={
-          request.loopbackPort === undefined
-            ? "Step 1 of 2 · Browser authorization"
-            : "Browser authorization"
+          request.loopbackPort === undefined ? "Schritt 1 von 2 · Browser" : "Browser-Autorisierung"
         }
-        title="Connecting your terminal"
-        description={
-          isSignedIn
-            ? "Redirecting to authorize Workjet Connect for your CLI…"
-            : "Sign in to continue authorizing Workjet Connect for your CLI."
-        }
+        title="Terminal wird verbunden"
+        description={isSignedIn ? "Weiterleitung …" : "Bitte anmelden"}
       />
       {isLoaded && !isSignedIn ? (
         <div className="mt-6">
@@ -107,7 +100,7 @@ export function ConnectCliAuthorizeSurface() {
               clerk.openSignIn(resolveClerkSignInProps(window.location.href, isElectron))
             }
           >
-            Sign in
+            Anmelden
           </Button>
         </div>
       ) : null}
@@ -129,9 +122,9 @@ export function ConnectCliCallbackSurface() {
     return (
       <AuthSurfaceShell>
         <ConnectCliAuthMessage
-          eyebrow="Step 2 of 2 · Terminal handoff"
-          title="Authorization did not complete"
-          description="No authorization code was returned. Re-run `workjet connect` in your terminal and try again."
+          eyebrow="Schritt 2 von 2 · Terminal"
+          title="Autorisierung fehlgeschlagen"
+          description="workjet connect erneut ausführen"
         />
       </AuthSurfaceShell>
     );
@@ -145,9 +138,9 @@ export function ConnectCliCallbackSurface() {
     return (
       <AuthSurfaceShell>
         <ConnectCliAuthMessage
-          eyebrow="Step 2 of 2 · Terminal handoff"
-          title="This code belongs to a different request"
-          description="This authorization response does not match a connect request started in this browser. Re-run `workjet connect` in your terminal and open the freshly printed URL in this browser."
+          eyebrow="Schritt 2 von 2 · Terminal"
+          title="Code gehört zu anderer Anfrage"
+          description="workjet connect erneut ausführen"
         />
       </AuthSurfaceShell>
     );
@@ -159,21 +152,19 @@ export function ConnectCliCallbackSurface() {
   return (
     <AuthSurfaceShell>
       <ConnectCliAuthMessage
-        eyebrow="Step 2 of 2 · Terminal handoff"
-        title="Almost connected"
+        eyebrow="Schritt 2 von 2 · Terminal"
+        title="Fast verbunden"
         description={
-          accountLabel
-            ? `Enter this code in your waiting terminal to connect it as ${accountLabel}.`
-            : "Enter this code in your waiting terminal to finish connecting."
+          accountLabel ? `Code im Terminal eingeben · ${accountLabel}` : "Code im Terminal eingeben"
         }
       />
 
       <div className="mt-6 overflow-hidden rounded-xl border border-border/80 bg-background/65">
         <div className="flex items-center justify-between border-b border-border/70 px-4 py-2.5">
           <span className="text-[10px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-            One-time authorization code
+            Einmalcode
           </span>
-          <span className="font-mono text-[10px] text-muted-foreground">expires shortly</span>
+          <span className="font-mono text-[10px] text-muted-foreground">läuft bald ab</span>
         </div>
         <code
           className="block p-4 font-mono text-sm leading-relaxed break-all select-all"
@@ -185,13 +176,11 @@ export function ConnectCliCallbackSurface() {
 
       <div className="mt-4 flex items-center gap-3">
         <Button type="button" onClick={() => copyToClipboard(authCode)}>
-          {isCopied ? "Copied!" : "Copy authorization code"}
+          {isCopied ? "Kopiert" : "Code kopieren"}
         </Button>
       </div>
-
-      <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
-        Only enter this code in a terminal session you started yourself. Anyone holding it can link
-        their machine to your Workjet Connect account while it is valid.
+      <p className="mt-6 text-xs text-muted-foreground">
+        Code nur im selbst gestarteten Terminal eingeben.
       </p>
     </AuthSurfaceShell>
   );

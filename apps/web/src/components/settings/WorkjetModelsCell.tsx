@@ -1,26 +1,28 @@
 import { CheckIcon, CircleDashedIcon, PlusIcon, XIcon } from "lucide-react";
+import { Checkbox } from "../ui/checkbox";
 import { useEffect, useRef, useState } from "react";
 import type { WorkjetGatewayAccountSummary } from "@workjet/contracts";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import type { ModelsManagementState, ModelsModelCheck } from "./WorkjetModelsProviders";
 import { parseModels } from "./WorkjetModelsFields";
 
 const FAILURE_LABELS: Readonly<Record<string, string>> = {
-  auth: "Authentication failed · sign in again or replace the API key",
-  "quota-rate-limit": "Quota or rate limit · wait for reset or check the subscription",
-  "unknown-model": "Unknown model · edit this model ID",
-  "network-provider": "Provider connection failed · re-check",
-  "account-selection-unavailable": "Gateway update required to check this exact account",
+  auth: "Anmeldung fehlgeschlagen · neu anmelden oder API-Key ersetzen",
+  "quota-rate-limit": "Kontingent oder Ratenlimit · Reset abwarten",
+  "unknown-model": "Unbekanntes Modell · Modell-ID prüfen",
+  "network-provider": "Verbindung zum Anbieter fehlgeschlagen",
+  "account-selection-unavailable": "Gateway-Update nötig",
 };
 
 const UNAVAILABLE_LABELS: Readonly<Record<string, string>> = {
-  "gateway-not-ready": "Not checked · the gateway is not ready",
-  "exact-account-unavailable": "Not checked · the gateway could not select this exact account",
-  "account-unavailable": "Not checked · this account is disabled or unavailable",
-  transport: "Not checked · the gateway request could not finish",
-  timeout: "Check timed out · retry this model",
-  "unverified-response": "Not checked · the gateway did not confirm an upstream result",
+  "gateway-not-ready": "Nicht geprüft · Gateway nicht bereit",
+  "exact-account-unavailable": "Nicht geprüft · Konto nicht auswählbar",
+  "account-unavailable": "Nicht geprüft · Konto deaktiviert",
+  transport: "Nicht geprüft · Anfrage abgebrochen",
+  timeout: "Zeitüberschreitung · erneut prüfen",
+  "unverified-response": "Nicht geprüft · keine Bestätigung",
 };
 
 export function modelCheckState(check: ModelsModelCheck | undefined) {
@@ -37,17 +39,17 @@ export function modelCheckDescription(
   check: ModelsModelCheck | undefined,
   checking: boolean,
 ): string {
-  if (!check) return checking ? "Checking this model" : "Not checked";
+  if (!check) return checking ? "Prüft …" : "Nicht geprüft";
   const status = modelCheckState(check);
   const result =
     status === "unavailable"
-      ? (UNAVAILABLE_LABELS[check.unavailableReason ?? ""] ?? "Not checked · re-check this model")
+      ? (UNAVAILABLE_LABELS[check.unavailableReason ?? ""] ?? "Nicht geprüft · erneut prüfen")
       : status === "ok"
-        ? `Responded · ${check.latencyMs} ms`
+        ? `Antwort · ${check.latencyMs} ms`
         : check.errorClass === "auth" && check.httpStatus === 403
-          ? "Access denied · check this account's permissions and subscription"
-          : (FAILURE_LABELS[check.errorClass ?? ""] ?? "Model check failed");
-  return `${result}${check.httpStatus === null ? "" : ` · ${status === "unavailable" ? "Gateway " : ""}HTTP ${check.httpStatus}`} · ${new Date(check.checkedAtMs).toLocaleString()}${checking ? " · checking again" : ""}`;
+          ? "Zugriff verweigert · Konto und Abo prüfen"
+          : (FAILURE_LABELS[check.errorClass ?? ""] ?? "Prüfung fehlgeschlagen");
+  return `${result}${check.httpStatus === null ? "" : ` · ${status === "unavailable" ? "Gateway " : ""}HTTP ${check.httpStatus}`} · ${new Date(check.checkedAtMs).toLocaleString()}${checking ? " · prüft erneut" : ""}`;
 }
 
 function ModelField({
@@ -77,7 +79,7 @@ function ModelField({
       return;
     const parsed = parseModels(draft);
     if (parsed === null) {
-      setError("Use model IDs separated by commas; spaces are not allowed within an ID.");
+      setError("Modell-IDs mit Komma trennen, ohne Leerzeichen.");
       return;
     }
     if (model === null && parsed.length === 0) {
@@ -98,7 +100,7 @@ function ModelField({
         setError(null);
         if (model !== null && next.includes(model)) setDraft(model);
         onDone?.();
-      } else setError("Model was not saved. Press Enter to retry.");
+      } else setError("Nicht gespeichert.");
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -109,7 +111,7 @@ function ModelField({
   );
   const description =
     pending?.status === "queued"
-      ? `${modelCheckDescription(check, false)} · queued`
+      ? `${modelCheckDescription(check, false)} · wartet`
       : modelCheckDescription(check, pending?.status === "running");
   const status = modelCheckState(check);
   const StatusIcon = pending
@@ -130,18 +132,18 @@ function ModelField({
         <input
           aria-label={
             model === null
-              ? `Add model for ${account.label}`
-              : `Model ${model} for ${account.label}`
+              ? `Modell hinzufügen für ${account.label}`
+              : `Modell ${model} für ${account.label}`
           }
           data-workjet-action={`models.account.${account.id}.model.${model ?? "add"}`}
           autoFocus={model === null}
-          placeholder="Model ID"
+          placeholder="Modell-ID"
           value={draft}
           maxLength={16512}
           disabled={state.mutationBusy || saving}
           style={{ width: `${Math.max(8, draft.length || 12)}ch` }}
           className="box-content min-w-0 max-w-full rounded bg-transparent px-1.5 py-1 font-mono text-[11px] leading-4 outline-none disabled:opacity-60"
-          title="Edit directly. Enter saves; Escape cancels. Comma-separated IDs are supported."
+          title="Eingabetaste speichert, Esc verwirft"
           onChange={(event) => {
             setDraft(event.target.value);
             setError(null);
@@ -200,16 +202,14 @@ function ModelField({
       )}
       {!pending &&
         (check?.unavailableReason === "timeout" || check?.unavailableReason === "transport") && (
-          <span role="alert" className="block text-[11px] text-muted-foreground">
-            {check?.unavailableReason === "timeout" ? "Check timed out" : "Check could not finish"}{" "}
-            ·{" "}
-            <button
-              type="button"
-              className="underline"
-              onClick={() => state.onCheckModels?.(account.id)}
-            >
-              Retry
-            </button>
+          <span
+            role="alert"
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+          >
+            {check?.unavailableReason === "timeout" ? "Zeitüberschreitung" : "Prüfung abgebrochen"}
+            <Button size="xs" variant="outline" onClick={() => state.onCheckModels?.(account.id)}>
+              Erneut prüfen
+            </Button>
           </span>
         )}
     </span>
@@ -228,7 +228,7 @@ export function WorkjetModelsCell({
   const [adding, setAdding] = useState(false);
   if (models !== undefined && state.onExcludeModel)
     return (
-      <div className="flex min-w-0 flex-wrap gap-1" aria-label={"Models for " + account.label}>
+      <div className="flex min-w-0 flex-wrap gap-1" aria-label={`Modelle für ${account.label}`}>
         {models.map((model) => {
           const excluded = account.excludedModelIds?.includes(model) ?? false;
           const unavailable =
@@ -250,11 +250,11 @@ export function WorkjetModelsCell({
                   ? XIcon
                   : CircleDashedIcon;
           const description = excluded
-            ? "Excluded for this account"
+            ? "Für dieses Konto ausgeschlossen"
             : unavailable
-              ? "Not offered by this account's live model list"
+              ? "Nicht in der Live-Modellliste des Kontos"
               : !active
-                ? "Account model access has not been observed · check this account"
+                ? "Zugriff noch nicht beobachtet · Konto prüfen"
                 : modelCheckDescription(check, pending?.status === "running");
           return (
             <label
@@ -265,18 +265,14 @@ export function WorkjetModelsCell({
                 (excluded || unavailable) && "text-muted-foreground opacity-60",
               )}
             >
-              <input
-                type="checkbox"
-                className="size-3 shrink-0"
+              <Checkbox
                 checked={!excluded}
                 disabled={state.mutationBusy || unavailable}
-                aria-label={"Use " + model + " for " + account.label}
+                aria-label={`${model} für ${account.label} verwenden`}
                 data-workjet-action={
                   "models.account." + account.id + ".model." + model + ".enabled"
                 }
-                onChange={(event) =>
-                  void state.onExcludeModel?.(account, model, !event.target.checked)
-                }
+                onCheckedChange={(checked) => void state.onExcludeModel?.(account, model, !checked)}
               />
               <span className="min-w-0 break-all">{model}</span>
               {!excluded && !unavailable && (
@@ -292,7 +288,8 @@ export function WorkjetModelsCell({
                         : "text-muted-foreground",
                   )}
                 >
-                  <Icon className="size-3.5" />
+                  {/* Only a failed check shows an icon; ok/pending stay quiet (#610). */}
+                  {!pending && status === "error" ? <Icon className="size-3.5" /> : null}
                 </span>
               )}
             </label>
@@ -304,7 +301,7 @@ export function WorkjetModelsCell({
     <div className="flex min-w-0 items-start gap-1">
       <div
         className="flex min-w-0 flex-1 flex-wrap items-center gap-1"
-        aria-label={`Models for ${account.label}`}
+        aria-label={`Modelle für ${account.label}`}
       >
         {account.modelIds.map((model) => (
           <ModelField
@@ -327,16 +324,23 @@ export function WorkjetModelsCell({
           onDone={() => setAdding(false)}
         />
       ) : (
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label={`Add model for ${account.label}`}
-          data-workjet-action={`models.account.${account.id}.add-model`}
-          disabled={state.mutationBusy}
-          onClick={() => setAdding(true)}
-        >
-          <PlusIcon className="size-3" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label={`Modell hinzufügen für ${account.label}`}
+                data-workjet-action={`models.account.${account.id}.add-model`}
+                disabled={state.mutationBusy}
+                onClick={() => setAdding(true)}
+              />
+            }
+          >
+            <PlusIcon className="size-3" />
+          </TooltipTrigger>
+          <TooltipPopup>Modell hinzufügen</TooltipPopup>
+        </Tooltip>
       )}
     </div>
   );

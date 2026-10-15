@@ -29,9 +29,12 @@ import type * as React from "react";
 import { useState, useEffect } from "react";
 
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
+import { InlinePanel } from "../ui/inline-panel";
+import { Row } from "../ui/row";
 import { Spinner } from "../ui/spinner";
 import { cn } from "~/lib/utils";
-import { ConfirmingDeleteButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
   formatWorkjetGatewayAccountPatternCount,
@@ -200,7 +203,7 @@ export function workjetGatewayFailureDescription(error: unknown): string {
     GATEWAY_FAILURE_REASONS.has(error.reason as WorkjetGatewayFailureReason)
       ? (error.reason as WorkjetGatewayFailureReason)
       : null;
-  if (reason === null) return "The Workjet provider gateway operation failed.";
+  if (reason === null) return "Gateway-Vorgang fehlgeschlagen.";
   return new WorkjetGatewayOperationError({ reason }).message;
 }
 
@@ -249,7 +252,7 @@ export function canAddWorkjetGatewayAccount(state: {
 /** Renders the recognition suffix, or nothing when no suffix was recorded. */
 export function maskGatewayCredentialSuffix(suffix: string | null): string | null {
   const trimmed = suffix?.trim() ?? "";
-  return trimmed === "" ? null : `Key ••••${trimmed}`;
+  return trimmed === "" ? null : `API-Key ••••${trimmed}`;
 }
 
 /**
@@ -268,24 +271,24 @@ export function gatewayAccountRotationLabel(
   const pool = (catalog?.providerPools ?? []).find((entry) => entry.provider === account.provider);
   const member = pool?.members.find((entry) => entry.accountId === account.id);
   if (member === undefined) return null;
-  if (!member.enabled) return "Disabled";
-  return member.selectable ? "In rotation" : "Held back by priority";
+  if (!member.enabled) return "Deaktiviert";
+  return member.selectable ? "In Rotation" : "Zurückgestellt";
 }
 
 export function workjetGatewayPhaseSummary(status: WorkjetGatewayStatus | null): string {
-  if (status === null) return "Select a primary environment to inspect its provider gateway.";
+  if (status === null) return "Kein Rechner gewählt";
   switch (status.phase) {
     case "ready":
-      return `Ready · ${status.configuredAccountCount} accounts · ${status.configuredModelCount} models`;
+      return `Bereit · ${status.configuredAccountCount} Konten · ${status.configuredModelCount} Modelle`;
     case "starting":
-      return "Starting…";
+      return "Startet …";
     case "stopping":
-      return "Stopping…";
+      return "Stoppt …";
     case "stopped":
-      return "Stopped";
+      return "Gestoppt";
     case "faulted":
       return status.failureReason === null
-        ? "Faulted"
+        ? "Gestört"
         : new WorkjetGatewayOperationError({ reason: status.failureReason }).message;
   }
 }
@@ -303,7 +306,7 @@ function GatewayRuntimeStatus({
     return (
       <div role="status" className="flex items-center gap-2">
         <Spinner className="size-3.5" />
-        Checking the provider gateway…
+        Gateway wird geprüft …
       </div>
     );
   }
@@ -317,21 +320,19 @@ function GatewayRuntimeStatus({
   }
   const summary = workjetGatewayPhaseSummary(status);
   return (
-    <div role="status" className="space-y-0.5">
-      <p className={status?.phase === "faulted" ? "text-destructive" : "text-foreground"}>
-        {status?.phase === "ready" ? (
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle2Icon className="size-3.5 text-success" />
-            {summary}
-          </span>
-        ) : (
-          summary
-        )}
-      </p>
-      {status?.providerEndpoint ? (
-        <p className="break-all font-mono text-[11px]">{status.providerEndpoint}</p>
-      ) : null}
-    </div>
+    <p
+      role="status"
+      className={status?.phase === "faulted" ? "text-destructive" : "text-foreground"}
+    >
+      {status?.phase === "ready" ? (
+        <span className="inline-flex items-center gap-1.5">
+          <CheckCircle2Icon className="size-3.5 text-success" />
+          {summary}
+        </span>
+      ) : (
+        summary
+      )}
+    </p>
   );
 }
 
@@ -349,23 +350,19 @@ function AddAccountProgress({
     return (
       <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
         <Spinner className="size-3.5" />
-        Preparing the {providerLabel} login…
+        {providerLabel}-Anmeldung wird vorbereitet …
       </div>
     );
   }
   if (login.status === "pending") {
     return (
-      <div className="space-y-1 text-xs text-muted-foreground">
-        <p role="status" className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span role="status" className="flex items-center gap-2">
           <Spinner className="size-3.5" />
-          Finish the {providerLabel} login in your browser, then return here.
-        </p>
-        <p>
-          Login session <span className="font-mono">{maskGatewayOauthState(login.state)}</span>.
-          Workjet never sees your credentials.
-        </p>
-        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
-          Cancel login
+          {providerLabel}-Anmeldung im Browser abschließen.
+        </span>
+        <Button type="button" size="xs" variant="outline" onClick={onCancel}>
+          Anmeldung abbrechen
         </Button>
       </div>
     );
@@ -382,8 +379,8 @@ function AddAccountProgress({
     <p role="status" className="flex items-start gap-1.5 text-xs text-muted-foreground">
       <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0 text-success" />
       {login.accountIds.length === 1
-        ? `Added one ${providerLabel} account.`
-        : `Added ${login.accountIds.length} ${providerLabel} accounts.`}
+        ? `${providerLabel}-Konto hinzugefügt.`
+        : `${login.accountIds.length} ${providerLabel}-Konten hinzugefügt.`}
     </p>
   );
 }
@@ -418,51 +415,35 @@ function AddApiKeyForm({
   };
 
   return (
-    <form
-      className="mt-1 space-y-1.5"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <label htmlFor={fieldId} className="block text-xs text-muted-foreground">
-        {providerLabel} API key
-      </label>
-      <div className="flex flex-wrap items-center gap-2">
+    <div data-settings-inline-editor="">
+      <InlinePanel
+        triggerLabel={`${providerLabel} API-Key`}
+        open
+        onOpenChange={(open) => {
+          if (open || isSaving) return;
+          setValue("");
+          onDismiss();
+        }}
+        submitLabel="Speichern"
+        onSubmit={submit}
+        submitDisabled={disabled || value.trim() === ""}
+        busy={isSaving}
+      >
         <input
           id={fieldId}
+          aria-label={`${providerLabel} API-Key`}
           type="password"
           autoComplete="off"
           spellCheck={false}
           maxLength={WORKJET_GATEWAY_API_KEY_MAX_INPUT_LENGTH}
           value={value}
           disabled={disabled || isSaving}
-          placeholder="Paste the key"
+          placeholder="API-Key einfügen"
           onChange={(event) => setValue(event.target.value)}
-          className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground"
+          className="min-w-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground"
         />
-        <Button type="submit" size="sm" disabled={disabled || isSaving || value.trim() === ""}>
-          {isSaving ? <Spinner className="size-3.5" /> : null}
-          Save key
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          disabled={isSaving}
-          onClick={() => {
-            setValue("");
-            onDismiss();
-          }}
-        >
-          Cancel
-        </Button>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        The key is stored on the server and never shown again. This list keeps only its last four
-        characters.
-      </p>
-    </form>
+      </InlinePanel>
+    </div>
   );
 }
 
@@ -479,7 +460,7 @@ function AddApiKeyProgress({
     return (
       <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
         <Spinner className="size-3.5" />
-        Storing the {providerLabel} key…
+        {providerLabel}-Key wird gespeichert …
       </p>
     );
   }
@@ -494,7 +475,7 @@ function AddApiKeyProgress({
   return (
     <p role="status" className="flex items-start gap-1.5 text-xs text-muted-foreground">
       <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0 text-success" />
-      Added a {providerLabel} account.
+      {providerLabel}-Konto hinzugefügt.
     </p>
   );
 }
@@ -530,16 +511,9 @@ export function WorkjetGatewayAccountsSectionView(
   );
 
   /**
-   * Does the gateway serve ANY model for this provider?
-   *
-   * Two different things look alike and must not be conflated. An account's
-   * `modelIds` are the models recorded ON THE ACCOUNT; the gateway's catalog
-   * is what it serves for the provider. An account with no recorded models is
-   * completely normal — Claude serves 15 catalog models with zero recorded on
-   * the account. What is NOT normal is a provider the gateway has no catalog
-   * for and no recorded models either: that account cannot answer a request.
-   *
-   * `null` means discovery has not answered yet, which is not a fault to show.
+   * Does the gateway serve ANY model for this provider? An account with no
+   * recorded models is normal; a provider without catalog AND without recorded
+   * models cannot answer a request. `null` means discovery has not answered.
    */
   const providerServesModels = (provider: WorkjetGatewayProvider): boolean | null => {
     const entry = state.pools?.models?.providers.find(
@@ -548,8 +522,7 @@ export function WorkjetGatewayAccountsSectionView(
     return entry === undefined ? null : entry.models.length > 0;
   };
 
-  // Connected first: those are the rows with state worth reading. The rest is
-  // a short menu of what can still be added.
+  // Connected first: those are the rows with state worth reading.
   const providersWithAccounts = WORKJET_GATEWAY_PROVIDERS.filter(
     (provider) => workjetGatewayAccountsByProvider(state.catalog, provider).length > 0,
   );
@@ -568,36 +541,27 @@ export function WorkjetGatewayAccountsSectionView(
             size="sm"
             variant="outline"
             onClick={() => {
-              // The refetch runs over the WebSocket and often answers in
-              // tens of milliseconds — without a minimum spin the click
-              // produced no visible change at all (interactive-review
-              // finding: "Refresh does nothing"). The spinner is held long
-              // enough to be seen; the DATA still comes from the refetch.
+              // Minimum spin so a fast WebSocket refetch still shows feedback.
               setRefreshSpinUntil(Date.now() + 900);
               state.onRefresh();
             }}
             disabled={refreshSpinning}
           >
             <RefreshCwIcon className={refreshSpinning ? "size-3.5 animate-spin" : "size-3.5"} />
-            Refresh
+            Aktualisieren
           </Button>
-          {/*
-            No start control in the happy path: the server starts the gateway
-            when a login begins. A faulted gateway is the one state the user
-            cannot wait out, so recovery is offered there and nowhere else.
-          */}
+          {/* A faulted gateway is the one state the user cannot wait out. */}
           {phase === "faulted" ? (
             <Button type="button" size="sm" onClick={state.onRetry} disabled={state.isOperating}>
               {state.isOperating ? <Spinner className="size-3.5" /> : null}
-              Retry gateway
+              Gateway neu starten
             </Button>
           ) : null}
         </div>
       }
     >
       <SettingsRow
-        title="Provider gateway"
-        description="Connect the LLM accounts the provider gateway routes through on the selected server. Harnesses are CLI runtimes, live under Settings → Harnesses, and never appear here."
+        title="Gateway"
         status={
           <GatewayRuntimeStatus
             status={state.status}
@@ -609,7 +573,7 @@ export function WorkjetGatewayAccountsSectionView(
 
       {state.catalogError !== null ? (
         <SettingsRow
-          title="Accounts unavailable"
+          title="Konten fehlen"
           status={
             <span role="alert" className="flex items-start gap-1.5 text-destructive">
               <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
@@ -619,26 +583,15 @@ export function WorkjetGatewayAccountsSectionView(
         />
       ) : null}
 
-      {/*
-        A DENSE list, not SettingsRow. SettingsRow is built for one sparse
-        setting at a time; used per provider it spent ~180px on a single line
-        of fact, repeated "No accounts are configured. This provider is added
-        with an API key." next to a button that already says "Add API key",
-        and printed "1 account configured." directly above the one account.
-        Seven providers became a page nobody could scan.
-
-        Connected providers come first because they are the ones with state
-        worth reading. The rest are a short menu of what can still be added.
-      */}
       {(
         [
-          ["Connected", providersWithAccounts],
-          ["Available", providersWithoutAccounts],
+          ["Verbunden", providersWithAccounts],
+          ["Verfügbar", providersWithoutAccounts],
         ] as ReadonlyArray<readonly [string, ReadonlyArray<WorkjetGatewayProvider>]>
       ).map(([groupLabel, providers]) =>
         providers.length === 0 ? null : (
           <div key={groupLabel} className="px-3 sm:px-4">
-            <h4 className="pt-3 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
+            <h4 className="pt-3 pb-1 text-[11px] font-medium text-muted-foreground">
               {groupLabel}
             </h4>
             <div className="divide-y divide-border/40">
@@ -648,43 +601,32 @@ export function WorkjetGatewayAccountsSectionView(
                   state.login.status !== "idle" && state.login.provider === provider;
                 const isApiKey = isWorkjetGatewayApiKeyProvider(provider);
                 const isKeyFormOpen = isApiKey && openApiKeyProvider === provider;
+                const ProviderIcon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
                 return (
                   <div key={provider} className="py-2">
                     <div className="flex items-center justify-between gap-3">
                       <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium text-foreground">
-                        {(() => {
-                          const ProviderIcon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
-                          return (
-                            <ProviderIcon
-                              className="size-4 shrink-0 text-foreground/80"
-                              aria-hidden
-                            />
-                          );
-                        })()}
+                        <ProviderIcon className="size-4 shrink-0 text-foreground/80" aria-hidden />
                         {WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
                       </span>
                       <span className="flex shrink-0 items-center gap-1">
-                        {/* xAI is BOTH kinds of account: a Grok subscription
-                            arrives by device-code browser login, an API key
-                            by paste — so it alone carries both buttons. */}
+                        {/* xAI is BOTH kinds of account: subscription login and API key. */}
                         {provider === "xai" ? (
                           <Button
                             type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-xs"
+                            size="xs"
+                            variant="outline"
                             disabled={!canAdd}
                             onClick={() => state.onAddAccount("xai")}
                           >
                             <PlusIcon className="size-3.5" />
-                            {accounts.length === 0 ? "Add account" : "Add another"}
+                            {accounts.length === 0 ? "Konto hinzufügen" : "Weiteres Konto"}
                           </Button>
                         ) : null}
                         <Button
                           type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs"
+                          size="xs"
+                          variant="outline"
                           disabled={!canAdd || isKeyFormOpen}
                           onClick={() =>
                             isApiKey
@@ -697,16 +639,13 @@ export function WorkjetGatewayAccountsSectionView(
                           ) : (
                             <PlusIcon className="size-3.5" />
                           )}
-                          {/* xAI's second button is ALWAYS the key path —
-                              "Add another" next to "Add another" said
-                              nothing about the difference (Befund F9). */}
                           {provider === "xai"
-                            ? "Add API key"
+                            ? "API-Key hinzufügen"
                             : accounts.length === 0
                               ? isApiKey
-                                ? "Add API key"
-                                : "Add account"
-                              : "Add another"}
+                                ? "API-Key hinzufügen"
+                                : "Konto hinzufügen"
+                              : "Weiteres Konto"}
                         </Button>
                       </span>
                     </div>
@@ -714,84 +653,73 @@ export function WorkjetGatewayAccountsSectionView(
                     {accounts.map((account) => {
                       const suffix = maskGatewayCredentialSuffix(account.credentialSuffix);
                       const serves = providerServesModels(provider);
+                      const rotation =
+                        gatewayAccountRotationLabel(state.catalog, account) ??
+                        (account.enabled ? "Aktiv" : "Deaktiviert");
                       return (
-                        <div
+                        <Row
                           key={account.id}
-                          className="flex flex-wrap items-baseline justify-between gap-x-3 pl-3 text-xs"
-                        >
-                          <span className="min-w-0 truncate text-muted-foreground">
-                            {account.label}
-                            {suffix === null ? null : (
-                              <span className="text-muted-foreground/60"> · {suffix}</span>
-                            )}
-                          </span>
-                          <span
-                            className={cn(
-                              "flex shrink-0 items-center gap-2",
-                              serves === false ? "text-amber-500" : "text-muted-foreground/70",
-                            )}
-                          >
-                            <span>
-                              {serves === false ? "serves no models · " : ""}
-                              {/*
-                                Explicitly "recorded on this account", never a
-                                bare model count: the bare number reads as what
-                                the provider serves, which is the gateway
-                                catalog and a different figure entirely.
-                              */}
+                          className="px-0"
+                          status={serves === false ? "error" : account.enabled ? "ok" : "off"}
+                          statusLabel={rotation}
+                          name={account.label}
+                          meta={suffix ?? undefined}
+                          chips={
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1 text-xs",
+                                serves === false ? "text-amber-500" : "text-muted-foreground",
+                              )}
+                            >
+                              {serves === false ? "liefert keine Modelle · " : ""}
                               {account.modelIds.length > 0 ? (
                                 <>
-                                  <span className="inline-flex items-center gap-1">
-                                    {formatWorkjetGatewayAccountPatternCount(
-                                      account.modelIds.length,
-                                    )}{" "}
-                                    recorded
-                                    <WorkjetGatewayModelCountsHelp />
-                                  </span>{" "}
-                                  ·{" "}
+                                  {formatWorkjetGatewayAccountPatternCount(account.modelIds.length)}{" "}
+                                  erfasst
+                                  <WorkjetGatewayModelCountsHelp /> ·{" "}
                                 </>
                               ) : null}
-                              {gatewayAccountRotationLabel(state.catalog, account) ??
-                                (account.enabled ? "Enabled" : "Disabled")}
+                              {rotation}
                             </span>
-                            {/* Per-access re-login, as in the Swift original
-                                (ProviderAccountsView: "Neu anmelden" on the
-                                access). Same begin flow as adding — logging
-                                into the same identity updates this account's
-                                secrets — but the affordance sits WHERE the
-                                expired access is, instead of asking the
-                                operator to know that "Add another" heals it. */}
-                            {isApiKey ? null : (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 px-1.5 text-[11px]"
-                                disabled={!canAdd || isActiveLogin}
-                                onClick={() => state.onAddAccount(provider)}
-                              >
-                                Re-login
-                              </Button>
-                            )}
-                            <ConfirmingDeleteButton
-                              label={`account ${account.label}`}
-                              onDelete={() => state.onRemoveAccount(account.id)}
-                            />
-                          </span>
-                        </div>
+                          }
+                          onDelete={() => state.onRemoveAccount(account.id)}
+                          deleteLabel="Entfernen"
+                          deleteConfirmTitle="Konto entfernen?"
+                          menuActions={
+                            isApiKey || !canAdd || isActiveLogin
+                              ? []
+                              : [
+                                  {
+                                    label: "Neu anmelden",
+                                    onSelect: () => state.onAddAccount(provider),
+                                  },
+                                ]
+                          }
+                          menuLabel={`Aktionen für ${account.label}`}
+                        />
                       );
                     })}
 
-                    {isKeyFormOpen ? (
-                      <div className="pt-2">
-                        <AddApiKeyForm
-                          provider={provider}
-                          disabled={!canAdd}
-                          apiKey={state.apiKey}
-                          onSubmit={(value) => state.onAddApiKey(provider, value)}
-                          onDismiss={() => setOpenApiKeyProvider(null)}
-                        />
-                      </div>
+                    {isApiKey ? (
+                      <InlineExpand
+                        label={WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+                        open={isKeyFormOpen}
+                        onOpenChange={(open) => {
+                          if (!open) setOpenApiKeyProvider(null);
+                        }}
+                      >
+                        {isKeyFormOpen ? (
+                          <div className="pt-2">
+                            <AddApiKeyForm
+                              provider={provider}
+                              disabled={!canAdd}
+                              apiKey={state.apiKey}
+                              onSubmit={(value) => state.onAddApiKey(provider, value)}
+                              onDismiss={() => setOpenApiKeyProvider(null)}
+                            />
+                          </div>
+                        ) : null}
+                      </InlineExpand>
                     ) : null}
                     {isApiKey ? (
                       <AddApiKeyProgress provider={provider} apiKey={state.apiKey} />

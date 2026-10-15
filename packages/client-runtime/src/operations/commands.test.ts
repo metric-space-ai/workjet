@@ -25,6 +25,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   archiveThread,
   createProject,
+  setThreadGoal,
   setThreadWorkjetConfig,
   settleThread,
   stopThreadSession,
@@ -75,6 +76,32 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
 });
 
 describe("environment commands", () => {
+  it.effect("routes goal controls with the retained thread, revision and operation ID", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+      yield* setThreadGoal({
+        commandId: CommandId.make("owner-goal-control"),
+        threadId: ThreadId.make("persistent-parent"),
+        status: "active",
+        objective: "Deliver the approved benchmark",
+        expectedRevision: 7,
+        createdAt: "2026-10-10T12:00:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      expect(dispatched).toEqual([
+        {
+          type: "thread.goal.set",
+          commandId: "owner-goal-control",
+          threadId: "persistent-parent",
+          status: "active",
+          objective: "Deliver the approved benchmark",
+          expectedRevision: 7,
+          createdAt: "2026-10-10T12:00:00.000Z",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
   it.effect("adds generated command metadata", () =>
     Effect.gen(function* () {
       const dispatched: ClientOrchestrationCommand[] = [];

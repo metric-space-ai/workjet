@@ -2,7 +2,7 @@ import { WorkjetInstanceGrokResponse } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { newCommandId } from "./utils";
 import {
-  describeWorkjetProjectControlFailure,
+  WorkjetProjectControlError,
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
 } from "../workjetProjectControl";
@@ -75,8 +75,7 @@ export async function requestInstanceGrok(
       }),
     ]);
     signal.throwIfAborted();
-    if (result._tag !== "completed")
-      throw new GrokControlFailure(describeWorkjetProjectControlFailure(result, instanceId));
+    if (result._tag !== "completed") throw new WorkjetProjectControlError(result, instanceId);
     let response: WorkjetInstanceGrokResponse;
     try {
       response = Schema.decodeUnknownSync(WorkjetInstanceGrokResponse)(result.response);
@@ -94,13 +93,54 @@ export async function requestInstanceGrok(
     return response;
   } catch (error) {
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
-    if (error instanceof GrokControlFailure) throw error;
+    if (error instanceof GrokControlFailure || error instanceof WorkjetProjectControlError)
+      throw error;
     throw new GrokControlFailure(
       "Grok control failed. Check the instance connection and Owner/Admin access, then retry.",
     );
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
+
+type GrokFailure = Pick<
+  NonNullable<WorkjetInstanceGrokResponse["check"]>,
+  "errorCode" | "upstream"
+>;
+
+const localRemedies: Readonly<Record<NonNullable<GrokFailure["errorCode"]>, string>> = {
+  timeout: "The model did not answer within 20 seconds. Retry the check.",
+  missing_credential: "Sign in with your Grok Build subscription.",
+  model_unavailable: "This model is absent from the account's live catalog. Refresh the models.",
+  invalid_response: "The gateway returned no usable answer. Retry the check.",
+  request_failed:
+    "The gateway request failed. Retry; a failed request does not prove an expired login.",
+};
+
+/** Upstream diagnoses require the instance's redacted, typed HTTP receipt. */
+export function describeInstanceGrokFailure(failure: GrokFailure): string {
+  const upstream = failure.upstream;
+  if (!upstream)
+    return failure.errorCode
+      ? localRemedies[failure.errorCode]
+      : "The check failed. Retry the check.";
+  const receipt = `HTTP ${upstream.status} · ${upstream.stage}`;
+  switch (upstream.status) {
+    case 401:
+      return `The provider rejected the subscription credential (${receipt}). Remove this account with the trash can, confirm, then choose Grok Build OAuth to sign in again.`;
+    case 403:
+      return `The provider denied access (${receipt}). Check your Grok Build subscription permissions, then retry.`;
+    case 404:
+      return upstream.stage === "inference"
+        ? `The provider could not find this model (${receipt}). Refresh models and check a model from the live list.`
+        : `The provider's model catalog was not found (${receipt}). Update the connected CTOX instance, then refresh models.`;
+    case 426:
+      return `The provider requires a newer Grok client (${receipt}). Update the connected CTOX instance, then retry.`;
+    case 429:
+      return `The provider rate limited this request (${receipt}). Retry later.`;
+    default:
+      return `The provider request failed (${receipt}). Retry the check.`;
   }
 }
 

@@ -129,7 +129,7 @@ describe("operational computer enrollment", () => {
       .mockResolvedValueOnce(assigned)
       .mockResolvedValueOnce({ _tag: "failed", code: "command_failed" });
     await expect(enrollOperationalComputer(nas, control, command, () => true)).rejects.toThrow(
-      "access endpoint still needs confirmation",
+      "Zugang noch unbestätigt",
     );
   });
   it("stops the second operation if the selected instance changed during assignment", async () => {
@@ -139,7 +139,7 @@ describe("operational computer enrollment", () => {
       return assigned;
     });
     await expect(enrollOperationalComputer(nas, control, command, () => current)).rejects.toThrow(
-      "selected Business OS changed",
+      "Instanz gewechselt",
     );
     expect(control).toHaveBeenCalledTimes(1);
   });
@@ -219,7 +219,7 @@ describe("native computer SSH key enrollment", () => {
       const ready = vi.fn();
       await expect(
         enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready),
-      ).rejects.toThrow("SSH key still needs confirmation");
+      ).rejects.toThrow("SSH-Schlüssel noch unbestätigt");
       expect(control).toHaveBeenCalledTimes(2);
       expect(ready).not.toHaveBeenCalled();
     }
@@ -236,7 +236,7 @@ describe("native computer SSH key enrollment", () => {
     const ready = vi.fn();
     await expect(
       enrollOperationalComputer(nativeKeyEnrollment, control, command, () => current, ready),
-    ).rejects.toThrow("selected Business OS changed");
+    ).rejects.toThrow("Instanz gewechselt");
     expect(control).toHaveBeenCalledTimes(2);
     expect(ready).not.toHaveBeenCalled();
   });
@@ -249,7 +249,7 @@ describe("native computer SSH key enrollment", () => {
     const ready = vi.fn();
     await expect(
       enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready),
-    ).rejects.toThrow("access endpoint still needs confirmation");
+    ).rejects.toThrow("Zugang noch unbestätigt");
     expect(ready).not.toHaveBeenCalled();
   });
 });

@@ -11,7 +11,7 @@ import {
   type WorkjetSessionImportItemResult,
   type WorkjetSessionImportSource,
 } from "@workjet/contracts";
-import { ArrowRightIcon, FolderInputIcon } from "lucide-react";
+import { FolderInputIcon } from "lucide-react";
 import * as Option from "effect/Option";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -37,6 +37,7 @@ import {
   useWorkjetProjectRegistry,
 } from "../../workjetProjectRegistry";
 import { Button } from "../ui/button";
+import { useSingleInlineExpand } from "../ui/inline-expand";
 import { SessionImportBrowser, sessionImportFolderName } from "./SessionImportBrowser";
 import { prepareSessionImportProject, type SessionImportProject } from "./sessionImportProject";
 import { selectAllSessionImportCandidates } from "./sessionImportSelection";
@@ -90,6 +91,7 @@ export function SessionImportSection({
     [presentationInstanceId, registry.projects, localProjects, computer?.id],
   );
   const [open, setOpen] = useState(false);
+  useSingleInlineExpand(open, setOpen);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [source, setSource] = useState<WorkjetSessionImportSource | "all">("all");
@@ -183,7 +185,7 @@ export function SessionImportSection({
     importingRef.current = true;
     stoppedRef.current = false;
     setError(null);
-    setProgress("Selecting conversations…");
+    setProgress("Unterhaltungen werden gewählt …");
     try {
       await selectAllSessionImportCandidates({
         query,
@@ -193,9 +195,7 @@ export function SessionImportSection({
           const result = await inspectForSelection({ environmentId, input });
           if (result._tag === "Failure") {
             const failure = squashAtomCommandFailure(result);
-            throw failure instanceof Error
-              ? failure
-              : new Error("The conversations could not be selected. You can retry.");
+            throw failure instanceof Error ? failure : new Error("Auswahl fehlgeschlagen.");
           }
           return result.value;
         },
@@ -205,12 +205,12 @@ export function SessionImportSection({
             for (const candidate of candidates) next.set(candidate.candidateId, candidate);
             return next;
           });
-          setProgress(`Selecting conversations… ${count} found`);
+          setProgress(`Unterhaltungen werden gewählt … ${count} gefunden`);
         },
       });
     } catch (cause) {
       if (isActive() && !stoppedRef.current)
-        setError(cause instanceof Error ? cause.message : "The selection could not be completed.");
+        setError(cause instanceof Error ? cause.message : "Auswahl fehlgeschlagen.");
     } finally {
       if (isActive()) {
         importingRef.current = false;
@@ -225,7 +225,7 @@ export function SessionImportSection({
     stoppedRef.current = false;
     setError(null);
     setResults([]);
-    setProgress("Preparing project…");
+    setProgress("Projekt wird vorbereitet …");
     const captured = [...selected.values()];
     const projectCommandId = (
       project: SessionImportProject,
@@ -270,7 +270,7 @@ export function SessionImportSection({
             return listed.response.projects;
           },
           attachLocalProjectFolder: async (project) => {
-            if (!isActive()) throw new Error("The active instance or computer changed.");
+            if (!isActive()) throw new Error("Instanz oder Rechner gewechselt.");
             const attached = await attachProjectFolder({
               environmentId,
               input: {
@@ -283,13 +283,13 @@ export function SessionImportSection({
               const failure = squashAtomCommandFailure(attached);
               throw failure instanceof Error
                 ? failure
-                : new Error("The project folder could not be attached.");
+                : new Error("Projektordner nicht verbunden.");
             }
             // Require the acknowledged command in the live canonical shell
             // before publishing a native working copy or copying any history.
             const deadline = Date.now() + 5_000;
             while (Date.now() < deadline) {
-              if (!isActive()) throw new Error("The active instance or computer changed.");
+              if (!isActive()) throw new Error("Instanz oder Rechner gewechselt.");
               const current = shellStateRef.current;
               if (
                 current.status === "live" &&
@@ -298,14 +298,12 @@ export function SessionImportSection({
               ) {
                 const bound = current.snapshot.value.projects.find(({ id }) => id === project.id);
                 if (!bound || bound.workspaceRoot === null)
-                  throw new Error("The saved project folder was not confirmed on this computer.");
+                  throw new Error("Projektordner auf diesem Rechner nicht bestätigt.");
                 return { id: bound.id, title: bound.title, workspaceRoot: bound.workspaceRoot };
               }
               await new Promise<void>((resolve) => setTimeout(resolve, 50));
             }
-            throw new Error(
-              "The saved project folder is still synchronizing. Reconnect and retry.",
-            );
+            throw new Error("Projektordner synchronisiert noch. Erneut versuchen.");
           },
           createLocalProject: async (project) => {
             const modelSelection = resolveProjectTeamModelSelection(
@@ -313,9 +311,7 @@ export function SessionImportSection({
                 ?.providers ?? [],
             );
             if (modelSelection === null)
-              throw new Error(
-                "Configure an available account with a concrete model in Models to create this project’s Lumas.",
-              );
+              throw new Error("Kein Modell für die Lumas. Unter Modelle einrichten.");
             const commandId = projectCommandId(project);
             const created = await createProject({
               environmentId,
@@ -339,9 +335,7 @@ export function SessionImportSection({
             });
             if (created._tag === "Failure") {
               const failure = squashAtomCommandFailure(created);
-              throw failure instanceof Error
-                ? failure
-                : new Error("The destination project could not be created.");
+              throw failure instanceof Error ? failure : new Error("Zielprojekt nicht erstellt.");
             }
           },
           confirmLogicalProject: async (project) => {
@@ -360,10 +354,9 @@ export function SessionImportSection({
             });
             if (confirmed._tag === "failed")
               throw new Error(workjetProjectCreationFailureMessage(confirmed.code));
-            if (!isActive())
-              throw new Error("The active instance changed while preparing the project.");
+            if (!isActive()) throw new Error("Instanz gewechselt.");
             if (!recordWorkjetProjectProjection(presentationInstanceId!, confirmed.project))
-              throw new Error("The project is not visible in the active CTOX instance yet.");
+              throw new Error("Projekt in der Instanz noch nicht sichtbar.");
           },
         },
       });
@@ -377,7 +370,7 @@ export function SessionImportSection({
       ) {
         if (!isActive() || stoppedRef.current) break;
         setProgress(
-          `Importing ${offset + 1}–${Math.min(offset + WORKJET_SESSION_IMPORT_MAX_SELECTION, captured.length)} of ${captured.length}…`,
+          `Import ${offset + 1}–${Math.min(offset + WORKJET_SESSION_IMPORT_MAX_SELECTION, captured.length)} von ${captured.length} …`,
         );
         const result = await runImport({
           environmentId,
@@ -392,9 +385,7 @@ export function SessionImportSection({
         if (result._tag === "Failure") {
           if (isAtomCommandInterrupted(result)) break;
           const failure = squashAtomCommandFailure(result);
-          throw failure instanceof Error
-            ? failure
-            : new Error("The conversations could not be imported.");
+          throw failure instanceof Error ? failure : new Error("Import fehlgeschlagen.");
         }
         collected.push(...result.value.items);
         setResults([...collected]);
@@ -407,12 +398,7 @@ export function SessionImportSection({
       }
       if (isActive()) inspection.refresh();
     } catch (cause) {
-      if (isActive())
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "The import could not be completed. You can retry.",
-        );
+      if (isActive()) setError(cause instanceof Error ? cause.message : "Import fehlgeschlagen.");
     } finally {
       if (isActive()) {
         importingRef.current = false;
@@ -424,18 +410,18 @@ export function SessionImportSection({
   return (
     <SettingsSection {...searchableSetting("import-sessions")}>
       <SettingsRow
-        title="Bring conversations into a project"
-        description="Browse Codex and Claude Code conversations, preview their content, and choose where they belong."
+        title="Unterhaltungen"
         control={
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setOpen(true)}
+            aria-expanded={open}
+            disabled={open && progress !== null}
+            onClick={() => setOpen(!open)}
             data-workjet-action="session-import.open"
           >
             <FolderInputIcon className="size-3.5" />
-            Browse conversations
-            <ArrowRightIcon className="size-3.5" />
+            {open ? "Schließen" : "Durchsuchen"}
           </Button>
         }
       />
@@ -504,8 +490,7 @@ export function SessionImportSection({
                     if (folder && isActive()) setWorkspaceRoot(folder);
                   })
                   .catch(() => {
-                    if (isActive())
-                      setError("Enter the folder path if the folder picker is unavailable.");
+                    if (isActive()) setError("Ordnerauswahl nicht verfügbar. Pfad eingeben.");
                   });
               },
             }

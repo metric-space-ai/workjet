@@ -123,3 +123,53 @@ describe("native gallery KPI read recovery", () => {
     });
   });
 });
+
+describe("gallery KPI last known values (#470)", () => {
+  const ready = {
+    prompt: { kpi_id: "kpi-1", prompt: "Count users", revision: 1 },
+    result: {
+      status: "ready" as const,
+      snapshot: {
+        project_id: "p",
+        kpi_id: "kpi-1",
+        prompt_revision: 1,
+        label: "Users",
+        display_value: "42",
+        unit: "",
+        sources: [
+          { kind: "native_metric" as const, project_id: "p", connection_id: "c", metric_key: "m" },
+        ],
+        freshness: { calculated_at_ms: 1, refresh_at_ms: 2, fresh_until_ms: 3 },
+      },
+    },
+  };
+  it("keeps a shown value as stale when a later read is still resolving", () => {
+    const first = mergeProjectKpiRead({ instanceId: null, records: {} }, "i", "p", {
+      project_id: "p",
+      revision: 1,
+      items: [ready],
+    });
+    const second = mergeProjectKpiRead(first, "i", "p", {
+      project_id: "p",
+      revision: 1,
+      items: [{ prompt: ready.prompt, result: { status: "resolving" } }],
+    });
+    expect(second.records.p?.items[0]?.result).toMatchObject({
+      status: "stale",
+      snapshot: { display_value: "42" },
+    });
+  });
+  it("drops the old value once the prompt was edited", () => {
+    const first = mergeProjectKpiRead({ instanceId: null, records: {} }, "i", "p", {
+      project_id: "p",
+      revision: 1,
+      items: [ready],
+    });
+    const second = mergeProjectKpiRead(first, "i", "p", {
+      project_id: "p",
+      revision: 2,
+      items: [{ prompt: { ...ready.prompt, revision: 2 }, result: { status: "resolving" } }],
+    });
+    expect(second.records.p?.items[0]?.result.status).toBe("resolving");
+  });
+});

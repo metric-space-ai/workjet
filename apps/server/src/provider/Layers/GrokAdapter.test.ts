@@ -569,6 +569,59 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }),
   );
 
+  it.effect(
+    "acknowledges a gateway prompt before native tool approval and keeps completion scoped",
+    () =>
+      Effect.gen(function* () {
+        const threadId = ThreadId.make("grok-gateway-prompt-acknowledgement");
+        const wrapperPath = yield* Effect.promise(() =>
+          makeMockGrokWrapper({ WORKJET_ACP_EMIT_TOOL_CALLS: "1" }),
+        );
+        const adapter = yield* makeTestAdapter(wrapperPath, { dispatchPromptInBackground: true });
+        const requestOpened =
+          yield* Deferred.make<Extract<ProviderRuntimeEvent, { type: "request.opened" }>>();
+        const completed = yield* Deferred.make<void>();
+        const eventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+          event.type === "request.opened"
+            ? Deferred.succeed(requestOpened, event).pipe(Effect.asVoid)
+            : event.type === "turn.completed"
+              ? Deferred.succeed(completed, undefined).pipe(Effect.asVoid)
+              : Effect.void,
+        ).pipe(Effect.forkChild);
+        yield* adapter.startSession({
+          threadId,
+          provider: ProviderDriverKind.make("grok"),
+          cwd: process.cwd(),
+          runtimeMode: "approval-required",
+        });
+        // This must return while the native prompt is still waiting for approval.
+        const accepted = yield* adapter.sendTurn({
+          threadId,
+          input: "wait for my tool approval",
+          attachments: [],
+        });
+        const request = yield* Deferred.await(requestOpened);
+        const running = (yield* adapter.listSessions()).find(
+          (session) => session.threadId === threadId,
+        );
+        assert.equal(running?.status, "running");
+        assert.equal(running?.activeTurnId, accepted.turnId);
+        yield* adapter.respondToRequest(
+          threadId,
+          ApprovalRequestId.make(String(request.requestId)),
+          "accept",
+        );
+        yield* Deferred.await(completed);
+        const ready = (yield* adapter.listSessions()).find(
+          (session) => session.threadId === threadId,
+        );
+        assert.equal(ready?.status, "ready");
+        assert.isUndefined(ready?.activeTurnId);
+        yield* adapter.stopSession(threadId);
+        yield* Fiber.interrupt(eventsFiber);
+      }),
+  );
+
   it.effect("reports a Grok session running only while the prompt is in flight", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-session-ready-after-prompt");

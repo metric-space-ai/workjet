@@ -1,41 +1,40 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import commandPaletteSource from "./CommandPalette.tsx?raw";
-import commandPaletteResultsSource from "./CommandPaletteResults.tsx?raw";
 import sidebarSource from "./Sidebar.tsx?raw";
 import chatIndexSource from "../routes/_chat.index.tsx?raw";
 import registrationSource from "../localProjectRegistration.tsx?raw";
 
 describe("CTOX-native project story", () => {
-  it("does not gate the visible Add project flow on an Environment or computer assignment", () => {
-    const start = commandPaletteSource.indexOf("const openAddProjectFlow");
-    const end = commandPaletteSource.indexOf("useLayoutEffect", start);
-    const visibleFlow = commandPaletteSource.slice(start, end);
+  it("creates projects inline in the gallery, never in a palette dialog", () => {
+    const start = chatIndexSource.indexOf("function InlineProjectCreate(");
+    const end = chatIndexSource.indexOf("export const Route", start);
+    const visibleFlow = chatIndexSource.slice(start, end > start ? end : undefined);
 
-    expect(visibleFlow).toContain("setIsLogicalProjectNameEntry(true)");
-    expect(visibleFlow).toContain("setLogicalProjectFolder(null)");
-    expect(commandPaletteSource).toContain("Attach folder (optional)");
+    expect(visibleFlow).toContain('triggerLabel="Projekt anlegen"');
+    expect(visibleFlow).toContain('aria-label="Instanz"');
     expect(visibleFlow).not.toContain("addProjectEnvironmentOptions");
     expect(visibleFlow).not.toContain("No Code computer assigned");
-    expect(visibleFlow).not.toContain("projectEnvironment.create");
+    expect(visibleFlow).not.toContain("Select a CTOX instance for this project.");
+    expect(commandPaletteSource).not.toContain("CommandDialog");
+    expect(commandPaletteSource).toContain("requestProjectCreate()");
   });
 
   it("saves a name-only project locally before any native catalog request and retains its retry identity", () => {
-    const start = commandPaletteSource.indexOf("const createLogicalProject =");
-    const end = commandPaletteSource.indexOf("const createLogicalProjectFromPath", start);
-    const creation = commandPaletteSource.slice(start, end);
-    expect(creation).toContain("workspaceRoot: string | null");
+    const start = chatIndexSource.indexOf("const submit = async () => {");
+    const end = chatIndexSource.indexOf("return (", start);
+    const creation = chatIndexSource.slice(start, end);
+    expect(creation).toContain("workspaceRoot: null");
     expect(creation).toContain("await createProject");
     expect(creation).toContain(".get(environmentProjects.projectsAtom)");
-    expect(creation).toContain(".filter((project) => project.environmentId === environmentId)");
-    expect(creation).not.toContain("unscopedProjects.filter");
+    expect(creation).toContain("project.environmentId === environmentId");
     expect(creation).not.toContain("listWorkjetProjects");
     expect(creation).not.toContain("runWorkjetProjectCreation");
     expect(creation).toMatch(
       /ctoxRegistration:\s*\{\s*instanceId,\s*commandId:\s*attempt.commandId,\s*status:\s*"pending"/,
     );
-    expect(creation).toContain("logicalProjectAttemptRef.current?.key !== attemptKey");
-    expect(creation).toContain("setLogicalProjectCreationError(description)");
+    expect(creation).toContain("attemptRef.current?.key !== key");
+    expect(creation).toContain("setError(");
     expect(registrationSource).toContain("commandId: intent.commandId");
     expect(registrationSource).toContain("projectId: project.id");
     expect(registrationSource).toContain("currentScope.selectionRevision !== selectionRevision");
@@ -48,28 +47,26 @@ describe("CTOX-native project story", () => {
     expect(registrationSource).not.toContain("setInterval");
   });
 
-  it("submits an entered local folder path through the same authoritative CTOX flow", () => {
-    expect(commandPaletteSource).toContain("Create project");
-    expect(commandPaletteSource).toContain("setIsLogicalProjectPathEntry(logicalProjectPathEntry)");
-    expect(commandPaletteSource).toContain("isLogicalProjectPathEntry &&");
-    expect(commandPaletteSource).toContain(
-      "void createLogicalProjectFromPath(resolvedAddProjectPath)",
-    );
-    expect(commandPaletteSource).toContain("ProjectCreationProgress stage={projectCreationStage}");
-    expect(commandPaletteSource).toContain('aria-live="polite"');
+  it("maps every former palette request onto an inline place", () => {
+    expect(commandPaletteSource).toContain('detail.open === "add-project"');
+    expect(commandPaletteSource).toContain('detail.open === "new-thread-in"');
+    expect(commandPaletteSource).toContain("startNewThreadFromContext");
+    expect(commandPaletteSource).toContain('command === "commandPalette.toggle"');
+    expect(commandPaletteSource).toContain("focusSearch()");
+    expect(sidebarSource).toContain('data-sidebar-search=""');
   });
 
   it("exposes stable action IDs and the authoritative project in Code chrome", () => {
-    expect(commandPaletteResultsSource).toContain("data-workjet-action={props.item.value}");
     expect(sidebarSource).toContain('data-workjet-action="project.add.sidebar"');
-    expect(chatIndexSource).toContain('data-workjet-action="project.add.hero"');
+    expect(chatIndexSource).toContain('triggerAction="project.add.hero"');
     expect(sidebarSource).toContain("useAvailableProjectContext()");
     expect(sidebarSource).toContain("project.title");
     expect(chatIndexSource).toContain(
-      'data-workjet-project-state={error ? "opening-error" : "opening"}',
+      'data-workjet-project-state={error ? "opening-error" : slow ? "opening-slow" : "opening"}',
     );
     expect(chatIndexSource).toContain("void openNativeSupervisor(selectedNative)");
-    expect(chatIndexSource).toContain("Retry opening supervisor");
+    expect(chatIndexSource).toContain('data-workjet-action="project.open.supervisor.retry"');
+    expect(chatIndexSource).toContain("PROJECT_OPENING_TIMEOUT_MS = 10_000");
     expect(chatIndexSource).not.toContain("Project synced with this CTOX instance");
   });
 });

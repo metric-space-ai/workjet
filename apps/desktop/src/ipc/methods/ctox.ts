@@ -4,6 +4,8 @@ import {
   CtoxInstanceAuthorityResolveInput,
   CtoxInstanceAuthorityResolveResult,
   CtoxDiscoveryResult,
+  CtoxInstancePreferenceInput,
+  CtoxInstancePreferenceResult,
   CtoxDecisionHubDisconnectInput,
   CtoxDecisionHubDisconnectResult,
   CtoxDecisionHubProvisionInput,
@@ -54,10 +56,15 @@ import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
 import * as CtoxDecisionHubProvisioner from "../../ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
+import * as CtoxInstancePreferences from "../../ctox/CtoxInstancePreferences.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
 import * as CtoxManagedLaunch from "../../ctox/CtoxManagedLaunch.ts";
+import { DesktopKeyRecovery, DesktopKeyRecoveryError } from "../../app/DesktopKeyRecovery.ts";
+import { recoverManagedAfterLogin } from "../../ctox/CtoxKeyRecovery.ts";
+import * as Option from "effect/Option";
 import * as CtoxShellFleet from "../../ctox/CtoxShellFleet.ts";
 import * as IpcChannels from "../channels.ts";
+import { CtoxControlDeviceStatus } from "@workjet/contracts";
 import type * as DesktopIpc from "../DesktopIpc.ts";
 
 function encodeSafe<A, I>(schema: Schema.Codec<A, I>, value: A): Effect.Effect<I> {
@@ -65,6 +72,27 @@ function encodeSafe<A, I>(schema: Schema.Codec<A, I>, value: A): Effect.Effect<I
 }
 
 const RAIL_INSTANCE_KEY_PREFIX = "instance:";
+
+const finishKeyRecovery = (
+  discovery: import("@workjet/contracts").CtoxManagedDiscoveryResult,
+  successfulLoginId?: string,
+) =>
+  Effect.gen(function* () {
+    const recovery = yield* Effect.serviceOption(DesktopKeyRecovery);
+    if (Option.isNone(recovery) || discovery._tag !== "ready" || discovery.sessionVerified !== true)
+      return;
+    const launch = yield* Effect.serviceOption(CtoxManagedLaunch.CtoxManagedLaunch);
+    const sessions = yield* Effect.serviceOption(CtoxElectronSessions.CtoxElectronSessions);
+    if (Option.isNone(launch) || Option.isNone(sessions))
+      return yield* new DesktopKeyRecoveryError({ operation: "resolve managed recovery services" });
+    yield* recoverManagedAfterLogin({
+      discovery,
+      recovery: recovery.value,
+      ...(successfulLoginId === undefined ? {} : { successfulLoginId }),
+      reconnect: (instance) =>
+        Effect.andThen(sessions.value.instance(instance), launch.value.launch(instance)),
+    });
+  });
 
 /**
  * The renderer only ever supplies the registry id, which a paired instance
@@ -85,6 +113,82 @@ const railKeyFor = Effect.fn("ctox.railKeyFor")(function* (instanceId: string) {
   return identity === undefined ? fallback : { identity, legacyInstanceId: instanceId };
 });
 
+export const setInstanceState: DesktopIpc.DesktopIpcMethod<
+  never,
+  | CtoxInstancePreferences.CtoxInstancePreferences
+  | CtoxElectronSessions.CtoxElectronSessions
+  | CtoxInstanceRegistry.CtoxInstanceRegistry
+  | CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_INSTANCE_STATE_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxInstancePreferenceInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      const failure = (code: Extract<CtoxInstancePreferenceResult, { _tag: "failed" }>["code"]) =>
+        encodeSafe(CtoxInstancePreferenceResult, { _tag: "failed", code });
+      if (input._tag === "None") return yield* failure("invalid_input");
+      const { instanceId, state, selectedInstanceId } = input.value;
+      if (state === "disabled" && instanceId === selectedInstanceId)
+        return yield* failure("selected_instance");
+      const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+      const store = yield* CtoxInstancePreferences.CtoxInstancePreferences;
+      const snapshot = yield* store.read.pipe(Effect.result);
+      if (Result.isFailure(snapshot)) return yield* failure("persistence_failed");
+      const descriptor = snapshot.success.find((row) => row.id === instanceId);
+      if (descriptor === undefined) return yield* failure("not_found");
+      if (state === "removed" && descriptor.source === "local_daemon")
+        return yield* failure("local_not_removable");
+      const result = yield* Effect.gen(function* () {
+        // Persist the stop marker first. New admissions cannot race guest teardown.
+        yield* store.set(descriptor, state);
+        const guests = yield* CtoxGuestManager.CtoxGuestManager;
+        if (state === "enabled") yield* guests.ensurePooled(instanceId);
+        const pairedRemoval =
+          state === "removed" &&
+          (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing");
+        if (state !== "enabled" && !pairedRemoval) {
+          const stopped = yield* guests.deactivateInstance(instanceId);
+          if (stopped._tag !== "completed") return yield* Effect.fail(undefined);
+        }
+        if (state === "removed") {
+          if (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing") {
+            const removed = yield* removePairedInstance
+              .handler({ instanceId })
+              .pipe(Effect.flatMap(Schema.decodeUnknownEffect(CtoxPairedInstanceRemoveResult)));
+            if (removed._tag !== "completed") return yield* Effect.fail(undefined);
+          } else if (descriptor.source === "ssh_managed")
+            yield* registry.removeSshManagedInstance(instanceId);
+        }
+      }).pipe(Effect.result);
+      return yield* Result.isFailure(result)
+        ? failure("persistence_failed")
+        : encodeSafe(CtoxInstancePreferenceResult, { _tag: "completed" });
+    }),
+};
+
+export const deviceStatus: DesktopIpc.DesktopIpcMethod<never, CtoxDevAuth.CtoxDevAuth> = {
+  channel: IpcChannels.CTOX_DEVICE_STATUS_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      return yield* encodeSafe(
+        CtoxControlDeviceStatus,
+        yield* auth.deviceStatus ?? Effect.succeed({ state: "not_configured" as const }),
+      );
+    }),
+};
+export const resetDevice: DesktopIpc.DesktopIpcMethod<never, CtoxDevAuth.CtoxDevAuth> = {
+  channel: IpcChannels.CTOX_DEVICE_RESET_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      yield* auth.resetDevice ?? Effect.void;
+      return yield* deviceStatus.handler(undefined);
+    }),
+};
+
 export const refresh: DesktopIpc.DesktopIpcMethod<
   never,
   CtoxDevAuth.CtoxDevAuth | CtoxInstanceRegistry.CtoxInstanceRegistry
@@ -97,7 +201,12 @@ export const refresh: DesktopIpc.DesktopIpcMethod<
       const managed = yield* auth.refresh.pipe(
         Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
       );
-      return yield* encodeSafe(CtoxDiscoveryResult, yield* registry.merge(managed));
+      yield* finishKeyRecovery(managed).pipe(Effect.orElseSucceed(() => undefined));
+      const discovery = yield* registry.merge(managed);
+      const guests = yield* Effect.serviceOption(CtoxGuestManager.CtoxGuestManager);
+      if (discovery._tag === "ready" && Option.isSome(guests))
+        yield* guests.value.observeShellGenerations?.(discovery.instances) ?? Effect.void;
+      return yield* encodeSafe(CtoxDiscoveryResult, discovery);
     }),
 };
 
@@ -148,6 +257,7 @@ export const login: DesktopIpc.DesktopIpcMethod<
             const managed = yield* auth.refresh.pipe(
               Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
             );
+            yield* finishKeyRecovery(managed, loginResult.value.loginId);
             return yield* encodeSafe(CtoxManagedLoginResult, {
               _tag: "completed",
               discovery: yield* registry.merge(managed),
@@ -253,7 +363,14 @@ export const importInvite: DesktopIpc.DesktopIpcMethod<
           code: "invalid_input",
         });
       }
-      const result = yield* registry.importInvite(input.value.invite).pipe(Effect.result);
+      const result = yield* registry
+        .importInvite(input.value.invite, input.value.replacesInstanceId)
+        .pipe(
+          Effect.flatMap((instance) =>
+            CtoxInstancePreferences.restorePreference(instance).pipe(Effect.as(instance)),
+          ),
+          Effect.result,
+        );
       return yield* encodeSafe(
         CtoxPairedInstanceImportResult,
         Result.isSuccess(result)
@@ -280,7 +397,12 @@ export const importManualPairing: DesktopIpc.DesktopIpcMethod<
           code: "invalid_input",
         });
       }
-      const result = yield* registry.importManualPairing(input.value).pipe(Effect.result);
+      const result = yield* registry.importManualPairing(input.value).pipe(
+        Effect.flatMap((instance) =>
+          CtoxInstancePreferences.restorePreference(instance).pipe(Effect.as(instance)),
+        ),
+        Effect.result,
+      );
       return yield* encodeSafe(
         CtoxPairedInstanceImportResult,
         Result.isSuccess(result)
@@ -419,7 +541,12 @@ export const addSshManagedInstance: DesktopIpc.DesktopIpcMethod<
           code: "invalid_input",
         });
       }
-      const result = yield* registry.addSshManagedInstance(input.value).pipe(Effect.result);
+      const result = yield* registry.addSshManagedInstance(input.value).pipe(
+        Effect.flatMap((instance) =>
+          CtoxInstancePreferences.restorePreference(instance).pipe(Effect.as(instance)),
+        ),
+        Effect.result,
+      );
       return yield* encodeSafe(
         CtoxSshManagedInstanceAddResult,
         Result.isSuccess(result)
@@ -474,6 +601,11 @@ export const activate: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxG
       const input = yield* Schema.decodeUnknownEffect(CtoxManagedActivationInput)(raw).pipe(
         Effect.option,
       );
+      if (Option.isSome(input) && input.value.repair === true) {
+        const recovery = yield* Effect.serviceOption(DesktopKeyRecovery);
+        if (Option.isSome(recovery) && recovery.value.prepareManagedRetry !== undefined)
+          yield* recovery.value.prepareManagedRetry(input.value.instanceId).pipe(Effect.ignore);
+      }
       const result =
         input._tag === "None"
           ? ({ _tag: "failed", code: "invalid_input" } as const)
@@ -972,10 +1104,14 @@ type CtoxIpcServices =
   | CtoxGuestManager.CtoxGuestManager
   | CtoxInstanceRegistry.CtoxInstanceRegistry
   | CtoxManagedLaunch.CtoxManagedLaunch
-  | CtoxShellFleet.CtoxShellFleet;
+  | CtoxShellFleet.CtoxShellFleet
+  | CtoxInstancePreferences.CtoxInstancePreferences;
 
 export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcServices>[] = [
   refresh,
+  deviceStatus,
+  resetDevice,
+  setInstanceState,
   login,
   logout,
   provisionDecisionHub,

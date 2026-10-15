@@ -4,11 +4,12 @@
  * and must not reach browser storage, logs, the returned outcome, or any other
  * project-control payload.
  */
-import * as NodeFS from "node:fs";
-import * as NodeURL from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import { CtoxWorkjetProjectControlResponse } from "@workjet/contracts";
+import cardSource from "./components/chat/SecretRequestCard.tsx?raw";
+import helperSource from "./workjetSecretRequests.ts?raw";
+import inputSource from "./components/ui/secret-input.tsx?raw";
 
 const CANARY = "CANARY-secret-7f3a9c1e5b-Ünïcode";
 const sent: unknown[] = [];
@@ -98,15 +99,7 @@ describe("secret request canary", () => {
   });
 
   it("keeps the card and helpers free of storage and draft writers", () => {
-    for (const rel of [
-      "./components/chat/SecretRequestCard.tsx",
-      "./workjetSecretRequests.ts",
-      "./components/ui/secret-input.tsx",
-    ]) {
-      const source = NodeFS.readFileSync(
-        NodeURL.fileURLToPath(new URL(rel, import.meta.url)),
-        "utf8",
-      );
+    for (const source of [cardSource, helperSource, inputSource]) {
       expect(source).not.toMatch(
         /localStorage|sessionStorage|indexedDB|composerDraft|DraftStore|console\./,
       );

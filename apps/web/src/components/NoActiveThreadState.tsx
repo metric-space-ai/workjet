@@ -1,10 +1,20 @@
-import { Empty, EmptyHeader, EmptyTitle } from "./ui/empty";
+import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "./ui/empty";
+import { Button } from "./ui/button";
 import { SidebarInset } from "./ui/sidebar";
 import { isElectron } from "../env";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { startNewThreadFromContext } from "../lib/chatThreadActions";
 
+/**
+ * Keine Unterhaltung gewählt (D50): ein Titel in 22 px und genau ein
+ * Primärknopf „Neue Unterhaltung“; die Kopfzeile bleibt leer.
+ */
 export function NoActiveThreadState() {
+  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
+    useHandleNewThread();
+  const canStart = defaultProjectRef !== null;
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
@@ -14,26 +24,28 @@ export function NoActiveThreadState() {
             isElectron ? "workspace-topbar drag-region" : "workspace-topbar",
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
           )}
-        >
-          {isElectron ? (
-            <span className="text-xs text-muted-foreground/50 wco:pr-[var(--workspace-native-controls-inset)]">
-              Keine Unterhaltung
-            </span>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
-                Keine Unterhaltung
-              </span>
-            </div>
-          )}
-        </header>
+        />
 
         <Empty className="flex-1">
-          <div className="w-full max-w-lg px-8 py-12">
-            <EmptyHeader className="max-w-none">
-              <EmptyTitle className="text-foreground text-xl">Unterhaltung wählen</EmptyTitle>
-            </EmptyHeader>
-          </div>
+          <EmptyHeader className="max-w-none">
+            <EmptyTitle className="text-foreground text-[22px]">Keine Unterhaltung</EmptyTitle>
+          </EmptyHeader>
+          {canStart ? (
+            <EmptyContent>
+              <Button
+                onClick={() =>
+                  void startNewThreadFromContext({
+                    activeDraftThread,
+                    activeThread: activeThread ?? undefined,
+                    defaultProjectRef,
+                    handleNewThread,
+                  })
+                }
+              >
+                Neue Unterhaltung
+              </Button>
+            </EmptyContent>
+          ) : null}
         </Empty>
       </div>
     </SidebarInset>

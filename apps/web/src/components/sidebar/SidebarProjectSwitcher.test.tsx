@@ -4,7 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { PROJECT_OVERVIEW_TEXT } from "../../projectOverviewText";
 import { SidebarProvider } from "../ui/sidebar";
 import { buildProjectSwitcherEntries } from "./projectSwitcher.logic";
-import { ProjectSwitcherList, SidebarProjectSwitcher } from "./SidebarProjectSwitcher";
+import { ProjectSwitcherRowContent, SidebarProjectSwitcher } from "./SidebarProjectSwitcher";
 import sidebarSource from "../Sidebar.tsx?raw";
 
 const text = PROJECT_OVERVIEW_TEXT.de;
@@ -24,13 +24,13 @@ const visibleText = (html: string) =>
 describe("Projektliste der Seitenleiste", () => {
   it("zeigt „metric“ und „Metric“ als zwei unterscheidbare Einträge", () => {
     const html = renderToStaticMarkup(
-      <ProjectSwitcherList
-        entries={entries}
-        selectedId="lgh"
-        label={text.chooseProject}
-        emptyText={text.noProjectFound}
-        onChoose={() => {}}
-      />,
+      <ul>
+        {entries.map((entry) => (
+          <li key={entry.id}>
+            <ProjectSwitcherRowContent entry={entry} selected={entry.id === "lgh"} />
+          </li>
+        ))}
+      </ul>,
     );
     const rows = html
       .split("<li>")

@@ -84,7 +84,7 @@ export function PersistentWorkerGoal({
   return (
     <section
       className="shrink-0 border-b border-border px-3 py-2 sm:px-5"
-      aria-label="Ziel der festen Luma"
+      aria-label="Ziel des festen Presets"
       data-workjet-persistent-goal="thread"
     >
       <div className="flex items-center gap-2">

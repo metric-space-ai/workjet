@@ -723,7 +723,7 @@ export function ProjectOverviewEditor({
         {configuration && onSaveConfiguration && (
           <>
             <label className="text-xs text-muted-foreground" htmlFor={`${id}-supervisor-luma`}>
-              Supervisor Luma
+              Supervisor-Preset
             </label>
             {renderLumaField ? (
               renderLumaField({

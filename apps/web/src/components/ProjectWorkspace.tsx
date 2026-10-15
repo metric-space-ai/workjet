@@ -26,6 +26,11 @@ import { SidebarInset } from "./ui/sidebar";
 import { InlinePanel } from "./ui/inline-panel";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
+import {
+  ProjectSettingsPanel,
+  useSettingsProjectGroups,
+} from "./settings/ProjectSettingsPanel";
+import { SettingsEmbeddedContext } from "./settings/settingsLayout";
 
 type Props = {
   readonly project: GalleryProject;
@@ -63,11 +68,28 @@ function ProjectWorkspaceContent({
   const language = useProjectOverviewLanguage();
   const text = PROJECT_OVERVIEW_TEXT[language];
   const navigate = useNavigate();
+  // Name, Symbol, Modell und Entfernen bearbeitet das Projekt selbst, inline
+  // (Einstellungen › Projekte entfällt, 15.10.).
+  const settingsGroups = useSettingsProjectGroups();
+  const local = project.local;
+  const settingsGroup =
+    local === null
+      ? undefined
+      : settingsGroups.find((group) =>
+          group.memberProjects.some(
+            (member) => member.environmentId === local.environmentId && member.id === local.id,
+          ),
+        );
+  const [editingProject, setEditingProject] = useState(false);
   const settingsLinks = [
-    {
-      label: language === "de" ? "Projekte & Worker" : "Projects & workers",
-      onClick: () => void navigate({ to: "/settings/projects" }),
-    },
+    ...(settingsGroup
+      ? [
+          {
+            label: language === "de" ? "Projekt bearbeiten" : "Edit project",
+            onClick: () => setEditingProject((open) => !open),
+          },
+        ]
+      : []),
     {
       label: language === "de" ? "Instanz & Kanäle" : "Instance & channels",
       onClick: () => void navigate({ to: "/settings/business-os" }),
@@ -230,6 +252,13 @@ function ProjectWorkspaceContent({
                 />
               </label>
             </InlinePanel>
+            {editingProject && settingsGroup ? (
+              <div className="basis-full" data-workjet-project-edit-inline="">
+                <SettingsEmbeddedContext.Provider value={{ onClose: () => setEditingProject(false) }}>
+                  <ProjectSettingsPanel projectKey={settingsGroup.projectKey} part="project" />
+                </SettingsEmbeddedContext.Provider>
+              </div>
+            ) : null}
           </>
         }
         {...(data.decisions.length

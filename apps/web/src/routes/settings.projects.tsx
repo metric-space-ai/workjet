@@ -1,14 +1,14 @@
-import { Outlet, createFileRoute, useChildMatches } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useChildMatches } from "@tanstack/react-router";
 
-import { ProjectsSettingsList } from "../components/settings/ProjectSettingsPanel";
+import { ProjectsSettingsRedirect } from "../components/settings/ProjectSettingsPanel";
 
 /**
- * Einstellungen › Projekte: the project list as Rows. A selected project
- * (Einstellungen › Projekte › <Projekt>) renders as the child route.
+ * Einstellungen › Projekte gibt es nicht mehr (15.10.): der alte Link landet
+ * auf der Projektübersicht, ein Projekt-Link auf dessen Projektkarte.
  */
 function ProjectsSettingsRoute() {
   const childMatches = useChildMatches();
-  return childMatches.length > 0 ? <Outlet /> : <ProjectsSettingsList />;
+  return childMatches.length > 0 ? <Outlet /> : <ProjectsSettingsRedirect />;
 }
 
 export const Route = createFileRoute("/settings/projects")({

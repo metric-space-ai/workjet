@@ -24,7 +24,7 @@ export function WorkerProfilePopupEditor(props: WorkerProfilePopupEditorProps) {
       <p role="status" className="text-sm text-muted-foreground">
         {target.phase === "resolving"
           ? "Instanz wird geprüft …"
-          : "Luma-Einstellungen nicht verfügbar"}
+          : "Preset-Einstellungen nicht verfügbar"}
       </p>
     );
   }
@@ -44,7 +44,7 @@ function ScopedWorkerProfilePopupEditor(props: WorkerProfilePopupEditorProps) {
   ) {
     return (
       <p role="alert" className="text-sm text-muted-foreground">
-        Luma nicht mehr verfügbar
+        Preset nicht mehr verfügbar
       </p>
     );
   }
@@ -82,7 +82,7 @@ function ScopedWorkerProfilePopupEditor(props: WorkerProfilePopupEditorProps) {
               },
             });
             if (result._tag !== "Success") {
-              throw new Error("Luma nicht gespeichert");
+              throw new Error("Preset nicht gespeichert");
             }
             props.onSaved(next);
           } finally {

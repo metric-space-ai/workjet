@@ -27,6 +27,7 @@ import {
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   CheckCircle2Icon,
+  KeyRoundIcon,
   PlusIcon,
   RefreshCwIcon,
   TerminalIcon,
@@ -40,15 +41,16 @@ import type { EnvironmentPresentation } from "../../state/environments";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { useBusinessOsCodeScope } from "../../businessOsCodeScope";
 import { ctoxConnectionMatchesSelectedInstance } from "../../workjetCtoxConnections";
+import { workerSourceProvisionRequest } from "../../workjetWorkerSourceConnection";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { randomUUID } from "../../lib/utils";
+import { Banner } from "../ui/banner";
 import { Button } from "../ui/button";
 import {
   Empty,
   EmptyContent,
-  EmptyDescription,
   EmptyHeader,
   EmptyLoading,
   EmptyTitle,
@@ -325,7 +327,7 @@ function replaceCatalogItem<T extends { readonly id: string }>(
   return items.map((candidate) => (candidate.id === item.id ? item : candidate));
 }
 
-export type WorkjetSettingsSectionId = "workers" | "prompt" | "telemetry" | "execution";
+export type WorkjetSettingsSectionId = "workers" | "prompt" | "execution";
 
 function modelPromptFor(configuration: WorkjetConfiguration, modelId: string): string {
   return configuration.modelPrompts.find((entry) => entry.modelId === modelId)?.prompt ?? "";
@@ -347,11 +349,6 @@ export const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
     label: searchableSetting("workjet-workers").title,
   },
   { id: "prompt", targetId: "workjet-prompt", label: searchableSetting("workjet-prompt").title },
-  {
-    id: "telemetry",
-    targetId: "workjet-telemetry",
-    label: searchableSetting("workjet-telemetry").title,
-  },
   {
     id: "execution",
     targetId: "workjet-execution",
@@ -1181,7 +1178,7 @@ export function WorkjetSettingsView({
               question "what will this worker be told" is answered by both
               together, and they lived on different pages here. */}
           {configuration.workerProfiles.length === 0 ? null : (
-            <SettingsRow title="Luma-Aufgaben">
+            <SettingsRow title="Preset-Aufgaben">
               <div className="mt-2 space-y-2 pb-3.5">
                 {configuration.workerProfiles.map((worker, workerIndex) => {
                   // The rules are stored PER MODEL — two workers on the same
@@ -1306,69 +1303,6 @@ export function WorkjetSettingsView({
         </SettingsSection>
       ) : null}
 
-      {activeSection === "telemetry" ? (
-        <SettingsSection
-          id={searchableSetting("workjet-telemetry").id}
-          title={searchableSetting("workjet-telemetry").title}
-        >
-          <SettingsRow
-            title="Claude-Code-Ereignisse"
-            control={
-              <Switch
-                checked={configuration.telemetry.claudeCodeEvents}
-                onCheckedChange={(claudeCodeEvents) =>
-                  onChange({
-                    ...configuration,
-                    telemetry: {
-                      ...configuration.telemetry,
-                      claudeCodeEvents: Boolean(claudeCodeEvents),
-                    },
-                  })
-                }
-                aria-label="Claude-Code-Ereignisse erfassen"
-              />
-            }
-          />
-          <SettingsRow
-            title="Luma-Ereignisse"
-            control={
-              <Switch
-                checked={configuration.telemetry.sidecarEvents}
-                onCheckedChange={(sidecarEvents) =>
-                  onChange({
-                    ...configuration,
-                    telemetry: {
-                      ...configuration.telemetry,
-                      sidecarEvents: Boolean(sidecarEvents),
-                    },
-                  })
-                }
-                aria-label="Luma-Ereignisse erfassen"
-              />
-            }
-          />
-          <SettingsRow
-            title="Aufbewahrung"
-            control={
-              <div className="flex items-center gap-2">
-                <PositiveIntegerInput
-                  ariaLabel="Aufbewahrung (Tage)"
-                  value={configuration.telemetry.retentionDays}
-                  onCommit={(retentionDays) =>
-                    onChange({
-                      ...configuration,
-                      telemetry: { ...configuration.telemetry, retentionDays },
-                    })
-                  }
-                  className="w-24"
-                />
-                <span className="text-xs text-muted-foreground">Tage</span>
-              </div>
-            }
-          />
-        </SettingsSection>
-      ) : null}
-
       {activeSection === "execution" ? (
         <SettingsSection
           id={searchableSetting("workjet-execution").id}
@@ -1472,74 +1406,67 @@ export function WorkjetSettings({
             entry.connectionId ===
             `ctox-dev:${scope.presentationInstanceId?.replace(/^managed:/, "")}`,
         );
-  const target =
+  const liveTarget =
     scope.phase === "ready" && connection !== undefined
       ? { connectionId: connection.connectionId, instanceId: connection.instanceId }
       : null;
+  const lastKnownKey =
+    environment === null ? null : `${environment.environmentId}:${scope.presentationInstanceId ?? ""}`;
+  if (liveTarget !== null && lastKnownKey !== null) LAST_KNOWN_PRESET_TARGETS.set(lastKnownKey, liveTarget);
+  // Fällt die Verbindung kurz aus, bleiben die zuletzt bekannten Presets stehen.
+  const target =
+    liveTarget ?? (lastKnownKey === null ? null : (LAST_KNOWN_PRESET_TARGETS.get(lastKnownKey) ?? null));
+  const authenticationRequired =
+    scope.phase === "ready" &&
+    presetConnectionNeedsAuthentication(connections.data?.connections, scope.presentationInstanceId);
+  const unavailable = target === null || environment === null;
+  // Still wiederholen statt einen Zustandstext zu zeigen.
+  const refreshConnections = connections.refresh;
+  useEffect(() => {
+    if (liveTarget !== null || authenticationRequired || scope.phase === "blocked") return;
+    const timer = window.setInterval(refreshConnections, PRESET_SILENT_RETRY_MS);
+    return () => window.clearInterval(timer);
+  }, [authenticationRequired, liveTarget, refreshConnections, scope.phase]);
+  const [reconnecting, setReconnecting] = useState(false);
+  const provision =
+    typeof window === "undefined" ? undefined : window.desktopBridge?.ctox?.provisionDecisionHub;
+  const provisionRequest =
+    environment === null || scope.phase !== "ready"
+      ? null
+      : workerSourceProvisionRequest(environment.environmentId, scope.presentationInstanceId);
+  const reconnect =
+    provision && provisionRequest
+      ? () => {
+          if (reconnecting) return;
+          setReconnecting(true);
+          void provision(provisionRequest)
+            .catch(() => undefined)
+            .finally(() => {
+              setReconnecting(false);
+              refreshConnections();
+            });
+        }
+      : null;
 
-  if (target === null || environment === null) {
-    const resolving = scope.phase === "resolving" || connections.isPending;
-    // Den Grund sichtbar nennen statt nur „nicht abrufbar“ (verify2 #4): die
-    // Verbindung der gewählten Instanz trägt ihn als reason.
-    const blockedReason =
-      scope.phase === "ready"
-        ? unreadyConnectionReason(connections.data?.connections, scope.presentationInstanceId)
-        : null;
+  if (unavailable || (authenticationRequired && liveTarget === null)) {
     const noInstance = scope.phase === "blocked" && scope.blocker === "no-active-instance";
     const promptPage = defaultSection === "prompt";
     return (
-      <SettingsPageContainer
+      <WorkjetPresetsUnavailableView
         title={searchableSetting(promptPage ? "workjet-prompt" : "workjet-workers").title}
-      >
-        {resolving ? (
-          <EmptyLoading
-            title={uiText("Instanz wird geladen", "Loading instance")}
-            slowMessage={uiText(
-              "Keine Antwort von der Instanz.",
-              "The instance is not responding.",
-            )}
-            onRetry={connections.refresh}
-          />
-        ) : (
-          <Empty>
-            <EmptyHeader>
-              <EmptyTitle>
-                {noInstance
-                  ? uiText("Keine Instanz", "No instance")
-                  : promptPage
-                    ? uiText("System-Prompts nicht abrufbar", "System prompts unavailable")
-                    : uiText("Worker-Presets nicht abrufbar", "Worker presets unavailable")}
-              </EmptyTitle>
-              {noInstance ? null : (
-                <EmptyDescription data-workjet-instance-blocked-reason="">
-                  {blockedReason ??
-                    uiText(
-                      "Die Instanz antwortet gerade nicht.",
-                      "The instance is not responding right now.",
-                    )}
-                </EmptyDescription>
-              )}
-            </EmptyHeader>
-            <EmptyContent>
-              {noInstance ? (
-                <Button render={<Link to="/settings/business-os" />}>
-                  {uiText("Instanz auswählen", "Choose instance")}
-                </Button>
-              ) : (
-                <Button onClick={connections.refresh}>{uiText("Erneut versuchen", "Retry")}</Button>
-              )}
-            </EmptyContent>
-          </Empty>
-        )}
-      </SettingsPageContainer>
+        state={noInstance ? "no-instance" : authenticationRequired ? "authentication" : "loading"}
+        onRetry={refreshConnections}
+        onReconnect={reconnect}
+        reconnecting={reconnecting}
+      />
     );
   }
 
   return (
     <ScopedWorkjetSettings
-      key={`${environment.environmentId}:${target.instanceId}:${target.connectionId}`}
-      environment={environment}
-      target={target}
+      key={`${environment!.environmentId}:${target!.instanceId}:${target!.connectionId}`}
+      environment={environment!}
+      target={target!}
       nativeInstanceId={scope.presentationInstanceId}
       {...(defaultSection ? { defaultSection } : {})}
     />
@@ -1697,7 +1624,11 @@ function ScopedWorkjetSettings({
   );
 }
 
-function unreadyConnectionReason(
+const PRESET_SILENT_RETRY_MS = 15_000;
+const LAST_KNOWN_PRESET_TARGETS = new Map<string, WorkjetLumaTarget>();
+
+/** Nur eine bestätigt fehlende Berechtigung zeigt eine Zeile; alles andere wiederholt still. */
+export function presetConnectionNeedsAuthentication(
   entries:
     | ReadonlyArray<
         Parameters<typeof ctoxConnectionMatchesSelectedInstance>[0] & {
@@ -1707,11 +1638,65 @@ function unreadyConnectionReason(
       >
     | undefined,
   instanceId: Parameters<typeof ctoxConnectionMatchesSelectedInstance>[1],
-): string | null {
-  for (const entry of entries ?? []) {
-    if (entry.status === "ready") continue;
-    if (!ctoxConnectionMatchesSelectedInstance(entry, instanceId)) continue;
-    return entry.reason ?? null;
-  }
-  return null;
+): boolean {
+  const matching = (entries ?? []).filter((entry) =>
+    ctoxConnectionMatchesSelectedInstance(entry, instanceId),
+  );
+  if (matching.some((entry) => entry.status === "ready")) return false;
+  return matching.some(
+    (entry) => entry.status === "needs_auth" || entry.reason === "authentication-required",
+  );
+}
+
+export function WorkjetPresetsUnavailableView({
+  title,
+  state,
+  onRetry,
+  onReconnect,
+  reconnecting = false,
+}: {
+  readonly title: string;
+  readonly state: "loading" | "authentication" | "no-instance";
+  readonly onRetry: () => void;
+  readonly onReconnect: (() => void) | null;
+  readonly reconnecting?: boolean;
+}) {
+  return (
+    <SettingsPageContainer title={title}>
+      {state === "no-instance" ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>{uiText("Keine Instanz", "No instance")}</EmptyTitle>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button render={<Link to="/settings/business-os" />}>
+              {uiText("Instanz auswählen", "Choose instance")}
+            </Button>
+          </EmptyContent>
+        </Empty>
+      ) : state === "authentication" ? (
+        <Banner
+          icon={KeyRoundIcon}
+          {...(onReconnect
+            ? {
+                action: {
+                  label: reconnecting
+                    ? uiText("Verbindet …", "Connecting …")
+                    : uiText("Neu verbinden", "Reconnect"),
+                  onClick: onReconnect,
+                },
+              }
+            : {})}
+        >
+          {uiText("Anmeldung der Instanz abgelaufen", "Instance sign-in expired")}
+        </Banner>
+      ) : (
+        <EmptyLoading
+          title={uiText("Instanz wird geladen", "Loading instance")}
+          slowMessage={uiText("Keine Antwort von der Instanz.", "The instance is not responding.")}
+          onRetry={onRetry}
+        />
+      )}
+    </SettingsPageContainer>
+  );
 }

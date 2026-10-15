@@ -127,7 +127,7 @@ export async function persistSupervisorComposerSelection(input: {
   const current = () => !input.signal.aborted && input.isCurrent();
   if (!current()) throw new Error("The project selection changed.");
   const configuration = input.snapshot.configuration;
-  if (!configuration) throw new Error("The instance Luma configuration has not loaded.");
+  if (!configuration) throw new Error("The instance preset configuration has not loaded.");
   const exists = configuration.workerProfiles.some((entry) => entry.id === input.profile.id);
   if (input.snapshot.revision === 0 || !exists) {
     const status = await input.writeConfiguration(

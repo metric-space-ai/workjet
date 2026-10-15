@@ -27,7 +27,7 @@ export type ContextWindowSnapshot = NullableContextWindowUsage & {
 
 /** Map a provider driver kind to a user-facing display name. */
 export function formatProviderDisplayName(provider: string | null | undefined): string {
-  if (!provider) return "Diese Luma";
+  if (!provider) return "Dieses Preset";
   switch (provider) {
     case "claudeAgent":
     case "claude":

@@ -89,7 +89,7 @@ export function NativePrivateChatControl(props: {
       if (live.current)
         toastManager.add({
           type: "error",
-          title: "Luma-Chat nicht geöffnet",
+          title: "Preset-Chat nicht geöffnet",
           description: error instanceof Error ? error.message : "Keine Bestätigung von CTOX",
         });
     } finally {
@@ -118,7 +118,7 @@ export function NativePrivateChatControl(props: {
         disabled={busy || props.connectionId === null}
         onClick={() => void open(false)}
       >
-        {busy ? "Wird geöffnet …" : "Luma-Chat öffnen"}
+        {busy ? "Wird geöffnet …" : "Preset-Chat öffnen"}
       </Button>
       <Button
         type="button"

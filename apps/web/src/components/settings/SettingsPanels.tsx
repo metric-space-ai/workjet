@@ -1,4 +1,5 @@
 import { SupportBundleSection } from "./SupportBundleSection";
+import { ProjectCheckoutRows } from "./ProjectSettingsPanel";
 import { workjetUiLanguage } from "../../workjetProjectControl";
 import { useUiText } from "../../hooks/useUiText";
 import { ArchiveX } from "lucide-react";
@@ -904,17 +905,6 @@ export function GeneralSettingsPanel() {
         />
         <AppearanceRows />
         <SettingsRow
-          {...searchableSetting("posthog-consent")}
-          control={
-            <Switch
-              checked={settings.posthogConsent}
-              onCheckedChange={(checked) => updateSettings({ posthogConsent: checked })}
-              aria-label={searchableSetting("posthog-consent").title}
-            />
-          }
-        />
-
-        <SettingsRow
           {...searchableSetting("developer-mode")}
           control={
             <Switch
@@ -1473,25 +1463,40 @@ export function ProjectFolderSettingRow() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   return (
+    <>
+      <ProjectFolderRow
+        value={settings.addProjectBaseDirectory}
+        onCommit={(addProjectBaseDirectory) => updateSettings({ addProjectBaseDirectory })}
+      />
+      {/* Arbeitskopien und Projekt-Skripte: nur im Entwicklermodus (15.10.). */}
+      <ProjectCheckoutRows />
+    </>
+  );
+}
+
+function ProjectFolderRow({
+  value,
+  onCommit,
+}: {
+  readonly value: string;
+  readonly onCommit: (next: string) => void;
+}) {
+  return (
     <SettingsRow
       {...searchableSetting("add-project-starts-in")}
       resetAction={
-        settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+        value !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
           <SettingResetButton
             label="Projektordner"
-            onClick={() =>
-              updateSettings({
-                addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-              })
-            }
+            onClick={() => onCommit(DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory)}
           />
         ) : null
       }
       control={
         <DraftInput
           className="w-full sm:w-72"
-          value={settings.addProjectBaseDirectory}
-          onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
+          value={value}
+          onCommit={onCommit}
           placeholder="~/"
           spellCheck={false}
           aria-label={searchableSetting("add-project-starts-in").title}

@@ -59,7 +59,7 @@ const worker = Schema.decodeUnknownSync(WorkjetWorkerProfile)({
 });
 const secondWorker = Schema.decodeUnknownSync(WorkjetWorkerProfile)({
   id: "review-luma",
-  name: "Review Luma",
+  name: "Review-Preset",
   computerId: gpu.id,
   harness: "claude-code",
   llmRouteId: "claude-personal",
@@ -156,7 +156,7 @@ function LumaMenu() {
   return (
     <div data-fixture="02-luma-menue" className="p-6">
       <Menu defaultOpen>
-        <MenuTrigger className="rounded-md border px-2 py-1 text-sm">Luma</MenuTrigger>
+        <MenuTrigger className="rounded-md border px-2 py-1 text-sm">Preset</MenuTrigger>
         <MenuPopup align="start" side="bottom" className="min-w-56 max-w-80">
           <ComposerWorkerMenuItems
             workers={[worker, secondWorker]}

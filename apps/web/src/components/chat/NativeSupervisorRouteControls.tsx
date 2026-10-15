@@ -152,7 +152,7 @@ export function NativeSupervisorRouteControls(props: {
           ? "Wird geladen …"
           : "Instanz-Konfiguration nicht verfügbar"
         : selectedId !== null && selected === null
-          ? "Gespeicherte Supervisor-Luma nicht verfügbar"
+          ? "Gespeichertes Supervisor-Preset nicht verfügbar"
           : null);
   useEffect(() => {
     props.onStatusChange?.(status);
@@ -207,7 +207,7 @@ export function NativeSupervisorRouteControls(props: {
               computers,
               models: catalog.data?.models ?? [],
             });
-      if (!prepared) throw new Error("Luma nicht verfügbar");
+      if (!prepared) throw new Error("Preset nicht verfügbar");
       const profile = "profile" in prepared ? prepared.profile : prepared;
       const selectedConfiguration =
         "configuration" in prepared ? prepared.configuration : configuration;

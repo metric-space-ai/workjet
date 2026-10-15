@@ -311,7 +311,7 @@ export function SessionImportSection({
                 ?.providers ?? [],
             );
             if (modelSelection === null)
-              throw new Error("Kein Modell für die Lumas. Unter Modelle einrichten.");
+              throw new Error("Kein Modell für die Presets. Unter Modelle einrichten.");
             const commandId = projectCommandId(project);
             const created = await createProject({
               environmentId,

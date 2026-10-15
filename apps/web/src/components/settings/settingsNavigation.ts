@@ -4,7 +4,6 @@ import {
   ArchiveIcon,
   AudioLinesIcon,
   CpuIcon,
-  FolderKanbanIcon,
   GitBranchIcon,
   KeyboardIcon,
   MonitorIcon,
@@ -29,7 +28,6 @@ const PAGE_ICONS: Readonly<Record<SettingsPagePath, ComponentType<{ className?: 
   "/settings/computers": MonitorIcon,
   "/settings/models": CpuIcon,
   "/settings/workjet": UserRoundIcon,
-  "/settings/projects": FolderKanbanIcon,
   "/settings/speech": AudioLinesIcon,
   "/settings/archived": ArchiveIcon,
   "/settings/diagnostics": ActivityIcon,
@@ -57,10 +55,10 @@ function navItem(to: SettingsPagePath): SettingsNavItem {
   return { to, label: SETTINGS_SECTION_LABELS[to], icon: PAGE_ICONS[to] };
 }
 
-/** Die acht Seiten (#568). */
+/** Die sieben Seiten (#568). */
 export const SETTINGS_NAV_ITEMS: ReadonlyArray<SettingsNavItem> = SETTINGS_PAGE_PATHS.map(navItem);
 
-/** Acht Seiten plus die fünf Entwicklerseiten. */
+/** Sieben Seiten plus die fünf Entwicklerseiten. */
 export const DEVELOPER_SETTINGS_NAV_ITEMS: ReadonlyArray<SettingsNavItem> = [
   ...SETTINGS_NAV_ITEMS,
   ...DEVELOPER_SETTINGS_PAGE_PATHS.map(navItem),

@@ -212,8 +212,7 @@ export function useInstanceGrokAccount(
             )}
           </div>
           <span className="block break-words text-[11px] text-muted-foreground">
-            {label} ·{" "}
-            {state ? (state.installed ? state.accountLabel : "OAuth-Abo") : "—"}
+            {label} · {state ? (state.installed ? state.accountLabel : "OAuth-Abo") : "—"}
           </span>
         </div>
         <div role="cell" className="flex min-w-0 flex-wrap gap-1">

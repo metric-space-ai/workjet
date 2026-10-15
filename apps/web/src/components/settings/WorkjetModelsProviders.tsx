@@ -1138,9 +1138,7 @@ function DraftAccountRow({
               disabled={instanceBusy}
               onClick={() => void startInstance()}
             >
-              {instanceBusy ? (
-                <LoaderIcon className="size-3.5 animate-spin" aria-hidden />
-              ) : null}
+              {instanceBusy ? <LoaderIcon className="size-3.5 animate-spin" aria-hidden /> : null}
               Auf {state.instanceGrok.label} anmelden
             </Button>
           ) : null}

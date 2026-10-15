@@ -480,7 +480,11 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
     <section aria-label="Modellkonten" className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-[13.5px] font-semibold">Modellkonten</h2>
-        <Button size="sm" disabled={grok.checking || grok.installed} onClick={() => void grok.start()}>
+        <Button
+          size="sm"
+          disabled={grok.checking || grok.installed}
+          onClick={() => void grok.start()}
+        >
           <PlusIcon className="size-3.5" />
           Grok-Konto hinzufügen
         </Button>

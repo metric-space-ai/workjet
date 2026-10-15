@@ -59,7 +59,10 @@ describe("independent instance account capabilities", () => {
   it("retries transport failures silently and keeps the known rows without a status line", () => {
     for (const html of [
       renderSection({ _tag: "failed", code: "timeout" }),
-      renderSection({ _tag: "failed", code: "guest_failed" }, { _tag: "failed", code: "guest_failed" }),
+      renderSection(
+        { _tag: "failed", code: "guest_failed" },
+        { _tag: "failed", code: "guest_failed" },
+      ),
       renderSection(undefined, undefined, "Account metadata unavailable"),
     ]) {
       expect(html).toContain("data-grok-login");

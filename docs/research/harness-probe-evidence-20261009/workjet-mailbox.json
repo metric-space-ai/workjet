@@ -1,0 +1,98 @@
+{
+  "time": "2026-10-09T22:07:34.451151+00:00",
+  "pid": 57900,
+  "server_exit_code": 130,
+  "results": [
+    {
+      "auth": {
+        "authenticated": true,
+        "scopes": [
+          "orchestration:read",
+          "orchestration:operate",
+          "terminal:operate",
+          "review:write",
+          "relay:read",
+          "access:read",
+          "access:write",
+          "relay:write"
+        ],
+        "sessionMethod": "browser-session-cookie",
+        "expiresAt": "2026-11-08T22:07:32.659Z"
+      }
+    },
+    {
+      "command": "project.create",
+      "response": {
+        "sequence": 2
+      }
+    },
+    {
+      "command": "thread.create",
+      "response": {
+        "sequence": 3
+      }
+    },
+    {
+      "command": "thread.create",
+      "response": {
+        "sequence": 4
+      }
+    },
+    {
+      "threads_created": [
+        "64ca126c-2b7e-4c6c-a4c4-61eebc508c8c",
+        "3f536a45-e5b2-4cf3-a221-f77a144ffca4"
+      ],
+      "environmentId": "b0d788f1-7eaf-4776-aa95-36dd50d477f8",
+      "snapshot_thread_count": 3
+    },
+    {
+      "bridge_source": "64ca126c-2b7e-4c6c-a4c4-61eebc508c8c",
+      "bridge_target": "3f536a45-e5b2-4cf3-a221-f77a144ffca4",
+      "exit_code": 0,
+      "stdout": "{\"schemaVersion\":1,\"status\":\"acknowledged\",\"envelopeId\":\"wjm-e541b4f0-449c-4165-9b77-f1747978b846\",\"disposition\":\"accepted-new\",\"acknowledgedAt\":\"2026-10-09T22:07:32.834Z\"}\n",
+      "stderr": ""
+    },
+    {
+      "bridge_source": "3f536a45-e5b2-4cf3-a221-f77a144ffca4",
+      "bridge_target": "64ca126c-2b7e-4c6c-a4c4-61eebc508c8c",
+      "exit_code": 0,
+      "stdout": "{\"schemaVersion\":1,\"status\":\"acknowledged\",\"envelopeId\":\"wjm-e90f018e-7601-4826-a2f7-1ee1ffcb9e8c\",\"disposition\":\"accepted-new\",\"acknowledgedAt\":\"2026-10-09T22:07:32.975Z\"}\n",
+      "stderr": ""
+    }
+  ],
+  "server_log": [
+    "    '53_WorkjetMailboxPeerRevocations',\n",
+    "    '54_WorkjetDelegationStateEvents',\n",
+    "    '55_WorkjetDecisionHub',\n",
+    "    '56_WorkjetSessionImports',\n",
+    "    '57_WorkjetBusinessOsComputerOwnership',\n",
+    "    '58_WorkjetDevicePairing',\n",
+    "    '59_WorkjetCtoxConnectionBindings',\n",
+    "    '60_WorkjetCtoxNativeRequests',\n",
+    "    '61_WorkjetCtoxNativeTurns',\n",
+    "    '62_WorkjetCtoxCrewStarts',\n",
+    "    '63_WorkjetCtoxCrewProviderBinding',\n",
+    "    '64_WorkjetWorkerCleanupReceipts',\n",
+    "    '65_WorkjetMailboxReviewRedrive',\n",
+    "    '66_WorkjetProjectTeamLearning',\n",
+    "    '67_WorkjetCtoxCrewRecoveryDispatch',\n",
+    "    '68_WorkjetCtoxCrewTerminalOutbox',\n",
+    "    '69_WorkjetCtoxCrewResumeCursor',\n",
+    "    '70_WorkjetCtoxCrewAdmissionRedrive',\n",
+    "    '71_WorkjetWorkerCleanupRemoved',\n",
+    "    '72_WorkjetCtoxCrewProviderResumeIdentity',\n",
+    "    '73_LogicalProjects',\n",
+    "    '74_ProjectOverview',\n",
+    "    '75_WorkjetWorkerPullRequests',\n",
+    "    '76_RemoteWorkerReceipts',\n",
+    "    '78_RemoteWorkerAuthority'\n",
+    "  ]\n",
+    "[00:07:17.781] INFO (#526): Listening on http://127.0.0.1:56745\n",
+    "[00:07:17.791] INFO (#525): agent activity publishing standby; waiting for Workjet Connect link reconciliation\n",
+    "[00:07:17.791] INFO (#525): provider.session.reaper.started\n",
+    "  { inactivityThresholdMs: 1800000, sweepIntervalMs: 300000 }\n"
+  ],
+  "cleanup": "owned disposable server exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

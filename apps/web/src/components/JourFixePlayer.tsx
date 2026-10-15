@@ -178,16 +178,22 @@ function PlayerContent({
             setPosition(time);
           }}
         />
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {timestamp(position)} / {timestamp(duration)}
-        </span>
+        {/* Without audio there is no time to show (Audit A-54). */}
+        {duration > 0 ? (
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {timestamp(position)} / {timestamp(duration)}
+          </span>
+        ) : null}
         <OptionSelect
           aria-label="Wiedergabetempo"
           className="w-auto min-w-0"
           value={String(speed)}
           options={[...new Set([0.8, 1, 1.15, 1.25, 1.5, rate])]
             .sort((a, b) => a - b)
-            .map((option) => ({ value: String(option), label: `${option}×` }))}
+            .map((option) => ({
+              value: String(option),
+              label: `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 }).format(option)}×`,
+            }))}
           onValueChange={(next) => {
             const nextRate = Number(next);
             if (audio.current) {

@@ -1,7 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
-  ArrowLeftIcon,
-  CheckIcon,
   MessageSquarePlusIcon,
   MicIcon,
   PencilIcon,
@@ -59,7 +57,7 @@ const MEETING_STATE_LABELS: Record<string, string> = {
 const PANEL_LABELS = {
   conversation: "Unterhaltung",
   comments: "Kommentare",
-  agenda: "Agenda",
+  agenda: "Tagesordnung",
 } as const;
 
 const MEETING_MARKDOWN_COMPONENTS: Components = {
@@ -530,30 +528,35 @@ function JourFixeRoomContent({
       <WorkjetHeaderContent className="flex min-w-0 items-center">
         <WorkspaceBreadcrumb ariaLabel="Regeltermin-Pfad">
           <WorkspaceBreadcrumbItem>
-            <button type="button" onClick={onBack} className="truncate hover:underline">
+            <button
+              type="button"
+              aria-label="Zur Übersicht"
+              onClick={onBack}
+              className="truncate rounded px-1 hover:bg-accent"
+            >
               {projectTitle}
             </button>
           </WorkspaceBreadcrumbItem>
           <WorkspaceBreadcrumbSeparator />
-          <WorkspaceBreadcrumbItem current>Regeltermin</WorkspaceBreadcrumbItem>
+          {/* One navigation line: the breadcrumb carries the date; no back arrow or
+              repeated heading below it (Audit A-50). */}
+          <WorkspaceBreadcrumbItem current>
+            Regeltermin ·{" "}
+            <time dateTime={new Date(meeting.scheduledAt).toISOString()}>
+              {new Intl.DateTimeFormat("de-DE", {
+                dateStyle: "medium",
+                timeStyle: "short",
+                timeZone: meeting.timezone,
+              }).format(meeting.scheduledAt)}
+              {meeting.timezone !== new Intl.DateTimeFormat().resolvedOptions().timeZone
+                ? ` · ${meeting.timezone}`
+                : ""}
+            </time>
+          </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
       </WorkjetHeaderContent>
-      <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-        <Button variant="ghost" size="icon-sm" aria-label="Zur Übersicht" onClick={onBack}>
-          <ArrowLeftIcon />
-        </Button>
-        <h1 className="text-sm font-medium">{projectTitle} · Regeltermin</h1>
-        <time
-          className="text-xs text-muted-foreground"
-          dateTime={new Date(meeting.scheduledAt).toISOString()}
-        >
-          {new Intl.DateTimeFormat("de-DE", {
-            dateStyle: "medium",
-            timeStyle: "short",
-            timeZone: meeting.timezone,
-          }).format(meeting.scheduledAt)}{" "}
-          · {meeting.timezone}
-        </time>
+      <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2">
+        <h1 className="sr-only">{projectTitle} · Regeltermin</h1>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {beforeStart ? (
             <span
@@ -572,11 +575,23 @@ function JourFixeRoomContent({
               läuft seit {meetingTimeLabel(meeting)}
             </span>
           ) : (
+            // Dot plus word, no pill (Audit A-13).
             <span
-              className={`rounded-full border px-2.5 py-1 text-xs capitalize ${meeting.state === "review" ? "border-amber-400/30 bg-amber-400/10 text-amber-400" : "border-border text-muted-foreground"}`}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
               data-meeting-state={meeting.state}
             >
-              {meeting.state === "confirmed" && <CheckIcon className="mr-1 inline size-3" />}
+              <span
+                aria-hidden="true"
+                className={`size-2 rounded-full ${
+                  meeting.state === "review"
+                    ? "bg-warning"
+                    : meeting.state === "confirmed"
+                      ? "bg-success"
+                      : meeting.state === "failed"
+                        ? "bg-destructive"
+                        : "bg-muted-foreground/50"
+                }`}
+              />
               {MEETING_STATE_LABELS[meeting.state] ?? meeting.state}
             </span>
           )}
@@ -594,7 +609,7 @@ function JourFixeRoomContent({
           {meeting.state === "live" && onEndMeeting && (
             <Button
               size="sm"
-              variant="ghost"
+              variant="outline"
               disabled={busy}
               onClick={() =>
                 void perform(
@@ -623,7 +638,7 @@ function JourFixeRoomContent({
             {onRefresh && (
               <Button
                 size="sm"
-                variant="ghost"
+                variant="outline"
                 disabled={busy}
                 onClick={() => void perform(onRefresh)}
               >
@@ -1168,9 +1183,13 @@ function JourFixeRoomContent({
                 }`}
               >
                 {PANEL_LABELS[name]}
-                {name === "comments" && meeting.comments.length > 0
-                  ? ` ${meeting.comments.length}`
-                  : ""}
+                {name === "comments" && meeting.comments.length > 0 ? (
+                  // A dot, not a counter (Audit A-53).
+                  <span
+                    aria-hidden="true"
+                    className="ms-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                  />
+                ) : null}
               </button>
             ))}
           </nav>
@@ -1254,7 +1273,7 @@ function JourFixeRoomContent({
                 <button
                   type="button"
                   key={item.id}
-                  className="block w-full text-left text-sm hover:underline"
+                  className="block w-full rounded px-1 py-0.5 text-left text-sm hover:bg-accent"
                   onClick={() => {
                     selectSlide(item.id);
                     setView("slides");

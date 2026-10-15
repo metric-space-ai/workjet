@@ -196,3 +196,27 @@ export function acquireWorkjetWorkerSourceGrant(
           ),
   );
 }
+
+/** ctox.dev stellt Worker-Quellen-Tokens für 1 Tag aus; nach 20 h wird erneuert. */
+export const WORKER_SOURCE_RENEW_AFTER_MS = 20 * 60 * 60 * 1000;
+
+/**
+ * Eine Worker-Quelle wird still neu ausgestellt, wenn sie eine Anmeldung
+ * braucht oder ihr Token älter als 20 h ist. Ohne bekannten Ausstellzeitpunkt
+ * (vor diesem App-Start ausgestellt) gilt sie als alt.
+ */
+export function workerSourceNeedsRenewal(
+  connection: {
+    readonly connectionId: string;
+    readonly source: string;
+    readonly status: string;
+  },
+  issuedAtMs: number | undefined,
+  nowMs: number,
+): boolean {
+  if (connection.source !== "ctox_dev") return false;
+  if (workerSourceGrantIdentity(connection.connectionId) === undefined) return false;
+  if (connection.status === "needs_auth") return true;
+  if (connection.status !== "ready") return false;
+  return issuedAtMs === undefined || nowMs - issuedAtMs >= WORKER_SOURCE_RENEW_AFTER_MS;
+}

@@ -10,7 +10,9 @@ import {
   acquireWorkjetWorkerSourceGrant,
   issueWorkjetWorkerSourceGrant,
   revokeWorkjetWorkerSourceGrant,
+  WORKER_SOURCE_RENEW_AFTER_MS,
   workerSourceGrantIdentity,
+  workerSourceNeedsRenewal,
 } from "./CtoxWorkerSourceGrant.ts";
 
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
@@ -184,4 +186,30 @@ describe("worker source credential custody", () => {
       expect(decodeJson(fetch.mock.calls[1]![1].body)).toEqual({ action: "revoke_token", tokenId });
     }),
   );
+});
+
+describe("worker source silent renewal", () => {
+  const connectionId = `ctox-dev-worker-source:${tenant}:${tokenId}`;
+  const now = 1_000_000_000_000;
+  const ready = { connectionId, source: "ctox_dev", status: "ready" };
+
+  it("renews connections that need sign-in, regardless of age", () => {
+    expect(workerSourceNeedsRenewal({ ...ready, status: "needs_auth" }, now, now)).toBe(true);
+  });
+
+  it("renews ready grants after 20 hours and ones issued before this app start", () => {
+    expect(workerSourceNeedsRenewal(ready, now - 1_000, now)).toBe(false);
+    expect(workerSourceNeedsRenewal(ready, now - WORKER_SOURCE_RENEW_AFTER_MS, now)).toBe(true);
+    expect(workerSourceNeedsRenewal(ready, undefined, now)).toBe(true);
+  });
+
+  it("leaves other connections and states alone", () => {
+    expect(
+      workerSourceNeedsRenewal({ ...ready, connectionId: `ctox-dev:${tenant}` }, undefined, now),
+    ).toBe(false);
+    expect(workerSourceNeedsRenewal({ ...ready, source: "local_ctox" }, undefined, now)).toBe(false);
+    expect(workerSourceNeedsRenewal({ ...ready, status: "unsupported" }, undefined, now)).toBe(
+      false,
+    );
+  });
 });

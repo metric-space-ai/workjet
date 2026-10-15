@@ -24,7 +24,7 @@ const profile = Schema.decodeUnknownSync(WorkjetWorkerProfile)({
   reasoning: "automatic",
 });
 
-describe("Project Supervisor Luma selection", () => {
+describe("Project Supervisor-Preset selection", () => {
   it("uses configured metadata in the overview only while its scoped source is available", () => {
     const ready = renderToStaticMarkup(
       <ProjectSupervisorLumaSummaryView lumaId={profile.id} phase="ready" profiles={[profile]} />,
@@ -37,7 +37,7 @@ describe("Project Supervisor Luma selection", () => {
         profiles={[profile]}
       />,
     );
-    expect(unavailable).toContain("Luma nicht verfügbar");
+    expect(unavailable).toContain("Preset nicht verfügbar");
     expect(unavailable).not.toContain(profile.modelId);
   });
 

@@ -75,15 +75,15 @@ Michael: „wenn eine GPU da ist, kann sie benutzt werden, wenn Build, dann halt
 - Englisch bleibt nur bei Eigennamen und Modellnamen.
 - Feste Begriffe:
 
-  | Begriff            | Bedeutung          | Statt                                             |
-  | ------------------ | ------------------ | ------------------------------------------------- |
-  | Instanz            | CTOX-Instanz       | Instance, Business OS (als Ortsname), CTOX-Master |
-  | Rechner            | Computer, Maschine | Computer, Machine                                 |
-  | Preset, Plural Presets | KI-Worker      | Luma, Agent, Worker (sichtbar)                    |
-  | Projekt            | –                  | Project                                           |
-  | Regeltermin        | –                  | Jour fixe (sichtbar)                              |
-  | Einstellungen      | –                  | Settings                                          |
-  | Modell, Harness    | –                  | –                                                 |
+  | Begriff                | Bedeutung          | Statt                                             |
+  | ---------------------- | ------------------ | ------------------------------------------------- |
+  | Instanz                | CTOX-Instanz       | Instance, Business OS (als Ortsname), CTOX-Master |
+  | Rechner                | Computer, Maschine | Computer, Machine                                 |
+  | Preset, Plural Presets | KI-Worker          | Luma, Agent, Worker (sichtbar)                    |
+  | Projekt                | –                  | Project                                           |
+  | Regeltermin            | –                  | Jour fixe (sichtbar)                              |
+  | Einstellungen          | –                  | Settings                                          |
+  | Modell, Harness        | –                  | –                                                 |
 
 ## 5. Icons (lucide, eine Strichstärke, `size-4` in Zeilen, `size-3.5` in Leisten)
 

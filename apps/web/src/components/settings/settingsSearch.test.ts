@@ -40,13 +40,26 @@ describe("searchSettings", () => {
     expect(searchSettings("xyzzy")).toEqual([]);
   });
 
-  it("finds Modelle and the project model for „modell“ (#603)", () => {
+  it("finds Modelle for „modell“ (#603)", () => {
     const results = searchSettings("modell");
-    expect(results.map((item) => item.title)).toEqual(
-      expect.arrayContaining(["Modelle", "Projekt-Modell"]),
+    expect(results.map((item) => item.title)).toContain("Modelle");
+    expect(results.find((item) => item.title === "Modelle")?.to).toBe("/settings/models");
+  });
+
+  it("finds Presets under the old name Lumas (15.10.)", () => {
+    expect(searchSettings("lumas").map((item) => item.title)).toContain("Presets");
+    expect(searchSettings("luma").map((item) => item.to)).toContain("/settings/workjet");
+  });
+
+  it("finds working copies on Rechner, only in developer mode (15.10.)", () => {
+    expect(searchSettings("arbeitskopie").map((item) => item.id)).not.toContain(
+      "project-working-copies",
     );
-    // Every hit names its page.
-    expect(results.find((item) => item.title === "Projekt-Modell")?.to).toBe("/settings/projects");
+    expect(
+      searchSettings("arbeitskopie", { developerMode: true }).find(
+        (item) => item.id === "project-working-copies",
+      )?.to,
+    ).toBe("/settings/computers");
   });
 
   it("offers no hits on hidden settings without developer mode (#550)", () => {
@@ -103,7 +116,7 @@ describe("searchSettings", () => {
   it("maps subpages to their parent page", () => {
     expect(settingsPageForPath("/settings/prompts")).toBe("/settings/workjet");
     expect(settingsPageForPath("/settings/usage")).toBe("/settings/models");
-    expect(settingsPageForPath("/settings/projects/abc")).toBe("/settings/projects");
+    expect(settingsPageForPath("/settings/projects/abc")).toBeNull();
     expect(settingsPageForPath("/settings/general")).toBe("/settings/general");
     expect(SETTINGS_SECTION_LABELS["/settings/business-os"]).toBe("Instanz");
   });

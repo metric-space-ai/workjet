@@ -675,6 +675,39 @@ export const CtoxWorkjetJourFixe = Schema.Struct({
     }),
   ),
 });
+/** Reader settings of the project feed (Übersicht), owned by the CTOX instance per project. */
+export const CTOX_WORKJET_FEED_SOURCE_KEYS = [
+  "disruptions",
+  "results",
+  "sessions",
+  "prs",
+  "meeting",
+  "setup",
+] as const;
+export const CtoxWorkjetFeedSettings = Schema.Struct({
+  /** Thema & Rhythmus */
+  title: Schema.optionalKey(Schema.NullOr(CtoxProjectText(120))),
+  windowDays: Schema.optionalKey(Schema.NullOr(Schema.Literals([1, 7, 30]))),
+  /** Quellen & Accounts */
+  sources: Schema.optionalKey(
+    Schema.Struct({
+      disruptions: Schema.optionalKey(Schema.Boolean),
+      results: Schema.optionalKey(Schema.Boolean),
+      sessions: Schema.optionalKey(Schema.Boolean),
+      prs: Schema.optionalKey(Schema.Boolean),
+      meeting: Schema.optionalKey(Schema.Boolean),
+      setup: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
+  /** Redaktion */
+  defaultTab: Schema.optionalKey(Schema.Literals(["top", "latest"])),
+  body: Schema.optionalKey(Schema.Literals(["short", "full"])),
+  replies: Schema.optionalKey(Schema.Literals(["three", "all"])),
+  /** Zustellung */
+  notifyDisruptions: Schema.optionalKey(Schema.Boolean),
+});
+export type CtoxWorkjetFeedSettings = typeof CtoxWorkjetFeedSettings.Type;
+
 export const CtoxWorkjetProjectConfiguration = Schema.Struct({
   description: Schema.optionalKey(Schema.NullOr(projectInfoText(4_096))),
   repoUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
@@ -682,6 +715,7 @@ export const CtoxWorkjetProjectConfiguration = Schema.Struct({
   supervisorLumaId: Schema.optionalKey(Schema.NullOr(CtoxProjectText(160))),
   info: Schema.optionalKey(Schema.NullOr(CtoxWorkjetProjectInfo)),
   jourFixe: Schema.optionalKey(Schema.NullOr(CtoxWorkjetJourFixe)),
+  feedSettings: Schema.optionalKey(Schema.NullOr(CtoxWorkjetFeedSettings)),
 });
 export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfiguration.Type;
 

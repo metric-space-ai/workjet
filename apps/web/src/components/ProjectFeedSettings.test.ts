@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { readFeedPreferences } from "./ProjectFeedSettings";
+import {
+  feedSettingsWire,
+  normalizeFeedPreferences,
+  readFeedPreferences,
+} from "./ProjectFeedSettings";
 import { feedSourceOf, githubPrImage } from "./ProjectOverviewView";
 
 describe("feed preferences", () => {
@@ -14,6 +18,25 @@ describe("feed preferences", () => {
       defaultTab: "latest",
     });
     expect(readFeedPreferences("{nope").defaultTab).toBe("top");
+  });
+  it("normalizes instance settings and round-trips them to the wire", () => {
+    const prefs = normalizeFeedPreferences({
+      title: "  Release-Feed ",
+      windowDays: 7,
+      body: "full",
+      replies: "all",
+      notifyDisruptions: true,
+      sources: { setup: false },
+    });
+    expect(prefs).toMatchObject({
+      title: "Release-Feed",
+      windowDays: 7,
+      body: "full",
+      replies: "all",
+    });
+    expect(prefs.sources.setup).toBe(false);
+    expect(normalizeFeedPreferences(feedSettingsWire(prefs))).toEqual(prefs);
+    expect(normalizeFeedPreferences({ windowDays: 3 as never }).windowDays).toBeNull();
   });
   it("maps post kinds to switchable sources", () => {
     expect(feedSourceOf("escalation")).toBe("disruptions");

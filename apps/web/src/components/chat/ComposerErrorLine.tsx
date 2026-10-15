@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Button } from "../ui/button";
 import type { ComposerErrorLine as ComposerErrorLineValue } from "./composerErrorLineLogic";
 
-/** Eine Zeile, genau eine Aktion, Rohtext nur hinter „Details“ (UI-Vertrag §2). */
+/** Eine Zeile, genau eine Aktion; Rohtext erscheint nie im Chat (UI-Vertrag §2). */
 export function ComposerErrorLine(props: {
   readonly line: ComposerErrorLineValue;
   readonly onAction: (() => void) | null;
@@ -17,7 +17,7 @@ export function ComposerErrorLine(props: {
       role="status"
       data-supervisor-connection-status="true"
       data-composer-error-kind={line.kind}
-      className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+      className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground"
     >
       <span className="min-w-0 [overflow-wrap:anywhere]">{line.text}</span>
       {props.control ??
@@ -32,14 +32,6 @@ export function ComposerErrorLine(props: {
             {props.busyLabel ?? line.actionLabel}
           </Button>
         ) : null)}
-      {line.details ? (
-        <details className="basis-full min-w-0" data-composer-error-details="true">
-          <summary className="w-fit cursor-pointer select-none">Details</summary>
-          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono">
-            {line.details}
-          </pre>
-        </details>
-      ) : null}
     </div>
   );
 }

@@ -14,35 +14,17 @@ const banner = (
 });
 
 describe("ComposerBannerStack", () => {
-  it("keeps expanded banners in layout flow so surrounding content moves out of their way", () => {
+  it("shows at most two banners, both visible, without hover mechanics (Audit B #25)", () => {
     const markup = renderToStaticMarkup(
-      <ComposerBannerStack items={[banner("front"), banner("stacked")]} />,
+      <ComposerBannerStack items={[banner("front"), banner("second"), banner("third")]} />,
     );
 
-    const expandedItems = markup.match(
-      /<div data-composer-banner-stack-expanded-items="true" class="([^"]+)">/,
-    );
-
-    expect(expandedItems?.[1]).toContain("grid-rows-[0fr]");
-    expect(expandedItems?.[1]).toContain("group-hover/banner-stack:grid-rows-[1fr]");
-    expect(expandedItems?.[1]).toContain("z-20");
-    expect(expandedItems?.[1]).not.toContain("absolute");
-    expect(markup.indexOf("front warning")).toBeLessThan(markup.indexOf("stacked warning"));
-    expect(markup).toContain("invisible pointer-events-none");
-    expect(markup).toContain("group-focus-within/banner-stack:visible");
-  });
-
-  it("colors the collapsed stack cap by the hidden banner's variant, not a fixed warning", () => {
-    const neutralBehind = renderToStaticMarkup(
-      <ComposerBannerStack items={[banner("front", "default"), banner("stacked", "default")]} />,
-    );
-    expect(neutralBehind).toContain("border-border");
-    expect(neutralBehind).not.toContain("border-warning/24");
-
-    const warningBehind = renderToStaticMarkup(
-      <ComposerBannerStack items={[banner("front", "default"), banner("stacked", "warning")]} />,
-    );
-    expect(warningBehind).toContain("border-warning/24");
+    expect(markup).toContain("front warning");
+    expect(markup).toContain("second warning");
+    expect(markup).not.toContain("third warning");
+    expect(markup.indexOf("front warning")).toBeLessThan(markup.indexOf("second warning"));
+    expect(markup).not.toContain("group-hover");
+    expect(markup).not.toContain("invisible");
   });
 
   it("does not render an expandable region for a single banner", () => {

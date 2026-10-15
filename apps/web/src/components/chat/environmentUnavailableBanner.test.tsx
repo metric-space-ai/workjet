@@ -29,17 +29,13 @@ describe("environmentUnavailableBannerItem", () => {
     expect(renderBanner(RAW_503, 119_999)).toBe("");
   });
 
-  it("zeigt nach 2 min „Instanz nicht erreichbar · Erneut“, Rohtext nur hinter Details", () => {
+  it("zeigt nach 2 min „Instanz nicht erreichbar · Erneut versuchen“, nie den Rohtext", () => {
     const html = renderBanner(RAW_503, 120_000);
     expect(html).toContain("Instanz nicht erreichbar");
     expect(html.match(/<button/g)).toHaveLength(1);
-    expect(html).toContain("Erneut</button>");
-    expect(html).toMatch(
-      /<summary[^>]*>Details<\/summary><pre[^>]*>Relay request failed \(HTTP 503\)<\/pre>/,
-    );
-    expect(html.replace(/<details[\s\S]*<\/details>/, "")).not.toMatch(
-      /503|Failed to connect|Reconnecting/,
-    );
+    expect(html).toContain("Erneut versuchen</button>");
+    expect(html).not.toContain("<details");
+    expect(html).not.toMatch(/503|Failed to connect|Reconnecting/);
   });
 
   it("zeigt 401 sofort als abgelaufene Anmeldung mit „Neu verbinden“", () => {

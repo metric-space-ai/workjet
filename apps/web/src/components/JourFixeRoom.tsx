@@ -39,6 +39,7 @@ import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema
 import type { SlideDocument } from "@workjet/slide-engine/schema";
 import { loadCanvasRuntime } from "@workjet/slide-engine/canvas";
 import { canvasSceneForSlide } from "@workjet/slide-engine/excalidraw/scene";
+import { JOUR_FIXE_CANVAS_MESSAGES } from "../lib/jourFixeCanvasMessages";
 import { PresentationSlideChangedError } from "../lib/jourFixePresentation";
 import { jourFixeShortcut } from "../lib/jourFixeShortcuts";
 
@@ -71,8 +72,11 @@ const MEETING_MARKDOWN_COMPONENTS: Components = {
 export const JOUR_FIXE_START_LEAD_MS = 5 * 60_000;
 
 /** Folienfläche: Papier im hellen Schema, Tafel im dunklen Schema. */
-const STAGE_SURFACE_CLASSES = "bg-[#f5f3ee] text-[#18181b] dark:bg-[#1b1a17] dark:text-[#eceae3]";
-const STAGE_MUTED_CLASSES = "text-[#71717a] dark:text-[#9b9a94]";
+const STAGE_SURFACE_CLASSES = "bg-stage-surface text-stage-foreground";
+const STAGE_MUTED_CLASSES = "text-stage-muted";
+
+/** Feste deutsche Zeile; der Rohtext bleibt in der Konsole (UI-Vertrag §2). */
+export const JOUR_FIXE_SLIDE_SAVE_FAILED = "Folie nicht gespeichert";
 
 /** Ob die App gerade im dunklen Schema steht (Klasse `dark` auf dem Wurzelelement). */
 export function useWorkjetDarkScheme(): boolean {
@@ -130,7 +134,10 @@ function JourFixeCanvasThumb({
     const slide = deck.slides.find((item) => item.id === slideId);
     if (!slide) return;
     const scene = slide.canvas ?? canvasSceneForSlide(slide, deck.assets);
-    void loadCanvasRuntime({ assetBaseUrl: THUMB_RUNTIME_BASE })
+    void loadCanvasRuntime({
+      assetBaseUrl: THUMB_RUNTIME_BASE,
+      messages: JOUR_FIXE_CANVAS_MESSAGES,
+    })
       .then((runtime) =>
         runtime.exportToSvg({
           elements: scene.elements,
@@ -530,7 +537,11 @@ function JourFixeRoomContent({
       <WorkjetHeaderContent className="flex min-w-0 items-center">
         <WorkspaceBreadcrumb ariaLabel="Regeltermin-Pfad">
           <WorkspaceBreadcrumbItem>
-            <button type="button" onClick={onBack} className="truncate hover:underline">
+            <button
+              type="button"
+              onClick={onBack}
+              className="truncate rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
               {projectTitle}
             </button>
           </WorkspaceBreadcrumbItem>
@@ -787,7 +798,7 @@ function JourFixeRoomContent({
               {canvasSlide && presentation && (
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   {slideSaveError && (
-                    <p role="alert" className="mr-auto text-xs text-red-500">
+                    <p role="alert" className="mr-auto text-[12px] text-destructive">
                       {slideSaveError}
                     </p>
                   )}
@@ -832,11 +843,8 @@ function JourFixeRoomContent({
                                 setEditingSlideId(null);
                                 setPendingScene(null);
                               }
-                              setSlideSaveError(
-                                reason instanceof Error
-                                  ? reason.message
-                                  : "Folie nicht gespeichert.",
-                              );
+                              console.warn(JOUR_FIXE_SLIDE_SAVE_FAILED, reason);
+                              setSlideSaveError(JOUR_FIXE_SLIDE_SAVE_FAILED);
                               setSavingSlide(false);
                             },
                           );
@@ -881,6 +889,27 @@ function JourFixeRoomContent({
                   )}
                 </div>
               )}
+              {/* 420 px: die 16:9-Folie wird zu klein zum Lesen; ihr Text steht lesbar daneben (Audit B #47). */}
+              {canvasSlide && !canvasEditing && (slide.title || slide.markdown) ? (
+                <article
+                  className="@[36rem]:hidden rounded-lg border border-border px-3 py-2 text-[13.5px]"
+                  data-workjet-slide-text=""
+                  aria-label="Folientext"
+                >
+                  {slide.title ? <h2 className="font-semibold">{slide.title}</h2> : null}
+                  {slide.markdown ? (
+                    <div className="mt-1 leading-relaxed [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-2">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        skipHtml
+                        components={MEETING_MARKDOWN_COMPONENTS}
+                      >
+                        {slide.markdown}
+                      </ReactMarkdown>
+                    </div>
+                  ) : null}
+                </article>
+              ) : null}
               <div
                 ref={stageRef}
                 tabIndex={0}
@@ -891,7 +920,7 @@ function JourFixeRoomContent({
                   <p
                     role={presentationStatus.state === "failed" ? "alert" : "status"}
                     data-workjet-presentation-state={presentationStatus.state}
-                    className={`absolute top-3 left-3 z-20 flex items-center gap-2 rounded-md px-3 py-1.5 text-xs shadow-sm ${presentationStatus.state === "failed" ? "bg-background/95 text-destructive" : "bg-background/80 text-[#52525b] dark:text-[#a8a79f]"}`}
+                    className={`absolute top-3 left-3 z-20 flex items-center gap-2 rounded-md px-3 py-1.5 text-xs shadow-sm ${presentationStatus.state === "failed" ? "bg-background/95 text-destructive" : "bg-background/80 text-stage-muted"}`}
                   >
                     {presentationStatus.text}
                     {presentationStatus.state === "failed" && presentationStatus.onRetry && (
@@ -1254,7 +1283,7 @@ function JourFixeRoomContent({
                 <button
                   type="button"
                   key={item.id}
-                  className="block w-full text-left text-sm hover:underline"
+                  className="block w-full rounded-md px-2 py-1 text-left text-[13.5px] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => {
                     selectSlide(item.id);
                     setView("slides");

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "../../lib/utils";
+import { Button } from "../ui/button";
 
 /**
  * The timeline face of the durable Workjet mailbox (docs/workjet-plan.md →
@@ -159,6 +160,34 @@ export function delegationStateToneClass(state: WorkjetDelegationState): string 
     case "queued":
     case "delivered":
       return "text-muted-foreground";
+  }
+}
+
+/** Deutsches Statuswort zu den Vertragsliteralen (UI-Vertrag §4). */
+export function delegationStateLabel(state: WorkjetDelegationState): string {
+  switch (state) {
+    case "queued":
+      return "wartet";
+    case "delivered":
+      return "zugestellt";
+    case "accepted":
+      return "angenommen";
+    case "running":
+      return "läuft";
+    case "needs-input":
+      return "braucht Eingabe";
+    case "review-requested":
+      return "Prüfung erbeten";
+    case "changes-requested":
+      return "Änderungen erbeten";
+    case "completed":
+      return "fertig";
+    case "failed":
+      return "fehlgeschlagen";
+    case "cancelled":
+      return "abgebrochen";
+    case "expired":
+      return "abgelaufen";
   }
 }
 
@@ -340,6 +369,8 @@ const IMMEDIATE_ACTIONS: ReadonlySet<WorkjetDelegationActionKind> = new Set([
 
 export interface WorkjetMailboxActivityCardProps {
   readonly model: WorkjetMailboxCardModel;
+  /** Sichtbarer Name der Gegenstelle (Worker- bzw. Unterhaltungstitel); nie eine ID. */
+  readonly peerTitle?: string | null | undefined;
   /**
    * Navigate to the peer thread. Only ever offered for a same-environment peer;
    * omitted (or absent) means the address renders as plain text.
@@ -439,24 +470,20 @@ function WorkjetDelegationActionRow(props: {
         {actions.map((kind) => {
           const Icon = ACTION_ICON[kind];
           return (
-            <button
+            <Button
               key={kind}
               type="button"
+              size="xs"
+              variant="outline"
               data-workjet-delegation-action={kind}
               aria-pressed={state.open === kind}
               disabled={busy}
               onClick={() => toggle(kind)}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]",
-                state.open === kind
-                  ? "bg-accent/60 text-foreground"
-                  : "text-muted-foreground hover:bg-accent/30",
-                kind === "cancel" ? "hover:text-destructive" : "",
-              )}
+              className={cn(state.open === kind && "bg-accent text-accent-foreground")}
             >
-              <Icon aria-hidden className="size-3" />
+              <Icon aria-hidden className="size-3.5" />
               {ACTION_LABEL[kind]}
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -523,23 +550,18 @@ function WorkjetDelegationActionRow(props: {
             />
           ) : null}
           <div className="flex items-center justify-end gap-1">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={close}
-              className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/30"
-            >
+            <Button type="button" size="xs" variant="outline" disabled={busy} onClick={close}>
               Abbrechen
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              size="xs"
               data-workjet-delegation-submit={state.open}
               disabled={submitDisabled}
               onClick={submit}
-              className="rounded-md bg-accent/60 px-1.5 py-0.5 text-[11px] font-medium text-foreground hover:bg-accent/80 disabled:opacity-50"
             >
               {ACTION_LABEL[state.open]}
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}
@@ -560,7 +582,8 @@ export function WorkjetMailboxActivityCard(props: WorkjetMailboxActivityCardProp
   const lead = outbound ? `${label} an` : `${label} von`;
   const disposition = dispositionBadgeLabel(model.disposition);
   const linkable = model.peerIsLocal && onOpenPeerThread !== undefined;
-  const peerLabel = `${shortEnvironmentId(model.peerEnvironmentId)} · ${model.peerThreadId}`;
+  // Rohdaten (Umgebungs- und Thread-ID) bleiben draußen (UI-Vertrag §2).
+  const peerLabel = props.peerTitle?.trim() || "Worker";
   const actionsEnabled = onDelegationAction !== undefined && onActionStateChange !== undefined;
 
   return (
@@ -572,9 +595,11 @@ export function WorkjetMailboxActivityCard(props: WorkjetMailboxActivityCardProp
         <DirectionIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium text-foreground">{lead}</span>
         {linkable ? (
-          <button
+          <Button
             type="button"
-            className="min-w-0 truncate font-mono text-[11px] text-info-foreground underline-offset-2 hover:underline"
+            size="xs"
+            variant="outline"
+            className="min-w-0 max-w-full"
             onClick={() =>
               onOpenPeerThread({
                 environmentId: model.peerEnvironmentId,
@@ -582,20 +607,18 @@ export function WorkjetMailboxActivityCard(props: WorkjetMailboxActivityCardProp
               })
             }
           >
-            {peerLabel}
-          </button>
+            <span className="truncate">{peerLabel}</span>
+          </Button>
         ) : (
-          <span className="min-w-0 truncate font-mono text-[11px] text-secondary-label">
-            {peerLabel}
-          </span>
+          <span className="min-w-0 truncate text-secondary-label">{peerLabel}</span>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-[.7rem]">
+        <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px]">
           <span className={cn(DISPOSITION_TONE[disposition] ?? "text-muted-foreground")}>
             {disposition}
           </span>
           {model.delegationState ? (
             <span className={delegationStateToneClass(model.delegationState)}>
-              {model.delegationState}
+              {delegationStateLabel(model.delegationState)}
             </span>
           ) : null}
         </span>

@@ -94,7 +94,10 @@ describe("persistent worker goal display", () => {
   it("renders goal actions as real buttons, never underlined text", () => {
     const text = html();
     expect(text).not.toContain("underline");
-    expect(text).toMatch(/<button[^>]*data-slot="button"[^>]*>.*Ändern/s);
+    // Icon-Buttons mit Tooltip statt Text-Buttons in der Leiste (Audit B #18).
+    const editButton = text.match(/<button[^>]*aria-label="Ziel ändern"[^>]*>/)?.[0] ?? "";
+    expect(editButton).toContain('type="button"');
+    expect(text).not.toContain(">Ändern<");
     expect(text).not.toContain("kein Abschlussnachweis");
   });
   it("shows the objective compactly without loop counters", () => {

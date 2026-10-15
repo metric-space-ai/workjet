@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { MicIcon, SquareIcon } from "lucide-react";
+import { Loader2Icon, MicIcon, MicOffIcon, SquareIcon } from "lucide-react";
 import { ComposerControl } from "./ComposerControl";
-import { Button } from "../ui/button";
 import {
   composerErrorLine,
   type ComposerErrorLine as ComposerErrorLineValue,
@@ -26,13 +25,22 @@ export function ComposerDictationButton(props: {
   readonly instanceId: string | null;
   readonly disabled?: boolean;
   readonly onTranscript: (text: string) => void;
+  /**
+   * Meldet den Fehler als Composer-Fehlerzeile an den Composer; `null` räumt
+   * sie weg. Ohne Empfänger zeigt der Knopf den Fehler nur am Icon (Tooltip).
+   */
+  readonly onErrorLine?: ((line: ComposerErrorLineValue | null) => void) | undefined;
 }) {
   const navigate = useNavigate();
   const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "finishing">("idle");
-  const [error, setError] = useState<ComposerErrorLineValue | null>(null);
-  const session = useRef<DictationSession | null>(null);
   const currentProps = useRef(props);
   currentProps.current = props;
+  const [error, setErrorState] = useState<ComposerErrorLineValue | null>(null);
+  const setError = (line: ComposerErrorLineValue | null) => {
+    setErrorState(line);
+    currentProps.current.onErrorLine?.(line);
+  };
+  const session = useRef<DictationSession | null>(null);
   const settings = () => {
     void navigate({ to: "/settings/speech" });
   };
@@ -53,13 +61,13 @@ export function ComposerDictationButton(props: {
   const fail = (reason: unknown) => {
     dispose();
     setPhase("idle");
-    // Eine deutsche Zeile; der Rohtext bleibt hinter „Details“.
-    setError(
-      composerErrorLine(reason ?? "Diktat fehlgeschlagen", {
-        fallback: "Diktat fehlgeschlagen",
-        unreachableForMs: Number.POSITIVE_INFINITY,
-      }),
-    );
+    // Eine deutsche Zeile als Composer-Fehlerzeile; der Rohtext erscheint nie.
+    const line = composerErrorLine(reason ?? "Diktat fehlgeschlagen", {
+      fallback: "Diktat fehlgeschlagen",
+      unreachableForMs: Number.POSITIVE_INFINITY,
+    });
+    // Die eine Aktion der Zeile führt in die Spracheinstellungen.
+    setError(line ? { ...line, actionLabel: "Spracheinstellungen" } : null);
   };
   const finish = async () => {
     const current = session.current;
@@ -136,60 +144,48 @@ export function ComposerDictationButton(props: {
       if (session.current === current) fail(reason);
     }
   };
+  const stateLabel =
+    phase === "recording"
+      ? "Diktat beenden"
+      : phase === "starting"
+        ? "Mikrofon verbindet"
+        : phase === "finishing"
+          ? "Wird transkribiert"
+          : error
+            ? error.text
+            : "Diktieren";
   return (
     <span className="relative inline-flex shrink-0 items-center">
       <ComposerControl
         type="button"
         className="size-7 justify-center px-0"
-        aria-label={phase === "recording" ? "Diktat beenden" : "Diktieren"}
+        aria-label={stateLabel}
         aria-pressed={phase === "recording"}
+        aria-busy={phase === "starting" || phase === "finishing" || undefined}
+        data-dictation-phase={phase}
         disabled={
           (props.disabled && props.instanceId !== null && phase !== "recording") ||
           phase === "starting" ||
           phase === "finishing"
         }
-        title={phase === "recording" ? "Diktat beenden" : "Diktieren"}
-        onClick={() => (phase === "recording" ? finish() : start())}
+        title={stateLabel}
+        onClick={() =>
+          phase === "recording" ? finish() : error && !props.onErrorLine ? settings() : start()
+        }
       >
         {phase === "recording" ? (
-          <SquareIcon className="size-4 text-red-500" />
+          <SquareIcon className="size-4 animate-status-pulse text-destructive" />
+        ) : phase === "starting" || phase === "finishing" ? (
+          <Loader2Icon className="size-4 animate-spin" />
+        ) : error && !props.onErrorLine ? (
+          <MicOffIcon className="size-4 text-destructive" />
         ) : (
           <MicIcon className="size-4" />
         )}
       </ComposerControl>
-      {phase !== "idle" ? (
-        <span
-          role="status"
-          className="absolute bottom-full right-0 mb-1 whitespace-nowrap rounded bg-popover px-2 py-1 text-xs"
-        >
-          {phase === "recording"
-            ? "Hört zu …"
-            : phase === "starting"
-              ? "Mikrofon wird verbunden …"
-              : "Wird transkribiert …"}
-        </span>
-      ) : null}
-      {error ? (
-        <span
-          role="alert"
-          className="absolute bottom-full right-0 mb-1 w-64 rounded border bg-popover p-2 text-xs"
-        >
-          <span className="flex flex-wrap items-center gap-2">
-            {error.text}
-            <Button type="button" size="xs" variant="outline" onClick={settings}>
-              Spracheinstellungen
-            </Button>
-          </span>
-          {error.details ? (
-            <details className="mt-1">
-              <summary className="w-fit cursor-pointer select-none">Details</summary>
-              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono">
-                {error.details}
-              </pre>
-            </details>
-          ) : null}
-        </span>
-      ) : null}
     </span>
   );
 }
+
+/** Aktion der Diktat-Fehlerzeile: in die Spracheinstellungen. */
+export const DICTATION_SETTINGS_ROUTE = "/settings/speech" as const;

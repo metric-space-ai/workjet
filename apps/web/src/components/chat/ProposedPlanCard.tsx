@@ -18,7 +18,6 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { cn } from "~/lib/utils";
-import { Badge } from "../ui/badge";
 import { InlinePanel } from "../ui/inline-panel";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { projectEnvironment } from "~/state/projects";
@@ -81,7 +80,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Kein Workspace-Pfad",
+          title: "Kein Projektordner",
         }),
       );
       return;
@@ -119,7 +118,6 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
         toastManager.add({
           type: "success",
           title: "Plan gespeichert",
-          description: result.value.relativePath,
         });
         return;
       }
@@ -137,11 +135,10 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   };
 
   return (
-    <div className="rounded-[24px] border border-border/80 bg-card/70 p-4 sm:p-5">
+    <div className="rounded-xl border border-border/80 bg-card/70 px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Badge variant="secondary">Plan</Badge>
-          <p className="truncate text-sm font-medium text-foreground">{title}</p>
+          <p className="truncate text-[13.5px] font-medium text-foreground">{title}</p>
         </div>
         <Menu>
           <MenuTrigger
@@ -151,9 +148,9 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           </MenuTrigger>
           <MenuPopup align="end">
             <MenuItem onClick={handleCopyPlan}>{isCopied ? "Kopiert" : "Kopieren"}</MenuItem>
-            <MenuItem onClick={handleDownload}>Als Markdown laden</MenuItem>
+            <MenuItem onClick={handleDownload}>Herunterladen</MenuItem>
             <MenuItem onClick={openSaveDialog} disabled={!workspaceRoot || isSavingToWorkspace}>
-              Im Workspace speichern
+              Im Projekt speichern
             </MenuItem>
           </MenuPopup>
         </Menu>
@@ -162,7 +159,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
         <InlinePanel
           hideTrigger
           className="mt-3"
-          triggerLabel="Im Workspace speichern"
+          triggerLabel="Im Projekt speichern"
           open={isSaveDialogOpen}
           onOpenChange={(open) => {
             if (!open && !isSavingToWorkspace) setIsSaveDialogOpen(false);

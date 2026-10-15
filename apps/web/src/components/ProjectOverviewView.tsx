@@ -14,12 +14,7 @@ import {
   type ProjectOverviewStatus,
   type ProjectOwnerOverview,
 } from "../projectOverviewModel";
-import {
-  BookmarkIcon,
-  GitPullRequestIcon,
-  MessageSquareIcon,
-  RefreshCwIcon,
-} from "lucide-react";
+import { BookmarkIcon, GitPullRequestIcon, MessageSquareIcon, RefreshCwIcon } from "lucide-react";
 import {
   ctoxPostContent,
   disruptionContent,

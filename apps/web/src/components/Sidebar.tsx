@@ -1146,9 +1146,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             )
           : cn(
               // Team rows show the full worker name and wrap instead of „…“ (15.10.).
-              props.projectTeam
-                ? "whitespace-normal break-words leading-snug"
-                : "truncate",
+              props.projectTeam ? "whitespace-normal break-words leading-snug" : "truncate",
               "group-hover/sidebar-row:text-foreground",
               props.isActive || isWoke
                 ? "text-foreground"
@@ -3758,58 +3756,58 @@ export default function Sidebar() {
               />
             ) : null}
             {searchOpen ? (
-            <div className="relative flex items-center gap-1">
-              {/* The whole row opens search, not only the text field. */}
-              <div
-                className="flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                onMouseDown={(event) => {
-                  if (event.target === threadSearchInputRef.current) return;
-                  event.preventDefault();
-                  threadSearchInputRef.current?.focus();
-                }}
-              >
-                <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
-                <Input
-                  ref={threadSearchInputRef}
-                  data-sidebar-search=""
-                  nativeInput
-                  unstyled
-                  type="search"
-                  value={threadSearchQuery}
-                  onChange={(event) => {
-                    setThreadSearchQuery(event.currentTarget.value);
-                    setActiveSearchResultIndex(0);
+              <div className="relative flex items-center gap-1">
+                {/* The whole row opens search, not only the text field. */}
+                <div
+                  className="flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                  onMouseDown={(event) => {
+                    if (event.target === threadSearchInputRef.current) return;
+                    event.preventDefault();
+                    threadSearchInputRef.current?.focus();
                   }}
-                  onKeyDown={handleThreadSearchKeyDown}
-                  placeholder={sidebarSearchPlaceholder(searchMode, overviewText.search)}
-                  aria-label={overviewText.searchThreads}
-                  role="combobox"
-                  aria-autocomplete="list"
-                  aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
-                  aria-controls={
-                    isSearchingThreads && threadSearchResults.length > 0
-                      ? "sidebar-thread-search-results"
-                      : undefined
-                  }
-                  aria-activedescendant={
-                    isSearchingThreads && threadSearchResults[activeSearchResultIndex]
-                      ? `sidebar-thread-search-result-${activeSearchResultIndex}`
-                      : undefined
-                  }
-                  className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
-                />
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="ghost"
-                  className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                  aria-label={overviewText.clearSearch}
-                  onClick={closeThreadSearch}
                 >
-                  <XIcon className="size-3" />
-                </Button>
+                  <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
+                  <Input
+                    ref={threadSearchInputRef}
+                    data-sidebar-search=""
+                    nativeInput
+                    unstyled
+                    type="search"
+                    value={threadSearchQuery}
+                    onChange={(event) => {
+                      setThreadSearchQuery(event.currentTarget.value);
+                      setActiveSearchResultIndex(0);
+                    }}
+                    onKeyDown={handleThreadSearchKeyDown}
+                    placeholder={sidebarSearchPlaceholder(searchMode, overviewText.search)}
+                    aria-label={overviewText.searchThreads}
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
+                    aria-controls={
+                      isSearchingThreads && threadSearchResults.length > 0
+                        ? "sidebar-thread-search-results"
+                        : undefined
+                    }
+                    aria-activedescendant={
+                      isSearchingThreads && threadSearchResults[activeSearchResultIndex]
+                        ? `sidebar-thread-search-result-${activeSearchResultIndex}`
+                        : undefined
+                    }
+                    className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
+                  />
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+                    aria-label={overviewText.clearSearch}
+                    onClick={closeThreadSearch}
+                  >
+                    <XIcon className="size-3" />
+                  </Button>
+                </div>
               </div>
-            </div>
             ) : null}
             {isSearchActive ? (
               <SidebarSearchModeSegment

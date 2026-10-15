@@ -12,7 +12,6 @@ import {
   WorkjetRoleControl,
   WorkjetRoleMenuContent,
   WORKJET_ROLE_FAILURE_TOAST,
-  WORKJET_ROLE_NEXT_SESSION_HINT,
   WORKJET_SETTINGS_ROUTE,
   WORKJET_WORKER_ROLE_REASON,
   type WorkjetRoleControlProps,
@@ -216,8 +215,8 @@ describe("WorkjetRoleControl", () => {
     expect(codeMarkup).toContain('data-workjet-role="standard"');
     expect(codeMarkup).toContain('data-workjet-role="orchestrator"');
     expect(codeMarkup).not.toContain('data-workjet-role="worker"');
-    expect(codeMarkup).toContain("Code");
-    expect(codeMarkup).toContain("Orchestrator");
+    expect(codeMarkup).toContain("Einzeln");
+    expect(codeMarkup).toContain("Supervisor");
 
     const codeRadios = collectByAttribute(WorkjetRoleControl(baseProps), "data-workjet-role");
     expect(codeRadios.map((radio) => radio.props["data-workjet-role"])).toEqual([
@@ -252,7 +251,7 @@ describe("WorkjetRoleControl", () => {
     const markup = renderControl({ ...baseProps, role: "worker" });
 
     expect(markup).toContain('data-workjet-role="worker"');
-    expect(markup).toContain("Preset");
+    expect(markup).toContain("Worker");
     expect(markup).not.toContain('data-workjet-role="standard"');
     expect(markup).not.toContain('data-workjet-role="orchestrator"');
 
@@ -320,10 +319,10 @@ describe("WorkjetRoleControl compact variant", () => {
     const text = textContent(content);
 
     expect(text).toContain("Workjet");
-    expect(text).toContain("Code");
-    expect(text).toContain("Orchestrator");
+    expect(text).toContain("Einzeln");
+    expect(text).toContain("Supervisor");
     expect(text).not.toContain("Preset");
-    expect(text).toContain(WORKJET_ROLE_NEXT_SESSION_HINT);
+    expect(text).not.toContain("nächsten Sitzung");
     expect(text).toContain("Workjet-Einstellungen");
 
     const [radioGroup] = collectByAttribute(content, "onValueChange");
@@ -344,7 +343,7 @@ describe("WorkjetRoleControl compact variant", () => {
     });
     const text = textContent(content);
 
-    expect(text).toContain("Preset");
+    expect(text).toContain("Worker");
     expect(text).toContain(WORKJET_WORKER_ROLE_REASON);
 
     const [radioGroup] = collectByAttribute(content, "onValueChange");

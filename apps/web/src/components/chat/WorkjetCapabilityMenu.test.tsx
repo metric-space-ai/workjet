@@ -176,7 +176,7 @@ describe("WorkjetCapabilityMenu", () => {
       expect(text).toContain(label);
     }
     expect(text).toContain("Instanz-Werkzeug");
-    expect(text).toContain("Presets steuern");
+    expect(text).toContain("Worker steuern");
     for (const raw of ["Orchestrator", "Decision Hub", "CTOX Business OS", "Web Search"]) {
       expect(text).not.toContain(raw);
     }
@@ -232,13 +232,13 @@ describe("WorkjetCapabilityMenu", () => {
       workjetRole: "standard" as const,
       onWorkjetRoleChange,
     };
-    const toggle = findByLabel(WorkjetCapabilityMenuItems(props), "Presets steuern");
+    const toggle = findByLabel(WorkjetCapabilityMenuItems(props), "Worker steuern");
     expect(toggle.props.checked).toBe(false);
     (toggle.props.onCheckedChange as (checked: boolean) => void)(true);
     expect(onWorkjetRoleChange).toHaveBeenCalledWith("orchestrator");
     const managed = findByLabel(
       WorkjetCapabilityMenuItems({ ...props, workjetRole: "worker" }),
-      "Presets steuern",
+      "Worker steuern",
     );
     expect(managed.props.disabled).toBe(true);
   });

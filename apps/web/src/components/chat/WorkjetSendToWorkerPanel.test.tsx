@@ -660,7 +660,7 @@ describe("the options-menu entry", () => {
   it("opens the inline row instead of a popover", () => {
     const onOpen = vi.fn();
     const item = WorkjetSendToWorkerMenuItem({ onOpen }) as InspectableElement;
-    expect(textContent(item)).toContain("An Preset senden");
+    expect(textContent(item)).toContain("An Worker senden");
     (item.props.onClick as () => void)();
     expect(onOpen).toHaveBeenCalledOnce();
     expect(

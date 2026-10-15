@@ -12,10 +12,7 @@ import {
 } from "@workjet/contracts";
 import { parseScopedThreadKey } from "@workjet/client-runtime/environment";
 import type { AgentPanelModel } from "@workjet/client-runtime/state/subagentRuntime";
-import {
-  emptyAgentPanelModel,
-  formatSubagentTokenCount,
-} from "@workjet/client-runtime/state/subagentRuntime";
+import { emptyAgentPanelModel } from "@workjet/client-runtime/state/subagentRuntime";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
@@ -2265,53 +2262,41 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
     coordinatorStatus === "cancelled" ||
     coordinatorStatus === "interrupted";
   const live = workflowGroup !== undefined ? !coordinatorSettled : running + waiting > 0;
-  // Same rule as the panel footer: providers may aggregate member usage into
-  // the coordinator, so count the coordinator only when no members exist.
-  const totalTokens = agents.reduce(
-    (sum, agent) => sum + (agent.usage?.totalTokens ?? 0),
-    spawn.workflowId && agents.length === 0 ? (workflowGroup?.workflow.usage?.totalTokens ?? 0) : 0,
-  );
-
   const livePhase = workflowGroup?.phases.find((phase) => phase.state === "running");
   const workflowName =
     workflowGroup?.workflow.workflowName ?? workflowGroup?.workflow.title ?? null;
 
-  // One steady in-flight presentation (monitoring-pill rule): waiting and
-  // stalled agents read as working; only settled states differentiate.
-  const working = running + waiting;
+  // One steady in-flight presentation: waiting and stalled agents read as
+  // working; the status shows only as the dot, never as a counter or pill.
   const dotClass = live ? "bg-info" : failed > 0 ? "bg-destructive" : "bg-success";
-  const lead = live
-    ? `Kicked off ${agentCount} subagent${agentCount === 1 ? "" : "s"}`
-    : `Ran ${agentCount} subagent${agentCount === 1 ? "" : "s"}`;
-  const status = live
+  const lead = live ? `${agentCount} Worker gestartet` : `${agentCount} Worker fertig`;
+  const statusLabel = live
     ? livePhase
-      ? `${livePhase.title} · ${livePhase.activeCount} working`
-      : working > 0
-        ? `${working} working`
-        : "working"
+      ? `${livePhase.title} läuft`
+      : "Worker arbeiten"
     : failed > 0
-      ? `${failed} failed`
-      : "✓ completed";
+      ? "Worker fehlgeschlagen"
+      : "Worker fertig";
 
   return (
     <button
       type="button"
       onClick={onOpenAgents}
-      className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-accent/50"
+      aria-label={`${lead}, Worker öffnen`}
+      className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13.5px] transition hover:bg-accent/50"
     >
-      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
+      <span
+        aria-label={statusLabel}
+        role="img"
+        title={statusLabel}
+        className={cn("size-1.5 shrink-0 rounded-full", dotClass)}
+      />
       <WorkEntryIconSvg name="bot" className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 truncate">
         <span className="font-medium">{lead}</span>
         {workflowName ? <span className="text-muted-foreground"> · {workflowName}</span> : null}
       </span>
-      <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-[.7rem] text-muted-foreground">
-        <span>{status}</span>
-        {totalTokens > 0 ? (
-          <span className="tabular-nums">Σ {formatSubagentTokenCount(totalTokens)}</span>
-        ) : null}
-        <span className="text-info-foreground">{live ? "Presets öffnen ▸" : "Ansehen ▸"}</span>
-      </span>
+      <span className="ml-auto shrink-0 text-[12px] text-muted-foreground">Worker öffnen</span>
     </button>
   );
 });

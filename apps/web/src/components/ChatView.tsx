@@ -337,7 +337,7 @@ import {
 } from "./chat/composerErrorLineLogic";
 import { useComposerSilentRetry } from "./chat/useComposerSilentRetry";
 import { environmentUnavailableBannerItem } from "./chat/environmentUnavailableBanner";
-import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
+import { ThreadSyncStatusLine } from "./chat/ThreadSyncStatusLine";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_DURATION_MS,
@@ -5298,7 +5298,7 @@ function ChatViewContent(props: ChatViewProps) {
       ),
       title: working
         ? liveCount > 0
-          ? `${liveCount} ${liveCount === 1 ? "Preset arbeitet" : "Presets arbeiten"} im Hintergrund`
+          ? `${liveCount} ${liveCount === 1 ? "Worker arbeitet" : "Worker arbeiten"} im Hintergrund`
           : "Hintergrundarbeit läuft"
         : "Überwacht im Hintergrund",
       actions: (
@@ -6046,13 +6046,13 @@ function ChatViewContent(props: ChatViewProps) {
     let titleSeed = trimmed;
     if (!titleSeed) {
       if (firstComposerImageName) {
-        titleSeed = `Image: ${firstComposerImageName}`;
+        titleSeed = `Bild: ${firstComposerImageName}`;
       } else if (composerTerminalContextsSnapshot.length > 0) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else if (composerElementContextsSnapshot.length > 0) {
         titleSeed = formatElementContextLabel(composerElementContextsSnapshot[0]!);
       } else {
-        titleSeed = "New thread";
+        titleSeed = "Neue Unterhaltung";
       }
     }
     const title = truncate(titleSeed);
@@ -7388,7 +7388,10 @@ function ChatViewContent(props: ChatViewProps) {
                     <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
                   )}
                   {threadSyncPhase && !activeEnvironmentUnavailable ? (
-                    <ThreadSyncStatusPill phase={threadSyncPhase} />
+                    <ThreadSyncStatusLine
+                      phase={threadSyncPhase}
+                      onRetry={() => void handleReconnectActiveEnvironment(environmentId)}
+                    />
                   ) : null}
                   <div
                     className="relative"

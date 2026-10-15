@@ -40,6 +40,9 @@ const view = new URLSearchParams(window.location.search).get("view") ?? "karten"
 /** Merkt gespeicherte Konfigurationen der Karten-Rückseite (nur Fixture-Nachweis). */
 const savedConfigurations: string[] = [];
 (window as unknown as { savedConfigurations: string[] }).savedConfigurations = savedConfigurations;
+/** Merkt geöffnete Projekte (WP-K2: ganze Kachel öffnet). */
+const openedProjects: string[] = [];
+(window as unknown as { openedProjects: string[] }).openedProjects = openedProjects;
 
 const instance = (id: string, displayName: string, status: string, ready: boolean) =>
   ({
@@ -101,7 +104,54 @@ const galleryProjects: GalleryProject[] = [
     },
     native: false,
   },
+  {
+    // WP-K2: keine Website, Git-Remote auf GitHub → Social-Preview des Repos.
+    key: "local:workjet",
+    id: "workjet",
+    title: "Workjet",
+    local: {
+      id: ProjectId.make("workjet"),
+      title: "Workjet",
+      environmentId: EnvironmentId.make("environment-local"),
+      updatedAt: "2026-10-12T00:00:00.000Z",
+      ctoxRegistration: null,
+      overview: { websiteUrl: null, websiteUrlCleared: true, slots: [null, null, null] },
+      repositoryIdentity: {
+        canonicalKey: "github.com/metric-space-ai/workjet",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "git@github.com:metric-space-ai/workjet.git",
+        },
+        provider: "github",
+        owner: "metric-space-ai",
+        name: "workjet",
+      },
+    } as unknown as NonNullable<GalleryProject["local"]>,
+    native: false,
+  },
+  {
+    // WP-K2: weder Website noch GitHub → Regeltermin und Team statt leerer Fläche.
+    key: "instance:lernwerk",
+    id: "lernwerk",
+    title: "Lernwerk",
+    local: null,
+    native: true,
+    configuration: {
+      id: ProjectId.make("lernwerk"),
+      title: "Lernwerk",
+      jourFixe: { weekday: 3, time: "09:30", timezone: "Europe/Berlin" },
+    },
+  },
 ];
+
+/** WP-K2: Teamstand je Kachel ohne Vorschau (synthetisch). */
+const fixtureCrew: Record<string, { lumas: number; disrupted: number }> = {
+  "instance:lernwerk": { lumas: 3, disrupted: 1 },
+  "local:workjet": { lumas: 2, disrupted: 0 },
+  "instance:nordlicht": { lumas: 1, disrupted: 0 },
+  "instance:hafen": { lumas: 4, disrupted: 2 },
+};
 
 /** WP-K1: KPI-Datensätze der Kachel-Ansicht (synthetisch). */
 const readyKpi = (projectId: string, id: string, label: string, value: string) => ({
@@ -365,7 +415,8 @@ function Fixture() {
                 ctoxInstanceId="welsch"
                 kpis={kpis}
                 kpisUnavailable={failed}
-                onOpen={() => {}}
+                crew={fixtureCrew[project.key] ?? null}
+                onOpen={() => openedProjects.push(project.key)}
                 onSave={async () => true}
                 onSaveKpis={async () => true}
                 onRefreshKpis={async () => true}
@@ -387,7 +438,8 @@ function Fixture() {
           <ProjectOverviewCard
             key={project.key}
             project={project}
-            onOpen={() => {}}
+            crew={fixtureCrew[project.key] ?? null}
+            onOpen={() => openedProjects.push(project.key)}
             onSave={async () => true}
             onSaveConfiguration={
               project.configuration

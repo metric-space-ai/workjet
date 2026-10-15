@@ -24,7 +24,11 @@ import {
   type GalleryProject,
   type GalleryProjectStatistics,
 } from "../projectOverview";
-import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
+import {
+  ProjectOverviewCard,
+  projectCardCrew,
+  type ProjectCardCrew,
+} from "../components/ProjectOverviewCard";
 import type { ProjectCardConfigurationValues } from "../components/ProjectOverviewEditor";
 import { ProjectTokenBudget } from "../components/ProjectTokenBudget";
 import { ConnectedProjectCalendar } from "../components/ConnectedProjectCalendar";
@@ -65,7 +69,7 @@ import {
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor, projectSupervisorThreadInput } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { LinkIcon, PlusIcon, ServerIcon } from "lucide-react";
+import { CpuIcon, LinkIcon, PlusIcon, ServerIcon } from "lucide-react";
 import {
   useCallback,
   useContext,
@@ -114,6 +118,7 @@ import {
 import { environmentProjects, projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
 import { nativeOpenAttemptKey, resolveNativeProjectOpening } from "../nativeProjectOpening";
+import { projectOverviewNeedsModelAccount } from "../projectModelAccountHint";
 import {
   resolveDefaultProviderModelSelection,
   resolveProjectTeamModelSelection,
@@ -521,6 +526,7 @@ function IndexDraftLanding() {
         projects={galleryProjects.map((project) => ({
           ...project,
           statistics: resolveGalleryProjectStatistics(project, threads, bootstrapped),
+          crew: bootstrapped ? projectCardCrew(project.local, threads) : null,
 
           canArchive: environments.some(
             (environment) =>
@@ -715,6 +721,8 @@ export function ProjectGallery({
       | undefined;
     readonly canArchive: boolean;
     readonly statistics: GalleryProjectStatistics;
+    /** Team state for cards without a preview (WP-K2); missing = unknown. */
+    readonly crew?: ProjectCardCrew | null | undefined;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
   /** Ersetzt „Projekt anlegen“. `null` lässt die Zeile weg (Tests, Einbettung). */
@@ -723,6 +731,8 @@ export function ProjectGallery({
   const t = useUiText();
   const [showArchived, setShowArchived] = useState(false);
   const [view, setView] = useState<"gallery" | "calendar">("gallery");
+  const { environments: galleryEnvironments } = useEnvironments();
+  const needsModelAccount = projectOverviewNeedsModelAccount(galleryEnvironments);
   const [galleryOrder, setGalleryOrder] = useState<{
     readonly revision: number;
     readonly projectIds: readonly string[];
@@ -1035,6 +1045,27 @@ export function ProjectGallery({
               </div>
             </div>
           </div>
+          {needsModelAccount ? (
+            // Banner (UI-Vertrag §1): Icon, eine Zeile, ein Button – kein Erklärsatz (#472).
+            <div
+              role="status"
+              className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-[13.5px]"
+              data-workjet-model-account-missing=""
+            >
+              <CpuIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="min-w-0 flex-1 font-medium">
+                {t("Kein Modell-Konto", "No model account")}
+              </span>
+              <Button
+                render={<Link to="/settings/models" />}
+                size="xs"
+                variant="outline"
+                data-workjet-action="project.model-account.setup"
+              >
+                {t("Modell-Konto einrichten", "Set up model account")}
+              </Button>
+            </div>
+          ) : null}
           {showArchived ? null : createForm !== undefined ? (
             createForm
           ) : (
@@ -1121,6 +1152,7 @@ export function ProjectGallery({
                           onSaveConfiguration={project.onSaveConfiguration}
                           canArchive={project.canArchive}
                           statistics={project.statistics}
+                          crew={project.crew}
                           kpis={
                             kpiProjection.instanceId === instanceId
                               ? kpiProjection.records[project.id]

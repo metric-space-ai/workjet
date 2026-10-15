@@ -49,7 +49,7 @@ Dazu gehören zwei kleine Elemente:
   - Bezeichnungen mit höchstens 3 Wörtern;
   - Platzhalter;
   - eine Fehler- oder Statuszeile mit höchstens 12 Wörtern.
-- Fehlende Werte zeigen „—“, nie einen Satz.
+- Fehlende Werte fallen samt Beschriftung weg; kein „—“-Platzhalter und nie ein Satz (Owner, 15.10.2026).
 - Jede Aktion ist ein Button aus `ui/button` mit genau diesen Varianten:
   - primär (`default`),
   - sekundär (`outline`),
@@ -75,15 +75,16 @@ Michael: „wenn eine GPU da ist, kann sie benutzt werden, wenn Build, dann halt
 - Englisch bleibt nur bei Eigennamen und Modellnamen.
 - Feste Begriffe:
 
-  | Begriff                | Bedeutung          | Statt                                             |
-  | ---------------------- | ------------------ | ------------------------------------------------- |
-  | Instanz                | CTOX-Instanz       | Instance, Business OS (als Ortsname), CTOX-Master |
-  | Rechner                | Computer, Maschine | Computer, Machine                                 |
-  | Preset, Plural Presets | KI-Worker          | Luma, Agent, Worker (sichtbar)                    |
-  | Projekt                | –                  | Project                                           |
-  | Regeltermin            | –                  | Jour fixe (sichtbar)                              |
-  | Einstellungen          | –                  | Settings                                          |
-  | Modell, Harness        | –                  | –                                                 |
+  | Begriff                | Bedeutung                                                         | Statt                                             |
+  | ---------------------- | ----------------------------------------------------------------- | ------------------------------------------------- |
+  | Instanz                | CTOX-Instanz                                                      | Instance, Business OS (als Ortsname), CTOX-Master |
+  | Rechner                | Computer, Maschine                                                | Computer, Machine                                 |
+  | Preset, Plural Presets | KI-Vorlage                                                        | Luma, Agent                                       |
+  | Worker                 | laufender KI-Worker im Projekt (Supervisor, persistent, einmalig) | Luma, Agent                                       |
+  | Projekt                | –                                                                 | Project                                           |
+  | Regeltermin            | –                                                                 | Jour fixe (sichtbar)                              |
+  | Einstellungen          | –                                                                 | Settings                                          |
+  | Modell, Harness        | –                                                                 | –                                                 |
 
 ## 5. Icons (lucide, eine Strichstärke, `size-4` in Zeilen, `size-3.5` in Leisten)
 

@@ -24,6 +24,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { projectEnvironment } from "~/state/projects";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { composerToastDescription } from "./composerErrorLineLogic";
 
 export const ProposedPlanCard = memo(function ProposedPlanCard({
   planMarkdown,
@@ -52,7 +53,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
         stackedThreadToast({
           type: "error",
           title: "Plan nicht kopiert",
-          description: error instanceof Error ? error.message : undefined,
+          description: composerToastDescription(error),
         }),
       );
     },
@@ -128,7 +129,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           stackedThreadToast({
             type: "error",
             title: "Plan nicht gespeichert",
-            description: error instanceof Error ? error.message : undefined,
+            description: composerToastDescription(error),
           }),
         );
       }

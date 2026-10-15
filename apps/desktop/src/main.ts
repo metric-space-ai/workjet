@@ -87,6 +87,7 @@ import { resolveDesktopProfileHome } from "./app/DesktopTestProfile.ts";
 import * as DesktopUserDataMigration from "./app/DesktopUserDataMigration.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
+import * as DesktopTray from "./tray/DesktopTray.ts";
 import * as BrowserSession from "./preview/BrowserSession.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
@@ -301,6 +302,7 @@ const desktopSupportLayer = DesktopSupportBundle.layer.pipe(
 const desktopApplicationLayer = Layer.mergeAll(
   DesktopLifecycle.layer,
   DesktopApplicationMenu.layer,
+  DesktopTray.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopDeepLinkRouter.layer,
   DesktopShellEnvironment.layer,

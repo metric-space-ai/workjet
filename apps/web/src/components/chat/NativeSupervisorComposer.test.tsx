@@ -135,7 +135,10 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain("Bei ctox.dev anmelden</button>");
+    // 401/abgelaufener Zugang: eine deutsche Zeile, eine Aktion, Rohtext nur hinter „Details“.
+    expect(html).toContain("Anmeldung der Instanz abgelaufen");
+    expect(html.match(/Neu verbinden<\/button>/g)).toHaveLength(1);
+    expect(html).toContain("<summary");
     expect(html).toContain('aria-label="An Supervisor senden" disabled=""');
   });
 
@@ -259,8 +262,10 @@ describe("native supervisor receipt display", () => {
     );
     expect(html).not.toContain("Actual native result");
     expect(html).not.toContain("Real requested change");
-    expect(html).toContain("no confirmed CTOX binding");
-    expect(html).toContain("Erneut versuchen");
+    // Englischer Rohtext steht nur noch hinter „Details“.
+    expect(html).toContain("Projektverbindung nicht verfügbar</span>");
+    expect(html).toMatch(/<pre[^>]*>This project has no confirmed CTOX binding/);
+    expect(html.match(/Erneut<\/button>/g)).toHaveLength(1);
   });
   it("shows a definitive pre-submit refusal and lets the user edit a new prompt", () => {
     const rejectedConfig: WorkjetThreadConfig = {
@@ -284,9 +289,9 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).toContain("Nicht gesendet");
-    expect(html).toContain("Bei ctox.dev anmelden</button>");
+    expect(html).toContain("Anmeldung der Instanz abgelaufen");
     expect(html.match(/data-supervisor-connection-status=/g)).toHaveLength(1);
-    expect(html.match(/Bei ctox.dev anmelden<\/button>/g)).toHaveLength(1);
+    expect(html.match(/Neu verbinden<\/button>/g)).toHaveLength(1);
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
   });
   it("keeps send unavailable without confirmed native project scope", () => {
@@ -317,7 +322,8 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).not.toContain("Confirm the project and CTOX connection to send.");
-    expect(html).toContain("Could not read the CTOX project list.");
-    expect(html).toContain("Erneut versuchen");
+    expect(html).toContain("Projektverbindung nicht verfügbar</span>");
+    expect(html).toMatch(/<pre[^>]*>Could not read the CTOX project list\.<\/pre>/);
+    expect(html.match(/Erneut<\/button>/g)).toHaveLength(1);
   });
 });

@@ -207,6 +207,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/business-os",
     searchAliases: ["Geräte", "Workjet-Apps", "Trennen", "Koppeln"],
   },
+  {
+    id: "instance-secrets",
+    title: "Zugangsdaten",
+    to: "/settings/business-os",
+    searchAliases: ["Secrets", "API-Schlüssel", "Passwort", "Token"],
+  },
   // ----- Rechner -----
   {
     id: "workjet-computers",

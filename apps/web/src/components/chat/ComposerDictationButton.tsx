@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { MicIcon, SquareIcon } from "lucide-react";
 import { ComposerControl } from "./ComposerControl";
+import { Button } from "../ui/button";
+import {
+  composerErrorLine,
+  type ComposerErrorLine as ComposerErrorLineValue,
+} from "./composerErrorLineLogic";
 import { ComposerDictationStream } from "../../lib/composerDictation";
 import { requestSpeechSettings } from "../../lib/workjetSpeechSettings";
 import {
@@ -24,7 +29,7 @@ export function ComposerDictationButton(props: {
 }) {
   const navigate = useNavigate();
   const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "finishing">("idle");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ComposerErrorLineValue | null>(null);
   const session = useRef<DictationSession | null>(null);
   const currentProps = useRef(props);
   currentProps.current = props;
@@ -48,7 +53,13 @@ export function ComposerDictationButton(props: {
   const fail = (reason: unknown) => {
     dispose();
     setPhase("idle");
-    setError(reason instanceof Error ? reason.message : "Diktat fehlgeschlagen");
+    // Eine deutsche Zeile; der Rohtext bleibt hinter „Details“.
+    setError(
+      composerErrorLine(reason ?? "Diktat fehlgeschlagen", {
+        fallback: "Diktat fehlgeschlagen",
+        unreachableForMs: Number.POSITIVE_INFINITY,
+      }),
+    );
   };
   const finish = async () => {
     const current = session.current;
@@ -163,10 +174,20 @@ export function ComposerDictationButton(props: {
           role="alert"
           className="absolute bottom-full right-0 mb-1 w-64 rounded border bg-popover p-2 text-xs"
         >
-          {error}{" "}
-          <button type="button" className="underline" onClick={settings}>
-            Spracheinstellungen
-          </button>
+          <span className="flex flex-wrap items-center gap-2">
+            {error.text}
+            <Button type="button" size="xs" variant="outline" onClick={settings}>
+              Spracheinstellungen
+            </Button>
+          </span>
+          {error.details ? (
+            <details className="mt-1">
+              <summary className="w-fit cursor-pointer select-none">Details</summary>
+              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono">
+                {error.details}
+              </pre>
+            </details>
+          ) : null}
         </span>
       ) : null}
     </span>

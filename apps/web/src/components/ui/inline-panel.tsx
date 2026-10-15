@@ -35,6 +35,8 @@ export interface InlinePanelProps {
   readonly className?: string;
   /** Opened from elsewhere (e.g. a menu item): no own trigger button. */
   readonly hideTrigger?: boolean;
+  /** Footer „Abbrechen“ is the only way back: no extra „Zuklappen“ chevron. */
+  readonly hideCollapseControl?: boolean;
 }
 
 function InlinePanel({
@@ -51,6 +53,7 @@ function InlinePanel({
   statusTone = "neutral",
   className,
   hideTrigger = false,
+  hideCollapseControl = false,
 }: InlinePanelProps) {
   return (
     <>
@@ -66,7 +69,12 @@ function InlinePanel({
           {triggerLabel}
         </Button>
       )}
-      <InlineExpand label={triggerLabel} open={open} onOpenChange={onOpenChange}>
+      <InlineExpand
+        label={triggerLabel}
+        open={open}
+        onOpenChange={onOpenChange}
+        hideCollapseControl={hideCollapseControl}
+      >
         <form
           aria-label={triggerLabel}
           className={cn("flex flex-col gap-3 rounded-lg border bg-card/40 p-3", className)}

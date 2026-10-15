@@ -1,10 +1,11 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import type { WorkjetThreadConfig, WorkjetThreadGoal } from "@workjet/contracts";
 import { PauseIcon, PencilIcon, PlayIcon } from "lucide-react";
 
 import { Button } from "./ui/button";
 import { InlinePanel } from "./ui/inline-panel";
 import { Textarea } from "./ui/textarea";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 const WorkerKanban = lazy(() => import("./PersistentWorkerKanban"));
 
@@ -29,6 +30,9 @@ export function persistentWorkerGoalState(goal: WorkjetThreadGoal, state: LoopSt
   if (state.sessionStatus === "error") return "Fehler";
   return goal.pendingContinuation ? "Eingereiht" : "Aktiv";
 }
+
+/** Feste Fehlerzeile neben dem Speichern; der Entwurf bleibt im Feld stehen. */
+export const PERSISTENT_GOAL_SAVE_FAILED = "Ziel nicht gespeichert";
 
 /** A retained team assignment is visible even before an explicit goal starts its loop. */
 export function PersistentWorkerGoal({
@@ -72,10 +76,10 @@ export function PersistentWorkerGoal({
         setEditing(false);
         setObjective(null);
       } else {
-        setError("Ziel nicht gespeichert, Entwurf bleibt erhalten");
+        setError(PERSISTENT_GOAL_SAVE_FAILED);
       }
     } catch {
-      setError("Ziel nicht gespeichert, Entwurf bleibt erhalten");
+      setError(PERSISTENT_GOAL_SAVE_FAILED);
     } finally {
       setBusy(false);
     }
@@ -87,17 +91,21 @@ export function PersistentWorkerGoal({
       aria-label="Ziel des Workers"
       data-workjet-persistent-goal="thread"
     >
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <button
           type="button"
-          className="min-w-0 flex-1 text-left"
+          className={
+            expanded ? "order-last basis-full text-left" : "min-w-0 flex-1 text-left"
+          }
           aria-expanded={expanded}
           aria-label={expanded ? "Ziel einklappen" : "Ziel aufklappen"}
           onClick={() => setExpanded((open) => !open)}
         >
           <span
             className={
-              expanded ? "block whitespace-pre-wrap break-words text-sm" : "block truncate text-sm"
+              expanded
+                ? "block whitespace-pre-wrap break-words text-[13.5px]"
+                : "block truncate text-[13.5px]"
             }
             title={expanded ? undefined : text}
           >
@@ -105,13 +113,10 @@ export function PersistentWorkerGoal({
           </span>
         </button>
         {onChangeGoal ? (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ms-auto flex shrink-0 items-center gap-0.5">
             {editing ? null : (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                aria-label={goal ? "Ziel ändern" : "Ziel festlegen"}
+              <GoalIconButton
+                label={goal ? "Ziel ändern" : "Ziel festlegen"}
                 disabled={busy || disabled}
                 onClick={() => {
                   setEditing(true);
@@ -119,14 +124,11 @@ export function PersistentWorkerGoal({
                 }}
               >
                 <PencilIcon aria-hidden="true" />
-                {goal ? "Ändern" : "Ziel festlegen"}
-              </Button>
+              </GoalIconButton>
             )}
             {goal ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
+              <GoalIconButton
+                label={goal.status === "active" ? "Pausieren" : "Fortsetzen"}
                 disabled={busy || disabled}
                 onClick={() =>
                   void change({
@@ -140,8 +142,7 @@ export function PersistentWorkerGoal({
                 ) : (
                   <PlayIcon aria-hidden="true" />
                 )}
-                {goal.status === "active" ? "Pausieren" : "Fortsetzen"}
-              </Button>
+              </GoalIconButton>
             ) : null}
           </div>
         ) : null}
@@ -161,6 +162,9 @@ export function PersistentWorkerGoal({
           submitLabel={busy ? "Speichert…" : goal ? "Ziel speichern" : "Ziel setzen und starten"}
           submitDisabled={disabled || !(objective ?? text).trim()}
           busy={busy}
+          hideCollapseControl
+          status={error}
+          statusTone="error"
           onSubmit={() =>
             void change({
               objective: (objective ?? text).trim(),
@@ -180,19 +184,46 @@ export function PersistentWorkerGoal({
           />
         </InlinePanel>
       ) : null}
-      {error ? (
-        <p className="mt-2 text-xs text-destructive" role="alert">
+      {error && !editing ? (
+        <p className="mt-2 text-[12px] text-destructive" role="alert">
           {error}
         </p>
       ) : null}
       {board ? (
-        <div className="mt-2 max-h-72 overflow-y-auto text-xs">
-          <Suspense fallback={<p role="status">Mini-Kanban wird geladen…</p>}>
+        <div className="mt-2 max-h-72 overflow-y-auto text-[12px]">
+          <Suspense fallback={null}>
             <WorkerKanban snapshot={board} />
           </Suspense>
           {goal?.reason ? <p className="mt-1 whitespace-pre-wrap">{goal.reason}</p> : null}
         </div>
       ) : null}
     </section>
+  );
+}
+
+function GoalIconButton(props: {
+  readonly label: string;
+  readonly disabled: boolean;
+  readonly onClick: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            aria-label={props.label}
+            disabled={props.disabled}
+            onClick={props.onClick}
+          />
+        }
+      >
+        {props.children}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{props.label}</TooltipPopup>
+    </Tooltip>
   );
 }

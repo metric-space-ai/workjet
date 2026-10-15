@@ -507,9 +507,18 @@ describe("WorkjetSendToWorkerPanelContent inline row", () => {
   });
 
   it("hides the task fields until the task kind is chosen", () => {
-    expect(byLabel(render(), "Dateien")).toBeUndefined();
-    const task = render({ draft: validTaskDraft });
-    expect(byLabel(task, "Dateien")).toBeDefined();
+    const fileSource = { environmentId: "env-a" as EnvironmentId, cwd: "/repo" };
+    const hasFilePicker = (tree: unknown) =>
+      JSON.stringify(tree, (_key, value) => (typeof value === "function" ? undefined : value)).includes(
+        '"cwd":"/repo"',
+      );
+    expect(hasFilePicker(render({ fileSource }))).toBe(false);
+    const task = render({ draft: validTaskDraft, fileSource });
+    // Dateien werden gewählt, nicht kommagetrennt getippt (Audit B #35).
+    expect(hasFilePicker(task)).toBe(true);
+    expect(JSON.stringify(task, (_k, v) => (typeof v === "function" ? undefined : v))).not.toContain(
+      "kommagetrennt",
+    );
     expect(byLabel(task, "Nicht-Ziele")).toBeDefined();
     expect(byLabel(task, "Abnahme")).toBeDefined();
     // Depth, reviews and TTL are menu choices with defaults, never number fields.

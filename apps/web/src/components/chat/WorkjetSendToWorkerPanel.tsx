@@ -41,6 +41,8 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { Textarea } from "../ui/textarea";
+import { getProjectFilePickerMatches } from "../files/ProjectFilePicker.logic";
+import { useProjectFilePickerQuery } from "../files/projectFilesQueryState";
 
 /**
  * "Nachricht" versus "Nachricht + Auftrag" for an ORCHESTRATOR thread
@@ -514,6 +516,11 @@ export interface WorkjetSendToWorkerPanelProps {
   readonly onSubmit: () => void;
   /** Schließt die Inline-Zeile. */
   readonly onClose?: (() => void) | undefined;
+  /**
+   * Projekt, aus dem die Dateien des Auftrags gewählt werden (wie die
+   * @-Erwähnung). Ohne Projekt bleibt die Dateiwahl aus.
+   */
+  readonly fileSource?: { readonly environmentId: EnvironmentId; readonly cwd: string } | null;
 }
 
 /**
@@ -654,15 +661,95 @@ export const WORKJET_SEND_TTL_PRESETS: ReadonlyArray<{
 );
 
 /** Scope-Dateien: im Entwurf zeilenweise, im Feld kommagetrennt. */
-function scopeFilesForField(scopeFiles: string): string {
-  return scopeFiles.split("\n").join(", ");
+function scopeFileList(scopeFiles: string): string[] {
+  return scopeFiles
+    .split("\n")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
 }
 
-function scopeFilesFromField(value: string): string {
-  return value
-    .split(",")
-    .map((part) => part.trim())
-    .join("\n");
+const SCOPE_FILE_PICKER_LIMIT = 6;
+
+/**
+ * Dateien des Auftrags werden ausgewählt, nicht getippt (UI-Vertrag §3): die
+ * Suche fragt den Projektindex wie die @-Erwähnung, ein Klick fügt die Datei
+ * als Chip hinzu.
+ */
+function WorkjetScopeFilePicker(props: {
+  readonly source: { readonly environmentId: EnvironmentId; readonly cwd: string };
+  readonly scopeFiles: string;
+  readonly disabled: boolean;
+  readonly onChange: (scopeFiles: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const selected = scopeFileList(props.scopeFiles);
+  const search = useProjectFilePickerQuery(
+    props.source.environmentId,
+    props.source.cwd,
+    query,
+    SCOPE_FILE_PICKER_LIMIT * 4,
+  );
+  const matches =
+    query.trim().length === 0
+      ? []
+      : getProjectFilePickerMatches(search.entries, search.matchedQuery ?? query)
+          .filter((match) => !selected.includes(match.path))
+          .slice(0, SCOPE_FILE_PICKER_LIMIT);
+  return (
+    <div className="flex min-w-0 flex-col gap-1" data-workjet-send-scope-files="true">
+      {selected.length > 0 ? (
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {selected.map((path) => (
+            <span
+              key={path}
+              className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border bg-background/60 ps-1.5 text-[11px]"
+            >
+              <span className="min-w-0 truncate">{path}</span>
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label={`${path} entfernen`}
+                title={`${path} entfernen`}
+                disabled={props.disabled}
+                onClick={() => props.onChange(selected.filter((entry) => entry !== path).join("\n"))}
+              >
+                <XIcon aria-hidden="true" className="size-3" />
+              </Button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <Input
+        size="sm"
+        aria-label="Datei suchen"
+        placeholder="Datei suchen"
+        disabled={props.disabled}
+        value={query}
+        onChange={(event) => setQuery(event.currentTarget.value)}
+      />
+      {matches.length > 0 ? (
+        <div role="listbox" aria-label="Dateien" className="flex flex-col rounded-md border">
+          {matches.map((match) => (
+            <button
+              key={match.path}
+              type="button"
+              role="option"
+              aria-selected={false}
+              disabled={props.disabled}
+              className="min-w-0 truncate px-2 py-1 text-left text-[12px] hover:bg-accent"
+              onClick={() => {
+                props.onChange([...selected, match.path].join("\n"));
+                setQuery("");
+              }}
+            >
+              {match.path}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function outcomeText(outcome: WorkjetSendOutcome): string {
@@ -677,7 +764,7 @@ function outcomeText(outcome: WorkjetSendOutcome): string {
 }
 
 /**
- * „An Luma senden“ als Inline-Zeile über dem Composer: Empfänger-Dropdown,
+ * „An Worker senden“ als Inline-Zeile über dem Composer: Empfänger-Dropdown,
  * Nachricht, „Senden“. Seltenes (Art, Laufzeit, Prüfrunden, Tiefe) steckt im
  * ⋯-Menü mit Standardwerten. Kein Popover, keine getippten IDs.
  */
@@ -716,9 +803,10 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
 
   return (
     <div
-      className="flex w-full min-w-0 flex-col gap-2 rounded-lg border bg-card/40 p-2"
+      className="@container/send-panel flex w-full min-w-0 flex-col gap-2 rounded-lg border bg-card/40 p-2"
       data-workjet-send-panel={draft.tab}
     >
+      {/* Schmal (420 px): Empfänger und Aktionen in einer Zeile, Text darunter über volle Breite. */}
       <div className="flex min-w-0 flex-wrap items-start gap-2">
         <Menu>
           <MenuTrigger
@@ -793,7 +881,7 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
         <Textarea
           rows={1}
           size="sm"
-          className="min-w-40 flex-1"
+          className="order-last min-w-0 basis-full @[36rem]/send-panel:order-none @[36rem]/send-panel:min-w-40 @[36rem]/send-panel:flex-1 @[36rem]/send-panel:basis-0"
           aria-label={handoff ? "Notiz" : "Nachricht"}
           placeholder={handoff ? "Notiz (optional)" : "Nachricht"}
           maxLength={handoff ? WORKJET_HANDOFF_NOTE_MAX_LENGTH : WORKJET_MESSAGE_MAX_LENGTH}
@@ -808,7 +896,7 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
                 })
           }
         />
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="ms-auto flex shrink-0 items-center gap-1">
           <Menu>
             <MenuTrigger
               disabled={disabled}
@@ -935,17 +1023,18 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
         </div>
       </div>
       {task ? (
-        <div className="grid min-w-0 gap-2 sm:grid-cols-3" data-workjet-send-task-fields="true">
-          <Input
-            size="sm"
-            aria-label="Dateien"
-            placeholder="Dateien, kommagetrennt"
-            disabled={disabled}
-            value={scopeFilesForField(draft.scopeFiles)}
-            onChange={(event) =>
-              patch({ scopeFiles: scopeFilesFromField(event.currentTarget.value) })
-            }
-          />
+        <div
+          className="grid min-w-0 gap-2 @[36rem]/send-panel:grid-cols-3"
+          data-workjet-send-task-fields="true"
+        >
+          {props.fileSource ? (
+            <WorkjetScopeFilePicker
+              source={props.fileSource}
+              scopeFiles={draft.scopeFiles}
+              disabled={disabled}
+              onChange={(scopeFiles) => patch({ scopeFiles })}
+            />
+          ) : null}
           <Input
             size="sm"
             aria-label="Nicht-Ziele"

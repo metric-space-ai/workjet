@@ -7548,6 +7548,14 @@ function ChatViewContent(props: ChatViewProps) {
                                     onDraftChange={setWorkjetSendDraft}
                                     onSubmit={onSubmitWorkjetSend}
                                     onClose={() => setWorkjetSendPanelOpen(false)}
+                                    fileSource={
+                                      activeProject?.workspaceRoot
+                                        ? {
+                                            environmentId: activeProject.environmentId,
+                                            cwd: activeProject.workspaceRoot,
+                                          }
+                                        : null
+                                    }
                                   />
                                 </div>
                               ) : null}

@@ -1,4 +1,5 @@
 import { DEFAULT_RUNTIME_MODE, type RuntimeMode } from "@workjet/contracts";
+import { Button } from "../ui/button";
 import { OptionSelect } from "../ui/option-select";
 import { useState } from "react";
 
@@ -18,13 +19,26 @@ export function ThreadApprovalControl({
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
+  const [lastMode, setLastMode] = useState<RuntimeMode | null>(null);
+  const save = async (mode: RuntimeMode) => {
+    setLastMode(mode);
+    setSaving(true);
+    setError(false);
+    try {
+      setError(!(await onChange(mode)));
+    } catch {
+      setError(true);
+    } finally {
+      setSaving(false);
+    }
+  };
   const projectPolicy = hasOwnWorktree
     ? projectRuntimeMode
     : projectRuntimeMode === "approval-required"
       ? "approval-required"
       : "auto-accept-edits";
   return (
-    <span className="no-drag inline-flex items-center gap-2 text-xs text-secondary-label">
+    <span className="no-drag inline-flex items-center gap-2 text-[12px] text-secondary-label">
       <OptionSelect
         aria-label="Freigaberegel"
         className="w-auto"
@@ -33,25 +47,32 @@ export function ThreadApprovalControl({
         options={[
           { value: "project", label: "Projektregel" },
           { value: "approval-required", label: "Freigabe nötig" },
-          { value: "auto", label: "Workspace-Autonomie", disabled: !hasOwnWorktree },
+          { value: "auto", label: "Eigener Arbeitsbaum", disabled: !hasOwnWorktree },
           { value: "auto-accept-edits", label: "Änderungen annehmen" },
           { value: "full-access", label: "Vollzugriff", disabled: !hasOwnWorktree },
         ]}
         onValueChange={async (value) => {
           const mode = value === "project" ? projectPolicy : (value as RuntimeMode);
           if (!hasOwnWorktree && (mode === "full-access" || mode === "auto")) return;
-          setSaving(true);
-          setError(false);
-          try {
-            setError(!(await onChange(mode)));
-          } catch {
-            setError(true);
-          } finally {
-            setSaving(false);
-          }
+          await save(mode);
         }}
       />
-      {error ? <span role="status">Regel nicht gespeichert</span> : null}
+      {error ? (
+        <>
+          <span role="status">Regel nicht gespeichert</span>
+          {lastMode !== null ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={saving}
+              onClick={() => void save(lastMode)}
+            >
+              Erneut versuchen
+            </Button>
+          ) : null}
+        </>
+      ) : null}
     </span>
   );
 }

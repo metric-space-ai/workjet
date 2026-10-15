@@ -10,6 +10,7 @@ import { CtoxWorkjetProjectControlResponse } from "@workjet/contracts";
 import cardSource from "./components/chat/SecretRequestCard.tsx?raw";
 import helperSource from "./workjetSecretRequests.ts?raw";
 import inputSource from "./components/ui/secret-input.tsx?raw";
+import settingsSource from "./components/settings/SecretsSettingsSection.tsx?raw";
 
 const CANARY = "CANARY-secret-7f3a9c1e5b-Ünïcode";
 const sent: unknown[] = [];
@@ -18,6 +19,12 @@ vi.mock("./workjetProjectControl", () => ({
   requestWorkjetProjectControl: vi.fn(
     async (_instance: string, request: { action: string; requestId?: string }) => {
       sent.push(request);
+      if (request.action === "secret.put" || request.action === "secret.delete") {
+        return {
+          _tag: "completed",
+          response: { action: request.action, name: (request as unknown as { name: string }).name },
+        };
+      }
       if (request.action === "secret.request.list") {
         return { _tag: "completed", response: { action: "secret.request.list", requests: [] } };
       }
@@ -86,6 +93,14 @@ describe("secret request canary", () => {
     expect(logs.join("\n")).not.toContain(CANARY);
   });
 
+  it("settings put sends the value once and keeps it out of storage and logs", async () => {
+    const { putCredential } = await import("./workjetSecretRequests");
+    expect(await putCredential("inst-1", "CUSTOM_KEY", CANARY)).toBe(true);
+    expect(sent.filter((r) => JSON.stringify(r).includes(CANARY))).toHaveLength(1);
+    expect(JSON.stringify(Object.entries(localStorage))).not.toContain(CANARY);
+    expect(logs.join("\n")).not.toContain(CANARY);
+  });
+
   it("rejects responses that try to carry a value back", () => {
     const decode = Schema.decodeUnknownSync(CtoxWorkjetProjectControlResponse);
     const decoded = decode({
@@ -99,7 +114,7 @@ describe("secret request canary", () => {
   });
 
   it("keeps the card and helpers free of storage and draft writers", () => {
-    for (const source of [cardSource, helperSource, inputSource]) {
+    for (const source of [cardSource, helperSource, inputSource, settingsSource]) {
       expect(source).not.toMatch(
         /localStorage|sessionStorage|indexedDB|composerDraft|DraftStore|console\./,
       );

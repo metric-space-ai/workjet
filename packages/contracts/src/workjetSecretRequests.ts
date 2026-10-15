@@ -32,6 +32,22 @@ export type WorkjetSecretRequestRecord = typeof WorkjetSecretRequestRecord.Type;
 
 export const WORKJET_SECRET_VALUE_MAX = 8192;
 
+/** CTOX credential keys: env-style, e.g. OPENROUTER_API_KEY. */
+export const CredentialName = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(64),
+  Schema.isPattern(/^[A-Z][A-Z0-9_]*$/),
+);
+
+/** Write-only listing: names and whether a value is set, never the value. */
+export const WorkjetCredentialRecord = Schema.Struct({
+  name: CredentialName,
+  description: Schema.NullOr(Schema.String.check(Schema.isMaxLength(500))),
+  isSet: Schema.Boolean,
+  updatedAt: Schema.NullOr(Schema.String.check(Schema.isMaxLength(64))),
+});
+export type WorkjetCredentialRecord = typeof WorkjetCredentialRecord.Type;
+
 export const WorkjetSecretRequestRequests = [
   Schema.Struct({
     action: Schema.Literal("secret.request.list"),
@@ -50,6 +66,18 @@ export const WorkjetSecretRequestRequests = [
     commandId: CommandId,
     requestId: RequestId,
   }),
+  Schema.Struct({ action: Schema.Literal("secret.list"), commandId: CommandId }),
+  Schema.Struct({
+    action: Schema.Literal("secret.put"),
+    commandId: CommandId,
+    name: CredentialName,
+    value: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(WORKJET_SECRET_VALUE_MAX)),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("secret.delete"),
+    commandId: CommandId,
+    name: CredentialName,
+  }),
 ] as const;
 
 export const WorkjetSecretRequestResponses = [
@@ -62,5 +90,13 @@ export const WorkjetSecretRequestResponses = [
     requestId: RequestId,
     status: WorkjetSecretRequestStatus,
     ref: Schema.optionalKey(text(300)),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("secret.list"),
+    secrets: Schema.Array(WorkjetCredentialRecord).check(Schema.isMaxLength(300)),
+  }),
+  Schema.Struct({
+    action: Schema.Literals(["secret.put", "secret.delete"]),
+    name: CredentialName,
   }),
 ] as const;

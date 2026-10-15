@@ -64,10 +64,9 @@ describe("compact project gallery", () => {
     expect(markup).not.toMatch(/<h2[^>]*><a/);
     expect(markup).toContain('data-workjet-action="project.open.gallery-title:instance:greppy"');
     expect(markup).toContain('data-workjet-action="project.open.gallery-preview:instance:greppy"');
-    expect(markup.match(/href="https:\/\/greppy.xyz"/g)).toHaveLength(1);
-    expect(markup).toMatch(
-      /<a[^>]*href="https:\/\/greppy.xyz"[^>]*aria-label="Webseite von greppy.xyz öffnen \(https:\/\/greppy.xyz\)"|<a[^>]*aria-label="Webseite von greppy.xyz öffnen \(https:\/\/greppy.xyz\)"[^>]*href="https:\/\/greppy.xyz"/,
-    );
+    // A-25: the title already is the domain, so no second domain line; the website is
+    // reachable from the ⋯ menu.
+    expect(markup).not.toContain('data-workjet-action="project.open.website:instance:greppy"');
     // #577: the website is a visible domain link; no tooltip-only icons.
     expect(markup).not.toContain('title="Webseite öffnen"');
     expect(markup).not.toContain('title="Projekt öffnen"');
@@ -89,7 +88,7 @@ describe("compact project gallery", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={{ ...project, title: "example.org" }} onOpen={() => {}} />,
     );
-    expect(markup).toContain('href="https://example.org"');
+    expect(markup).not.toContain('href="https://example.org"');
     expect(markup).not.toContain("data-workjet-project-preview");
     expect(markup).not.toContain('aria-label="Logo von example.org"');
     expect(markup).toContain('aria-label="example.org öffnen"');

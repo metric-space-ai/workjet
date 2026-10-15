@@ -48,11 +48,14 @@ describe("compact project configuration", () => {
     );
     expect(markup.match(/placeholder="Kennzahl in einem Satz"/g)).toHaveLength(3);
     expect(markup).not.toContain("KPI-Angaben brauchen");
-    expect(markup).toContain("Git-Quelle");
+    expect(markup).toContain("Repository");
+    expect(markup).not.toContain("Git-Quelle");
     expect(markup).toContain("Webseite");
     expect(markup).toContain("Token-Budget");
-    expect(markup).toContain("Mrd. Tokens je Regeltermin-Zyklus");
-    expect(markup).toContain("kein Limit");
+    expect(markup).toContain("Mrd.");
+    expect(markup).toContain('placeholder="kein Limit"');
+    expect(markup).toContain("Regeltermin Zeitzone");
+    expect(markup).not.toContain("Regeltermin-Zyklus");
     expect(markup).not.toContain("Entered metric");
     expect(markup).not.toContain("type</label>");
     expect(markup).toContain("Regeltermin Wochentag");
@@ -143,7 +146,7 @@ describe("compact project configuration", () => {
         kpisLoadFailed
       />,
     );
-    expect(markup).toContain("KPIs konnten nicht von der Instanz geladen werden.");
+    expect(markup).toContain("Kennzahlen nicht geladen");
     expect(markup.match(/<textarea[^>]*disabled=""/g)).toHaveLength(3);
   });
   it("does not expose KPI configuration for a foreign project", () => {
@@ -206,7 +209,7 @@ describe("card back configuration editor", () => {
       />,
     );
     expect(markup).toContain('data-workjet-project-card-config=""');
-    for (const label of ["Name", "Website", "Repository", "Regeltermin", "Uhrzeit"])
+    for (const label of ["Name", "Webseite", "Repository", "Regeltermin", "Uhrzeit"])
       expect(markup).toContain(label);
     expect(markup).toContain('value="molecularity"');
     expect(markup).toContain('value="https://molecularity.example"');
@@ -287,10 +290,10 @@ describe("card configuration patch", () => {
       );
     const markup = render(null);
     expect(markup).toContain('data-workjet-action="project.card.config.repo-suggestion"');
-    expect(markup).toContain("Repo übernehmen");
+    expect(markup).toContain("Repository übernehmen");
     expect(markup).toContain("github.com/metric-space-ai/greppy");
     // Proposed, not written: the field itself stays empty.
     expect(markup).not.toContain('value="https://github.com/metric-space-ai/greppy"');
-    expect(render("https://github.com/x/y")).not.toContain("Repo übernehmen");
+    expect(render("https://github.com/x/y")).not.toContain("Repository übernehmen");
   });
 });

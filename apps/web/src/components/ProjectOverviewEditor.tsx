@@ -89,6 +89,26 @@ const WEEKDAY_LABELS = [
  * Dichte Rückseite der Galeriekarte. Speichert über denselben Pfad wie
  * Einstellungen › Projekt (project.configure bzw. Projektübersicht).
  */
+/** The viewer's own zone is the default for a new regular meeting (Audit A-37). */
+export function systemTimeZone(): string {
+  try {
+    return new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+/** All IANA zones as a selection; the current value always stays selectable. */
+export function timeZoneOptions(current: string): ReadonlyArray<{ value: string; label: string }> {
+  const intl = Intl as unknown as { supportedValuesOf?: (key: "timeZone") => string[] };
+  const zones = new Set<string>(intl.supportedValuesOf?.("timeZone") ?? []);
+  zones.add(systemTimeZone());
+  if (current.trim()) zones.add(current.trim());
+  return [...zones]
+    .sort((a, b) => a.localeCompare(b))
+    .map((zone) => ({ value: zone, label: zone.replaceAll("_", " ") }));
+}
+
 function editorText(de: string, en: string): string {
   return workjetUiLanguage() === "en" ? en : de;
 }
@@ -277,7 +297,7 @@ export function ProjectCardConfigEditor({
         }
       }}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2 pr-16">
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-2">
         <div className="grid grid-cols-2 gap-1.5">
           <div className="flex min-w-0 flex-col gap-0.5">
             {label(`${id}-name`, editorText("Name", "Name"))}
@@ -294,7 +314,7 @@ export function ProjectCardConfigEditor({
             />
           </div>
           <div className="flex min-w-0 flex-col gap-0.5">
-            {label(`${id}-website`, editorText("Website", "Website"))}
+            {label(`${id}-website`, editorText("Webseite", "Website"))}
             <Input
               id={`${id}-website`}
               size="sm"
@@ -320,9 +340,11 @@ export function ProjectCardConfigEditor({
             onBlur={() => void commit(draft)}
           />
           {repositorySuggestion && !draft.repositoryUrl?.trim() ? (
-            <button
+            <Button
               type="button"
-              className="flex min-w-0 items-center gap-1.5 self-start rounded-full border border-border px-2 py-0.5 text-[11px] hover:bg-accent disabled:opacity-60"
+              size="xs"
+              variant="outline"
+              className="min-w-0 max-w-full self-start"
               data-workjet-action="project.card.config.repo-suggestion"
               title={repositorySuggestion}
               disabled={pending}
@@ -332,11 +354,11 @@ export function ProjectCardConfigEditor({
                 void commit(updated);
               }}
             >
-              <span className="font-medium">{editorText("Repo übernehmen", "Use repository")}</span>
+              <span>{editorText("Repository übernehmen", "Use repository")}</span>
               <span className="min-w-0 truncate text-muted-foreground">
                 {repositorySuggestion.replace(/^https:\/\//, "")}
               </span>
-            </button>
+            </Button>
           ) : null}
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-1.5">
@@ -366,7 +388,7 @@ export function ProjectCardConfigEditor({
                       : {
                           weekday: Number(next),
                           time: draft.jourFixe?.time ?? "09:00",
-                          timezone: draft.jourFixe?.timezone ?? "Europe/Berlin",
+                          timezone: draft.jourFixe?.timezone ?? systemTimeZone(),
                         },
                 };
                 setDraft(updated);
@@ -505,7 +527,7 @@ export function ProjectOverviewEditor({
     enabled: configuration?.jourFixe != null,
     weekday: configuration?.jourFixe?.weekday ?? 1,
     time: configuration?.jourFixe?.time ?? "09:00",
-    timezone: configuration?.jourFixe?.timezone ?? "Europe/Berlin",
+    timezone: configuration?.jourFixe?.timezone ?? systemTimeZone(),
   }));
   const scopedKpis = configuration?.id === kpis?.project_id ? kpis : undefined;
   const [initialKpis, setInitialKpis] = useState(scopedKpis);
@@ -538,7 +560,7 @@ export function ProjectOverviewEditor({
       enabled: configuration?.jourFixe != null,
       weekday: configuration?.jourFixe?.weekday ?? 1,
       time: configuration?.jourFixe?.time ?? "09:00",
-      timezone: configuration?.jourFixe?.timezone ?? "Europe/Berlin",
+      timezone: configuration?.jourFixe?.timezone ?? systemTimeZone(),
     });
     setPrompts(initialPrompts());
     setState({ pending: false, message: "" });
@@ -570,7 +592,7 @@ export function ProjectOverviewEditor({
           try {
             new Intl.DateTimeFormat("de-DE", { timeZone: meeting.timezone.trim() });
           } catch {
-            fieldErrors.meeting = "Zeitzone wie Europe/Berlin eintragen.";
+            fieldErrors.meeting = "Zeitzone wählen.";
           }
         if (Object.keys(fieldErrors).length > 0) {
           setErrors(fieldErrors);
@@ -690,34 +712,30 @@ export function ProjectOverviewEditor({
           htmlFor={`${id}-token-budget`}
         >
           {editorText("Token-Budget", "Token budget")}
-          {budget.trim().length === 0 ? (
-            <span className="text-muted-foreground/70" data-project-field-default="">
-              {editorText("kein Limit", "no limit")}
-            </span>
-          ) : null}
         </label>
         <div className="grid gap-1">
           <div className="flex items-center gap-2">
             <Input
               id={`${id}-token-budget`}
               inputMode="decimal"
+              placeholder={editorText("kein Limit", "no limit")}
               value={budget}
               onChange={(event) => setBudget(event.target.value)}
               disabled={state.pending}
               aria-invalid={errors.budget !== undefined}
             />
             <span className="shrink-0 text-xs text-muted-foreground">
-              {editorText("Mrd. Tokens je Regeltermin-Zyklus", "bn tokens per meeting cycle")}
+              {editorText("Mrd.", "bn")}
             </span>
           </div>
           {errors.budget !== undefined && (
-            <p className="text-xs text-red-400" role="alert">
+            <p className="text-xs text-destructive-foreground" role="alert">
               {errors.budget}
             </p>
           )}
         </div>
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-repository`}>
-          {editorText("Git-Quelle", "Git source")}
+          {editorText("Repository", "Repository")}
         </label>
         <Input
           id={`${id}-repository`}
@@ -746,7 +764,7 @@ export function ProjectOverviewEditor({
           aria-invalid={errors.urls !== undefined}
         />
         {errors.urls !== undefined && (
-          <p className="text-xs text-red-400 sm:col-start-2" role="alert">
+          <p className="text-xs text-destructive-foreground sm:col-start-2" role="alert">
             {errors.urls}
           </p>
         )}
@@ -857,18 +875,17 @@ export function ProjectOverviewEditor({
                   setMeeting((current) => ({ ...current, time: event.target.value }))
                 }
               />
-              <Input
+              <OptionSelect
                 aria-label="Regeltermin Zeitzone"
-                required={meeting.enabled}
+                className="w-auto min-w-0"
                 disabled={state.pending || !meeting.enabled}
                 value={meeting.timezone}
-                onChange={(event) =>
-                  setMeeting((current) => ({ ...current, timezone: event.target.value }))
-                }
+                options={timeZoneOptions(meeting.timezone)}
+                onValueChange={(timezone) => setMeeting((current) => ({ ...current, timezone }))}
               />
             </div>
             {errors.meeting !== undefined && (
-              <p className="text-xs text-red-400 sm:col-start-2" role="alert">
+              <p className="text-xs text-destructive-foreground sm:col-start-2" role="alert">
                 {errors.meeting}
               </p>
             )}
@@ -939,8 +956,8 @@ export function ProjectOverviewEditor({
         {kpisLoadFailed ? (
           <p role="alert" className="text-xs text-destructive" data-workjet-kpis-load-failed="">
             {workjetUiLanguage() === "en"
-              ? "KPIs could not be loaded from the instance. Reopen the settings to try again."
-              : "KPIs konnten nicht von der Instanz geladen werden. Einstellungen erneut öffnen, um es noch einmal zu versuchen."}
+              ? "Metrics not loaded"
+              : "Kennzahlen nicht geladen"}
           </p>
         ) : null}
         {([0, 1, 2] as const).map((index) => (
@@ -949,7 +966,7 @@ export function ProjectOverviewEditor({
             className="grid items-center gap-2 sm:grid-cols-[6rem_minmax(0,1fr)_minmax(8rem,0.6fr)]"
           >
             <label htmlFor={`${id}-kpi-${index}`} className="text-xs text-muted-foreground">
-              KPI {index + 1}
+              {editorText("Kennzahl", "Metric")} {index + 1}
             </label>
             <Textarea
               id={`${id}-kpi-${index}`}
@@ -958,7 +975,7 @@ export function ProjectOverviewEditor({
               value={prompts[index]}
               placeholder={
                 workjetUiLanguage() === "en"
-                  ? "Describe the KPI in one sentence"
+                  ? "Describe the metric in one sentence"
                   : "Kennzahl in einem Satz"
               }
               disabled={state.pending || !canConfigureKpis}

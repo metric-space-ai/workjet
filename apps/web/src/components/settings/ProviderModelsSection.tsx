@@ -260,7 +260,7 @@ export function ProviderModelsSection({
                         {capLabels.length > 0 ? (
                           <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                             {capLabels.map((label) => (
-                              <span key={label} className="text-[10px] text-muted-foreground">
+                              <span key={label} className="text-[11px] text-muted-foreground">
                                 {label}
                               </span>
                             ))}

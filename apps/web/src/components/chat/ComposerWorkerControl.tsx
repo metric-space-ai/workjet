@@ -102,7 +102,7 @@ export function ComposerWorkerMenuItems(
       </MenuRadioGroup>
       <MenuSeparator />
       <MenuItem onClick={props.onOpenWorkjetSettings}>
-        {workjetUiLanguage() === "en" ? "Manage worker presets" : "Worker-Presets verwalten"}
+        {workjetUiLanguage() === "en" ? "Manage presets" : "Presets verwalten"}
       </MenuItem>
     </>
   );

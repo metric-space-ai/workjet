@@ -1,17 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  CheckIcon,
-  CircleDashedIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
-import type { WorkjetInstanceGrokResponse } from "@workjet/contracts";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { WorkjetInstanceGrokResponse, WorkjetNativeProviderAccount } from "@workjet/contracts";
 import {
   requestInstanceGrok,
   grokVerificationLink,
-  describeInstanceGrokFailure,
   type InstanceGrokInput,
 } from "../../lib/workjetInstanceGrok";
 import type { InstanceGrokAccountPresentation } from "./WorkjetModelsProviders";
@@ -21,23 +12,69 @@ import {
 } from "../../workjetProjectControl";
 import { WORKJET_GATEWAY_PROVIDER_ICONS } from "./WorkjetGatewayAccounts";
 import { Button } from "../ui/button";
+import { Row, RowStatusDot, type RowStatus } from "../ui/row";
+import { NativeProviderLimits } from "./NativeProviderLimits";
+import { SettingsLoadingRow } from "./settingsAdd";
 
 type Check = NonNullable<WorkjetInstanceGrokResponse["check"]>;
+type GrokFailure = {
+  readonly errorCode: Check["errorCode"];
+  readonly upstream?: Check["upstream"] | undefined;
+};
 const INSTANCE_RETRY_MS = 15_000;
-const columns =
-  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
 
-/** Instance-owned subscription; computer gateway accounts remain separate rows. */
+/** Eine Fehlerzeile mit höchstens 12 Wörtern (UI-Vertrag §2), Deutsch. */
+export function grokFailureLine(failure: GrokFailure): string {
+  const status = failure.upstream?.status;
+  if (status === 401) return "Anmeldung abgelaufen. Abo entfernen und neu anmelden.";
+  if (status === 403) return "Zugriff verweigert. Abo-Berechtigung prüfen.";
+  if (status === 404) return "Modell beim Anbieter nicht gefunden.";
+  if (status === 426) return "Instanz zu alt für Grok. CTOX aktualisieren.";
+  if (status === 429) return "Anbieter drosselt. Später erneut versuchen.";
+  if (status !== undefined) return `Anbieter antwortet mit HTTP ${status}.`;
+  switch (failure.errorCode) {
+    case "timeout":
+      return "Keine Antwort in 20 Sekunden.";
+    case "missing_credential":
+      return "Nicht angemeldet.";
+    case "model_unavailable":
+      return "Modell fehlt im Abo.";
+    case "invalid_response":
+      return "Antwort unbrauchbar.";
+    default:
+      return "Prüfung fehlgeschlagen.";
+  }
+}
+
+function grokRowStatus(
+  busy: string | undefined,
+  checks: Readonly<Record<string, Check>>,
+  problem: boolean,
+): RowStatus {
+  const results = new Set(Object.values(checks).map((check) => check.status));
+  if (busy !== undefined && !busy.startsWith("instance.grok.")) return "busy";
+  if (problem || results.has("error")) return "error";
+  return results.has("ok") ? "ok" : "off";
+}
+
+/**
+ * Instance-owned subscription. It renders in the same `ui/row` list as the
+ * accounts of this computer (Audit C 1–3); its quota comes from the instance's
+ * provider registry when the instance reports one.
+ */
 export function useInstanceGrokAccount(
   instanceId: string,
   label: string,
+  quota?: WorkjetNativeProviderAccount["reportedQuota"],
 ): InstanceGrokAccountPresentation {
   const [state, setState] = useState<WorkjetInstanceGrokResponse>();
   const [checks, setChecks] = useState<Readonly<Record<string, Check>>>({});
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
   const [connectionFailure, setConnectionFailure] = useState<WorkjetProjectControlFailure>();
-  const [confirmRemove, setConfirmRemove] = useState(false);
+  /** Eine vom Nutzer ausgelöste Aktion endet nie still (Audit C 47). */
+  const [userFailure, setUserFailure] = useState(false);
+  const lastInput = useRef<InstanceGrokInput | undefined>(undefined);
   const alive = useRef(true);
   const controller = useRef<AbortController | undefined>(undefined);
   const retained = useRef<WorkjetInstanceGrokResponse | undefined>(undefined);
@@ -56,8 +93,12 @@ export function useInstanceGrokAccount(
     } else if (check) setChecks((old) => ({ ...old, [check.modelId]: check }));
   }, []);
   const run = useCallback(
-    async (input: InstanceGrokInput) => {
+    async (input: InstanceGrokInput, user = false) => {
       if (!alive.current) return undefined;
+      if (user) {
+        lastInput.current = input;
+        setUserFailure(false);
+      }
       controller.current?.abort();
       const active = new AbortController();
       controller.current = active;
@@ -68,6 +109,7 @@ export function useInstanceGrokAccount(
         const result = await requestInstanceGrok(instanceId, input, active.signal);
         if (active.signal.aborted || !alive.current) return undefined;
         setConnectionFailure(undefined);
+        setUserFailure(false);
         apply(result);
         return result;
       } catch (failure) {
@@ -78,8 +120,10 @@ export function useInstanceGrokAccount(
               ? failure.message
               : "unknown";
         if (!active.signal.aborted && alive.current) {
-          if (failure instanceof WorkjetProjectControlError) setConnectionFailure(failure.failure);
-          else setError(failure instanceof Error ? failure.message : "Grok-Aktion fehlgeschlagen.");
+          if (failure instanceof WorkjetProjectControlError) {
+            setConnectionFailure(failure.failure);
+            if (user) setUserFailure(true);
+          } else setError("Grok-Aktion fehlgeschlagen.");
         }
         return undefined;
       } finally {
@@ -157,7 +201,7 @@ export function useInstanceGrokAccount(
   const checkAll = () => {
     void (async () => {
       for (const modelId of state?.models ?? []) {
-        const result = await run({ action: "instance.grok.check", modelId });
+        const result = await run({ action: "instance.grok.check", modelId }, true);
         if (!result) break;
       }
     })();
@@ -173,8 +217,7 @@ export function useInstanceGrokAccount(
 
   /** Startet das Abo auf der Instanz; liefert den Rohcode eines Fehlers oder null. */
   const start = async (): Promise<string | null> => {
-    setConfirmRemove(false);
-    const result = await run({ action: "instance.grok.start" });
+    const result = await run({ action: "instance.grok.start" }, true);
     if (!result) return lastFailure.current ?? "unknown";
     if (
       result.login?.phase === "accepted" &&
@@ -191,205 +234,176 @@ export function useInstanceGrokAccount(
   const link = login && grokVerificationLink(login.verificationUri);
   const lastProblem =
     state?.catalogError ?? (state?.check?.status === "error" ? state.check : null);
-  const row = (
-    <div role="rowgroup" data-account-id="ctox-instance-grok" className="border-b border-border/50">
-      <div role="row" className={columns + " min-h-14 py-1.5"}>
-        <div role="cell" className="min-w-0">
-          <div className="flex items-center gap-1.5 text-xs font-medium">
-            <Icon className="size-4 shrink-0" />
-            <span>xAI · Grok Build</span>
-            {!state?.installed && (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`Grok-Konto auf ${label} hinzufügen`}
-                data-workjet-action="models.instance.xai.add-account"
-                disabled={!!busy || phase === "pending"}
-                onClick={() => void start()}
-              >
-                <PlusIcon className="size-3" />
-              </Button>
-            )}
-          </div>
-          <span className="block break-words text-[11px] text-muted-foreground">
-            {label} · {state ? (state.installed ? state.accountLabel : "OAuth-Abo") : "—"}
-          </span>
+  const pending = phase === "pending" && login;
+  const failureLine = userFailure
+    ? "Instanz antwortet nicht."
+    : (error ?? (lastProblem ? grokFailureLine(lastProblem) : null));
+  const retry = () => {
+    const input = lastInput.current;
+    void run(input ?? { action: "instance.grok.read" }, input !== undefined);
+  };
+  const statusLine = failureLine ? (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center gap-2 px-3 pb-2 pl-9 text-xs text-destructive"
+      data-workjet-instance-grok-failure=""
+    >
+      <span>{failureLine}</span>
+      <Button size="xs" variant="outline" disabled={!!busy} onClick={retry}>
+        Erneut versuchen
+      </Button>
+    </div>
+  ) : null;
+  const pendingLine = pending ? (
+    <div role="status" className="flex flex-wrap items-center gap-3 px-3 pb-2 pl-9 text-xs">
+      <span>
+        Code <strong className="font-mono select-all">{login.userCode}</strong>
+      </span>
+      {link ? (
+        <Button
+          size="xs"
+          render={
+            <a
+              href={link}
+              target="_blank"
+              rel="noreferrer"
+              data-workjet-action="models.instance.xai.open-login"
+            />
+          }
+        >
+          Anmeldung öffnen
+        </Button>
+      ) : (
+        <span role="alert">Anmeldelink ungültig.</span>
+      )}
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={!!busy}
+        onClick={() => {
+          void run({ action: "instance.grok.cancel", loginId: login.loginId }, true);
+        }}
+      >
+        Abbrechen
+      </Button>
+    </div>
+  ) : null;
+  // Ohne Abo gibt es keine Zeile: hinzugefügt wird über „+ Hinzufügen › xAI“
+  // (Audit C 4, 46). Vor der ersten Antwort ein Skelett, nach 10 s
+  // „Nicht erreichbar · Erneut“ (Audit C 5).
+  let row: ReactNode;
+  if (state === undefined) {
+    row = (
+      <div data-account-id="ctox-instance-grok">
+        {userFailure ? statusLine : <SettingsLoadingRow onRetry={retry} label="Grok lädt" />}
+      </div>
+    );
+  } else if (!state.installed) {
+    row =
+      pendingLine || statusLine ? (
+        <div data-account-id="ctox-instance-grok">
+          {pendingLine}
+          {statusLine}
         </div>
-        <div role="cell" className="flex min-w-0 flex-wrap gap-1">
-          {state?.models.map((modelId) => {
-            const check = checks[modelId];
-            const running = busy === modelId;
-            const Status =
-              running || !check ? CircleDashedIcon : check.status === "ok" ? CheckIcon : XIcon;
-            return (
-              <button
-                key={modelId}
-                type="button"
-                className="inline-flex min-w-0 items-center gap-1 rounded border border-border px-1.5 py-1 font-mono text-[11px]"
-                disabled={!!busy || phase === "pending"}
-                onClick={() => {
-                  void run({ action: "instance.grok.check", modelId });
-                }}
-                data-workjet-action={`models.instance.xai.check.${modelId}`}
-                title={
-                  running
-                    ? "Prüft …"
-                    : check?.status === "ok"
-                      ? `Prüfung bestanden · ${check.latencyMs} ms · ${new Date(check.checkedAt).toLocaleString("de-DE")}`
-                      : check?.status === "error"
-                        ? describeInstanceGrokFailure(check)
-                        : "Nicht geprüft"
-                }
-              >
-                <span className="min-w-0 whitespace-normal break-all">{modelId}</span>
-                <Status
-                  className={
-                    "size-3 shrink-0 " +
-                    (running || !check
-                      ? "text-muted-foreground"
-                      : check.status === "ok"
-                        ? "text-emerald-500"
-                        : "text-destructive")
-                  }
-                  aria-label={
+      ) : null;
+  } else {
+    const rowStatus = grokRowStatus(busy, checks, Boolean(lastProblem || userFailure));
+    row = (
+      <div data-account-id="ctox-instance-grok">
+        <Row
+          className="py-1.5"
+          status={rowStatus}
+          statusLabel={
+            rowStatus === "ok"
+              ? "Prüfung bestanden"
+              : rowStatus === "error"
+                ? "Prüfung fehlgeschlagen"
+                : rowStatus === "busy"
+                  ? "Prüft"
+                  : "Nicht geprüft"
+          }
+          name={
+            <span className="flex min-w-0 items-center gap-2">
+              <Icon role="img" aria-label="xAI" className="size-4 shrink-0" />
+              <span className="truncate">{state.accountLabel}</span>
+            </span>
+          }
+          meta={<span className="pl-6">Abo · Instanz {label}</span>}
+          chips={
+            quota === undefined ? undefined : <NativeProviderLimits provider="xai" quota={quota} />
+          }
+          onDelete={() => {
+            void run({ action: "instance.grok.remove" }, true);
+          }}
+          deleteLabel="Entfernen"
+          deleteConfirmTitle="Abo entfernen?"
+          menuActions={[
+            { label: "Neu prüfen", onSelect: checkAll },
+            {
+              label: "Neu laden",
+              onSelect: () => {
+                void run({ action: "instance.grok.read" }, true);
+              },
+            },
+          ]}
+          menuLabel={`Aktionen für ${state.accountLabel}`}
+        />
+        {state.models.length > 0 ? (
+          <div className="flex min-w-0 flex-wrap gap-1 px-3 pb-1.5 pl-9">
+            {state.models.map((modelId) => {
+              const check = checks[modelId];
+              const running = busy === modelId;
+              const status: RowStatus = running
+                ? "busy"
+                : check?.status === "ok"
+                  ? "ok"
+                  : check?.status === "error"
+                    ? "error"
+                    : "off";
+              return (
+                <Button
+                  key={modelId}
+                  size="xs"
+                  variant="outline"
+                  className="font-mono"
+                  disabled={!!busy || phase === "pending"}
+                  onClick={() => {
+                    void run({ action: "instance.grok.check", modelId }, true);
+                  }}
+                  data-workjet-action={`models.instance.xai.check.${modelId}`}
+                  title={
                     running
-                      ? "Prüft"
+                      ? "Prüft …"
                       : check?.status === "ok"
-                        ? "Prüfung bestanden"
+                        ? `Prüfung bestanden${check.latencyMs === null ? "" : ` · ${check.latencyMs} ms`} · ${new Date(check.checkedAt).toLocaleString("de-DE")}`
                         : check?.status === "error"
-                          ? (check.errorCode ?? "Prüfung fehlgeschlagen")
+                          ? grokFailureLine(check)
                           : "Nicht geprüft"
                   }
-                />
-              </button>
-            );
-          })}
-          {state?.installed && state.models.length === 0 && (
-            <span className="text-xs text-muted-foreground">Keine Modelle gemeldet</span>
-          )}
-          {!state?.installed && phase !== "pending" && (
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={!!busy}
-              data-workjet-action="models.instance.xai.sign-in"
-              onClick={() => void start()}
-            >
-              Grok Build OAuth
-            </Button>
-          )}
-        </div>
-        <span role="cell" title="Keine Limits gemeldet" className="text-xs text-muted-foreground">
-          —
-        </span>
-        <span
-          role="cell"
-          title={
-            state
-              ? state.installed
-                ? "Abo gespeichert"
-                : "Kein Abo gespeichert"
-              : "Kontostatus nicht verfügbar"
-          }
-          aria-label={state ? undefined : "Kontostatus nicht verfügbar"}
-          className="text-center text-xs text-muted-foreground"
-        >
-          {state ? (state.installed ? "✓" : "—") : "◌"}
-        </span>
-        <div role="cell">
-          {state?.installed ? (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={`Grok-Konto von ${label} entfernen`}
-              disabled={!!busy}
-              onClick={() => setConfirmRemove(true)}
-              data-workjet-action="models.instance.xai.remove"
-            >
-              <Trash2Icon className="size-3.5" />
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Grok-Konto neu laden"
-              disabled={!!busy}
-              onClick={() => {
-                void run({ action: "instance.grok.read" });
-              }}
-            >
-              <RefreshCwIcon className="size-3.5" />
-            </Button>
-          )}
-        </div>
+                >
+                  <RowStatusDot
+                    status={status}
+                    label={
+                      running
+                        ? "Prüft"
+                        : check?.status === "ok"
+                          ? "Prüfung bestanden"
+                          : check?.status === "error"
+                            ? "Prüfung fehlgeschlagen"
+                            : "Nicht geprüft"
+                    }
+                  />
+                  {modelId}
+                </Button>
+              );
+            })}
+          </div>
+        ) : null}
+        {pendingLine}
+        {statusLine}
       </div>
-      {phase === "pending" && login && (
-        <div role="status" className="flex flex-wrap items-center gap-3 py-2 text-xs">
-          <span>
-            Code <strong className="font-mono select-all">{login.userCode}</strong>
-          </span>
-          {link ? (
-            <Button
-              size="xs"
-              render={
-                <a
-                  href={link}
-                  target="_blank"
-                  rel="noreferrer"
-                  data-workjet-action="models.instance.xai.open-login"
-                />
-              }
-            >
-              Grok-Anmeldung öffnen
-            </Button>
-          ) : (
-            <span role="alert">Anmeldelink ungültig. Abbrechen und neu starten.</span>
-          )}
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={!!busy}
-            onClick={() => {
-              void run({ action: "instance.grok.cancel", loginId: login.loginId });
-            }}
-          >
-            Anmeldung abbrechen
-          </Button>
-        </div>
-      )}
-      {confirmRemove && (
-        <div role="alert" className="flex flex-wrap items-center gap-2 py-2 text-xs">
-          <span>Abo von {label} entfernen?</span>
-          <Button
-            size="xs"
-            variant="destructive"
-            disabled={!!busy}
-            data-workjet-action="models.instance.xai.confirm-remove"
-            onClick={() => {
-              void run({ action: "instance.grok.remove" }).then((result) => {
-                if (result) setConfirmRemove(false);
-              });
-            }}
-          >
-            Entfernen
-          </Button>
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={!!busy}
-            onClick={() => setConfirmRemove(false)}
-          >
-            Abbrechen
-          </Button>
-        </div>
-      )}
-      {(error || lastProblem) && (
-        <p role="alert" className="py-1 text-xs text-destructive">
-          {error ?? (lastProblem && describeInstanceGrokFailure(lastProblem))}
-        </p>
-      )}
-    </div>
-  );
+    );
+  }
   return {
     row,
     connectionFailure,

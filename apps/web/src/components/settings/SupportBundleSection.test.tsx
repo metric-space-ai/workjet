@@ -43,7 +43,8 @@ describe("support bundle section", () => {
 
   it("offers the action as title plus button, without paragraphs", () => {
     const markup = renderView();
-    expect(markup).toContain("Support-Bundle");
+    expect(markup).toContain("Hilfepaket");
+    expect(markup).not.toContain("Datei bleibt auf diesem Rechner");
     expect(markup).toContain("Erstellen");
     expect(markup).not.toMatch(/<p[\s>]/);
   });

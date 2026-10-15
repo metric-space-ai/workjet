@@ -36,6 +36,8 @@ import { ctoxConnectionMatchesSelectedInstance } from "../../workjetCtoxConnecti
 import { resolvePrivateChatDraftProject } from "../../workjetPrivateChatScope";
 import { InlineExpand } from "../ui/inline-expand";
 import { WorkjetComputersSettings } from "../settings/WorkjetComputersSettings";
+import { WorkjetSettings } from "../settings/WorkjetSettings";
+import { SettingsEmbeddedContext } from "../settings/settingsLayout";
 import { NativePrivateChatControl } from "./NativePrivateChatControl";
 import { serializeComposerFileLink } from "@workjet/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@workjet/shared/model";
@@ -638,7 +640,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onDraftEnvironmentChange,
     computerChangeDisabledReason,
     onWorkjetRoleChange,
-    onOpenWorkjetSettings,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -1854,6 +1855,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLDivElement | null>(null);
   const [isStashMenuOpen, setIsStashMenuOpen] = useState(false);
   const [isAddComputerOpen, setIsAddComputerOpen] = useState(false);
+  // B#55: Presets werden am Klickort bearbeitet, nicht auf einer eigenen Seite.
+  const [isPresetsOpen, setIsPresetsOpen] = useState(false);
+  const presetsEmbedding = useMemo(() => ({ onClose: () => setIsPresetsOpen(false) }), []);
   const [stashPulse, setStashPulse] = useState<{ key: number; active: boolean }>({
     key: 0,
     active: false,
@@ -3665,6 +3669,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       >
         <WorkjetComputersSettings setupOnly onCompleted={() => setIsAddComputerOpen(false)} />
       </InlineExpand>
+      <InlineExpand
+        open={isPresetsOpen}
+        onOpenChange={setIsPresetsOpen}
+        label="Presets"
+        className="mb-2 max-h-[60vh] overflow-y-auto rounded-2xl border bg-card p-3 pe-9"
+      >
+        {isPresetsOpen ? (
+          <SettingsEmbeddedContext.Provider value={presetsEmbedding}>
+            <WorkjetSettings defaultSection="workers" />
+          </SettingsEmbeddedContext.Provider>
+        ) : null}
+      </InlineExpand>
       {dictationError ? (
         <ComposerErrorLine
           line={dictationError}
@@ -4145,7 +4161,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         getModelDisabledReason(selectedInstanceId, selectedModel) !== null
                       }
                       onSelectWorker={handleSelectWorkjetWorker}
-                      onOpenWorkjetSettings={onOpenWorkjetSettings}
+                      onOpenWorkjetSettings={() => setIsPresetsOpen(true)}
                     />
                   }
                   manual={

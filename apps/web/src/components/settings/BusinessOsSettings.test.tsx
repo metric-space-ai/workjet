@@ -121,10 +121,21 @@ describe("Business OS settings scope", () => {
         addPanel={<span data-testid="add-panel">Instanz hinzufügen</span>}
       />,
     );
-    expect(markup).toContain("Keine Instanz gewählt");
+    // The open panel replaces the empty state at the click location.
+    expect(markup).not.toContain("Keine Instanz gewählt");
     expect(markup).toContain('data-testid="add-panel"');
-    expect(markup).not.toContain("Gerät hinzufügen");
+    expect(markup).not.toContain("data-workjet-instance-devices");
     expect(markup).not.toContain('role="dialog"');
+  });
+
+  it("offers one primary action in the empty state (Audit C 18)", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView instances={[]} activeInstanceId={null} onAddInstance={() => {}} />,
+    );
+    expect(markup).toContain("Keine Instanz gewählt");
+    expect(markup).toMatch(
+      /<button[^>]*data-workjet-action="instance.add"[^>]*>Instanz hinzufügen/,
+    );
   });
 
   it("shows no status box for a failed discovery; it retries quietly", () => {
@@ -133,7 +144,8 @@ describe("Business OS settings scope", () => {
     );
     expect(markup).not.toContain('role="alert"');
     expect(markup).not.toContain("Erneut versuchen");
-    expect(markup).toContain("—");
+    expect(markup).not.toContain("—");
+    expect(markup).toContain('data-slot="settings-loading"');
   });
 
   it("is one page: no settings grid that duplicates the sidebar, no English captions", () => {
@@ -195,9 +207,9 @@ describe("Business OS settings scope", () => {
         deviceManagementBlockedReason="WELSCH zuerst einmal in Ops öffnen."
       />,
     );
-    expect(markup).toContain("Gerät hinzufügen");
     expect(markup).toContain("WELSCH zuerst einmal in Ops öffnen.");
-    expect(markup).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*Gerät hinzufügen/);
+    // No dead add button while blocked.
+    expect(markup).not.toContain('data-workjet-action="instance.devices.add"');
     expect(markup).not.toContain("serverautoritativ");
     expect(markup).not.toContain("primaryEnvironment");
   });

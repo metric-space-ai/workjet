@@ -10,10 +10,12 @@ import {
   type EnvironmentId,
 } from "@workjet/contracts";
 import { createEnvironmentRpcCommand } from "@workjet/client-runtime/state/runtime";
-import { useNavigate } from "@tanstack/react-router";
 import { InlineExpand } from "../ui/inline-expand";
 import { WorkjetComputersSettings } from "../settings/WorkjetComputersSettings";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { WorkjetSettings } from "../settings/WorkjetSettings";
+import { ProviderSettingsPanel } from "../settings/ProviderSettingsPanel";
+import { SettingsEmbeddedContext } from "../settings/settingsLayout";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { readActiveWorkjetScope } from "../../activeWorkjetScope";
 import {
   businessOsCodeScopeContainsEnvironment,
@@ -90,6 +92,8 @@ export function supervisorPresetChoices(input: {
   return input.cached.length > 0 || remembered === undefined ? input.cached : remembered;
 }
 
+type InlineSettingsPanel = "presets" | "harness" | null;
+
 export function NativeSupervisorRouteControls(props: {
   readonly scope: NativeSupervisorScope | null;
   readonly workerSourceBinding?:
@@ -143,8 +147,10 @@ export function NativeSupervisorRouteControls(props: {
   const write = useAtomCommand(serverEnvironment.updateLumaConfiguration, { reportFailure: false });
   const read = useAtomCommand(readInstanceConfiguration, { reportFailure: false });
   const route = useSupervisorRouteDisplay(props.scope);
-  const navigate = useNavigate();
   const [addComputerOpen, setAddComputerOpen] = useState(false);
+  // B#55: Presets und Harness werden am Klickort eingerichtet, ohne den Chat zu verlassen.
+  const [inlinePanel, setInlinePanel] = useState<InlineSettingsPanel>(null);
+  const embedding = useMemo(() => ({ onClose: () => setInlinePanel(null) }), []);
   const project = registry.projects.find((entry) => entry.id === props.scope?.projectId);
   const selectedId =
     project?.supervisorLumaId ??
@@ -379,9 +385,9 @@ export function NativeSupervisorRouteControls(props: {
         onSelectWorker={(id) => void choose(id)}
         onSelectManual={(next) => void choose(next)}
         onError={reportError}
-        onConfigureWorkers={() => void navigate({ to: "/settings/workjet" })}
+        onConfigureWorkers={() => setInlinePanel("presets")}
         onAddComputer={() => setAddComputerOpen(true)}
-        onSetupHarness={() => void navigate({ to: "/settings/harnesses" })}
+        onSetupHarness={() => setInlinePanel("harness")}
         onHarnessMenuOpen={() => {
           // Erkennung nach einer Installation ohne App-Neustart neu anstoßen.
           instance.refresh();
@@ -397,6 +403,24 @@ export function NativeSupervisorRouteControls(props: {
           className="mt-2 rounded-2xl border bg-card p-3 pe-9"
         >
           <WorkjetComputersSettings setupOnly onCompleted={() => setAddComputerOpen(false)} />
+        </InlineExpand>
+        <InlineExpand
+          open={inlinePanel !== null}
+          onOpenChange={(open) => {
+            if (!open) setInlinePanel(null);
+          }}
+          label={inlinePanel === "harness" ? "Harness" : "Presets"}
+          className="mt-2 max-h-[60vh] overflow-y-auto rounded-2xl border bg-card p-3 pe-9"
+        >
+          {inlinePanel === null ? null : (
+            <SettingsEmbeddedContext.Provider value={embedding}>
+              {inlinePanel === "harness" ? (
+                <ProviderSettingsPanel sections="harnesses" />
+              ) : (
+                <WorkjetSettings defaultSection="workers" />
+              )}
+            </SettingsEmbeddedContext.Provider>
+          )}
         </InlineExpand>
       </div>
     </>

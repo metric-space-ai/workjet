@@ -274,12 +274,43 @@ export function buildKeybindingCommandOptions(
   );
 }
 
+/** Deutsche Bezeichnung je Befehl (D48); nie aus der Befehls-ID gebaut. */
+const COMMAND_LABELS: Readonly<Record<string, string>> = {
+  "sidebar.toggle": "Seitenleiste ein/aus",
+  "terminal.toggle": "Terminal ein/aus",
+  "terminal.split": "Terminal teilen",
+  "terminal.splitVertical": "Terminal senkrecht teilen",
+  "terminal.new": "Neues Terminal",
+  "terminal.close": "Terminal schließen",
+  "rightPanel.toggle": "Rechte Leiste ein/aus",
+  "diff.toggle": "Änderungen ein/aus",
+  "preview.toggle": "Vorschau ein/aus",
+  "preview.refresh": "Vorschau neu laden",
+  "preview.focusUrl": "Vorschau: Adresse",
+  "preview.zoomIn": "Vorschau vergrößern",
+  "preview.zoomOut": "Vorschau verkleinern",
+  "preview.resetZoom": "Vorschau: Originalgröße",
+  "commandPalette.toggle": "Befehlspalette",
+  "filePicker.toggle": "Datei öffnen",
+  "projectSearch.toggle": "Im Projekt suchen",
+  "themeEditor.toggle": "Farbschema bearbeiten",
+  "composer.stash": "Entwurf zurücklegen",
+  "chat.new": "Neue Unterhaltung",
+  "chat.newLocal": "Neue lokale Unterhaltung",
+  "editor.openFavorite": "Im Editor öffnen",
+  "modelPicker.toggle": "Modellwahl",
+  "thread.previous": "Vorherige Unterhaltung",
+  "thread.next": "Nächste Unterhaltung",
+};
+
 export function commandLabel(command: KeybindingCommand): string {
   const raw = String(command);
   if (raw.startsWith("script.") && raw.endsWith(".run")) {
-    return `Run Script: ${titleCaseCommandSegment(raw.slice("script.".length, -".run".length))}`;
+    return `Skript: ${titleCaseCommandSegment(raw.slice("script.".length, -".run".length))}`;
   }
-  return raw.split(".").map(titleCaseCommandSegment).join(": ");
+  const jump = /^(thread|modelPicker)\.jump\.(\d)$/.exec(raw);
+  if (jump) return jump[1] === "thread" ? `Unterhaltung ${jump[2]}` : `Modell ${jump[2]}`;
+  return COMMAND_LABELS[raw] ?? raw.split(".").map(titleCaseCommandSegment).join(": ");
 }
 
 function titleCaseCommandSegment(segment: string): string {

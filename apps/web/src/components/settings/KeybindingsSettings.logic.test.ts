@@ -129,9 +129,9 @@ describe("KeybindingsSettings.logic", () => {
   });
 
   it("formats static and project script command labels", () => {
-    expect(commandLabel("commandPalette.toggle")).toBe("Command Palette: Toggle");
-    expect(commandLabel("themeEditor.toggle")).toBe("Theme Editor: Toggle");
-    expect(commandLabel("script.setup-db.run")).toBe("Run Script: Setup Db");
+    expect(commandLabel("commandPalette.toggle")).toBe("Befehlspalette");
+    expect(commandLabel("themeEditor.toggle")).toBe("Farbschema bearbeiten");
+    expect(commandLabel("script.setup-db.run")).toBe("Skript: Setup Db");
   });
 
   it("builds known when variable options from defaults without frontend labels", () => {
@@ -246,13 +246,13 @@ describe("KeybindingsSettings.logic", () => {
       "",
     );
 
-    expect(rows[0]?.conflicts).toEqual(["Chat: New Local"]);
+    expect(rows[0]?.conflicts).toEqual(["Neue lokale Unterhaltung"]);
     expect(
       keybindingConflictLabels(rows, {
         rowId: rows[0]?.id ?? "",
         key: "mod+n",
         when: "",
       }),
-    ).toEqual(["Chat: New Local"]);
+    ).toEqual(["Neue lokale Unterhaltung"]);
   });
 });

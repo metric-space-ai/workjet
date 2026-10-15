@@ -40,33 +40,36 @@ const INSTANCE_LIST_TEXT_EN: { readonly [K in keyof typeof INSTANCE_LIST_TEXT]: 
   error: "Change not saved. Please try again.",
 };
 
+/**
+ * Ein Statuspunkt je Zeile, der Zustand steht nur in seinem Tooltip/Label
+ * (D33, Owner 15.10.: keine Statuswörter oder Chips). „Kopplung abgelaufen“
+ * ist der eine Begriff für den abgelaufenen Zustand (D34).
+ */
 export interface InstanceRowState {
   readonly status: RowStatus;
   /** Kurzer Zustand für Statuspunkt und Diagnose. */
   readonly label: string;
-  /** Chip nur bei einem Problem oder laufender Einrichtung. */
-  readonly chip: string | null;
 }
 
 export function instanceRowState(instance: CtoxManagedInstance): InstanceRowState {
   if ((instance.workjetState ?? "enabled") !== "enabled") {
-    return { status: "off", label: "Deaktiviert", chip: null };
+    return { status: "off", label: "Deaktiviert" };
   }
   switch (instance.status) {
     case "offline":
-      return { status: "error", label: "Getrennt", chip: "Getrennt" };
+      return { status: "error", label: "Getrennt" };
     case "pairing_expired":
-      return { status: "error", label: "Kopplung abgelaufen", chip: "Abgelaufen" };
+      return { status: "error", label: "Kopplung abgelaufen" };
     case "needs_auth":
-      return { status: "error", label: "Anmeldung nötig", chip: "Anmeldung nötig" };
+      return { status: "error", label: "Anmeldung nötig" };
     case "error":
-      return { status: "error", label: "Fehler", chip: "Fehler" };
+      return { status: "error", label: "Fehler" };
     case "installing":
-      return { status: "busy", label: "Wird eingerichtet", chip: "Wird eingerichtet" };
+      return { status: "busy", label: "Wird eingerichtet" };
     default:
       return instance.healthSummary.dataPlaneReady
-        ? { status: "ok", label: "Verbunden", chip: null }
-        : { status: "busy", label: "Nicht bestätigt", chip: null };
+        ? { status: "ok", label: "Verbunden" }
+        : { status: "busy", label: "Nicht bestätigt" };
   }
 }
 
@@ -81,7 +84,7 @@ export function instanceRowMeta(instance: CtoxManagedInstance): string {
     case "ssh_managed":
       return "SSH";
     default:
-      return "—";
+      return "";
   }
 }
 
@@ -132,10 +135,11 @@ export function dedupeCtoxInstances(
 
 function InstanceDiagnosis({ instance }: { readonly instance: CtoxManagedInstance }) {
   const state = instanceRowState(instance);
+  // Fehlende Werte fallen samt Beschriftung weg (Audit C 40).
   const entries: ReadonlyArray<readonly [string, string]> = [
     ["Zustand", state.label],
     ["Quelle", SOURCE_LABELS[instance.source]],
-    ["Adresse", instance.domain ?? "—"],
+    ...(instance.domain ? [["Adresse", instance.domain] as const] : []),
     ["Synchronisierung", instance.healthSummary.dataPlaneReady ? "bereit" : "nicht bestätigt"],
   ];
   return (
@@ -262,33 +266,23 @@ export function InstancesTable({
               <Row
                 name={name}
                 meta={instanceRowMeta(instance)}
-                // One status signal (#631): the chip names a problem; a dot only
-                // for the one state without a chip. Healthy and deactivated stay quiet.
-                {...(state.chip === null && state.status === "busy"
-                  ? { status: state.status, statusLabel: state.label }
+                // One status signal (D33): the dot, its state in the label only.
+                status={state.status}
+                statusLabel={state.label}
+                {...(switchable
+                  ? {
+                      chips: (
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          data-workjet-action={`instance.select:${instance.id}`}
+                          onClick={() => void choose(instance.id)}
+                        >
+                          {text.select}
+                        </Button>
+                      ),
+                    }
                   : {})}
-                chips={
-                  <>
-                    {state.chip !== null ? (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                        {state.chip}
-                      </span>
-                    ) : null}
-                    {enabled ? null : (
-                      <span className="text-[11px] text-muted-foreground">{text.disabled}</span>
-                    )}
-                    {switchable ? (
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        data-workjet-action={`instance.select:${instance.id}`}
-                        onClick={() => void choose(instance.id)}
-                      >
-                        {text.select}
-                      </Button>
-                    ) : null}
-                  </>
-                }
                 {...(deletable ? { onDelete: () => void change(instance, "removed") } : {})}
                 deleteLabel={text.remove}
                 deleteConfirmTitle={text.removeConfirm}

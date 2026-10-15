@@ -28,7 +28,7 @@ describe("Workjet settings information architecture (#568)", () => {
     expect(settingsNavItems(true)).toHaveLength(12);
     expect(DEVELOPER_SETTINGS_NAV_ITEMS.slice(7).map((item) => item.label)).toEqual([
       "Diagnose",
-      "Harnesses",
+      "Harness",
       "Schnittstellen",
       "Versionsverwaltung",
       "Tastenkürzel",

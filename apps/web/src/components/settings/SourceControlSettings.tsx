@@ -200,7 +200,7 @@ function itemSummary({
   readonly auth: SourceControlProviderAuth | null;
   readonly authAccount: string | null;
 }) {
-  // The „Bald“ badge already says it; a second caption is slop (QA 0.0.95 E).
+  // Nicht fertige Einträge werden gar nicht gelistet (Audit C 30).
   if (isVcsNotReady(item)) return null;
 
   if (item.status !== "available") {
@@ -268,11 +268,6 @@ function DiscoveryItemRow({
                 {item.label}
               </span>
               {version ? <code className="text-xs text-muted-foreground">{version}</code> : null}
-              {isVcsNotReady(item) ? (
-                <Badge variant="warning" size="sm">
-                  Bald
-                </Badge>
-              ) : null}
               {authStatus?.badge ? (
                 <Badge variant={authStatus.badge} size="sm">
                   {authStatus.label}
@@ -556,7 +551,7 @@ function ScopedSourceControlSettingsPanel({
               title="Versionsverwaltung"
               headerAction={scanButton}
             >
-              {/* Only usable systems: „Bald“/unavailable entries are not choices (#627). */}
+              {/* Only usable systems: unfinished/unavailable entries are not choices (#627). */}
               {result.versionControlSystems
                 .filter((item) => item.implemented && item.status === "available")
                 .map((item) => (

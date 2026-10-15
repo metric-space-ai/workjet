@@ -1307,16 +1307,16 @@ function resolveProjectInstanceOptions(
  */
 function galleryConfigurationSave(
   project: GalleryProject,
-  instanceId: string | null,
+  activeCtoxInstanceId: string | null,
 ): {
   readonly savePatch?: (patch: ProjectCardConfigurationPatch) => Promise<boolean>;
   readonly onSaveConfiguration?: (values: ProjectCardConfigurationValues) => Promise<boolean>;
 } {
   const configuration = project.configuration;
-  if (configuration === undefined || instanceId === null) return {};
+  if (configuration === undefined || activeCtoxInstanceId === null) return {};
   const savePatch = async (patch: ProjectCardConfigurationPatch) => {
-    if (readActiveWorkjetScope().selectedInstanceId !== instanceId) return false;
-    const result = await configureWorkjetProject(instanceId, {
+    if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return false;
+    const result = await configureWorkjetProject(activeCtoxInstanceId, {
       action: "project.configure",
       commandId: newCommandId(),
       projectId: configuration.id,
@@ -1325,10 +1325,10 @@ function galleryConfigurationSave(
     if (
       result._tag !== "completed" ||
       result.response.action !== "project.configure" ||
-      readActiveWorkjetScope().selectedInstanceId !== instanceId
+      readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
     )
       return false;
-    refreshWorkjetProjectRegistry(instanceId);
+    refreshWorkjetProjectRegistry(activeCtoxInstanceId);
     return true;
   };
   return {

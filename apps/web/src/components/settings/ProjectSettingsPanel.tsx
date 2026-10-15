@@ -24,7 +24,7 @@ import { createModelSelection } from "@workjet/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@workjet/shared/keybindings";
 import { Link, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import { PencilIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -61,7 +61,14 @@ import {
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
-import { primaryServerProvidersAtom, serverEnvironment } from "../../state/server";
+import {
+  primaryServerAvailableEditorsAtom,
+  primaryServerProvidersAtom,
+  serverEnvironment,
+} from "../../state/server";
+import { shellEnvironment } from "../../state/shell";
+import { resolveAndPersistPreferredEditor } from "../../editorPreferences";
+import { SettingsAddButton } from "./settingsAdd";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
@@ -77,9 +84,9 @@ import {
 import { Button } from "../ui/button";
 import { InlineExpand } from "../ui/inline-expand";
 import { Input } from "../ui/input";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { Empty, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useUiText } from "../../hooks/useUiText";
 import { Row } from "../ui/row";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -96,7 +103,6 @@ import { workjetUiLanguage } from "../../workjetProjectControl";
 import { recordWorkjetProjectProjection, selectWorkjetProject } from "../../workjetProjectRegistry";
 import { selectProjectOverviewRef } from "../../projectOverviewSelection";
 import { readActiveWorkjetScope } from "../../activeWorkjetScope";
-import { cn } from "../../lib/utils";
 import { INSTANCE_PROJECT_KEY_PREFIX } from "./InstanceProjectSettings";
 import { searchableSetting } from "./settingsSearch";
 
@@ -253,29 +259,16 @@ export function ProjectCheckoutRow({
   const scriptNames: string[] = [];
   for (const member of group.memberProjects)
     for (const script of member.scripts) scriptNames.push(script.name);
+  // Die Zeile selbst klappt auf (UI-Vertrag §1.2); die Meta nennt nur andere Orte (Audit C 25).
+  const otherLocations = group.memberProjects
+    .map((member) => member.environmentLabel)
+    .filter((label): label is string => typeof label === "string" && label.length > 0);
   return (
     <Row
-      name={
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={onToggle}
-          className="flex min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          data-workjet-action={`project.checkout:${group.projectKey}`}
-        >
-          <span className="truncate">{name}</span>
-          <ChevronDownIcon
-            aria-hidden
-            className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-180",
-            )}
-          />
-        </button>
-      }
-      meta={group.memberProjects
-        .map((member) => member.environmentLabel ?? "Dieser Rechner")
-        .join(" · ")}
+      name={name}
+      expanded={open}
+      onToggleExpanded={onToggle}
+      {...(otherLocations.length > 0 ? { meta: [...new Set(otherLocations)].join(" · ") } : {})}
       chips={
         scriptNames.length > 0 ? (
           <span className="flex min-w-0 flex-wrap gap-1">
@@ -441,15 +434,14 @@ function ProjectDetail({
     reportFailure: false,
   });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
-    onCopy: ({ path }) => {
-      toastManager.add({ type: "success", title: "Pfad kopiert", description: path });
+    onCopy: () => {
+      toastManager.add({ type: "success", title: "Pfad kopiert" });
     },
-    onError: (error) => {
+    onError: () => {
       toastManager.add(
         stackedThreadToast({
           type: "error",
           title: "Pfad nicht kopiert",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler.",
         }),
       );
     },
@@ -461,22 +453,12 @@ function ProjectDetail({
     ) ?? group.memberProjects[0]!;
   const faviconPath = representative.faviconPath ?? null;
 
-  const threadCountByMember = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const thread of threads) {
-      const key = `${thread.environmentId}:${thread.projectId}`;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return counts;
-  }, [threads]);
   const reportFailure = useCallback((title: string, result: AtomCommandResult<void, unknown>) => {
     if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-    const error = squashAtomCommandFailure(result);
     toastManager.add(
       stackedThreadToast({
         type: "error",
         title,
-        description: error instanceof Error ? error.message : "Unbekannter Fehler.",
       }),
     );
   }, []);
@@ -550,13 +532,11 @@ function ProjectDetail({
         if (!group.memberProjects.every((member) => member.title === title)) {
           await updateAllMembers({ title }, "Projekt nicht umbenannt");
         }
-      } catch (error) {
+      } catch {
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Projektname nicht abgeglichen",
-            description:
-              error instanceof Error ? error.message : "Neu verbinden und erneut versuchen.",
           }),
         );
       } finally {
@@ -648,6 +628,16 @@ function ProjectDetail({
   // from the same snapshot would drop each other's changes. One at a time.
   const [isSavingScripts, setIsSavingScripts] = useState(false);
   const savingScriptsRef = useRef(false);
+  const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
+  const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
+  const openProjectFile = (
+    environmentId: (typeof selectedCheckout)["environmentId"],
+    path: string,
+  ) => {
+    const editor = resolveAndPersistPreferredEditor(availableEditors ?? []);
+    if (!editor) return;
+    void openInEditor({ environmentId, input: { cwd: path, editor } });
+  };
   const workjetFile = useWorkjetProjectFileState(
     selectedCheckout.environmentId,
     selectedCheckout.workspaceRoot,
@@ -887,12 +877,21 @@ function ProjectDetail({
     [deleteProject, group.memberProjects.length, navigate, reportFailure, threads],
   );
 
-  const selectedCheckoutThreadCount = threadCountByMember.get(memberKey(selectedCheckout)) ?? 0;
   const selectedCheckoutGrouping =
     projectGroupingSettings.sidebarProjectGroupingOverrides?.[
       deriveProjectGroupingOverrideKey(selectedCheckout)
     ] ?? "inherit";
-  const selectedCheckoutLabel = selectedCheckout.environmentLabel ?? "Dieser Rechner";
+  // Ortsname statt Rohpfad; bei zwei Arbeitskopien am selben Ort hilft der Ordnername (Audit C 23).
+  const checkoutLabel = (member: (typeof group.memberProjects)[number]) => {
+    const place = member.environmentLabel ?? "Dieser Rechner";
+    const sharedPlace =
+      group.memberProjects.filter(
+        (candidate) => (candidate.environmentLabel ?? "Dieser Rechner") === place,
+      ).length > 1;
+    const folder = member.workspaceRoot?.split(/[\\/]/).findLast((part) => part.length > 0);
+    return sharedPlace && folder ? `${place} · ${readableProjectName(folder)}` : place;
+  };
+  const selectedCheckoutLabel = checkoutLabel(selectedCheckout);
 
   const removeLabel =
     group.memberProjects.length > 1 ? "Alle Einträge entfernen" : "Projekt entfernen";
@@ -1098,7 +1097,7 @@ function ProjectDetail({
                       hideIndicator
                       value={member.physicalProjectKey}
                     >
-                      {member.environmentLabel ?? "Dieser Rechner"} · {member.workspaceRoot}
+                      {checkoutLabel(member)}
                     </SelectItem>
                   ))}
                 </SelectPopup>
@@ -1106,33 +1105,25 @@ function ProjectDetail({
             ) : undefined
           }
         >
-          <div className="px-3 py-2 sm:px-4">
-            <div className="flex min-w-0 items-center rounded-lg bg-muted/30 p-1 text-[13.5px] text-muted-foreground">
-              <button
-                disabled={selectedCheckout.workspaceRoot === null}
-                aria-label="Pfad kopieren"
-                className="group flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left outline-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                title="Pfad kopieren"
-                type="button"
-                onClick={() =>
-                  selectedCheckout.workspaceRoot !== null &&
-                  copyPathToClipboard(selectedCheckout.workspaceRoot, {
-                    path: selectedCheckout.workspaceRoot,
-                  })
-                }
-              >
-                <code className="min-w-0 flex-1 truncate font-mono">
-                  {selectedCheckout.workspaceRoot ?? "Ohne Ordner"}
-                </code>
-                <CopyIcon className="size-4 shrink-0 opacity-60 group-hover:opacity-100" />
-              </button>
-              <div className="shrink-0 border-l border-border/60 px-2 tabular-nums">
-                {selectedCheckoutThreadCount === 1
-                  ? "1 Unterhaltung"
-                  : `${selectedCheckoutThreadCount} Unterhaltungen`}
-              </div>
-            </div>
-          </div>
+          <Row
+            name={selectedCheckoutLabel}
+            {...(selectedCheckout.workspaceRoot === null
+              ? {}
+              : {
+                  menuActions: [
+                    {
+                      label: "Pfad kopieren",
+                      onSelect: () => {
+                        if (selectedCheckout.workspaceRoot !== null)
+                          copyPathToClipboard(selectedCheckout.workspaceRoot, {
+                            path: selectedCheckout.workspaceRoot,
+                          });
+                      },
+                    },
+                  ],
+                  menuLabel: `Aktionen für ${selectedCheckoutLabel}`,
+                })}
+          />
           <SettingsRow
             title="Gruppierung"
             control={
@@ -1186,7 +1177,7 @@ function ProjectDetail({
                 ) : (
                   <Button
                     size="xs"
-                    variant="destructive-outline"
+                    variant="outline"
                     onClick={() => setConfirmingRemoval("checkout")}
                   >
                     <Trash2Icon className="size-3.5" />
@@ -1204,53 +1195,59 @@ function ProjectDetail({
           title={embedded ? "" : t("Skripte", "Scripts")}
           {...(embedded ? {} : { collapsible: sectionToggle("Skripte") })}
           headerAction={
-            <div className="flex flex-wrap gap-1.5">
-              {importableScripts.length > 0 ? (
-                <Menu>
-                  <MenuTrigger
-                    render={
-                      <Button size="xs" variant="ghost" disabled={isSavingScripts} type="button" />
-                    }
-                  >
-                    Aus workjet.json
-                    <ChevronDownIcon className="size-3.5" />
-                  </MenuTrigger>
-                  <MenuPopup align="end" className="w-72">
-                    {importableScripts.map((fileScript) => (
-                      <MenuItem
-                        key={`${fileScript.name} ${fileScript.command}`}
-                        onClick={() => void importFileScript(fileScript)}
-                      >
+            editorRequest === null ? (
+              <SettingsAddButton
+                action="project.scripts.add"
+                disabled={isSavingScripts}
+                options={[
+                  {
+                    key: "new",
+                    label: "Neues Skript",
+                    onSelect: () =>
+                      setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT }),
+                  },
+                  // Importieren aus der Projektdatei sitzt im selben Menü (Audit C 24).
+                  ...importableScripts.map((fileScript) => ({
+                    key: `${fileScript.name} ${fileScript.command}`,
+                    label: (
+                      <span className="flex min-w-0 items-center gap-2">
                         <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4 shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium">{fileScript.name}</div>
-                          <div className="truncate font-mono text-muted-foreground">
-                            {fileScript.command}
-                          </div>
-                        </div>
-                      </MenuItem>
-                    ))}
-                  </MenuPopup>
-                </Menu>
-              ) : null}
-              {editorRequest === null ? (
-                <Button
-                  size="xs"
-                  variant="outline"
+                        <span className="truncate">{fileScript.name} importieren</span>
+                      </span>
+                    ),
+                    onSelect: () => void importFileScript(fileScript),
+                  })),
+                ]}
+              />
+            ) : null
+          }
+        >
+          {editorRequest !== null && editorRequest.scriptId === null ? (
+            <div className="px-3 py-2 sm:px-4">
+              <ProjectScriptEditor
+                request={editorRequest}
+                scripts={scripts}
+                onSubmit={submitScript}
+                onDelete={deleteScript}
+                onClose={() => setEditorRequest(null)}
+              />
+            </div>
+          ) : null}
+          {scripts.length === 0 && editorRequest === null ? (
+            <Empty className="py-4">
+              <EmptyHeader>
+                <EmptyTitle className="text-[13.5px]">Keine Skripte</EmptyTitle>
+              </EmptyHeader>
+              <EmptyContent>
+                <SettingsAddButton
+                  action="project.scripts.add-first"
                   disabled={isSavingScripts}
                   onClick={() =>
                     setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })
                   }
-                >
-                  <PlusIcon className="size-3.5" />
-                  Skript hinzufügen
-                </Button>
-              ) : null}
-            </div>
-          }
-        >
-          {scripts.length === 0 && editorRequest === null ? (
-            <p className="px-3 py-2 text-[13.5px] text-muted-foreground sm:px-4">Keine Skripte</p>
+                />
+              </EmptyContent>
+            </Empty>
           ) : null}
           {scripts.map((script) => {
             const shortcutLabel = shortcutLabelForCommand(
@@ -1301,34 +1298,54 @@ function ProjectDetail({
                     {shortcutLabel ? (
                       <span className="text-xs text-muted-foreground">{shortcutLabel}</span>
                     ) : null}
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      className="shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-                      aria-label={`${script.name} bearbeiten`}
-                      disabled={isSavingScripts}
-                      onClick={() => setEditorRequest(editorRequestForScript(script, keybindings))}
-                    >
-                      <SettingsIcon className="size-3.5" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            className="shrink-0 text-muted-foreground"
+                            aria-label={`${script.name} bearbeiten`}
+                            disabled={isSavingScripts}
+                            onClick={() =>
+                              setEditorRequest(editorRequestForScript(script, keybindings))
+                            }
+                          />
+                        }
+                      >
+                        <PencilIcon className="size-3.5" />
+                      </TooltipTrigger>
+                      <TooltipPopup>Bearbeiten</TooltipPopup>
+                    </Tooltip>
                   </>
                 }
               />
             );
           })}
-          {editorRequest !== null && editorRequest.scriptId === null ? (
-            <div className="px-3 py-2 sm:px-4">
-              <ProjectScriptEditor
-                request={editorRequest}
-                scripts={scripts}
-                onSubmit={submitScript}
-                onDelete={deleteScript}
-                onClose={() => setEditorRequest(null)}
-              />
-            </div>
-          ) : null}
           {workjetFile.status === "invalid" ? (
-            <SettingsRow title="workjet.json ist ungültig" className="text-warning" />
+            <SettingsRow
+              title="workjet.json ist ungültig"
+              className="text-warning"
+              {...(selectedCheckout.workspaceRoot === null
+                ? {}
+                : {
+                    control: (
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => {
+                          if (selectedCheckout.workspaceRoot !== null)
+                            openProjectFile(
+                              selectedCheckout.environmentId,
+                              `${selectedCheckout.workspaceRoot}/workjet.json`,
+                            );
+                        }}
+                      >
+                        Öffnen
+                      </Button>
+                    ),
+                  })}
+            />
           ) : null}
         </SettingsSection>
       ) : null}
@@ -1348,10 +1365,7 @@ function ProjectDetail({
                   onCancel={() => setConfirmingRemoval(null)}
                 />
               ) : (
-                <Button
-                  variant="destructive-outline"
-                  onClick={() => setConfirmingRemoval("project")}
-                >
+                <Button variant="outline" onClick={() => setConfirmingRemoval("project")}>
                   <Trash2Icon />
                   {removeLabel}
                 </Button>

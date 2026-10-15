@@ -438,7 +438,6 @@ export function ProviderInstanceCard({
         stackedThreadToast({
           type: "error",
           title: `${providerName}: Kopieren fehlgeschlagen`,
-          description: error.message,
         }),
       );
     },

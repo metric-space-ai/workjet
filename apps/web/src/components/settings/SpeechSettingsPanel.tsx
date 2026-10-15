@@ -1,19 +1,11 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { OptionSelect } from "../ui/option-select";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  AudioLinesIcon,
-  CheckIcon,
-  CircleDashedIcon,
-  LoaderIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  XIcon,
-} from "lucide-react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { CheckIcon, CircleDashedIcon, LoaderIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import type { WorkjetSpeechConfig, WorkjetSpeechSettingsResponse } from "@workjet/contracts";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { Button } from "../ui/button";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Input } from "../ui/input";
 import { Row } from "../ui/row";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -24,10 +16,43 @@ import {
   speechFailureReason,
 } from "../../lib/workjetSpeechSettings";
 import { markSpeechSupport, speechReadFailureView } from "./speechAvailability";
+import { SettingsAddButton, SettingsLoadingRow } from "./settingsAdd";
 
 const SPEECH_RETRY_MS = 5_000;
 
-const controlClass = "h-8 min-w-0 rounded-md border border-border bg-background px-2 text-sm";
+/** Sprechtempo als Auswahl statt Zahlenfeld mit „ד-Suffix (Audit C 36). */
+export const SPEECH_RATES = [0.8, 0.9, 1, 1.1, 1.15, 1.2, 1.3, 1.4, 1.5] as const;
+function rateLabel(rate: number): string {
+  return `${rate.toLocaleString("de-DE")}×`;
+}
+
+/** Anbieterzeichen Mistral (Audit C 37), in den Farben der Marke. */
+export function MistralIcon({ className, ...props }: ComponentProps<"svg">) {
+  const rows = ["#FFD800", "#FFAF00", "#FF8205", "#FA500F", "#E10500"];
+  const cells: ReadonlyArray<ReadonlyArray<number>> = [
+    [0, 4],
+    [0, 1, 3, 4],
+    [0, 2, 4],
+    [0, 4],
+    [0, 4],
+  ];
+  return (
+    <svg viewBox="0 0 10 10" className={className} {...props}>
+      {cells.map((columns, row) =>
+        columns.map((column) => (
+          <rect
+            key={`${row}:${column}`}
+            x={column * 2}
+            y={row * 2}
+            width={2}
+            height={2}
+            fill={rows[row]}
+          />
+        )),
+      )}
+    </svg>
+  );
+}
 export const SPEECH_REMEDIES: Readonly<Record<string, string>> = {
   missing_credential: "Schlüssel fehlt",
   missing_voice: "Keine Stimme gewählt",
@@ -116,9 +141,10 @@ function checkTitle(
 ): string {
   if (view === "saved") return "Gespeichert";
   if (view === "running") return "Prüft";
-  if (view === "ok") return `Geprüft · ${check?.latencyMs ?? "—"} ms`;
+  if (view === "ok")
+    return check?.latencyMs == null ? "Geprüft" : `Geprüft · ${check.latencyMs} ms`;
   if (view === "bad") return SPEECH_REMEDIES[check?.errorClass ?? ""] ?? "Prüfung fehlgeschlagen";
-  return "—";
+  return "Nicht geprüft";
 }
 
 export function InstanceSpeechSettings({
@@ -250,7 +276,6 @@ export function InstanceSpeechSettings({
   const sttCheck = settings?.sttCheck;
   const sttPending = busy === "speech.settings.check.transcription";
   const disabled = busy !== undefined || !config;
-  const mistralInUse = config?.synthesis === "mistral" || config?.transcription === "mistral";
   const accountView: CheckView =
     busy === "speech.settings.check"
       ? "running"
@@ -266,7 +291,7 @@ export function InstanceSpeechSettings({
   const showMistral = credential || draft === "mistral";
   const backendOptions = (current: WorkjetSpeechConfig["synthesis"] | undefined) => [
     { value: "runtime", label: "Lokale Laufzeit" },
-    ...(credential || current === "mistral" ? [{ value: "mistral", label: "Mistral API" }] : []),
+    ...(credential ? [{ value: "mistral", label: "Mistral API" }] : []),
     ...(current === "computer" ? [{ value: "computer" as const, label: "Sprach-Rechner" }] : []),
   ];
 
@@ -292,36 +317,6 @@ export function InstanceSpeechSettings({
             </TooltipTrigger>
             <TooltipPopup>Aktualisieren</TooltipPopup>
           </Tooltip>
-          <Menu>
-            <MenuTrigger
-              render={
-                <Button
-                  size="sm"
-                  disabled={!config || busy !== undefined}
-                  data-workjet-action="speech.add-provider"
-                />
-              }
-            >
-              <PlusIcon className="size-3.5" />
-              Hinzufügen
-            </MenuTrigger>
-            <MenuPopup align="end">
-              {SPEECH_PROVIDERS.map((provider) => (
-                <MenuItem
-                  key={provider.id}
-                  disabled={credential}
-                  data-workjet-action={`speech.provider.${provider.id}.select`}
-                  onClick={() => {
-                    setDraft(provider.id);
-                    setEditing(provider.id);
-                  }}
-                >
-                  <AudioLinesIcon className="size-4" />
-                  {provider.label}
-                </MenuItem>
-              ))}
-            </MenuPopup>
-          </Menu>
         </div>
       }
     >
@@ -335,6 +330,31 @@ export function InstanceSpeechSettings({
           Keine Berechtigung für Spracheinstellungen
         </p>
       ) : null}
+      {!config && !readDenied ? (
+        <SettingsLoadingRow onRetry={() => setReadAttempt((attempt) => attempt + 1)} />
+      ) : null}
+      {config && !showMistral ? (
+        // Ohne Mistral keine toten Steuerelemente, nur die Zeile „+ Hinzufügen“ (Audit C 6, 38).
+        <div
+          className="flex items-center rounded-lg border px-3 py-1.5"
+          data-workjet-speech-accounts=""
+        >
+          <SettingsAddButton
+            action="speech.add-provider"
+            disabled={busy !== undefined}
+            options={SPEECH_PROVIDERS.map((provider) => ({
+              key: provider.id,
+              label: provider.label,
+              icon: MistralIcon,
+              action: `speech.provider.${provider.id}.select`,
+              onSelect: () => {
+                setDraft(provider.id);
+                setEditing(provider.id);
+              },
+            }))}
+          />
+        </div>
+      ) : null}
       {config && showMistral ? (
         <div
           className="divide-y divide-border/50 rounded-lg border"
@@ -345,29 +365,25 @@ export function InstanceSpeechSettings({
               className="py-1.5"
               name={
                 <span className="flex min-w-0 items-center gap-2">
-                  <AudioLinesIcon role="img" aria-label="Mistral API" className="size-4 shrink-0" />
+                  <MistralIcon role="img" aria-label="Mistral API" className="size-4 shrink-0" />
                   <span className="truncate font-medium">Mistral API</span>
                 </span>
               }
-              meta={
-                <span className="pl-6">
-                  {credential ? "API-Key" : "—"}
-                  {accountView === "bad" ? ` · ${checkTitle("bad", check)}` : ""}
-                </span>
-              }
+              {...(credential
+                ? {
+                    meta: (
+                      <span className="pl-6">
+                        API-Key
+                        {accountView === "bad" ? ` · ${checkTitle("bad", check)}` : ""}
+                      </span>
+                    ),
+                  }
+                : {})}
               chips={
                 credential || savedAt !== null ? (
                   <CheckSymbol view={accountView} title={checkTitle(accountView, check)} />
                 ) : undefined
               }
-              active={credential && mistralInUse}
-              activeDisabled={!credential || disabled}
-              activeLabel="Mistral API verwenden"
-              onActiveChange={(on) => {
-                if (!config) return;
-                const backend = on ? "mistral" : "runtime";
-                void configure({ ...config, synthesis: backend, transcription: backend });
-              }}
               {...(draft === "mistral" && !credential
                 ? {
                     onDelete: () => {
@@ -409,156 +425,158 @@ export function InstanceSpeechSettings({
           </div>
         </div>
       ) : null}
-      <div
-        className="divide-y divide-border rounded-lg border border-border"
-        {...(!config ? { "data-workjet-speech-unloaded": "" } : {})}
-      >
-        <SettingsRow
-          title="Vorlesen"
-          control={
-            <OptionSelect
-              aria-label="Vorlesen"
-              className="w-full sm:w-64"
-              value={config?.synthesis ?? ""}
-              placeholder="—"
-              disabled={disabled}
-              options={backendOptions(config?.synthesis)}
-              onValueChange={(next) =>
-                config &&
-                void configure({ ...config, synthesis: next === "mistral" ? "mistral" : "runtime" })
-              }
-            />
-          }
-        />
-        <SettingsRow
-          title="Transkription"
-          control={
-            <OptionSelect
-              aria-label="Transkription"
-              className="w-full sm:w-64"
-              value={config?.transcription ?? ""}
-              placeholder="—"
-              disabled={disabled}
-              options={backendOptions(config?.transcription)}
-              onValueChange={(next) =>
-                config &&
-                void configure({
-                  ...config,
-                  transcription: next === "mistral" ? "mistral" : "runtime",
-                })
-              }
-            />
-          }
-        />
-        <SettingsRow
-          title="Stimme"
-          control={
-            <OptionSelect
-              aria-label="Stimme"
-              className="w-full sm:w-64"
-              value={config?.voice_id ?? ""}
-              placeholder={config?.synthesis === "mistral" ? "Stimme wählen" : "—"}
-              disabled={disabled || config?.synthesis !== "mistral"}
-              options={[
-                ...(config?.voice_id && !voices.some((voice) => voice.id === config.voice_id)
-                  ? [{ value: config.voice_id, label: "Aktuelle Stimme" }]
-                  : []),
-                ...voices.map((voice) => ({ value: voice.id, label: voice.name || voice.id })),
-              ]}
-              onValueChange={(next) =>
-                config && void configure({ ...config, voice_id: next || null })
-              }
-            />
-          }
-        />
-        <SettingsRow
-          title="Sprechtempo"
-          control={
-            <div className="flex items-center gap-2">
-              <input
-                aria-label="Sprechtempo"
-                type="number"
-                min={0.8}
-                max={1.5}
-                step={0.01}
-                value={config ? rate : ""}
-                placeholder="—"
-                disabled={disabled}
-                className={controlClass + " w-24 text-right tabular-nums"}
-                onChange={(event) => setRate(event.target.value)}
-                onBlur={() => {
-                  const value = Number(rate);
-                  if (!config) return;
-                  if (!Number.isFinite(value) || value < 0.8 || value > 1.5) {
-                    setRate(String(config.rate));
-                    setError("Sprechtempo: 0,8× bis 1,5×");
-                  } else if (value !== config.rate) void configure({ ...config, rate: value });
-                }}
-              />
-              <span className="text-sm text-muted-foreground">×</span>
-            </div>
-          }
-        />
-        <SettingsRow
-          title="Test"
-          control={
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={disabled || config?.synthesis !== "mistral"}
-                onClick={() => void run({ action: "speech.settings.check" })}
-              >
-                {busy === "speech.settings.check" ? (
-                  <LoaderIcon className="size-3.5 animate-spin" aria-hidden />
-                ) : null}
-                Stimme testen
-              </Button>
-              <span className="flex items-center gap-1">
-                {sttCheck || sttPending ? (
-                  <CheckSymbol
-                    view={sttPending ? "running" : sttCheck?.state === "ok" ? "ok" : "bad"}
-                    title={
-                      sttPending
-                        ? "Prüft"
-                        : sttCheck?.state === "ok"
-                          ? `Geprüft · ${sttCheck.latencyMs ?? "—"} ms`
-                          : (SPEECH_REMEDIES[sttCheck?.errorClass ?? ""] ??
-                            "Prüfung fehlgeschlagen")
-                    }
-                  />
-                ) : null}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={
-                    disabled ||
-                    config?.transcription !== "mistral" ||
-                    config?.synthesis !== "mistral"
+      {config ? (
+        <div className="divide-y divide-border rounded-lg border border-border">
+          {/* Die Wahl Lokal | Mistral gibt es nur mit Schlüssel (Audit C 15). */}
+          {backendOptions(config.synthesis).length > 1 ? (
+            <SettingsRow
+              title="Vorlesen"
+              control={
+                <OptionSelect
+                  aria-label="Vorlesen"
+                  className="w-full sm:w-64"
+                  value={config.synthesis}
+                  disabled={disabled}
+                  options={backendOptions(config.synthesis)}
+                  onValueChange={(next) =>
+                    void configure({
+                      ...config,
+                      synthesis: next === "mistral" ? "mistral" : "runtime",
+                    })
                   }
-                  onClick={() => void run({ action: "speech.settings.check.transcription" })}
-                >
-                  Transkription testen
-                </Button>
-              </span>
-            </div>
-          }
-        >
-          {recording ? (
-            <audio
-              ref={audio}
-              controls
-              src={recording}
-              className="mt-2 h-9 w-full"
-              onLoadedMetadata={(event) => {
-                event.currentTarget.preservesPitch = true;
-                event.currentTarget.playbackRate = config?.rate ?? 1.15;
-              }}
+                />
+              }
             />
           ) : null}
-          {transcript ? <p className="mt-2 text-sm">{transcript}</p> : null}
-        </SettingsRow>
-      </div>
+          {backendOptions(config.transcription).length > 1 ? (
+            <SettingsRow
+              title="Transkription"
+              control={
+                <OptionSelect
+                  aria-label="Transkription"
+                  className="w-full sm:w-64"
+                  value={config.transcription}
+                  disabled={disabled}
+                  options={backendOptions(config.transcription)}
+                  onValueChange={(next) =>
+                    void configure({
+                      ...config,
+                      transcription: next === "mistral" ? "mistral" : "runtime",
+                    })
+                  }
+                />
+              }
+            />
+          ) : null}
+          {config.synthesis === "mistral" ? (
+            <SettingsRow
+              title="Stimme"
+              control={
+                <OptionSelect
+                  aria-label="Stimme"
+                  className="w-full sm:w-64"
+                  value={config.voice_id ?? ""}
+                  placeholder="Stimme wählen"
+                  disabled={disabled}
+                  options={[
+                    ...(config.voice_id && !voices.some((voice) => voice.id === config.voice_id)
+                      ? [{ value: config.voice_id, label: "Aktuelle Stimme" }]
+                      : []),
+                    ...voices.map((voice) => ({ value: voice.id, label: voice.name || voice.id })),
+                  ]}
+                  onValueChange={(next) => void configure({ ...config, voice_id: next || null })}
+                />
+              }
+            />
+          ) : null}
+          <SettingsRow
+            title="Sprechtempo"
+            control={
+              <OptionSelect
+                aria-label="Sprechtempo"
+                className="w-full sm:w-32"
+                value={rate}
+                disabled={disabled}
+                options={[
+                  ...(SPEECH_RATES.some((value) => String(value) === rate)
+                    ? []
+                    : [{ value: rate, label: rateLabel(Number(rate)) }]),
+                  ...SPEECH_RATES.map((value) => ({
+                    value: String(value),
+                    label: rateLabel(value),
+                  })),
+                ]}
+                onValueChange={(next) => {
+                  const value = Number(next);
+                  if (Number.isFinite(value) && value !== config.rate)
+                    void configure({ ...config, rate: value });
+                }}
+              />
+            }
+          />
+          {config.synthesis === "mistral" ? (
+            <SettingsRow
+              title="Test"
+              control={
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={disabled}
+                    onClick={() => void run({ action: "speech.settings.check" })}
+                  >
+                    {busy === "speech.settings.check" ? (
+                      <LoaderIcon className="size-3.5 animate-spin" aria-hidden />
+                    ) : null}
+                    Stimme testen
+                  </Button>
+                  {config.transcription === "mistral" ? (
+                    <span className="flex items-center gap-1">
+                      {sttCheck || sttPending ? (
+                        <CheckSymbol
+                          view={sttPending ? "running" : sttCheck?.state === "ok" ? "ok" : "bad"}
+                          title={
+                            sttPending
+                              ? "Prüft"
+                              : sttCheck?.state === "ok"
+                                ? sttCheck.latencyMs == null
+                                  ? "Geprüft"
+                                  : `Geprüft · ${sttCheck.latencyMs} ms`
+                                : (SPEECH_REMEDIES[sttCheck?.errorClass ?? ""] ??
+                                  "Prüfung fehlgeschlagen")
+                          }
+                        />
+                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={disabled}
+                        onClick={() => void run({ action: "speech.settings.check.transcription" })}
+                      >
+                        Transkription testen
+                      </Button>
+                    </span>
+                  ) : null}
+                </div>
+              }
+            >
+              {recording ? (
+                <audio
+                  ref={audio}
+                  controls
+                  src={recording}
+                  className="mt-2 h-9 w-full"
+                  onLoadedMetadata={(event) => {
+                    event.currentTarget.preservesPitch = true;
+                    event.currentTarget.playbackRate = config.rate;
+                  }}
+                />
+              ) : null}
+              {transcript ? <p className="mt-2 text-sm">{transcript}</p> : null}
+            </SettingsRow>
+          ) : null}
+        </div>
+      ) : null}
     </SettingsSection>
   );
 }
@@ -593,7 +611,8 @@ function SpeechKeyForm({
         void onSave(secret).then((ok) => setFailed(!ok));
       }}
     >
-      <input
+      <Input
+        nativeInput
         ref={input}
         aria-label="Mistral-Schlüssel"
         type="password"
@@ -601,7 +620,7 @@ function SpeechKeyForm({
         spellCheck={false}
         value={key}
         maxLength={4096}
-        className={controlClass + " w-full sm:w-72"}
+        className="w-full sm:w-72"
         placeholder={replacing ? "Neuer API-Key" : "API-Key"}
         disabled={busy}
         onChange={(event) => setKey(event.target.value)}

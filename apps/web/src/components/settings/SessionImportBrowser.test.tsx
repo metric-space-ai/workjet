@@ -76,7 +76,8 @@ describe("conversation import browser controls", () => {
       preview: unknown,
     };
     const tree = SessionImportBrowser(input);
-    expect(visitElements(tree, (node) => node.props.children === "—")).not.toBeNull();
+    // A missing folder drops out with its label (Audit C 40); no placeholder dash.
+    expect(visitElements(tree, (node) => node.props.children === "—")).toBeNull();
     expect(
       visitElements(tree, (node) => node.props.children === "Kein Ordner erfasst"),
     ).not.toBeNull();

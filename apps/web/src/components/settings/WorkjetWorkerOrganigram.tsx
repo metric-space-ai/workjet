@@ -446,9 +446,11 @@ export function WorkjetWorkerOrganigram({
                 }}
               />
               <p className="truncate text-xs font-medium">{worker.name}</p>
-              <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-muted-foreground">
-                {worker.instructions ?? "—"}
-              </p>
+              {worker.instructions ? (
+                <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                  {worker.instructions}
+                </p>
+              ) : null}
               <button
                 type="button"
                 aria-label={`Abhängigkeit von ${worker.name} beginnen`}

@@ -524,7 +524,7 @@ export function WorkjetWorkerPersonalizationEditor({
                               className="h-4 min-w-0 flex-1 cursor-pointer accent-primary disabled:cursor-not-allowed"
                             />
                             {isWeight ? (
-                              <span className="w-7 text-right font-mono text-[9px] text-amber-600 dark:text-amber-300">
+                              <span className="w-7 text-right font-mono text-[11px] text-amber-600 dark:text-amber-300">
                                 {influence >= 0 ? "+" : ""}
                                 {influence.toFixed(1)}
                               </span>
@@ -577,21 +577,21 @@ export function WorkjetWorkerPersonalizationEditor({
           >
             <div className="mt-3 space-y-2 rounded-lg border border-border/60 bg-muted/10 p-2.5">
               <div className="grid gap-2 lg:grid-cols-2">
-                <label className="space-y-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                <label className="space-y-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                   W · Meta → Detail
                   <Textarea
                     value={matrixW}
                     onChange={(event) => setMatrixW(event.target.value)}
-                    className="min-h-32 max-h-64 font-mono text-[10px] normal-case"
+                    className="min-h-32 max-h-64 font-mono text-[11px] normal-case"
                     aria-label="Gewichte Meta zu Detail"
                   />
                 </label>
-                <label className="space-y-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                <label className="space-y-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                   A · Detail → Detail
                   <Textarea
                     value={matrixA}
                     onChange={(event) => setMatrixA(event.target.value)}
-                    className="min-h-32 max-h-64 font-mono text-[10px] normal-case"
+                    className="min-h-32 max-h-64 font-mono text-[11px] normal-case"
                     aria-label="Gewichte Detail zu Detail"
                   />
                 </label>

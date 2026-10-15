@@ -15,6 +15,8 @@ import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
 import { useCtoxMode } from "../components/ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "../components/settings/settingsInstanceContext";
 import { Button } from "../components/ui/button";
+import { EmptyLoading } from "../components/ui/empty";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useUiText } from "../hooks/useUiText";
 import { SettingsCompactNav, SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
 import { useClientSettings } from "../hooks/useSettings";
@@ -46,18 +48,18 @@ function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
   return (
     <Button
       size="xs"
-      variant="ghost"
+      variant="outline"
       disabled={changedSettingLabels.length === 0}
       onClick={() => setConfirming(true)}
     >
-      <RotateCcwIcon className="mx-1 size-3.5" />
+      <RotateCcwIcon className="size-3.5" />
       Standard wiederherstellen
     </Button>
   );
 }
 
 function SettingsContentLayout() {
-  const { discovery, selectedId } = useCtoxMode();
+  const { discovery, selectedId, refresh } = useCtoxMode();
   const instanceContext = resolveSettingsInstanceContext(
     discovery,
     selectedId,
@@ -139,17 +141,24 @@ function SettingsContentLayout() {
         <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground sm:flex">
           <SettingsSidebarNav pathname={location.pathname} />
         </aside>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          aria-label={t("Einstellungen schließen", "Close settings")}
-          data-workjet-action="settings.close"
-          onClick={navigateBackWithinApp}
-          className="absolute top-1 right-1 z-10 size-10 sm:top-2 sm:right-2"
-        >
-          <XIcon className="size-5" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={t("Einstellungen schließen", "Close settings")}
+                data-workjet-action="settings.close"
+                onClick={navigateBackWithinApp}
+                className="absolute top-2 right-2 z-10 size-8 sm:top-3 sm:right-3"
+              />
+            }
+          >
+            <XIcon className="size-4" />
+          </TooltipTrigger>
+          <TooltipPopup>{t("Schließen", "Close")}</TooltipPopup>
+        </Tooltip>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-popover text-foreground">
           <div className="sm:hidden">
             <SettingsCompactNav pathname={location.pathname} />
@@ -174,9 +183,11 @@ function SettingsContentLayout() {
             {canShowSettings ? (
               <Outlet />
             ) : discovery === "loading" ? (
-              <p role="status" className="px-6 py-8 text-sm text-muted-foreground">
-                Instanzen werden geladen …
-              </p>
+              <EmptyLoading
+                className="py-8"
+                title={t("Instanzen laden …", "Loading instances …")}
+                onRetry={() => void refresh()}
+              />
             ) : (
               <Navigate to="/settings/business-os" replace />
             )}

@@ -71,7 +71,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/speech": "Sprachausgabe",
   "/settings/archived": "Archiv",
   "/settings/diagnostics": "Diagnose",
-  "/settings/harnesses": "Harnesses",
+  "/settings/harnesses": "Harness",
   "/settings/integrations": "Schnittstellen",
   "/settings/source-control": "Versionsverwaltung",
   "/settings/keybindings": "Tastenkürzel",
@@ -213,6 +213,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/business-os",
     searchAliases: ["Secrets", "API-Schlüssel", "Passwort", "Token"],
   },
+  {
+    id: "instance-calendar-accounts",
+    title: "Kalender-Konten",
+    to: "/settings/business-os",
+    searchAliases: ["Kalender", "Google Kalender", "Termine", "Calendar", "Konten"],
+  },
   // ----- Rechner -----
   {
     id: "workjet-computers",
@@ -320,9 +326,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   // ----- Entwicklermodus -----
   {
     id: "harnesses",
-    title: "Coding-Agenten",
+    title: "Harness",
     to: "/settings/harnesses",
-    searchAliases: ["Harnesses", "Coding agents", "CLI"],
+    searchAliases: ["Harnesses", "Coding-Agenten", "Coding agents", "CLI"],
     developerOnly: true,
   },
   {

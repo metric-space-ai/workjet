@@ -16,12 +16,12 @@ import {
 } from "react";
 
 import { Button } from "../ui/button";
-import { EmptyLoading } from "../ui/empty";
+import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
 import { InlinePanel } from "../ui/inline-panel";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Input } from "../ui/input";
 import { Row, type RowMenuAction, type RowStatus } from "../ui/row";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { SEGMENT_TOGGLE_CLASS } from "../ctox/InstanceAddInline";
+import { Segment } from "../ui/segment";
 import {
   setProviderDraft,
   updateProviderDraft,
@@ -290,19 +290,18 @@ export function AccountLimits({ health }: { readonly health: ModelsAccountHealth
   );
   if (!health || windows.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1 text-[11px] tabular-nums">
+    // Fenster nebeneinander als Chips, Balken ≥ 64 px (Audit C 39).
+    <div className="flex flex-wrap items-center gap-1.5 text-[11px] tabular-nums">
       {windows.map((window, index) => {
         const remaining = window.remainingPercent;
         const reported = remaining !== null && !window.notInPlan && !window.unlimited;
         return (
           <span
             key={window.id ?? `${window.label}:${index}`}
-            className="flex flex-wrap items-center gap-1.5"
+            className="inline-flex items-center gap-1.5 rounded border border-border/60 px-1.5 py-0.5"
             title={`${window.tooltip ?? window.label}${window.resetsAtMs === null ? "" : ` · Reset ${resetLabel(window.resetsAtMs)}`}${health.observedAtMs === null ? "" : ` · gemessen ${new Date(health.observedAtMs).toLocaleString()}`}${health.quotaError ? " · Aktualisierung fehlgeschlagen" : ""}`}
           >
-            <span className="shrink-0 flex-1 whitespace-nowrap text-muted-foreground">
-              {window.label}
-            </span>
+            <span className="shrink-0 whitespace-nowrap text-muted-foreground">{window.label}</span>
             {reported && (
               <span
                 role="meter"
@@ -310,7 +309,7 @@ export function AccountLimits({ health }: { readonly health: ModelsAccountHealth
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={remaining}
-                className="h-1 w-8 shrink-0 overflow-hidden rounded-full bg-muted"
+                className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-muted"
               >
                 <span
                   className={cn(
@@ -351,6 +350,8 @@ export function AccountLimits({ health }: { readonly health: ModelsAccountHealth
   );
 }
 
+type PickedModels = ReadonlyArray<string>;
+
 export function WorkjetModelsKeyForm({
   provider,
   account,
@@ -371,6 +372,9 @@ export function WorkjetModelsKeyForm({
   const [label, setLabel] = useState(account?.label ?? WORKJET_GATEWAY_PROVIDER_LABELS[provider]);
   const sharedModels = state.onEditProviderModels !== undefined;
   const [modelText, setModelText] = useState(provider === "kimi" ? "" : models.join(", "));
+  // Katalogmodelle als Auswahl statt kommagetrennter Eingabe (Audit C 13).
+  const initialPicked: PickedModels = provider === "kimi" ? [] : models;
+  const [picked, setPicked] = useState(initialPicked);
   const [error, setError] = useState<string | null>(null);
   const providerLabel = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
   const apiKeyError =
@@ -383,7 +387,11 @@ export function WorkjetModelsKeyForm({
   const submit = () => {
     // Discover this key's own plan before intersecting shared provider models.
     const selectedModels = provider === "kimi" ? [] : (account?.modelIds ?? models);
-    const parsed = sharedModels ? selectedModels : parseModels(modelText);
+    const parsed = sharedModels
+      ? selectedModels
+      : models.length > 0
+        ? [...picked]
+        : parseModels(modelText);
     if (
       !key.trim() ||
       !label.trim() ||
@@ -423,15 +431,16 @@ export function WorkjetModelsKeyForm({
         statusTone="error"
       >
         <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-          <input
+          <Input
+            nativeInput
             data-workjet-action={`models.key-form.${account?.id ?? provider}.label`}
             aria-label="Kontoname"
             value={label}
             onChange={(event) => setLabel(event.target.value)}
             maxLength={160}
-            className="rounded-md border bg-background px-2 py-1.5 text-sm"
           />
-          <input
+          <Input
+            nativeInput
             aria-label={account ? `API-Key für ${account.label}` : `API-Key für ${providerLabel}`}
             type="password"
             data-workjet-action={`models.key-form.${account?.id ?? provider}.value`}
@@ -440,18 +449,42 @@ export function WorkjetModelsKeyForm({
             value={key}
             maxLength={512}
             onChange={(event) => setKey(event.target.value)}
-            className="rounded-md border bg-background px-2 py-1.5 text-sm"
           />
         </div>
-        {!account && !sharedModels ? (
-          <input
+        {!account && !sharedModels && models.length > 0 ? (
+          <div
+            role="group"
             aria-label={`Modelle für ${providerLabel}`}
-            placeholder={
-              provider === "kimi" ? "Modell-IDs (optional)" : "Modell-IDs, kommagetrennt"
-            }
+            className="flex min-w-0 flex-wrap gap-1"
+          >
+            {models.map((modelId) => {
+              const on = picked.includes(modelId);
+              return (
+                <Button
+                  key={modelId}
+                  type="button"
+                  size="xs"
+                  variant={on ? "default" : "outline"}
+                  aria-pressed={on}
+                  className="font-mono"
+                  onClick={() =>
+                    setPicked((current) =>
+                      on ? current.filter((id) => id !== modelId) : [...current, modelId],
+                    )
+                  }
+                >
+                  {modelId}
+                </Button>
+              );
+            })}
+          </div>
+        ) : !account && !sharedModels ? (
+          <Input
+            nativeInput
+            aria-label={`Modelle für ${providerLabel}`}
+            placeholder={provider === "kimi" ? "Modell (optional)" : "Modell"}
             value={modelText}
             onChange={(event) => setModelText(event.target.value)}
-            className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
           />
         ) : null}
       </InlinePanel>
@@ -866,10 +899,41 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
     draft?.provider !== state.login.provider
       ? state.login.provider
       : null;
+  const addMenu = (
+    <Menu>
+      <MenuTrigger
+        render={
+          <Button
+            size="sm"
+            disabled={state.mutationBusy}
+            data-workjet-action="models.add-provider"
+          />
+        }
+      >
+        <PlusIcon className="size-3.5" />
+        Hinzufügen
+      </MenuTrigger>
+      <MenuPopup align="end">
+        {WORKJET_GATEWAY_PROVIDERS.map((provider) => {
+          const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
+          return (
+            <MenuItem
+              key={provider}
+              data-workjet-action={`models.provider.${provider}.select`}
+              onClick={() => startAdd(provider)}
+            >
+              <Icon className="size-4" />
+              {WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+            </MenuItem>
+          );
+        })}
+      </MenuPopup>
+    </Menu>
+  );
   return (
     <section className="space-y-3" aria-label="Anbieter" data-testid="models-providers">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">{t("Anbieter", "Providers")}</h2>
+        <h2 className="text-[13.5px] font-semibold">{t("Anbieter", "Providers")}</h2>
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -912,35 +976,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             </TooltipTrigger>
             <TooltipPopup>Aktualisieren</TooltipPopup>
           </Tooltip>
-          <Menu>
-            <MenuTrigger
-              render={
-                <Button
-                  size="sm"
-                  disabled={state.mutationBusy}
-                  data-workjet-action="models.add-provider"
-                />
-              }
-            >
-              <PlusIcon className="size-3.5" />
-              Hinzufügen
-            </MenuTrigger>
-            <MenuPopup align="end">
-              {WORKJET_GATEWAY_PROVIDERS.map((provider) => {
-                const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
-                return (
-                  <MenuItem
-                    key={provider}
-                    data-workjet-action={`models.provider.${provider}.select`}
-                    onClick={() => startAdd(provider)}
-                  >
-                    <Icon className="size-4" />
-                    {WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
-                  </MenuItem>
-                );
-              })}
-            </MenuPopup>
-          </Menu>
+          {addMenu}
         </div>
       </div>
       {fault ? (
@@ -963,38 +999,29 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
       {state.isInitialLoading && accounts.length === 0 && !nativeRows && draft === null ? (
         <EmptyLoading className="py-4" title="Anbieter laden …" onRetry={state.onRefresh} />
       ) : null}
-      {nativeRows ? (
-        <div className="overflow-x-auto">
-          <div role="table" aria-label="Instanz-Konten" className="min-w-0 sm:min-w-[34rem]">
-            <div role="row" className="sr-only">
-              <span role="columnheader">Konto</span>
-              <span role="columnheader" className="hidden sm:block">
-                Modelle
-              </span>
-              <span role="columnheader">Limits</span>
-              <span role="columnheader" className="text-center">
-                Aktiv
-              </span>
-              <span role="columnheader" className="sr-only">
-                Aktionen
-              </span>
-            </div>
-            {nativeRows}
-          </div>
-        </div>
-      ) : null}
-      {nativeRows && (providers.length > 0 || draft !== null) ? (
-        <h3 className="pt-2 text-xs font-semibold text-muted-foreground">Dieser Rechner</h3>
-      ) : null}
       {accounts.length === 0 &&
+      !nativeRows &&
       !state.instanceGrok?.installed &&
       draft === null &&
       !state.isInitialLoading ? (
-        <p className="py-4 text-sm text-muted-foreground">Keine Anbieter</p>
+        <Empty className="py-6">
+          <EmptyHeader>
+            <EmptyTitle className="text-[13.5px]">Keine Anbieter</EmptyTitle>
+          </EmptyHeader>
+          <EmptyContent>{addMenu}</EmptyContent>
+        </Empty>
       ) : null}
-      {/* One list, one row pattern for every account; the provider is the row icon (#610). */}
-      {accounts.length > 0 || draft !== null ? (
+      {/* One list, one row pattern for every account, instance and this computer;
+          the provider is the row icon (#610, Audit C 3). */}
+      {nativeRows || accounts.length > 0 || draft !== null ? (
         <div className="divide-y divide-border/50 rounded-lg border" data-testid="models-accounts">
+          {nativeRows}
+          {draft !== null ? <DraftAccountRow draft={draft} state={state} /> : null}
+          {nativeRows && providers.length > 0 ? (
+            <div className="bg-muted/30 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+              Dieser Rechner
+            </div>
+          ) : null}
           {providers.flatMap((provider) =>
             accounts
               .filter((account) => account.provider === provider)
@@ -1004,7 +1031,6 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                 </div>
               )),
           )}
-          {draft !== null ? <DraftAccountRow draft={draft} state={state} /> : null}
         </div>
       ) : null}
       {orphanLogin !== null ? (
@@ -1033,7 +1059,6 @@ function DraftAccountRow({
   const t = useUiText();
   const [instanceFailure, setInstanceFailure] = useState<string | null>(null);
   const [instanceBusy, setInstanceBusy] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
   const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
   const label = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
   const keyProvider = isWorkjetGatewayApiKeyProvider(provider) ? provider : null;
@@ -1051,7 +1076,6 @@ function DraftAccountRow({
     if (!grok) return;
     setInstanceBusy(true);
     setInstanceFailure(null);
-    setShowDetails(false);
     const failure = await grok.start();
     setInstanceBusy(false);
     setInstanceFailure(failure);
@@ -1077,24 +1101,17 @@ function DraftAccountRow({
         }
         chips={
           both ? (
-            <ToggleGroup
+            <Segment
               aria-label="Art des Kontos"
-              size="xs"
-              variant="outline"
-              value={[draft.mode]}
-              onValueChange={(value) => {
-                const next = value[0];
-                if (next === "subscription" || next === "key")
-                  updateProviderDraft({ mode: next, keyFormOpen: next === "key" });
-              }}
-            >
-              <Toggle className={SEGMENT_TOGGLE_CLASS} value="subscription">
-                Abo
-              </Toggle>
-              <Toggle className={SEGMENT_TOGGLE_CLASS} value="key">
-                API-Key
-              </Toggle>
-            </ToggleGroup>
+              value={draft.mode}
+              onValueChange={(next) =>
+                updateProviderDraft({ mode: next, keyFormOpen: next === "key" })
+              }
+              options={[
+                { value: "subscription", label: "Abo" },
+                { value: "key", label: "API-Key" },
+              ]}
+            />
           ) : undefined
         }
         active={false}
@@ -1150,18 +1167,10 @@ function DraftAccountRow({
           className="flex flex-wrap items-center gap-2 px-3 pb-2 pl-9 text-xs text-destructive"
           data-workjet-draft-failure=""
         >
-          <span>Anmeldung auf {state.instanceGrok.label} nicht gestartet.</span>
+          <span>{state.instanceGrok.label} antwortet nicht.</span>
           <Button size="xs" variant="outline" onClick={() => void startInstance()}>
-            Erneut
+            Erneut versuchen
           </Button>
-          <Button size="xs" variant="outline" onClick={() => setShowDetails((open) => !open)}>
-            Details
-          </Button>
-          {showDetails ? (
-            <code className="w-full font-mono text-[11px] text-muted-foreground">
-              {instanceFailure}
-            </code>
-          ) : null}
         </div>
       ) : null}
       {draft.mode === "key" && keyProvider !== null ? (

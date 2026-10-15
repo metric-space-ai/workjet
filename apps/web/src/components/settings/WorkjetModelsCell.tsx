@@ -3,6 +3,7 @@ import { Checkbox } from "../ui/checkbox";
 import { useEffect, useRef, useState } from "react";
 import type { WorkjetGatewayAccountSummary } from "@workjet/contracts";
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import type { ModelsManagementState, ModelsModelCheck } from "./WorkjetModelsProviders";
@@ -297,6 +298,7 @@ export function WorkjetModelsCell({
         })}
       </div>
     );
+  const choices = (models ?? []).filter((model) => !account.modelIds.includes(model));
   return (
     <div className="flex min-w-0 items-start gap-1">
       <div
@@ -323,6 +325,42 @@ export function WorkjetModelsCell({
           state={state}
           onDone={() => setAdding(false)}
         />
+      ) : choices.length > 0 ? (
+        // Bekannte Modelle als Auswahl, Tippen nur für ein eigenes (Audit C 13).
+        <Menu>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <MenuTrigger
+                  render={
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Modell hinzufügen für ${account.label}`}
+                      data-workjet-action={`models.account.${account.id}.add-model`}
+                      disabled={state.mutationBusy}
+                    />
+                  }
+                />
+              }
+            >
+              <PlusIcon className="size-3" />
+            </TooltipTrigger>
+            <TooltipPopup>Modell hinzufügen</TooltipPopup>
+          </Tooltip>
+          <MenuPopup align="end">
+            {choices.map((choice) => (
+              <MenuItem
+                key={choice}
+                className="font-mono"
+                onClick={() => void state.onEditModels([account], [...account.modelIds, choice])}
+              >
+                {choice}
+              </MenuItem>
+            ))}
+            <MenuItem onClick={() => setAdding(true)}>Eigenes Modell</MenuItem>
+          </MenuPopup>
+        </Menu>
       ) : (
         <Tooltip>
           <TooltipTrigger

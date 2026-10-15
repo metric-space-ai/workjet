@@ -166,11 +166,11 @@ function booleanStateLabel(
 ): string {
   if (value === "true") return labels.true;
   if (value === "false") return labels.false;
-  return "—";
+  return "";
 }
 
 const THERMAL_STATE_LABELS: Record<string, string> = {
-  unknown: "—",
+  unknown: "",
   nominal: "Normal",
   fair: "Erhöht",
   serious: "Hoch",
@@ -234,13 +234,9 @@ function SourceStatusBadge({
 
 function LastSampleLabel({ sampledAt }: { sampledAt: DateTime.Utc | null }) {
   useRelativeTimeTick();
-  if (!sampledAt) {
-    return <span className="text-[11px] text-muted-foreground/55">—</span>;
-  }
+  if (!sampledAt) return null;
   const relative = formatRelativeTime(DateTime.formatIso(sampledAt));
-  if (!relative) {
-    return <span className="text-[11px] text-muted-foreground/55">—</span>;
-  }
+  if (!relative) return null;
   return (
     <span className="text-[11px] text-muted-foreground/60">
       {relative.suffix ? "Vor " : ""}
@@ -548,9 +544,7 @@ function ProcessActions({
   signalingKeys: ReadonlySet<string>;
   onSignal: (process: ResourceTelemetryProcess, signal: ServerProcessSignal) => void;
 }) {
-  if (!canSignalProcess(process)) {
-    return <span className="text-[12px] text-muted-foreground/35">—</span>;
-  }
+  if (!canSignalProcess(process)) return null;
   const isSignaling = signalingKeys.has(processIdentityKey(process));
   return (
     <ProcessSignalButtons
@@ -948,7 +942,12 @@ function AttributionTable({ entries }: { entries: ReadonlyArray<ResourceAttribut
   );
 }
 
-export function ResourceTelemetryDiagnostics() {
+export function ResourceTelemetryDiagnostics({
+  serverHistory,
+}: {
+  /** Der Verlauf der Server-Kindprozesse, im selben Abschnitt „Ressourcenverlauf“. */
+  readonly serverHistory?: ReactNode;
+} = {}) {
   const [windowMs, setWindowMs] = useState(15 * 60_000);
   const selectedWindow =
     HISTORY_WINDOWS.find((option) => option.windowMs === windowMs) ?? HISTORY_WINDOWS[1];
@@ -1007,17 +1006,12 @@ export function ResourceTelemetryDiagnostics() {
           toastManager.add({
             type: "error",
             title: `${signal} nicht gesendet`,
-            ...Option.match(result.value.message, {
-              onNone: () => ({}),
-              onSome: (message) => ({ description: message }),
-            }),
           });
         })
-        .catch((error: unknown) => {
+        .catch(() => {
           toastManager.add({
             type: "error",
             title: `${signal} nicht gesendet`,
-            ...(error instanceof Error ? { description: error.message } : {}),
           });
         })
         .finally(() => {
@@ -1030,11 +1024,10 @@ export function ResourceTelemetryDiagnostics() {
   const retryCollector = useCallback(() => {
     setIsRetrying(true);
     void retryTelemetry()
-      .catch((error: unknown) => {
+      .catch(() => {
         toastManager.add({
           type: "error",
           title: "Monitor nicht neu gestartet",
-          ...(error instanceof Error ? { description: error.message } : {}),
         });
       })
       .finally(() => {
@@ -1095,7 +1088,7 @@ export function ResourceTelemetryDiagnostics() {
             </div>
             <div className="flex items-center gap-2 text-[12px] text-muted-foreground/65">
               <span className="size-1.5 rounded-full bg-emerald-500" />
-              {snapshot ? `Alle ${formatSampleInterval(snapshot.sampleIntervalMs)}` : "—"}
+              {snapshot ? `Alle ${formatSampleInterval(snapshot.sampleIntervalMs)}` : null}
             </div>
           </div>
           <div className="grid grid-cols-2 divide-x divide-y divide-border/55 @[46rem]/resource-telemetry:grid-cols-3">
@@ -1141,7 +1134,9 @@ export function ResourceTelemetryDiagnostics() {
             <IconStat
               icon={<GaugeIcon className="size-3.5" />}
               label="CPU-Drossel"
-              value={snapshot ? (speedLimit === null ? "—" : `${speedLimit.toFixed(0)}%`) : "..."}
+              value={
+                snapshot ? (speedLimit === null ? "Keine" : `${speedLimit.toFixed(0)}%`) : "..."
+              }
               detail={
                 snapshot && snapshot.power.thermalState !== "unknown"
                   ? (THERMAL_STATE_LABELS[snapshot.power.thermalState] ??
@@ -1160,7 +1155,7 @@ export function ResourceTelemetryDiagnostics() {
           {snapshot ? (
             <div className="grid border-t border-border/60 bg-muted/10 @[46rem]/resource-telemetry:grid-cols-3">
               <AggregateCard
-                label="Backend + Presets"
+                label="Backend + Worker"
                 accentClass="bg-emerald-500/80"
                 aggregate={snapshot.groups.backend}
               />
@@ -1286,17 +1281,15 @@ export function ResourceTelemetryDiagnostics() {
                       : undefined
                   }
                 />
-                <DetailRow
-                  label="Sidecar"
-                  value={Option.match(snapshot.health.sidecarVersion, {
-                    onNone: () => "—",
-                    onSome: (version) =>
-                      `${version}${Option.match(snapshot.health.sidecarPid, {
-                        onNone: () => "",
-                        onSome: (pid) => ` · PID ${pid}`,
-                      })}`,
-                  })}
-                />
+                {Option.isSome(snapshot.health.sidecarVersion) ? (
+                  <DetailRow
+                    label="Begleitprozess"
+                    value={`${snapshot.health.sidecarVersion.value}${Option.match(
+                      snapshot.health.sidecarPid,
+                      { onNone: () => "", onSome: (pid) => ` · PID ${pid}` },
+                    )}`}
+                  />
+                ) : null}
                 <DetailRow label="Neustarts" value={String(snapshot.health.restartCount)} />
               </>
             ) : (
@@ -1337,6 +1330,7 @@ export function ResourceTelemetryDiagnostics() {
           <ResourceHistoryChart buckets={history.data?.buckets ?? []} />
           <HistoryProcessTable processes={history.data?.topProcesses ?? []} />
         </div>
+        {serverHistory ?? null}
       </SettingsSection>
 
       <SettingsSection

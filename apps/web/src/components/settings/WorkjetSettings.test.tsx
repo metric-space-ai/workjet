@@ -141,8 +141,8 @@ describe("Workjet configuration settings", () => {
     }
     // Page title is „Presets“ (15.10.); the empty list is a title plus one primary action.
     expect(markup).toContain(">Presets</h1>");
-    expect(markup).toContain("Keine Worker-Presets");
-    expect(markup).toContain("Preset hinzufügen");
+    expect(markup).toContain("Keine Presets");
+    expect(markup).toContain('data-workjet-action="presets.add"');
     expect(markup).not.toContain("Connection targets");
     // The Greppy RUNTIME sits under Workers now — it supports composition.
     expect(markup).toContain(GREPPY_TITLE);
@@ -177,8 +177,9 @@ describe("Workjet configuration settings", () => {
     );
     expect(markup).toContain('data-slot="row"');
     expect(markup).toContain(">Umsetzung<");
-    // Meta: Modell · Harness · Rechner (missing → „Rechner: —“).
-    expect(markup).toContain("claude-opus-5-5 · Claude Code · Rechner: —");
+    // Meta: Modell · Harness · Rechner; a missing computer drops out (Audit C 26).
+    expect(markup).toContain("claude-opus-5-5 · Claude Code<");
+    expect(markup).not.toContain("Rechner: —");
     expect(markup).toContain('aria-label="Löschen"');
     expect(markup).toContain("Weitere Aktionen");
     expect(markup).toContain("Rechner fehlt");
@@ -218,7 +219,7 @@ describe("Workjet configuration settings", () => {
       renderToStaticMarkup(<WorktreeStorageInline storage={automaticWorktreeStorage} />),
     ).toContain("125 GB frei");
     expect(formatAvailableBytes(1_500_000_000)).toBe("1.50 GB");
-    expect(formatAvailableBytes(Number.NaN)).toBe("—");
+    expect(formatAvailableBytes(Number.NaN)).toBe("");
   });
 
   it("checks, applies, and resets storage only through valid selected-server controls", () => {
@@ -332,7 +333,8 @@ describe("Workjet Greppy runtime settings", () => {
       availability: "unavailable",
       reason: "override-invalid",
     });
-    expect(overrideMarkup).toContain("WORKJET_GREPPY_EXECUTABLE");
+    expect(overrideMarkup).toContain("greppy nicht startbar.");
+    expect(overrideMarkup).not.toContain("WORKJET_GREPPY_EXECUTABLE");
     expect(overrideMarkup).not.toContain("Greppy installieren");
     expect(overrideMarkup).not.toContain("Greppy reparieren");
     expect(overrideMarkup).not.toContain("/greppy");
@@ -401,9 +403,10 @@ describe("Workjet Greppy runtime settings", () => {
     const failureToast = addToast.mock.calls.at(-1)?.[0];
     expect(failureToast).toMatchObject({
       type: "error",
-      title: "Greppy-Reparatur fehlgeschlagen",
-      description: "Greppy-Vorgang fehlgeschlagen.",
+      // One line (D49): the reason folds into the title.
+      title: "Greppy-Reparatur fehlgeschlagen · Greppy-Vorgang fehlgeschlagen.",
     });
+    expect(failureToast).not.toHaveProperty("description");
     expect(JSON.stringify(failureToast)).not.toContain(internalText);
     expect(greppyOperationFailureDescription(new Error(internalText))).not.toContain(internalText);
   });

@@ -32,7 +32,7 @@ export function InstanceConnectionStatus({
     return (
       <div
         role="status"
-        className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs text-muted-foreground"
+        className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground"
         data-workjet-instance-connection="core-outdated"
       >
         <span className="min-w-0">
@@ -53,7 +53,7 @@ export function InstanceConnectionStatus({
   return (
     <div
       role="status"
-      className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs text-muted-foreground"
+      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground"
       data-workjet-instance-connection=""
     >
       <span className="min-w-0">{describeWorkjetProjectControlFailure(failure, null, "de")}</span>
@@ -91,8 +91,10 @@ export function InstanceProviderSection({
     grok.connectionFailure,
   ].find((candidate) => candidate !== undefined && isActionableInstanceFailure(candidate));
   return (
-    <div role="rowgroup" aria-label={`Instanz ${label}`} className="border-b border-border">
-      <div className="py-2 text-xs font-semibold">Instanz {label}</div>
+    <div role="rowgroup" aria-label={`Instanz ${label}`}>
+      <div className="bg-muted/30 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+        Instanz {label}
+      </div>
       {failure ? (
         <InstanceConnectionStatus
           label={label}
@@ -109,7 +111,7 @@ export function InstanceProviderSection({
           {unsupportedProviders ? (
             <div
               role="status"
-              className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs text-muted-foreground"
+              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground"
               data-workjet-provider-management-unavailable=""
             >
               <span>{describeWorkjetProjectControlFailure(unsupportedProviders, null, "de")}</span>

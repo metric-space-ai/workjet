@@ -386,10 +386,7 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
       ) : null}
 
       {pools.length === 0 ? (
-        <SettingsRow
-          title="Keine Pools"
-          status={<span className="text-muted-foreground">—</span>}
-        />
+        <SettingsRow title="Keine Pools" />
       ) : (
         pools.map((pool) => {
           // Health and model facts for THIS provider, beside its pool. They

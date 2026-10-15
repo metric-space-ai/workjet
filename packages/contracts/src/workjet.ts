@@ -1537,6 +1537,27 @@ export const WorkjetGatewayAccountBalance = Schema.Struct({
 });
 export type WorkjetGatewayAccountBalance = typeof WorkjetGatewayAccountBalance.Type;
 
+/** Exact configured-model eligibility from the host's real selection state. */
+export const WorkjetGatewayAccountModelHealth = Schema.Struct({
+  modelId: TrimmedNonEmptyString,
+  status: Schema.Literals([
+    "ready",
+    "unknown",
+    "disabled",
+    "cooldown",
+    "model-unavailable",
+    "auth-required",
+    "quota",
+    "balance",
+  ]),
+  usable: Schema.Boolean,
+  cooldownUntilMs: Schema.NullOr(NonNegativeInt),
+  errorCode: Schema.NullOr(TrimmedNonEmptyString),
+  httpStatus: Schema.NullOr(NonNegativeInt),
+  observedAtMs: Schema.NullOr(NonNegativeInt),
+});
+export type WorkjetGatewayAccountModelHealth = typeof WorkjetGatewayAccountModelHealth.Type;
+
 export const WorkjetGatewayAccountHealth = Schema.Struct({
   accountId: WorkjetGatewayAccountId,
   provider: WorkjetGatewayProvider,
@@ -1557,6 +1578,8 @@ export const WorkjetGatewayAccountHealth = Schema.Struct({
   quotaSupported: Schema.Boolean,
   quotaRefreshing: Schema.Boolean,
   quotaError: Schema.NullOr(Schema.Literals(["unavailable", "provider-error"])),
+  /** Absent on older host releases; never synthesize an all-clear from it. */
+  models: Schema.optionalKey(Schema.Array(WorkjetGatewayAccountModelHealth)),
 });
 export type WorkjetGatewayAccountHealth = typeof WorkjetGatewayAccountHealth.Type;
 

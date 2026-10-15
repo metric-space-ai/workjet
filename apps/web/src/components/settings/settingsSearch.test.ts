@@ -40,13 +40,12 @@ describe("searchSettings", () => {
     expect(searchSettings("xyzzy")).toEqual([]);
   });
 
-  it("finds Modelle, Textmodell and the project model for „modell“ (#603)", () => {
+  it("finds Modelle and the project model for „modell“ (#603)", () => {
     const results = searchSettings("modell");
     expect(results.map((item) => item.title)).toEqual(
-      expect.arrayContaining(["Modelle", "Textmodell", "Projekt-Modell"]),
+      expect.arrayContaining(["Modelle", "Projekt-Modell"]),
     );
     // Every hit names its page.
-    expect(results.find((item) => item.title === "Textmodell")?.to).toBe("/settings/models");
     expect(results.find((item) => item.title === "Projekt-Modell")?.to).toBe("/settings/projects");
   });
 
@@ -73,10 +72,8 @@ describe("searchSettings", () => {
     expect(ids("schriftgröße")).toEqual(["font-size"]);
   });
 
-  it("finds Textmodell on Modelle, not on Allgemein (#550)", () => {
-    expect(searchSettings("textmodell")).toEqual([
-      { id: "text-generation-model", title: "Textmodell", to: "/settings/models" },
-    ]);
+  it("has no Textmodell setting any more (Michael, 15.10.)", () => {
+    expect(searchSettings("textmodell")).toEqual([]);
   });
 
   it("keeps catalog result ids unique and anchor props from the catalog", () => {

@@ -115,7 +115,6 @@ import {
   resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
 } from "./ProviderSettingsPanel.logic";
-import { TextGenerationModelSection } from "./SettingsPanels";
 
 function withoutProviderInstanceKey<V>(
   record: Readonly<Record<ProviderInstanceId, V>> | undefined,
@@ -405,13 +404,10 @@ export function ProviderSettingsPanel({
       ) : null}
 
       {sections === "models" ? (
-        <>
-          <WorkjetGatewayAccountsSection
-            environmentId={effectiveEnvironmentId}
-            devicesLoading={devicesLoading}
-          />
-          <TextGenerationModelSection />
-        </>
+        <WorkjetGatewayAccountsSection
+          environmentId={effectiveEnvironmentId}
+          devicesLoading={devicesLoading}
+        />
       ) : null}
     </Container>
   );

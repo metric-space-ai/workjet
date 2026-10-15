@@ -248,11 +248,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchAliases: ["Modell-Routing"],
   },
   {
-    id: "text-generation-model",
-    title: "Textmodell",
-    to: "/settings/models",
-  },
-  {
     id: "usage",
     title: "Verbrauch",
     to: "/settings/usage",

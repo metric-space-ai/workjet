@@ -27,14 +27,24 @@ const origin = process.env.R2_FIXTURE_ORIGIN || "http://127.0.0.1:5793";
 
   // Inhaltsfläche, Kopf (neben dem Titel) und KPI-Zeile öffnen.
   const lernwerk = card("instance:lernwerk");
-  for (const selector of [
-    "[data-workjet-project-card-content]",
-    "[data-workjet-project-card-slots]",
+  for (const [key, selector] of [
+    ["instance:lernwerk", "[data-workjet-project-card-content]"],
+    ["local:workjet", "[data-workjet-project-card-slots]"],
   ]) {
     await reset();
-    await lernwerk.locator(selector).click({ position: { x: 4, y: 4 } });
-    assert.deepEqual(await opened(), ["instance:lernwerk"], `Klick auf ${selector}`);
+    await card(key)
+      .locator(selector)
+      .click({ position: { x: 4, y: 4 } });
+    assert.deepEqual(await opened(), [key], `Klick auf ${selector}`);
   }
+  // Unbekannte Werte fallen weg: nirgends ein „—“ als Platzhalter auf den Kacheln.
+  const dashes = await page.evaluate(
+    () =>
+      [...document.querySelectorAll("[data-workjet-project-card] *")].filter(
+        (element) => element.children.length === 0 && element.textContent.trim() === "—",
+      ).length,
+  );
+  assert.equal(dashes, 0, "kein „—“ auf den Kacheln");
   await reset();
   const box = await lernwerk.boundingBox();
   await page.mouse.click(box.x + box.width / 2, box.y + 12);

@@ -44,7 +44,7 @@ describe("project exit assessment display", () => {
     expect(markup).not.toContain("since previous calculated assessment");
   });
 
-  it("adds the fixed exit measure without replacing the three project KPI slots", () => {
+  it("adds the fixed exit measure as a stamp, without placeholder KPI slots", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard
         project={{
@@ -63,7 +63,9 @@ describe("project exit assessment display", () => {
         onOpen={() => {}}
       />,
     );
-    expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
+    // KPIs never read: their slots drop out (no „—“), the exit stamp stays.
+    expect(markup).not.toContain("data-workjet-project-card-slot=");
+    expect(markup).not.toMatch(/>—</);
     expect(markup).toContain(formatExitEur(800_000));
     // #561: ein Tipp auf den Stempel öffnet die Bewertung inline auf der Karte.
     expect(markup).not.toContain('aria-label="Fünf-Jahres-Exit-Bewertung ansehen"');

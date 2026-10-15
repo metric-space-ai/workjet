@@ -431,7 +431,7 @@ export function ProjectOverviewCard({
           />
         )}
         {kpisEmpty && onSaveKpis && editingKpi === null ? (
-          <div className="flex h-11 items-center" data-workjet-project-card-slots="">
+          <div className="flex h-12 items-center" data-workjet-project-card-slots="">
             <Button
               size="sm"
               variant="outline"
@@ -475,7 +475,7 @@ export function ProjectOverviewCard({
                 return (
                   <div
                     key={position}
-                    className="flex min-h-11 min-w-0 flex-col gap-0.5"
+                    className="flex h-12 min-w-0 flex-col gap-0.5"
                     data-workjet-project-card-slot={index + 1}
                     data-workjet-kpi-unknown=""
                   >
@@ -489,7 +489,7 @@ export function ProjectOverviewCard({
               return (
                 <div
                   key={position}
-                  className="flex min-h-11 min-w-0 flex-col gap-0.5"
+                  className="flex min-h-12 min-w-0 flex-col gap-0.5"
                   data-workjet-project-card-slot={index + 1}
                 >
                   <dt

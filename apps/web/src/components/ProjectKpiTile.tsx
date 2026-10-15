@@ -134,16 +134,16 @@ export function ProjectKpiTile({
       : metric?.status === "ready"
         ? text.ready
         : metric?.detail || "—";
-  const resolvedLabel = record
-    ? projectKpiPresentation(record, projectId, position).label !== null
-    : false;
+  const shown = metric && !dirty ? metric.value : "—";
   const value = (
     <dd
-      className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]"
+      className={`order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere] ${
+        shown === "—" ? "text-muted-foreground" : ""
+      }`}
       data-workjet-kpi-status={metric?.status ?? "unconfigured"}
       title={metric?.message ?? undefined}
     >
-      {metric && !dirty ? metric.value : "—"}
+      {shown}
     </dd>
   );
   return (
@@ -160,14 +160,12 @@ export function ProjectKpiTile({
         }
       }}
     >
-      <div className="relative flex min-w-0 flex-col gap-0.5 pe-4">
-        {/* min-h keeps the row height while a slot has no label; the sentence of an
-            uncalculated KPI stays short (two lines) instead of pushing the row. */}
+      <div className="relative flex h-11.5 min-w-0 flex-col gap-0.5 pe-4">
+        {/* One label line and a fixed slot height (48 px incl. the editor gap): the KPI
+            strip has the same height on every card, so a gallery row stays flush. */}
         <dt
-          className={`min-h-4 min-w-0 break-words text-[11px] leading-4 text-muted-foreground ${
-            resolvedLabel ? "" : "line-clamp-2"
-          }`}
-          title={resolvedLabel ? undefined : label || undefined}
+          className="min-h-4 min-w-0 break-words text-[11px] leading-4 text-muted-foreground line-clamp-1"
+          title={label || undefined}
         >
           {label}
         </dt>

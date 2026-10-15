@@ -1287,18 +1287,15 @@ export function ResourceTelemetryDiagnostics({
                       : undefined
                   }
                 />
-                {Option.match(snapshot.health.sidecarVersion, {
-                  onNone: () => null,
-                  onSome: (version) => (
-                    <DetailRow
-                      label="Begleitprozess"
-                      value={`${version}${Option.match(snapshot.health.sidecarPid, {
-                        onNone: () => "",
-                        onSome: (pid) => ` · PID ${pid}`,
-                      })}`}
-                    />
-                  ),
-                })}
+                {Option.isSome(snapshot.health.sidecarVersion) ? (
+                  <DetailRow
+                    label="Begleitprozess"
+                    value={`${snapshot.health.sidecarVersion.value}${Option.match(
+                      snapshot.health.sidecarPid,
+                      { onNone: () => "", onSome: (pid) => ` · PID ${pid}` },
+                    )}`}
+                  />
+                ) : null}
                 <DetailRow label="Neustarts" value={String(snapshot.health.restartCount)} />
               </>
             ) : (

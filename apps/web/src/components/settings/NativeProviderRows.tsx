@@ -1,5 +1,4 @@
 import { RefreshCwIcon } from "lucide-react";
-import { Switch } from "../ui/switch";
 import { Checkbox } from "../ui/checkbox";
 import { useEffect, useState } from "react";
 import type {

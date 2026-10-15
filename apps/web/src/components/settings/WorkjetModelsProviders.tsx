@@ -351,6 +351,8 @@ export function AccountLimits({ health }: { readonly health: ModelsAccountHealth
   );
 }
 
+type PickedModels = ReadonlyArray<string>;
+
 export function WorkjetModelsKeyForm({
   provider,
   account,
@@ -372,7 +374,8 @@ export function WorkjetModelsKeyForm({
   const sharedModels = state.onEditProviderModels !== undefined;
   const [modelText, setModelText] = useState(provider === "kimi" ? "" : models.join(", "));
   // Katalogmodelle als Auswahl statt kommagetrennter Eingabe (Audit C 13).
-  const [picked, setPicked] = useState<ReadonlyArray<string>>(provider === "kimi" ? [] : models);
+  const initialPicked: PickedModels = provider === "kimi" ? [] : models;
+  const [picked, setPicked] = useState(initialPicked);
   const [error, setError] = useState<string | null>(null);
   const providerLabel = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
   const apiKeyError =

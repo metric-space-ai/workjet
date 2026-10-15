@@ -893,7 +893,7 @@ function ProjectDetail({
       group.memberProjects.filter(
         (candidate) => (candidate.environmentLabel ?? "Dieser Rechner") === place,
       ).length > 1;
-    const folder = member.workspaceRoot?.split(/[\\/]/).filter(Boolean).at(-1);
+    const folder = member.workspaceRoot?.split(/[\\/]/).findLast((part) => part.length > 0);
     return sharedPlace && folder ? `${place} · ${readableProjectName(folder)}` : place;
   };
   const selectedCheckoutLabel = checkoutLabel(selectedCheckout);

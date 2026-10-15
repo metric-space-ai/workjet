@@ -51,10 +51,10 @@ function grokRowStatus(
   checks: Readonly<Record<string, Check>>,
   problem: boolean,
 ): RowStatus {
-  const results = Object.values(checks).map((check) => check.status);
+  const results = new Set(Object.values(checks).map((check) => check.status));
   if (busy !== undefined && !busy.startsWith("instance.grok.")) return "busy";
-  if (problem || results.includes("error")) return "error";
-  return results.includes("ok") ? "ok" : "off";
+  if (problem || results.has("error")) return "error";
+  return results.has("ok") ? "ok" : "off";
 }
 
 /**

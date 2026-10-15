@@ -1,7 +1,6 @@
 import { workjetUiLanguage } from "../../workjetProjectControl";
 import { ProjectFolderSettingRow } from "./SettingsPanels";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { ProviderSettingsPanel } from "./ProviderSettingsPanel";
 import type {
   ComputerConnection,
   ComputerControlInput,
@@ -1776,8 +1775,6 @@ export function WorkjetComputersSettings({
       <SettingsSection title={workjetUiLanguage() === "en" ? "This computer" : "Dieser Rechner"}>
         <ProjectFolderSettingRow />
       </SettingsSection>
-      {/* Coding agents are per machine, so they live on Rechner (#554). */}
-      <ProviderSettingsPanel sections="harnesses" embedded />
     </SettingsPageContainer>
   );
 }

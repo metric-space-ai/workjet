@@ -1,0 +1,9 @@
+{
+  "time": "2026-10-09T21:50:33.119176+00:00",
+  "url": "https://api.z.ai/api/coding/paas/v4/models",
+  "credential_used": false,
+  "method": "GET",
+  "status": 401,
+  "error": "{\"error\":{\"code\":\"1001\",\"message\":\"Authentication parameter not received in Header, unable to authenticate\"}}",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

@@ -1,0 +1,31 @@
+{
+  "time": "2026-10-09T22:02:17.259373+00:00",
+  "pid": 44232,
+  "server_exit_code": 1,
+  "results": [
+    {
+      "error": "RuntimeError('Disposable server did not become ready')"
+    }
+  ],
+  "server_log": [
+    "node:events:505\n",
+    "    throw er; // Unhandled 'error' event\n",
+    "    ^\n",
+    "\n",
+    "Error: EAGAIN: resource temporarily unavailable, read\n",
+    "Emitted 'error' event on Interface instance at:\n",
+    "    at ReadStream.onerror (node:internal/readline/interface:259:10)\n",
+    "    at ReadStream.emit (node:events:526:24)\n",
+    "    at emitErrorNT (node:internal/streams/destroy:170:8)\n",
+    "    at emitErrorCloseNT (node:internal/streams/destroy:129:3)\n",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {\n",
+    "  errno: -35,\n",
+    "  code: 'EAGAIN',\n",
+    "  syscall: 'read'\n",
+    "}\n",
+    "\n",
+    "Node.js v26.6.0\n"
+  ],
+  "cleanup": "owned disposable server exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

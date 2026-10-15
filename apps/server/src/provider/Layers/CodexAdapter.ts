@@ -1,3 +1,4 @@
+import { readWorkjetManagedPrompt, workjetTeamEnvironment } from "../../mcp/WorkjetThreadTeam.ts";
 /**
  * CodexAdapterLive - Scoped live implementation for the Codex provider adapter.
  *
@@ -1776,7 +1777,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           launchArgs: workerSource
             ? ""
             : resolveCodexLaunchArgs(codexConfig.launchArgs, sessionEnvironment),
-          ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
+          environment: workjetTeamEnvironment(input.threadId, sessionEnvironment),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }
@@ -1793,11 +1794,13 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               : {}),
           ...(serviceTier ? { serviceTier } : {}),
           onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
+          ...(readWorkjetManagedPrompt(input.threadId) !== undefined
+            ? { compiledManagedPrompt: readWorkjetManagedPrompt(input.threadId)! }
+            : {}),
           ...(mcpSession
             ? {
-                compiledManagedPrompt: mcpSession.compiledManagedPrompt,
                 environment: {
-                  ...(sessionEnvironment ?? process.env),
+                  ...workjetTeamEnvironment(input.threadId, sessionEnvironment),
                   WORKJET_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(
                     /^Bearer\s+/,
                     "",

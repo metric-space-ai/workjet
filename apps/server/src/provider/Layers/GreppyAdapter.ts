@@ -1,3 +1,5 @@
+import { readWorkjetManagedPrompt, workjetTeamEnvironment } from "../../mcp/WorkjetThreadTeam.ts";
+import { prefixTurnWithManagedPrompt } from "../managedPromptHooks.ts";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 import { prepareWorkerSourceNamespace } from "../../workjet/WorkerSourceNamespace.ts";
 // @effect-diagnostics nodeBuiltinImport:off
@@ -261,7 +263,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
               ]
             : [],
           config,
-          environment,
+          environment: workjetTeamEnvironment(input.threadId, environment),
           model,
           spawner,
           cwd: input.cwd,
@@ -383,7 +385,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
             cancelled: false,
             stopped: false,
             managedPrompt:
-              managed?.compiledManagedPrompt.trim() ||
+              readWorkjetManagedPrompt(input.threadId)?.trim() ||
               input.workjetConfig?.managedInstructions.trim(),
           };
           yield* acp.getEvents().pipe(
@@ -578,9 +580,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
           turnId,
           payload: { model: ctx.session.model },
         });
-        const text = ctx.managedPrompt
-          ? `<workjet_managed_instructions>\n${ctx.managedPrompt}\n</workjet_managed_instructions>\n\n${prepared.text}`
-          : prepared.text;
+        const text = prefixTurnWithManagedPrompt(ctx.managedPrompt, prepared.text);
         const prompt = [{ type: "text" as const, text }];
         const result = yield* ctx.acp
           .prompt({ prompt })

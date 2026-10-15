@@ -354,8 +354,14 @@ validationLayer("CodexAdapterLive validation", (it) => {
         | (Record<string, unknown> & { onProcessSpawn?: unknown })
         | undefined;
       NodeAssert.equal(typeof validationOptions?.onProcessSpawn, "function");
-      const { onProcessSpawn: _onProcessSpawn, ...validationOptionsWithoutSpawnHook } =
-        validationOptions ?? {};
+      const {
+        onProcessSpawn: _onProcessSpawn,
+        environment,
+        ...validationOptionsWithoutSpawnHook
+      } = validationOptions ?? {};
+      // Inherited environment plus the CTOX team identity (unknown thread → operator).
+      NodeAssert.equal((environment as NodeJS.ProcessEnv | undefined)?.CTOX_TEAM_ROLE, "operator");
+      NodeAssert.equal((environment as NodeJS.ProcessEnv | undefined)?.CTOX_SESSION_ID, undefined);
       NodeAssert.deepStrictEqual(validationOptionsWithoutSpawnHook, {
         binaryPath: "codex",
         cwd: process.cwd(),
@@ -526,6 +532,7 @@ foreignWorkerLayer("CodexAdapter foreign worker source authority", (it) => {
           NodeAssert.deepStrictEqual(
             Object.keys(options.environment ?? {}).sort(),
             [
+              "CTOX_TEAM_ROLE",
               "HOME",
               "LANG",
               "PATH",

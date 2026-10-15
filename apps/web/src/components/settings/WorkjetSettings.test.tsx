@@ -139,8 +139,8 @@ describe("Workjet configuration settings", () => {
     ]) {
       expect(markup).not.toContain(gone);
     }
-    // Page title is „Worker-Presets“; the empty list is a title plus one primary action.
-    expect(markup).toContain(">Worker-Presets</h1>");
+    // Page title is „Lumas“ (#568); the empty list is a title plus one primary action.
+    expect(markup).toContain(">Lumas</h1>");
     expect(markup).toContain("Keine Worker-Presets");
     expect(markup).toContain("Preset hinzufügen");
     expect(markup).not.toContain("Connection targets");
@@ -297,7 +297,7 @@ describe("Workjet Greppy runtime settings", () => {
     // Computers stands beside Models and Harnesses.
     expect(SETTINGS_NAV_ITEMS).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Worker-Presets", to: "/settings/workjet" }),
+        expect.objectContaining({ label: "Lumas", to: "/settings/workjet" }),
         expect.objectContaining({ label: "Rechner", to: "/settings/computers" }),
       ]),
     );

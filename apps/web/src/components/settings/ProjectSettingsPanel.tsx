@@ -66,7 +66,6 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { ProjectFavicon } from "../ProjectFavicon";
-import { ProjectOverviewEditor } from "../ProjectOverviewEditor";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -93,21 +92,13 @@ import {
   useSettingsEmbedded,
 } from "./settingsLayout";
 import { ProjectFaviconPicker } from "./ProjectFaviconPicker";
-import { ProjectSupervisorLumaField } from "../ProjectSupervisorLumaField";
-import type { ProjectConfigurationValues } from "../ProjectOverviewEditor";
-import { buildProjectGallery } from "../../projectOverview";
-import { configureWorkjetProject, workjetUiLanguage } from "../../workjetProjectControl";
-import { useProjectKpiSettings } from "../../hooks/useProjectKpiSettings";
-import {
-  recordWorkjetProjectProjection,
-  refreshWorkjetProjectRegistry,
-  useWorkjetProjectRegistry,
-} from "../../workjetProjectRegistry";
-import { readActiveWorkjetScope, useActiveWorkjetScope } from "../../activeWorkjetScope";
-import { cn, newCommandId } from "../../lib/utils";
+import { workjetUiLanguage } from "../../workjetProjectControl";
+import { recordWorkjetProjectProjection, selectWorkjetProject } from "../../workjetProjectRegistry";
+import { selectProjectOverviewRef } from "../../projectOverviewSelection";
+import { readActiveWorkjetScope } from "../../activeWorkjetScope";
+import { cn } from "../../lib/utils";
 import {
   INSTANCE_PROJECT_KEY_PREFIX,
-  InstanceProjectDetail,
   InstanceProjectRow,
   instanceProjectSettingsKey,
   useInstanceOnlyProjects,
@@ -161,6 +152,9 @@ export function ProjectsSettingsList() {
   const instanceProjects = useInstanceOnlyProjects().projects;
   const [openKey, setOpenKey] = useState<string | null>(null);
   const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
+  const navigate = useNavigate();
+  const openProjectCard = (projectKey: string) =>
+    void navigate({ to: "/settings/projects/$projectKey", params: { projectKey } });
   const rows = [
     ...groups.map((group) => ({
       name: readableProjectName(group.displayName),
@@ -176,8 +170,7 @@ export function ProjectsSettingsList() {
           <InstanceProjectRow
             key={project.key}
             project={project}
-            open={openKey === key}
-            onToggle={() => toggle(key)}
+            onOpenCard={() => openProjectCard(key)}
           />
         ),
       };
@@ -287,17 +280,56 @@ function localProjectRow(
   );
 }
 
+/**
+ * Regeltermin, Budget und Supervisor bearbeitet nur noch die Projektkarte
+ * (#569): der frühere Einstellungs-Link auf ein Projekt öffnet die Karte.
+ */
+export function ProjectCardRedirect({ projectKey }: { projectKey: string }) {
+  const groups = useSettingsProjectGroups();
+  const navigate = useNavigate();
+  const doneRef = useRef(false);
+  const group = groups.find((candidate) => candidate.projectKey === projectKey) ?? null;
+  useEffect(() => {
+    if (doneRef.current) return;
+    const instanceId = readActiveWorkjetScope().selectedInstanceId;
+    const openCard = () => {
+      doneRef.current = true;
+      void navigate({ to: "/", replace: true });
+    };
+    if (projectKey.startsWith(INSTANCE_PROJECT_KEY_PREFIX)) {
+      if (instanceId !== null) {
+        selectWorkjetProject(instanceId, projectKey.slice(INSTANCE_PROJECT_KEY_PREFIX.length));
+        selectProjectOverviewRef(instanceId, null);
+      }
+      openCard();
+      return;
+    }
+    const member = group?.memberProjects[0];
+    if (member !== undefined) {
+      if (instanceId !== null && selectWorkjetProject(instanceId, member.id)) {
+        selectProjectOverviewRef(instanceId, null);
+      } else {
+        if (instanceId !== null) selectWorkjetProject(instanceId, null);
+        selectProjectOverviewRef(instanceId, scopeProjectRef(member.environmentId, member.id));
+      }
+      openCard();
+      return;
+    }
+    // Projects hydrate asynchronously; an unknown key lands on the list.
+    const timer = window.setTimeout(() => {
+      doneRef.current = true;
+      void navigate({ to: "/settings/projects", replace: true });
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [group, navigate, projectKey]);
+  return null;
+}
+
 export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
   const groups = useSettingsProjectGroups();
   const navigate = useNavigate();
 
   const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
-  const instance = useInstanceOnlyProjects();
-  const instanceProject = projectKey.startsWith(INSTANCE_PROJECT_KEY_PREFIX)
-    ? (instance.projects.find(
-        (project) => project.id === projectKey.slice(INSTANCE_PROJECT_KEY_PREFIX.length),
-      ) ?? null)
-    : null;
 
   // Mitglieder der zuletzt gezeigten Gruppe merken: Ändert sich die
   // Gruppierungsregel (und damit der Schlüssel), folgt die Seite dem Projekt.
@@ -329,8 +361,6 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
     }
   }, [groups, navigate, projectKey, selected]);
 
-  if (!selected && instanceProject !== null && instance.instanceId !== null)
-    return <InstanceProjectDetail instanceId={instance.instanceId} project={instanceProject} />;
   if (!selected) {
     return (
       <Empty className="flex-1">
@@ -358,7 +388,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   ];
   const [tab, setTab] = useState<ProjectTab>("general");
   const navigate = useNavigate();
-  const { environments } = useEnvironments();
   const settings = usePrimarySettings();
   const { workjetProjectRegistry, workjetProjects } = useAvailableProjectContext();
   const [isSavingName, setIsSavingName] = useState(false);
@@ -830,67 +859,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     ] ?? "inherit";
   const selectedCheckoutLabel = selectedCheckout.environmentLabel ?? "Dieser Rechner";
 
-  // ----- CTOX configuration: Regeltermin, Supervisor (native projects) -----
-  const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
-  const nativeRegistry = useWorkjetProjectRegistry(activeCtoxInstanceId);
-  const allProjects = useProjects();
-  const nativeConfiguration = useMemo(() => {
-    if (activeCtoxInstanceId === null) return undefined;
-    const gallery = buildProjectGallery({
-      projects: allProjects,
-      nativeProjects: nativeRegistry.projects,
-      instanceId: activeCtoxInstanceId,
-      primaryEnvironmentId: representative.environmentId,
-      computers: settings.workjet.computers,
-    });
-    return gallery.find(
-      (project) =>
-        project.configuration !== undefined &&
-        project.local !== null &&
-        group.memberProjects.some(
-          (member) =>
-            member.environmentId === project.local?.environmentId &&
-            member.id === project.local?.id,
-        ),
-    )?.configuration;
-  }, [
-    activeCtoxInstanceId,
-    allProjects,
-    group.memberProjects,
-    nativeRegistry.projects,
-    representative.environmentId,
-    settings.workjet.computers,
-  ]);
-  const saveNativeConfiguration = useCallback(
-    async (values: ProjectConfigurationValues): Promise<boolean> => {
-      if (activeCtoxInstanceId === null || nativeConfiguration === undefined) return false;
-      if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return false;
-      const result = await configureWorkjetProject(activeCtoxInstanceId, {
-        action: "project.configure",
-        commandId: newCommandId(),
-        projectId: nativeConfiguration.id,
-        title: group.displayName,
-        ...values,
-      });
-      if (
-        result._tag !== "completed" ||
-        result.response.action !== "project.configure" ||
-        readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
-      )
-        return false;
-      refreshWorkjetProjectRegistry(activeCtoxInstanceId);
-      return true;
-    },
-    [activeCtoxInstanceId, group.displayName, nativeConfiguration],
-  );
-
-  const projectKpis = useProjectKpiSettings(activeCtoxInstanceId, nativeConfiguration?.id);
-
   const removeLabel =
     group.memberProjects.length > 1 ? "Alle Einträge entfernen" : "Projekt entfernen";
 
-  // Regeltermin, budget and KPIs are edited on the project card; embedded settings skip them.
-  const showTab = (id: ProjectTab | "card") => !embedded || (id === "card" ? false : id === tab);
+  // Regeltermin, Budget und Supervisor bearbeitet nur die Projektkarte (#569).
+  const showTab = (id: ProjectTab) => !embedded || id === tab;
   const titleIcon = (
     <ProjectFavicon
       environmentId={representative.environmentId}
@@ -964,48 +937,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               </div>
             ) : null}
           </InlineExpand>
-        </SettingsSection>
-      ) : null}
-
-      {showTab("card") ? (
-        <SettingsSection
-          title={
-            embedded
-              ? ""
-              : t("Regeltermin, Budget und Supervisor", "Regular meeting, budget and supervisor")
-          }
-        >
-          <div className="px-3 py-3 sm:px-4" data-workjet-project-settings-overview="">
-            <ProjectOverviewEditor
-              key={group.projectKey}
-              onCancel={embedded?.onClose}
-              overview={representative.overview}
-              configuration={nativeConfiguration}
-              onSaveConfiguration={nativeConfiguration ? saveNativeConfiguration : undefined}
-              kpis={projectKpis.kpis}
-              onSaveKpis={projectKpis.save}
-              kpisLoadFailed={projectKpis.loadFailed}
-              renderLumaField={(props) => <ProjectSupervisorLumaField {...props} />}
-              onSave={async (overview) => {
-                if (
-                  !group.memberProjects.every((member) =>
-                    environments.some(
-                      (environment) =>
-                        environment.environmentId === member.environmentId &&
-                        environment.connection.phase === "connected" &&
-                        environment.serverConfig?.projectOverview === true,
-                    ),
-                  )
-                )
-                  return false;
-                const result = await updateAllMembers(
-                  { overview },
-                  "Projektübersicht nicht gespeichert",
-                );
-                return result._tag === "Success";
-              }}
-            />
-          </div>
         </SettingsSection>
       ) : null}
 

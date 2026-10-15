@@ -12,7 +12,8 @@
     "generate:decision-hub-skill": "node scripts/generate-decision-hub-skill.mjs",
     "generate:workjet-collective-skill": "node scripts/generate-workjet-collective-skill.mjs",
     "typecheck": "tsgo --noEmit",
-    "test": "vp test run"
+    "test": "vp test run",
+    "generate:ctox-toolhub-skill": "node scripts/generate-ctox-toolhub-skill.mjs"
   },
   "dependencies": {
     "@workjet/contracts": "workspace:*",

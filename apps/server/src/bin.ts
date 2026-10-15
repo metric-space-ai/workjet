@@ -19,6 +19,8 @@ import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
 import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { desktopTargetCommand } from "./cli/desktopTarget.ts";
+import { ledgerCommand, runsCommand } from "./cli/workerLedger.ts";
+import { workersCommand, healthCommand, runCommand } from "./cli/workerRun.ts";
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -61,6 +63,11 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       serviceCommand,
       servicePreflightCommand,
       desktopTargetCommand,
+      workersCommand,
+      healthCommand,
+      runCommand,
+      ledgerCommand,
+      runsCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),
   );

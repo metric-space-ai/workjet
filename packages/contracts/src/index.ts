@@ -49,6 +49,7 @@ export * from "./workjetCtoxCrew.ts";
 export * from "./workjetCtoxCrewOffers.ts";
 export * from "./workjetCtoxBinding.ts";
 export * from "./capability.ts";
+export * from "./toolhubAuthorize.ts";
 export * from "./ctox.ts";
 export * from "./ctoxControlDevice.ts";
 export * from "./workjetJourFixeSpeech.ts";

@@ -14,6 +14,7 @@ const App = {
 const Limit = Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })));
 const RetryKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/));
 const Delegation = { idempotency_key: RetryKey };
+const ToolkitSlug = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9_-]{0,63}$/));
 
 /** Finite Business OS operations. Routing and actor context are never model arguments. */
 const CtoxBusinessOsRequest = Schema.Union([
@@ -81,6 +82,26 @@ const CtoxBusinessOsRequest = Schema.Union([
     limit: Limit,
   }),
   Schema.Struct({ operation: Schema.Literal("get_run"), run_id: Id }),
+  // CTOX Toolhub on the bound instance. Thread and team role are added by
+  // Workjet from the authenticated scope, never by the model.
+  Schema.Struct({ operation: Schema.Literal("toolhub_list") }),
+  Schema.Struct({
+    operation: Schema.Literal("toolhub_catalog"),
+    toolkit: Schema.optionalKey(ToolkitSlug),
+  }),
+  Schema.Struct({
+    operation: Schema.Literal("toolhub_exec"),
+    tool: Schema.String.check(
+      Schema.isPattern(/^[a-z0-9][a-z0-9_-]{0,63}\.[A-Za-z0-9_.-]{1,128}$/),
+    ),
+    arguments: Schema.Record(Schema.String, Schema.Unknown),
+    confirm: Schema.optionalKey(Schema.Boolean),
+  }),
+  Schema.Struct({
+    operation: Schema.Literal("toolhub_needs_user"),
+    toolkit: ToolkitSlug,
+    reason: Schema.optionalKey(Text),
+  }),
   Schema.Struct({
     operation: Schema.Literal("open_link"),
     kind: Id,

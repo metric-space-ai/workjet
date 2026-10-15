@@ -43,6 +43,10 @@ is the used share of the one weekly or monthly pool, `config.currentPeriod.end`
 on-demand spend and prepaid balance never become a window. xAI API keys have no
 quota read.
 
+Both readings travel as `source.field = "used_percent"` with a 0..100 used
+value, because the app contract (`WorkjetGatewayQuotaWindow`) whitelists source
+field names and drops the whole account-health list on an unknown one.
+
 Probe and parse failures report quota errors without rejecting inference
 authentication. Positive readings expire for display; known exhausted windows
 remain exhausted until their actual reset. Unlimited windows never exhaust.

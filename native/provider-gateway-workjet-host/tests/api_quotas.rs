@@ -224,10 +224,10 @@ fn kimi_code_usages_become_one_window_per_vendor_limit() {
     assert_eq!(seconds, [Some(18_000), Some(604_800), None]);
     for window in &windows {
         let source = window.source.as_ref().unwrap();
-        assert_eq!(source.field, "used_ratio");
+        assert_eq!(source.field, "used_percent");
         assert!(!window.tool_only && window.model_pattern.is_none());
     }
-    assert_eq!(windows[0].source.as_ref().unwrap().value, Some(0.25));
+    assert_eq!(windows[0].source.as_ref().unwrap().value, Some(25.0));
     // An exhausted monthly pool blocks every Kimi model until its reset.
     assert!(quota_applies(&windows[2], "kimi-k3"));
     assert!(quota_is_exhausted(&windows[2], 1001));
@@ -290,7 +290,7 @@ fn kimi_code_older_usage_and_limits_shape_is_read_only_without_usages() {
     assert_eq!(windows[3].source.as_ref().unwrap().window_seconds, None);
     assert!(windows
         .iter()
-        .all(|w| w.source.as_ref().unwrap().field == "limit_used_ratio"));
+        .all(|w| w.source.as_ref().unwrap().field == "used_percent"));
 
     // When the current shape is present, the older fields are ignored.
     let mixed = br#"{"usages":{"limit_5h":{"used_ratio":0.5}},"usage":{"limit":100,"used":100}}"#;
@@ -323,7 +323,7 @@ fn supergrok_credits_become_exactly_one_weekly_or_monthly_window() {
     assert_eq!(windows[0].remaining_percent, Some(62.5));
     assert_eq!(windows[0].resets_at_ms, Some(1_792_454_400_000));
     let source = windows[0].source.as_ref().unwrap();
-    assert_eq!(source.field, "creditUsagePercent");
+    assert_eq!(source.field, "used_percent");
     assert_eq!(source.value, Some(37.5));
     assert_eq!(source.window_seconds, Some(604_800));
     // Exhausted on-demand spend is not the subscription pool.
@@ -381,4 +381,29 @@ fn grok_credits_read_only_targets_the_subscription_chat_proxy() {
     assert!(!reads_balance(GROK_CREDITS_URL));
     // xAI API keys have no quota endpoint: no bars, nothing invented.
     assert!(api_quota_endpoint("xai", "https://api.x.ai/v1").is_none());
+}
+
+#[test]
+fn kimi_and_grok_sources_stay_inside_the_app_contract_whitelist() {
+    // packages/contracts WorkjetGatewayQuotaWindow.source: field literal, value 0..100.
+    const WHITELIST: [&str; 5] = [
+        "utilization",
+        "used_percent",
+        "percentage",
+        "current_interval_remaining_percent",
+        "current_weekly_remaining_percent",
+    ];
+    let bodies: [(&str, &[u8]); 3] = [
+        ("kimi", KIMI_CODE_USAGES),
+        ("kimi", br#"{"usage":{"limit":100,"used":40},"limits":[{"detail":{"limit":10,"used":12}}]}"#),
+        ("xai", br#"{"config":{"creditUsagePercent":37.5,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY"}}}"#),
+    ];
+    for (provider, body) in bodies {
+        for window in parse_usage(provider, body, 1000).unwrap() {
+            let wire = serde_json::to_value(&window).unwrap();
+            assert!(WHITELIST.contains(&wire["source"]["field"].as_str().unwrap()));
+            let value = wire["source"]["value"].as_f64().unwrap();
+            assert!((0.0..=100.0).contains(&value));
+        }
+    }
 }

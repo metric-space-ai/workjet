@@ -1035,6 +1035,11 @@ pub fn parse_usage(provider: &str, body: &[u8], observed: i64) -> Option<Vec<Quo
     }
     Some(windows)
 }
+/// The app contract (`WorkjetGatewayQuotaWindow.source.field`) accepts only
+/// whitelisted names with a 0..100 value; an unknown name makes the app drop
+/// every account's health. Kimi Code `used_ratio` (0..1) and SuperGrok
+/// `creditUsagePercent` (0..100) are both a used share, carried as percent.
+const KIMI_GROK_SOURCE_FIELD: &str = "used_percent";
 fn rfc3339_ms(value: Option<&serde_json::Value>) -> Option<i64> {
     value
         .and_then(|v| v.as_str())
@@ -1070,16 +1075,18 @@ fn parse_kimi_code_usage(value: &serde_json::Value, observed: i64) -> Option<Vec
             let Some(entry) = usages.get(name).filter(|v| v.is_object()) else {
                 continue;
             };
-            let used = finite_number(entry.get("used_ratio")).filter(|v| (0.0..=1.0).contains(v));
+            let used = finite_number(entry.get("used_ratio"))
+                .filter(|v| (0.0..=1.0).contains(v))
+                .map(|v| v * 100.0);
             windows.push(QuotaWindow {
                 name: name.into(),
                 source: Some(QuotaSource {
-                    field: "used_ratio".into(),
+                    field: KIMI_GROK_SOURCE_FIELD.into(),
                     value: used,
                     window_seconds: seconds,
                     ..Default::default()
                 }),
-                remaining_percent: used.map(|v| 100.0 - v * 100.0),
+                remaining_percent: used.map(|v| 100.0 - v),
                 resets_at_ms: rfc3339_ms(entry.get("reset_time")),
                 observed_at_ms: observed,
                 ..Default::default()
@@ -1095,21 +1102,21 @@ fn parse_kimi_code_usage(value: &serde_json::Value, observed: i64) -> Option<Vec
                 .map(|(remaining, limit)| limit - remaining)
         });
         // Same clamp as the vendor CLI: remaining = min(max(limit - used, 0), limit).
-        let ratio = limit
+        let used = limit
             .zip(used)
-            .map(|(limit, used)| (used / limit).clamp(0.0, 1.0));
+            .map(|(limit, used)| (used / limit).clamp(0.0, 1.0) * 100.0);
         let reset = ["resetTime", "reset_time", "resetAt", "reset_at"]
             .into_iter()
             .find_map(|key| rfc3339_ms(detail.get(key)));
         QuotaWindow {
             name,
             source: Some(QuotaSource {
-                field: "limit_used_ratio".into(),
-                value: ratio,
+                field: KIMI_GROK_SOURCE_FIELD.into(),
+                value: used,
                 window_seconds: seconds,
                 ..Default::default()
             }),
-            remaining_percent: ratio.map(|v| 100.0 - v * 100.0),
+            remaining_percent: used.map(|v| 100.0 - v),
             resets_at_ms: reset,
             observed_at_ms: observed,
             ..Default::default()
@@ -1181,7 +1188,7 @@ fn parse_grok_credits(value: &serde_json::Value, observed: i64) -> Option<Vec<Qu
     Some(vec![QuotaWindow {
         name: name.into(),
         source: Some(QuotaSource {
-            field: "creditUsagePercent".into(),
+            field: KIMI_GROK_SOURCE_FIELD.into(),
             value: used,
             window_seconds: seconds,
             ..Default::default()

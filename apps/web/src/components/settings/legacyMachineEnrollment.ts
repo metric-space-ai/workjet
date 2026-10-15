@@ -40,6 +40,16 @@ export interface LegacyEnrollmentDeps {
     request: AddComputerRequest,
     phase: AddComputerPhase,
   ) => Promise<AddComputerOutcome & { readonly environmentId?: EnvironmentId }>;
+  /**
+   * Mit Passwort: Desktop-Schlüssel einmalig ins authorized_keys des Ziels
+   * eintragen (Desktop-IPC `workjetComputerKeys.install`); danach Schlüssel.
+   */
+  readonly installKey?:
+    | ((target: NonNullable<AddComputerRequest["target"]>) => Promise<{
+        readonly ok: boolean;
+        readonly message: string;
+      }>)
+    | undefined;
   /** Steht der Rechner dieser Umgebung in der Liste als online? */
   readonly isOnline: (environmentId: EnvironmentId) => boolean;
   readonly now?: () => number;
@@ -287,9 +297,17 @@ export function createLegacyMachineEnrollment(deps: LegacyEnrollmentDeps): {
           : () => undefined;
       const withPassword = !!password;
       try {
-        const outcome = await deps.add(
-          requestForCandidate(candidate, candidate.name),
-          (key, state) => put(entry, { key, state, at_ms: now() }),
+        const request = requestForCandidate(candidate, candidate.name);
+        if (withPassword && request.target && deps.installKey) {
+          put(entry, { key: "transport_connected", state: "running", at_ms: now() });
+          const installed = await deps.installKey(request.target);
+          if (!installed.ok) {
+            fail(entry, installed.message || "Anmeldung abgelehnt.", true);
+            return;
+          }
+        }
+        const outcome = await deps.add(request, (key, state) =>
+          put(entry, { key, state, at_ms: now() }),
         );
         if (outcome.status === "error") {
           fail(entry, outcome.message, withPassword);

@@ -529,3 +529,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     },
   },
 } satisfies DesktopBridge);
+
+// „Rechner hinzufügen“ mit Passwort: Schlüssel einmalig eintragen. Eigener,
+// schmaler Kanal neben desktopBridge (Rechner-Setup-Pfad, ctox sync v4 §16.41).
+contextBridge.exposeInMainWorld("workjetComputerKeys", {
+  install: (target: {
+    alias: string;
+    hostname: string;
+    username: string | null;
+    port: number | null;
+  }): Promise<{ ok: boolean; message: string }> =>
+    ipcRenderer.invoke(IpcChannels.INSTALL_COMPUTER_SSH_KEY_CHANNEL, target),
+});

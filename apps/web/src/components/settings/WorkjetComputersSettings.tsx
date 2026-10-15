@@ -7,7 +7,6 @@ import type {
   ComputerControlResult,
   ComputerFacts,
   ComputerMetadata,
-  ComputerSshKeyInfo,
   DesktopBridge,
   EnvironmentId,
   CtoxWorkjetComputerProjection,
@@ -1191,6 +1190,20 @@ export async function removeComputerRow(input: {
 }
 
 /** Die Verbindung, über die das Backend den Rechner erkennt. */
+/** Schmaler Desktop-Kanal (preload `workjetComputerKeys`) für den Schlüsseleintrag. */
+interface ComputerKeysBridge {
+  readonly install: (target: {
+    alias: string;
+    hostname: string;
+    username: string | null;
+    port: number | null;
+  }) => Promise<{ readonly ok: boolean; readonly message: string }>;
+}
+function computerKeysBridge(): ComputerKeysBridge | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as unknown as { workjetComputerKeys?: ComputerKeysBridge }).workjetComputerKeys;
+}
+
 /** Steht der Eintrag der Quellenliste schon als Rechner in der Liste? */
 export function isKnownComputer(
   computers: ReadonlyArray<WorkjetComputer>,
@@ -1728,6 +1741,7 @@ export function WorkjetComputersSettings({
       ? () => bridge.discoverTailscalePeers()
       : undefined,
     localName: localAvailable ? (localComputer?.label ?? "Dieser Rechner") : null,
+    installKey: computerKeysBridge()?.install,
     add: (request, phase) => addComputer(request, undefined, phase),
     isOnline: (target) =>
       environments.some(

@@ -5,7 +5,7 @@ import type {
 } from "@workjet/contracts";
 import * as NetService from "@workjet/shared/Net";
 import * as SshAuth from "@workjet/ssh/auth";
-import { resolveSshTarget } from "@workjet/ssh/command";
+import { resolveSshTarget, runSshCommand } from "@workjet/ssh/command";
 import { discoverSshHosts } from "@workjet/ssh/config";
 import {
   SshCommandError,
@@ -25,6 +25,7 @@ import * as Path from "effect/Path";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import { AUTHORIZED_KEY_SCRIPT, ensureDesktopPublicKey } from "../computers/MachineKeyInstall.ts";
 import * as DesktopSshPasswordPrompts from "./DesktopSshPasswordPrompts.ts";
 
 export type DesktopSshEnvironmentRuntimeServices =
@@ -55,6 +56,13 @@ export class DesktopSshEnvironment extends Context.Service<
     readonly discoverHosts: (input?: {
       readonly homeDir?: string;
     }) => Effect.Effect<readonly DesktopDiscoveredSshHost[], DesktopSshEnvironmentDiscoverError>;
+    /**
+     * Trägt den Desktop-Schlüssel idempotent in ~/.ssh/authorized_keys des
+     * Ziels ein. Ein Passwort fragt ssh über SSH_ASKPASS beim Renderer an.
+     */
+    readonly installAuthorizedKey?: (
+      target: DesktopSshEnvironmentTarget,
+    ) => Effect.Effect<void, DesktopSshEnvironmentOperationError>;
     readonly ensureEnvironment: (
       target: DesktopSshEnvironmentTarget,
       options?: { readonly issuePairingToken?: boolean },
@@ -81,7 +89,10 @@ export interface DesktopSshEnvironmentLayerOptions {
  * bleibt der Eintrag wie gefunden.
  */
 function discoverDesktopSshHostsEffect(input?: { readonly homeDir?: string }) {
-  return discoverSshHosts(input ?? {}).pipe(
+  // `ssh -G` liest immer die echte ~/.ssh/config; bei fremdem Home (Tests)
+  // bleiben die Einträge daher unaufgelöst.
+  if (input?.homeDir !== undefined) return discoverSshHosts(input);
+  return discoverSshHosts({}).pipe(
     Effect.flatMap((hosts) =>
       Effect.forEach(
         hosts,
@@ -165,6 +176,22 @@ export const make = Effect.gen(function* () {
       discoverDesktopSshHostsEffect(input).pipe(
         Effect.provide(runtimeContext),
         Effect.withSpan("desktop.ssh.discoverHosts"),
+      ),
+    installAuthorizedKey: (target) =>
+      Effect.promise(() => ensureDesktopPublicKey()).pipe(
+        Effect.flatMap((publicKey) =>
+          runSshCommand(target, {
+            remoteCommandArgs: [AUTHORIZED_KEY_SCRIPT],
+            stdin: `${publicKey}\n`,
+            interactiveAuth: true,
+            batchMode: "no",
+            timeoutMs: 60_000,
+          }),
+        ),
+        Effect.asVoid,
+        Effect.provideService(SshAuth.SshPasswordPrompt, passwordPrompt),
+        Effect.provide(runtimeContext),
+        Effect.withSpan("desktop.ssh.installAuthorizedKey"),
       ),
     ensureEnvironment: (target, ensureOptions) =>
       manager

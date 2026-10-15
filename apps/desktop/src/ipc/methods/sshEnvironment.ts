@@ -151,6 +151,34 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
   }),
 });
 
+/**
+ * „Rechner hinzufügen“ mit Passwort: Desktop-Schlüssel einmalig ins
+ * authorized_keys des Ziels eintragen. Das Passwort läuft über die
+ * vorhandene SSH_ASKPASS-Abfrage, nie über diesen Kanal.
+ */
+export const installComputerSshKey = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.INSTALL_COMPUTER_SSH_KEY_CHANNEL,
+  payload: DesktopSshEnvironmentTargetSchema,
+  result: Schema.Struct({ ok: Schema.Boolean, message: Schema.String }),
+  handler: Effect.fn("desktop.ipc.sshEnvironment.installComputerSshKey")(function* (target) {
+    const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
+    if (!sshEnvironment.installAuthorizedKey)
+      return { ok: false, message: "Schlüsseleintrag nicht verfügbar." };
+    return yield* sshEnvironment.installAuthorizedKey(target).pipe(
+      Effect.as({ ok: true, message: "" }),
+      Effect.catch((error) =>
+        Effect.succeed({
+          ok: false,
+          message:
+            "stderr" in error && typeof error.stderr === "string" && error.stderr
+              ? error.stderr
+              : error.message,
+        }),
+      ),
+    );
+  }),
+});
+
 export const disconnectSshEnvironment = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.DISCONNECT_SSH_ENVIRONMENT_CHANNEL,
   payload: Schema.Union([

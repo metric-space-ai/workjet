@@ -37,6 +37,7 @@ export const CONNECTION_CATALOG_WARNING_CHANNEL = "desktop:connection-catalog-wa
 export const DISCOVER_SSH_HOSTS_CHANNEL = "desktop:discover-ssh-hosts";
 export const DISCOVER_TAILSCALE_PEERS_CHANNEL = "desktop:discover-tailscale-peers";
 export const ENSURE_SSH_ENVIRONMENT_CHANNEL = "desktop:ensure-ssh-environment";
+export const INSTALL_COMPUTER_SSH_KEY_CHANNEL = "desktop:install-computer-ssh-key";
 export const DISCONNECT_SSH_ENVIRONMENT_CHANNEL = "desktop:disconnect-ssh-environment";
 export const FETCH_SSH_ENVIRONMENT_DESCRIPTOR_CHANNEL = "desktop:fetch-ssh-environment-descriptor";
 export const BOOTSTRAP_SSH_BEARER_SESSION_CHANNEL = "desktop:bootstrap-ssh-bearer-session";

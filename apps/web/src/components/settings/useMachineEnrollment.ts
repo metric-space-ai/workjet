@@ -37,6 +37,10 @@ export function useMachineEnrollment(deps: LegacyEnrollmentDeps): MachineEnrollm
         get localName() {
           return latest.current.localName;
         },
+        installKey: (target) =>
+          latest.current.installKey
+            ? latest.current.installKey(target)
+            : Promise.resolve({ ok: false, message: "Schlüsseleintrag nicht verfügbar." }),
         add: (request, phase) => latest.current.add(request, phase),
         isOnline: (environmentId) => latest.current.isOnline(environmentId),
       }),

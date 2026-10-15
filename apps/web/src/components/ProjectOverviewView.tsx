@@ -789,7 +789,7 @@ function buildFeed(
           ? { author: pr.author, harness: "GitHub" }
           : { author: text.feedSystem, harness: null }),
       body: event.sentence,
-      ...(content ?? {}),
+      ...content,
       tone: "normal",
       kind: event.kind === "goal" ? "meeting" : event.kind,
       badge: null,
@@ -1110,7 +1110,6 @@ function FeedCard(props: {
   readonly onOpen: (() => void) | undefined;
 }) {
   const { item, text } = props;
-  const de = props.locale.startsWith("de");
   const [expanded, setExpanded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const long = !props.fullBody && item.body.length > 280;

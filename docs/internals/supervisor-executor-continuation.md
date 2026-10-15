@@ -39,11 +39,11 @@ Proposed contract ID: `ctox.workjet.executor-continuation.v1`. The operation nam
 below require agreement with Crew and canonical fixture generation before becoming
 executable. They are not current capabilities.
 
-| Project-control action | Native command | Purpose |
-| --- | --- | --- |
+| Project-control action                         | Native command                                              | Purpose                                                      |
+| ---------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ |
 | `thread.executor.continuation.capabilities.v1` | `ctox.workjet.thread.executor.continuation.capabilities.v1` | Read supported transitions and a current native CAS snapshot |
-| `thread.executor.continuation.request.v1` | `ctox.workjet.thread.executor.continuation.request.v1` | Record an Owner-selected future executor change |
-| `thread.executor.continuation.read.v1` | `ctox.workjet.thread.executor.continuation.read.v1` | Reconcile the same durable request after disconnect/reopen |
+| `thread.executor.continuation.request.v1`      | `ctox.workjet.thread.executor.continuation.request.v1`      | Record an Owner-selected future executor change              |
+| `thread.executor.continuation.read.v1`         | `ctox.workjet.thread.executor.continuation.read.v1`         | Reconcile the same durable request after disconnect/reopen   |
 
 The mutation request contains only:
 

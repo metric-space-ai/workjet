@@ -47,6 +47,7 @@ import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { SecretsSettingsSection } from "./SecretsSettingsSection";
+import { CalendarAccountsSection } from "./CalendarAccountsSettings";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
 const EMPTY_DEVICES: readonly WorkjetDeviceBindingSummary[] = [];
@@ -523,6 +524,7 @@ export function BusinessOsSettingsView({
         renewingInvite={renewingInvite}
       />
       <SecretsSettingsSection instanceId={selected.id} />
+      <CalendarAccountsSection instanceId={selected.id} />
       {network === null ? null : <NetworkSection>{network}</NetworkSection>}
       {addPanel === null ? null : <div className="flex flex-col px-3 sm:px-4">{addPanel}</div>}
     </SettingsPageContainer>

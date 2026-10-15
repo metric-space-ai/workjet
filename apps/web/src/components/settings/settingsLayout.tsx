@@ -389,7 +389,7 @@ export function useSettingsEmbedded() {
 
 function SettingsPageTitle({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
   return (
-    <h1 className="flex min-w-0 items-center gap-2 px-3 text-xl font-semibold tracking-[-0.025em] break-words sm:px-4">
+    <h1 className="flex min-w-0 items-center gap-2 px-3 text-[22px] font-semibold tracking-[-0.025em] break-words sm:px-4">
       {icon}
       {children}
     </h1>

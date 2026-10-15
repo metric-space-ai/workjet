@@ -27,7 +27,7 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
 } from "@workjet/contracts/settings";
 import * as Equal from "effect/Equal";
-import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
+import { APP_VERSION, HOSTED_APP_CHANNEL } from "../../branding";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -319,7 +319,7 @@ function AboutVersionSection() {
                 disabled={isChangingUpdateChannel}
               >
                 <SelectValue>
-                  {selectedUpdateChannel === "nightly" ? "Nightly" : "Stabil"}
+                  {selectedUpdateChannel === "nightly" ? "Vorabversion" : "Stabil"}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -327,7 +327,7 @@ function AboutVersionSection() {
                   Stabil
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
-                  Nightly
+                  Vorabversion
                 </SelectItem>
               </SelectPopup>
             </Select>
@@ -348,14 +348,17 @@ function AboutVersionSection() {
               }}
             >
               <SelectTrigger className="w-full sm:w-40" aria-label="Update-Kanal">
-                <SelectValue>{HOSTED_APP_CHANNEL_LABEL}</SelectValue>
+                {/* Ein Begriff auf beiden Wegen: Stabil | Vorabversion (Audit C 19). */}
+                <SelectValue>
+                  {selectedHostedAppChannel === "nightly" ? "Vorabversion" : "Stabil"}
+                </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="latest">
-                  Latest
+                  Stabil
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
-                  Nightly
+                  Vorabversion
                 </SelectItem>
               </SelectPopup>
             </Select>
@@ -866,36 +869,70 @@ function LegacyFeaturesSection() {
 /** Desktop only, macOS/Windows: the OS login item. Hidden where the bridge has no login item. */
 function OpenAtLoginRow() {
   const [state, setState] = useState<{ supported: boolean; openAtLogin: boolean } | null>(null);
+  /** Lese- oder Schreibfehler: eine Statuszeile mit genau einer Aktion (Audit C 34). */
+  const [failure, setFailure] = useState<"read" | { readonly wanted: boolean } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const hasBridge = typeof window !== "undefined" && window.desktopBridge?.getLoginItemState;
   useEffect(() => {
     const getLoginItemState = window.desktopBridge?.getLoginItemState;
     if (typeof getLoginItemState !== "function") return;
     let active = true;
     void getLoginItemState()
       .then((next) => {
-        if (active) setState(next);
+        if (!active) return;
+        setState(next);
+        setFailure(null);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setFailure("read");
+      });
     return () => {
       active = false;
     };
-  }, []);
-  if (state === null || !state.supported) return null;
+  }, [attempt]);
+  const apply = (wanted: boolean, previous: { supported: boolean; openAtLogin: boolean }) => {
+    const setOpenAtLogin = window.desktopBridge?.setOpenAtLogin;
+    if (typeof setOpenAtLogin !== "function") return;
+    setFailure(null);
+    setState({ ...previous, openAtLogin: wanted });
+    void setOpenAtLogin(wanted)
+      .then(setState)
+      .catch(() => {
+        setState(previous);
+        setFailure({ wanted });
+      });
+  };
+  if (!hasBridge) return null;
+  if (state === null && failure !== "read") return null;
+  if (state !== null && !state.supported) return null;
   return (
     <SettingsRow
       title="Beim Anmelden starten"
+      status={
+        failure === null ? undefined : (
+          <span role="status" className="flex flex-wrap items-center gap-2">
+            {failure === "read" ? "Nicht gelesen." : "Nicht geändert."}
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => {
+                if (failure === "read") setAttempt((value) => value + 1);
+                else if (state !== null) apply(failure.wanted, state);
+              }}
+            >
+              Erneut versuchen
+            </Button>
+          </span>
+        )
+      }
       control={
-        <Switch
-          checked={state.openAtLogin}
-          onCheckedChange={(checked) => {
-            const setOpenAtLogin = window.desktopBridge?.setOpenAtLogin;
-            if (typeof setOpenAtLogin !== "function") return;
-            setState({ ...state, openAtLogin: Boolean(checked) });
-            void setOpenAtLogin(Boolean(checked))
-              .then(setState)
-              .catch(() => setState(state));
-          }}
-          aria-label="Beim Anmelden starten"
-        />
+        state === null ? undefined : (
+          <Switch
+            checked={state.openAtLogin}
+            onCheckedChange={(checked) => apply(Boolean(checked), state)}
+            aria-label="Beim Anmelden starten"
+          />
+        )
       }
     />
   );

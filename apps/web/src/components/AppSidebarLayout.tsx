@@ -53,6 +53,7 @@ import { WorkjetHeaderFrame } from "./WorkjetHeader";
 import { useSharedWorkjetHeader } from "./WorkjetHeaderSlots";
 import { BusinessOsCodeScopeSynchronizer } from "../businessOsCodeScope";
 import { WorkjetProjectRegistrySynchronizer } from "../workjetProjectRegistry";
+import { DesktopTrayProjects } from "./desktop/DesktopTrayProjects";
 import { synchronizeActiveWorkjetMode } from "../activeWorkjetScope";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
@@ -260,6 +261,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
     >
       <BusinessOsCodeScopeSynchronizer />
       <WorkjetProjectRegistrySynchronizer />
+      {isElectron ? <DesktopTrayProjects /> : null}
       <CtoxModeProvider businessOsVisible={isCtoxShell}>
         <WorkjetHeaderFrame mode={productMode} sidebarAvailable={!isCtoxShell}>
           {!isCtoxShell ? <ProjectProjectionRetention /> : null}

@@ -863,6 +863,44 @@ function LegacyFeaturesSection() {
   );
 }
 
+/** Desktop only, macOS/Windows: the OS login item. Hidden where the bridge has no login item. */
+function OpenAtLoginRow() {
+  const [state, setState] = useState<{ supported: boolean; openAtLogin: boolean } | null>(null);
+  useEffect(() => {
+    const getLoginItemState = window.desktopBridge?.getLoginItemState;
+    if (typeof getLoginItemState !== "function") return;
+    let active = true;
+    void getLoginItemState()
+      .then((next) => {
+        if (active) setState(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (state === null || !state.supported) return null;
+  return (
+    <SettingsRow
+      title="Beim Anmelden starten"
+      control={
+        <Switch
+          checked={state.openAtLogin}
+          onCheckedChange={(checked) => {
+            const setOpenAtLogin = window.desktopBridge?.setOpenAtLogin;
+            if (typeof setOpenAtLogin !== "function") return;
+            setState({ ...state, openAtLogin: Boolean(checked) });
+            void setOpenAtLogin(Boolean(checked))
+              .then(setState)
+              .catch(() => setState(state));
+          }}
+          aria-label="Beim Anmelden starten"
+        />
+      }
+    />
+  );
+}
+
 export function GeneralSettingsPanel() {
   const t = useUiText();
   const settings = usePrimarySettings();
@@ -904,6 +942,7 @@ export function GeneralSettingsPanel() {
           }
         />
         <AppearanceRows />
+        <OpenAtLoginRow />
         <SettingsRow
           {...searchableSetting("developer-mode")}
           control={

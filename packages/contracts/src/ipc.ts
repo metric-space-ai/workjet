@@ -1121,6 +1121,16 @@ import type {
   ComputerSshKeyInfo,
 } from "./computerDetection.ts";
 
+export interface DesktopLoginItemState {
+  readonly supported: boolean;
+  readonly openAtLogin: boolean;
+}
+
+export interface DesktopTrayProject {
+  readonly key: string;
+  readonly title: string;
+}
+
 export interface DesktopBridge {
   controlComputers?: (input: ComputerControlInput) => Promise<ComputerControlResult>;
   listComputerSshKeys?: () => Promise<readonly ComputerSshKeyInfo[]>;
@@ -1225,6 +1235,14 @@ export interface DesktopBridge {
   onDeepLinkPending?: (listener: () => void) => () => void;
   /** A saved connection catalog could not be read; local provisioning continues. */
   onConnectionCatalogWarning?: (listener: () => void) => () => void;
+  /**
+   * Open-at-login state. `supported` is false where Electron has no login-item
+   * API (Linux). Optional: older desktop builds and the web build lack it.
+   */
+  getLoginItemState?: () => Promise<DesktopLoginItemState>;
+  setOpenAtLogin?: (enabled: boolean) => Promise<DesktopLoginItemState>;
+  /** The renderer's most recent projects (at most five) for the menu-bar/tray menu. */
+  setTrayProjects?: (projects: readonly DesktopTrayProject[]) => Promise<void>;
   getWslState: () => Promise<DesktopWslState>;
   setWslBackendEnabled: (enabled: boolean) => Promise<DesktopWslState>;
   setWslDistro: (distro: string | null) => Promise<DesktopWslState>;

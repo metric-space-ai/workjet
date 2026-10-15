@@ -1878,6 +1878,8 @@ export const WorkjetDeviceBindingSummary = Schema.Struct({
   deviceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
   businessOsInstanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
   pairedAtMillis: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** CTOX `business_mobile_invites.display_name`; older backends omit it. */
+  displayName: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
 });
 export type WorkjetDeviceBindingSummary = typeof WorkjetDeviceBindingSummary.Type;
 

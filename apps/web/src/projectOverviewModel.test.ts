@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  PROJECT_OVERVIEW_LIVE_STALE_MS,
   buildProjectOwnerOverview,
+  projectOverviewAttentionRank,
   projectOverviewBudgetValue,
+  projectOverviewLastSignOfLife,
+  projectOverviewSideSections,
+  projectOverviewWorkerState,
+  sortByAttention,
   projectOverviewStatusTone,
   projectOverviewWorkerName,
   projectOverviewNextMeetingDate,
@@ -83,5 +89,109 @@ describe("dense owner overview model", () => {
         partial: true,
       }),
     ).toBe("1,8/2,3 Mrd. (≥78 %)");
+  });
+});
+
+describe("project overview live state (WP-BLICK)", () => {
+  const now = Date.parse("2026-10-15T17:00:00Z");
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+  const base = {
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    backgroundLiveness: null,
+    waitingOnSupervisor: false,
+    workerDecisionProblem: undefined,
+    workjetConfig: { schemaVersion: 1 },
+  } as const;
+  const thread = (
+    status: "running" | "starting" | "stopped",
+    lastSign: number,
+    extra: Record<string, unknown> = {},
+  ) =>
+    ({
+      ...base,
+      updatedAt: ago(lastSign),
+      session: { status, updatedAt: ago(lastSign), activeTurnId: null },
+      latestTurn: { requestedAt: ago(lastSign), startedAt: ago(lastSign), completedAt: null },
+      ...extra,
+    }) as unknown as Parameters<typeof projectOverviewWorkerState>[0];
+
+  it("reports running only with fresh activity", () => {
+    expect(projectOverviewWorkerState(thread("running", 30_000), now)).toBe("running");
+    expect(projectOverviewWorkerState(thread("starting", 30_000), now)).toBe("running");
+    expect(projectOverviewWorkerState(thread("running", PROJECT_OVERVIEW_LIVE_STALE_MS), now)).toBe(
+      "running",
+    );
+  });
+  it("reports a stale running or starting session as stuck", () => {
+    expect(
+      projectOverviewWorkerState(thread("running", PROJECT_OVERVIEW_LIVE_STALE_MS + 1), now),
+    ).toBe("stuck");
+    // Measured 15.10.2026: supervisors held "starting" since 14.10. without a process.
+    expect(projectOverviewWorkerState(thread("starting", 30 * 3_600_000), now)).toBe("stuck");
+    expect(projectOverviewStatusTone("stuck")).toBe("red");
+  });
+  it("counts a fresh tool activity on the thread as a sign of life", () => {
+    const old = thread("running", 600_000, { updatedAt: ago(20_000) });
+    expect(projectOverviewWorkerState(old, now)).toBe("running");
+  });
+  it("does not count a skipped control round as a sign of life", () => {
+    const tickAt = ago(10_000);
+    const stale = thread("starting", 30 * 3_600_000, {
+      updatedAt: tickAt,
+      workjetConfig: {
+        schemaVersion: 2,
+        supervisorTick: { lastTickAt: tickAt, lastControlAt: null, outcome: "skipped-busy" },
+      },
+    });
+    expect(projectOverviewLastSignOfLife(stale)).toBe(now - 30 * 3_600_000);
+    expect(projectOverviewWorkerState(stale, now)).toBe("stuck");
+  });
+  it("trusts live background work and leaves idle sessions waiting", () => {
+    expect(
+      projectOverviewWorkerState(
+        thread("stopped", 30 * 3_600_000, { backgroundLiveness: "working" }),
+        now,
+      ),
+    ).toBe("running");
+    expect(projectOverviewWorkerState(thread("stopped", 30 * 3_600_000), now)).toBe("waiting");
+  });
+});
+
+describe("project overview side column order (WP-BLICK)", () => {
+  it("puts action first: live, goals, KPIs, meeting, and drops empty sections", () => {
+    expect(
+      projectOverviewSideSections({ live: true, goals: true, kpis: true, meeting: true }),
+    ).toEqual(["live", "goals", "kpis", "meeting"]);
+    expect(
+      projectOverviewSideSections({ live: false, goals: true, kpis: false, meeting: true }),
+    ).toEqual(["goals", "meeting"]);
+    expect(
+      projectOverviewSideSections({ live: false, goals: false, kpis: false, meeting: false }),
+    ).toEqual([]);
+  });
+  it("lists stuck and disrupted rows first and keeps the order otherwise", () => {
+    const rows = [
+      { id: "a", state: "running" },
+      { id: "b", state: "asks" },
+      { id: "c", state: "stuck" },
+      { id: "d", state: "running" },
+      { id: "e", state: "disrupted" },
+    ] as const;
+    expect(
+      sortByAttention(rows, (row) => projectOverviewAttentionRank(row.state)).map((row) => row.id),
+    ).toEqual(["c", "e", "b", "a", "d"]);
+  });
+  it("lists disrupted goals before completed and waiting ones", () => {
+    const goals = [
+      { title: "done", status: "completed" },
+      { title: "open", status: "waiting" },
+      { title: "broken", status: "disrupted" },
+    ] as const;
+    expect(
+      sortByAttention(goals, (goal) => projectOverviewAttentionRank(goal.status)).map(
+        (goal) => goal.title,
+      ),
+    ).toEqual(["broken", "open", "done"]);
   });
 });

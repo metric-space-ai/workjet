@@ -1,6 +1,6 @@
-import { useCallback, useState, type ReactNode } from "react";
-import { GitPullRequestIcon } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { XIcon } from "lucide-react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
@@ -12,6 +12,7 @@ import { buildProjectOwnerOverview, type ProjectOverviewPr } from "../projectOve
 import { resolveGalleryProjectOverview, type GalleryProject } from "../projectOverview";
 import { useGithubMergedPullRequests } from "../hooks/useGithubMergedPullRequests";
 import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
+import { refreshWorkjetProjectKpis } from "../workjetProjectControl";
 import { ProjectOverviewView } from "./ProjectOverviewView";
 import { ProjectOverviewDecisions } from "./ProjectOverviewDecisions";
 import { ProjectOverviewPullRequest } from "./ProjectOverviewPullRequest";
@@ -23,10 +24,12 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "./WorkspaceBreadcrumb";
 import { SidebarInset } from "./ui/sidebar";
-import { InlinePanel } from "./ui/inline-panel";
-import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { ProjectSettingsPanel, useSettingsProjectGroups } from "./settings/ProjectSettingsPanel";
+import {
+  PROJECT_SETTINGS_HASH,
+  ProjectSettingsPanel,
+  useSettingsProjectGroups,
+} from "./settings/ProjectSettingsPanel";
 import { SettingsEmbeddedContext } from "./settings/settingsLayout";
 
 type Props = {
@@ -36,9 +39,6 @@ type Props = {
   readonly onOpenJourFixe?: () => void;
   readonly ctoxInstanceId?: string | null;
   readonly openMeeting?: boolean;
-  readonly onAddParent: (domain: string, goal: string) => Promise<boolean>;
-  /** Öffnet die Pull-Request-Liste dieses Projekts. */
-  readonly onOpenPullRequests?: () => void;
   /** Compact one-line notice above the overview, e.g. a missing model account. */
   readonly notice?: ReactNode;
 };
@@ -54,9 +54,7 @@ function ProjectWorkspaceContent({
   project,
   threads,
   onOpenChat,
-  onAddParent,
   onOpenJourFixe,
-  onOpenPullRequests,
   ctoxInstanceId,
   openMeeting = false,
   notice,
@@ -65,8 +63,8 @@ function ProjectWorkspaceContent({
   const language = useProjectOverviewLanguage();
   const text = PROJECT_OVERVIEW_TEXT[language];
   const navigate = useNavigate();
-  // Name, Symbol, Modell und Entfernen bearbeitet das Projekt selbst, inline
-  // (Einstellungen › Projekte entfällt, 15.10.).
+  // Projekteinstellungen (Name, Symbol, Modell, Arbeitsbereich) öffnen inline
+  // über das Icon „Projekteinstellungen“ der Seitenleiste (15.10.).
   const settingsGroups = useSettingsProjectGroups();
   const local = project.local;
   const settingsGroup =
@@ -77,13 +75,19 @@ function ProjectWorkspaceContent({
             (member) => member.environmentId === local.environmentId && member.id === local.id,
           ),
         );
+  const hash = useLocation({ select: (location) => location.hash });
   const [editingProject, setEditingProject] = useState(false);
+  useEffect(() => {
+    if (hash !== PROJECT_SETTINGS_HASH) return;
+    setEditingProject(true);
+    void navigate({ to: ".", hash: "", replace: true, hashScrollIntoView: false });
+  }, [hash, navigate]);
   const settingsLinks = [
     ...(settingsGroup
       ? [
           {
-            label: language === "de" ? "Projekt bearbeiten" : "Edit project",
-            onClick: () => setEditingProject((open) => !open),
+            label: text.projectSettings,
+            onClick: () => setEditingProject(true),
           },
         ]
       : []),
@@ -94,6 +98,17 @@ function ProjectWorkspaceContent({
   ];
   const nativeInstance = project.native && project.configuration ? (ctoxInstanceId ?? null) : null;
   const sources = useProjectOverviewSources(nativeInstance, project.id);
+  const configurationId = project.configuration?.id ?? null;
+  // „Neu berechnen“ startet die Neuberechnung in CTOX (project.kpis.refresh, #502) und
+  // liest danach neu. Der stille Wiederholversuch nach einem Lesefehler liest nur neu.
+  const { failed: sourcesFailed, reload: reloadSources } = sources;
+  const recomputeKpis = useCallback(() => {
+    if (sourcesFailed || nativeInstance === null || configurationId === null) {
+      reloadSources();
+      return;
+    }
+    void refreshWorkjetProjectKpis(nativeInstance, configurationId).then(() => reloadSources());
+  }, [sourcesFailed, reloadSources, nativeInstance, configurationId]);
   const tokenBudgetSource = useProjectOverviewTokenBudgetSource(project);
   const exit = useProjectExitModel(nativeInstance, project.id, project.configuration?.exitModel);
   const githubPrs = useGithubMergedPullRequests(
@@ -120,29 +135,8 @@ function ProjectWorkspaceContent({
     ],
     projectTokenBudgetSource: tokenBudgetSource,
   });
-  const [editingParent, setEditingParent] = useState(false);
   const [meetingKey, setMeetingKey] = useState<string | null>(null);
   const [dismissedMeetingKey, setDismissedMeetingKey] = useState<string | null>(null);
-  const [domain, setDomain] = useState("");
-  const [goal, setGoal] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const submitParent = async () => {
-    if (saving || !domain.trim() || !goal.trim()) return;
-    setSaving(true);
-    setFailed(false);
-    try {
-      if (await onAddParent(domain.trim(), goal.trim())) {
-        setEditingParent(false);
-        setDomain("");
-        setGoal("");
-      } else setFailed(true);
-    } catch {
-      setFailed(true);
-    } finally {
-      setSaving(false);
-    }
-  };
   const roomKey = `${ctoxInstanceId}:${project.id}`;
   const nativeRoom =
     project.native && ctoxInstanceId != null && project.configuration !== undefined;
@@ -188,12 +182,39 @@ function ProjectWorkspaceContent({
           {notice}
         </div>
       ) : null}
+      {editingProject && settingsGroup ? (
+        <section
+          className="mx-5 mt-3 rounded-md border border-border sm:mx-6"
+          aria-label={text.projectSettings}
+          data-workjet-project-settings-inline=""
+        >
+          <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
+            <h2 className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
+              {text.projectSettings}
+            </h2>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label={language === "de" ? "Schließen" : "Close"}
+              title={language === "de" ? "Schließen" : "Close"}
+              onClick={() => setEditingProject(false)}
+            >
+              <XIcon aria-hidden />
+            </Button>
+          </div>
+          <div className="px-3">
+            <SettingsEmbeddedContext.Provider value={{ onClose: () => setEditingProject(false) }}>
+              <ProjectSettingsPanel projectKey={settingsGroup.projectKey} part="project" />
+            </SettingsEmbeddedContext.Provider>
+          </div>
+        </section>
+      ) : null}
       <ProjectOverviewView
         data={data}
         onOpenChat={onOpenChat}
         {...(openJourFixe ? { onOpenJourFixe: openJourFixe } : {})}
         connectionError={sources.failed}
-        onRecomputeKpis={sources.reload}
+        onRecomputeKpis={recomputeKpis}
         feedPosts={sources.feedPosts}
         settingsLinks={settingsLinks}
         feedPersistence={{
@@ -203,63 +224,6 @@ function ProjectWorkspaceContent({
           stored: project.configuration?.feedSettings,
         }}
         connectionMessage={sources.failureText}
-        actions={
-          <>
-            {onOpenPullRequests ? (
-              <Button size="sm" variant="outline" onClick={onOpenPullRequests}>
-                <GitPullRequestIcon />
-                Pull Requests
-              </Button>
-            ) : null}
-            <InlinePanel
-              // The header row wraps; an open panel takes its own full line.
-              {...(editingParent
-                ? { className: "mt-2 basis-full text-[13.5px] text-foreground" }
-                : {})}
-              triggerLabel={text.addParent}
-              open={editingParent}
-              onOpenChange={(open) => {
-                setEditingParent(open);
-                if (!open) setFailed(false);
-              }}
-              submitLabel={saving ? text.saving : text.addParent}
-              submitDisabled={!domain.trim() || !goal.trim()}
-              busy={saving}
-              status={failed ? text.addFailed : undefined}
-              statusTone="error"
-              onSubmit={() => void submitParent()}
-            >
-              <label className="grid gap-1 text-[13.5px]">
-                {text.name}
-                <Input
-                  required
-                  maxLength={256}
-                  value={domain}
-                  onChange={(event) => setDomain(event.target.value)}
-                />
-              </label>
-              <label className="grid gap-1 text-[13.5px]">
-                {text.goal}
-                <textarea
-                  required
-                  maxLength={4096}
-                  value={goal}
-                  onChange={(event) => setGoal(event.target.value)}
-                  className="min-h-24 rounded-md border border-input bg-transparent p-2"
-                />
-              </label>
-            </InlinePanel>
-            {editingProject && settingsGroup ? (
-              <div className="basis-full" data-workjet-project-edit-inline="">
-                <SettingsEmbeddedContext.Provider
-                  value={{ onClose: () => setEditingProject(false) }}
-                >
-                  <ProjectSettingsPanel projectKey={settingsGroup.projectKey} part="project" />
-                </SettingsEmbeddedContext.Provider>
-              </div>
-            ) : null}
-          </>
-        }
         {...(data.decisions.length
           ? {
               decisions: (

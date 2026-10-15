@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, type ProjectOverview } from "@workjet/contracts";
-import { ProjectOverviewCard } from "./ProjectOverviewCard";
+import {
+  ProjectOverviewCard,
+  projectCardCrew,
+  projectCardJourFixeLabel,
+} from "./ProjectOverviewCard";
+import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { GalleryProject } from "../projectOverview";
 import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
 import type { PromptedProjectKpis } from "../projectKpis";
@@ -352,5 +357,134 @@ describe("project card: last known state instead of state text", () => {
     expect(markup).not.toContain("data-workjet-project-preview");
     expect(markup).toContain("data-workjet-project-stamp-row");
     expect(markup).toContain('data-workjet-exit-model-stamp=""');
+  });
+});
+
+describe("whole card opens the project (WP-K2)", () => {
+  it("makes the card itself a focusable open target and keeps configuring in the menu", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard
+        project={{
+          ...project,
+          configuration: { id: ProjectId.make("greppy"), title: "greppy.xyz" },
+        }}
+        onOpen={() => {}}
+        onSaveConfiguration={async () => true}
+      />,
+    );
+    expect(markup).toMatch(/<article[^>]*tabindex="0"[^>]*aria-label="greppy.xyz öffnen"/);
+    // The KPI strip is no longer one big configure button; „Konfigurieren“ sits in ⋯.
+    expect(markup).not.toContain('data-workjet-action="project.configure.gallery:instance:greppy"');
+  });
+
+  it("shows the GitHub social preview when the project has no website snapshot", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard
+        project={{
+          key: "instance:molecularity",
+          id: "molecularity",
+          title: "molecularity",
+          local: null,
+          native: true,
+          configuration: {
+            id: ProjectId.make("molecularity"),
+            title: "molecularity",
+            publicUrl: null,
+            repoUrl: "https://github.com/metric-space-ai/molecularity",
+          },
+        }}
+        onOpen={() => {}}
+      />,
+    );
+    expect(markup).toContain('data-workjet-project-preview="github"');
+    expect(markup).toContain(
+      'src="https://opengraph.githubassets.com/1/metric-space-ai/molecularity"',
+    );
+    expect(markup).toContain('alt="GitHub-Vorschau von molecularity"');
+    expect(markup).not.toContain("data-workjet-project-card-content");
+  });
+
+  it("shows the next Regeltermin and the team as chips instead of an empty area", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard
+        project={{
+          key: "instance:lernwerk",
+          id: "lernwerk",
+          title: "Lernwerk",
+          local: null,
+          native: true,
+          configuration: {
+            id: ProjectId.make("lernwerk"),
+            title: "Lernwerk",
+            jourFixe: { weekday: 3, time: "09:30", timezone: "Europe/Berlin" },
+          },
+        }}
+        crew={{ lumas: 3, disrupted: 1 }}
+        onOpen={() => {}}
+      />,
+    );
+    expect(markup).not.toContain("data-workjet-project-preview");
+    expect(markup).toContain("data-workjet-project-card-content");
+    expect(markup).toContain("Mi · 09:30");
+    expect(markup).toContain('data-workjet-project-card-lumas="3"');
+    expect(markup).toContain("1 gestört");
+  });
+
+  it("shows „—“ for an unknown Regeltermin and team, never a sentence", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard
+        project={{ key: "instance:x", id: "x", title: "X", local: null, native: true }}
+        onOpen={() => {}}
+      />,
+    );
+    expect(markup).toContain("data-workjet-project-card-content");
+    expect(markup).toMatch(/data-workjet-project-card-jour-fixe=""[\s\S]*?>—<\/dd>/);
+    expect(markup).toMatch(/data-workjet-project-card-lumas=""[\s\S]*?>—<\/span>/);
+    expect(markup).not.toContain("gestört");
+  });
+
+  it("labels the weekly meeting by weekday and time", () => {
+    expect(projectCardJourFixeLabel({ weekday: 1, time: "09:00" }, "de")).toBe("Mo · 09:00");
+    expect(projectCardJourFixeLabel({ weekday: 7, time: "18:15" }, "en")).toBe("Sun · 18:15");
+    expect(projectCardJourFixeLabel(null, "de")).toBe("—");
+    expect(projectCardJourFixeLabel({ weekday: 9, time: "09:00" }, "de")).toBe("—");
+  });
+
+  it("counts the project's team and its disrupted Lumas from its own histories", () => {
+    const local = {
+      id: ProjectId.make("p"),
+      title: "P",
+      environmentId: EnvironmentId.make("env"),
+      updatedAt: "2026-10-15T00:00:00.000Z",
+    } as unknown as NonNullable<GalleryProject["local"]>;
+    const thread = (
+      id: string,
+      role: "supervisor" | "worker",
+      status: string | null,
+      extra: Record<string, unknown> = {},
+    ) =>
+      ({
+        id,
+        environmentId: "env",
+        projectId: "p",
+        archivedAt: null,
+        deletedAt: null,
+        workjetConfig: { schemaVersion: 2, team: { role } },
+        session: status === null ? null : { status },
+        hasPendingApprovals: false,
+        hasPendingUserInput: false,
+        ...extra,
+      }) as unknown as EnvironmentThreadShell;
+    const threads = [
+      thread("supervisor", "supervisor", "ready"),
+      // A running worker counts as running only with a fresh sign of life (#758).
+      thread("busy", "worker", "running", { updatedAt: new Date().toISOString() }),
+      thread("broken", "worker", "error"),
+      thread("done", "worker", "ready"),
+      thread("other", "worker", "running", { projectId: "q" }),
+      thread("archived", "worker", "running", { archivedAt: "2026-10-01T00:00:00.000Z" }),
+    ];
+    expect(projectCardCrew(local, threads)).toEqual({ lumas: 3, disrupted: 1 });
+    expect(projectCardCrew(null, threads)).toBeNull();
   });
 });

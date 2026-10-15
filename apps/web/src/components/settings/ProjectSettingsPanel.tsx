@@ -144,6 +144,9 @@ function compareByName(a: { readonly name: string }, b: { readonly name: string 
  * Projektübersicht und über das Einstellungs-Symbol im Projekt verwaltet.
  * Alte Links landen auf der Projektübersicht.
  */
+/** Hash, mit dem die Projektübersicht ihre Projekteinstellungen inline öffnet. */
+export const PROJECT_SETTINGS_HASH = "projekt-einstellungen";
+
 export function ProjectsSettingsRedirect() {
   const navigate = useNavigate();
   useEffect(() => {
@@ -285,7 +288,8 @@ export function ProjectCardRedirect({ projectKey }: { projectKey: string }) {
     const instanceId = readActiveWorkjetScope().selectedInstanceId;
     const openCard = () => {
       doneRef.current = true;
-      void navigate({ to: "/", replace: true });
+      // Die Projektübersicht öffnet die Projekteinstellungen inline.
+      void navigate({ to: "/", hash: PROJECT_SETTINGS_HASH, replace: true });
     };
     if (projectKey.startsWith(INSTANCE_PROJECT_KEY_PREFIX)) {
       if (instanceId !== null) {

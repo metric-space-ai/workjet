@@ -239,3 +239,58 @@ describe("card back configuration editor", () => {
     expect(markup).toContain("Kein Termin");
   });
 });
+
+describe("card configuration patch", () => {
+  const saved = {
+    title: "ctox.dev",
+    websiteUrl: "https://ctox.dev",
+    repositoryUrl: "https://github.com/mkh-welsch/ctox-dev",
+    jourFixe: { weekday: 1, time: "13:00", timezone: "Europe/Berlin" },
+  };
+  it("sends only the name when only the name changed", async () => {
+    const { projectCardConfigurationPatch } = await import("./ProjectOverviewEditor");
+    const patch = projectCardConfigurationPatch(saved, { ...saved, title: " ctox " });
+    expect(patch).toEqual({ title: "ctox" });
+    for (const key of ["repoUrl", "publicUrl", "info", "description", "jourFixe"])
+      expect(patch).not.toHaveProperty(key);
+  });
+  it("sends an explicit null only for a field the user emptied", async () => {
+    const { projectCardConfigurationPatch } = await import("./ProjectOverviewEditor");
+    expect(projectCardConfigurationPatch(saved, { ...saved, websiteUrl: "  " })).toEqual({
+      title: "ctox.dev",
+      publicUrl: null,
+    });
+    const empty = { ...saved, websiteUrl: null, repositoryUrl: null };
+    expect(projectCardConfigurationPatch(empty, { ...empty, jourFixe: null })).toEqual({
+      title: "ctox.dev",
+      jourFixe: null,
+    });
+  });
+  it("proposes the folder's repository as a chip only while the field is empty", async () => {
+    const { ProjectCardConfigContext, ProjectCardConfigEditor } =
+      await import("./ProjectOverviewEditor");
+    const render = (repositoryUrl: string | null) =>
+      renderToStaticMarkup(
+        <ProjectCardConfigContext.Provider
+          value={{ repositorySuggestion: "https://github.com/metric-space-ai/greppy" }}
+        >
+          <ProjectCardConfigEditor
+            title="greppy.xyz"
+            websiteUrl={null}
+            repositoryUrl={repositoryUrl}
+            jourFixe={null}
+            canEditTitle
+            onSave={async () => true}
+            onCancel={() => {}}
+          />
+        </ProjectCardConfigContext.Provider>,
+      );
+    const markup = render(null);
+    expect(markup).toContain('data-workjet-action="project.card.config.repo-suggestion"');
+    expect(markup).toContain("Repo übernehmen");
+    expect(markup).toContain("github.com/metric-space-ai/greppy");
+    // Proposed, not written: the field itself stays empty.
+    expect(markup).not.toContain('value="https://github.com/metric-space-ai/greppy"');
+    expect(render("https://github.com/x/y")).not.toContain("Repo übernehmen");
+  });
+});

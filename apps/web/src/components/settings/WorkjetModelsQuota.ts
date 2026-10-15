@@ -3,6 +3,22 @@ import type { WorkjetGatewayQuotaWindow, WorkjetNativeProviderAccount } from "@w
 export const MODELS_QUOTA_FRESH_FOR_MS = 300_000;
 const DAY_SECONDS = 86_400;
 
+/** Kimi Code and SuperGrok window names (workjet #755), with German labels. */
+const NAMED_WINDOW_SECONDS: Readonly<Record<string, number>> = {
+  limit_5h: 5 * 3600,
+  limit_7d: 7 * DAY_SECONDS,
+  limit_month_total: 30 * DAY_SECONDS,
+  weekly: 7 * DAY_SECONDS,
+  monthly: 30 * DAY_SECONDS,
+};
+const NAMED_WINDOW_LABELS: Readonly<Record<string, string>> = {
+  limit_5h: "5 Std.",
+  limit_7d: "7 Tage",
+  limit_month_total: "Monat",
+  weekly: "Woche",
+  monthly: "Monat",
+};
+
 /** Normalize provider evidence once, before both health and limit presentation use it. */
 export function normalizeModelsQuota(
   provider: string,
@@ -17,7 +33,10 @@ export function normalizeModelsQuota(
       const used =
         (provider === "claude" && field === "utilization") ||
         (provider === "codex" && field === "used_percent") ||
-        (provider === "zai" && field === "percentage");
+        (provider === "zai" && field === "percentage") ||
+        // Kimi Code (limit_5h, limit_7d, limit_month_total) and SuperGrok (weekly, monthly)
+        // report the consumed share 0..100 since workjet #755.
+        ((provider === "kimi" || provider === "xai") && field === "used_percent");
       const direct =
         provider === "minimax" &&
         (field === "current_interval_remaining_percent" ||
@@ -65,10 +84,15 @@ export function normalizeModelsQuota(
         } else if (provider === "minimax") {
           if (window.name.endsWith("_interval")) seconds = 5 * 3600;
           else if (window.name.endsWith("_weekly")) seconds = 7 * DAY_SECONDS;
+        } else if (provider === "kimi" || provider === "xai") {
+          seconds = NAMED_WINDOW_SECONDS[window.name] ?? null;
         }
       }
+      const namedLabel =
+        provider === "kimi" || provider === "xai" ? NAMED_WINDOW_LABELS[window.name] : undefined;
       const label =
-        seconds === 7 * DAY_SECONDS
+        namedLabel ??
+        (seconds === 7 * DAY_SECONDS
           ? "7 Tage"
           : seconds !== null && seconds >= 28 * DAY_SECONDS && seconds <= 31 * DAY_SECONDS
             ? "30 Tage"
@@ -76,7 +100,7 @@ export function normalizeModelsQuota(
               ? "Kurzfristig"
               : provider === "codex" && window.name === "primary_window"
                 ? "Kurzfristig"
-                : "unbekannt";
+                : "unbekannt");
       const fresh =
         now >= window.observedAtMs && now - window.observedAtMs < MODELS_QUOTA_FRESH_FOR_MS;
       const resetPending = window.resetsAtMs !== null && window.resetsAtMs > now;

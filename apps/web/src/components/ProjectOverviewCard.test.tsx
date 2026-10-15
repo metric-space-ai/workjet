@@ -438,7 +438,8 @@ describe("whole card opens the project (WP-K2)", () => {
       />,
     );
     expect(markup).toContain("data-workjet-project-card-content");
-    expect(markup.match(/<dd>—<\/dd>/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(markup).toMatch(/data-workjet-project-card-jour-fixe=""[\s\S]*?>—<\/dd>/);
+    expect(markup).toMatch(/data-workjet-project-card-lumas=""[\s\S]*?>—<\/span>/);
     expect(markup).not.toContain("gestört");
   });
 

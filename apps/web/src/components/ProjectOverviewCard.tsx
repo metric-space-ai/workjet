@@ -102,6 +102,8 @@ const CARD_OWN_ACTION_SELECTOR = [
 ].join(",");
 /** A pointer that moved further than this between press and release dragged, not clicked. */
 const CARD_CLICK_SLOP_PX = 6;
+/** Silent retry of a preview image that failed to load. */
+const PREVIEW_RETRY_MS = 5 * 60_000;
 
 export function ProjectOverviewCard({
   project,
@@ -237,6 +239,13 @@ export function ProjectOverviewCard({
     if (!ok) setArchiveError(t("Neuberechnung nicht erreichbar.", "Recalculation not reachable."));
   };
   const closeEditing = () => setEditing(null);
+  // A failed preview (GitHub rate limit, offline) is retried silently; meanwhile the
+  // card shows its content instead of an empty area.
+  useEffect(() => {
+    if (failedPreviewImage === null) return;
+    const timer = window.setTimeout(() => setFailedPreviewImage(null), PREVIEW_RETRY_MS);
+    return () => window.clearTimeout(timer);
+  }, [failedPreviewImage]);
   // Only one card editor (Exit-Bewertung / Konfigurieren) is open across the
   // gallery: opening one closes every other InlineExpand, like the KPI tiles.
   useSingleInlineExpand(editing !== null, (open) => {
@@ -530,49 +539,60 @@ export function ProjectOverviewCard({
         // Ohne Vorschau keine leere Fläche: nächster Regeltermin und Team als Chips.
         <>
           <div
-            className="flex min-w-0 flex-wrap items-center gap-1.5 px-3 pb-2"
+            className="flex min-h-20 min-w-0 flex-1 flex-col justify-center gap-2 px-3 py-3"
             data-workjet-project-card-content=""
           >
-            <dl className="contents">
+            <dl className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
               <div
-                className="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-[11px] tabular-nums"
+                className="flex min-w-0 flex-col gap-0.5"
                 data-workjet-project-card-jour-fixe=""
               >
-                <dt className="sr-only">{t("Regeltermin", "Regular meeting")}</dt>
-                <CalendarClockIcon
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <dd>{jourFixeLabel}</dd>
+                <dt className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                  <CalendarClockIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                  {t("Regeltermin", "Regular meeting")}
+                </dt>
+                <dd
+                  className={`order-first truncate text-[22px] leading-7 font-semibold tracking-tight tabular-nums ${
+                    jourFixe === null ? "text-muted-foreground" : ""
+                  }`}
+                >
+                  {jourFixeLabel}
+                </dd>
               </div>
               <div
-                className="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-[11px] tabular-nums"
+                className="flex min-w-0 flex-col gap-0.5"
                 data-workjet-project-card-lumas={crew?.lumas ?? ""}
               >
-                <dt className="sr-only">{t("Lumas", "Lumas")}</dt>
-                <UserRoundIcon
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <dd>{crew == null ? "—" : crew.lumas}</dd>
+                <dt className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                  <UserRoundIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                  {t("Lumas", "Lumas")}
+                </dt>
+                <dd className="order-first flex min-w-0 items-center gap-1.5">
+                  <span
+                    className={`text-[22px] leading-7 font-semibold tracking-tight tabular-nums ${
+                      crew == null ? "text-muted-foreground" : ""
+                    }`}
+                  >
+                    {crew == null ? "—" : crew.lumas}
+                  </span>
+                  {crew != null && crew.disrupted > 0 ? (
+                    <span
+                      className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-destructive/40 px-1.5 text-[11px] text-destructive tabular-nums"
+                      data-workjet-project-card-disrupted={crew.disrupted}
+                    >
+                      <span aria-hidden="true" className="size-1.5 rounded-full bg-destructive" />
+                      {`${crew.disrupted} ${t("gestört", "disrupted")}`}
+                    </span>
+                  ) : null}
+                </dd>
               </div>
-              {crew != null && crew.disrupted > 0 ? (
-                <div
-                  className="inline-flex h-6 items-center gap-1 rounded-full border border-destructive/40 px-2 text-[11px] text-destructive tabular-nums"
-                  data-workjet-project-card-disrupted={crew.disrupted}
-                >
-                  <dt className="sr-only">{t("Gestört", "Disrupted")}</dt>
-                  <span aria-hidden="true" className="size-1.5 rounded-full bg-destructive" />
-                  <dd>{`${crew.disrupted} ${t("gestört", "disrupted")}`}</dd>
-                </div>
-              ) : null}
             </dl>
             {canRate && (
               <Button
                 size="xs"
                 variant="outline"
                 onClick={() => setEditing("exit")}
-                className="ms-auto"
+                className="self-start"
                 data-workjet-action={`project.exit_model.rate:${project.key}`}
               >
                 {t("Bewerten", "Rate")}

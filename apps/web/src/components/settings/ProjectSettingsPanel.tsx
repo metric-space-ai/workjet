@@ -25,7 +25,7 @@ import { DEFAULT_RESOLVED_KEYBINDINGS } from "@workjet/shared/keybindings";
 import { Link, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useAvailableProjectContext } from "../../availableProjects";
@@ -144,8 +144,41 @@ function compareByName(a: { readonly name: string }, b: { readonly name: string 
  * Projektübersicht und über das Einstellungs-Symbol im Projekt verwaltet.
  * Alte Links landen auf der Projektübersicht.
  */
-/** Hash, mit dem die Projektübersicht ihre Projekteinstellungen inline öffnet. */
-export const PROJECT_SETTINGS_HASH = "projekt-einstellungen";
+/**
+ * Das Icon „Projekteinstellungen“ öffnet die Projektübersicht mit den
+ * Einstellungen inline: die Anfrage überlebt den Wechsel auf die Übersicht.
+ */
+let projectSettingsRequestCount = 0;
+let projectSettingsRequestPending = false;
+const projectSettingsListeners = new Set<() => void>();
+
+export function requestProjectSettings(): void {
+  projectSettingsRequestCount += 1;
+  projectSettingsRequestPending = true;
+  for (const listener of projectSettingsListeners) listener();
+}
+
+/** Nimmt eine offene Anfrage genau einmal entgegen. */
+export function takeProjectSettingsRequest(): boolean {
+  const pending = projectSettingsRequestPending;
+  projectSettingsRequestPending = false;
+  return pending;
+}
+
+function subscribeProjectSettings(listener: () => void) {
+  projectSettingsListeners.add(listener);
+  return () => {
+    projectSettingsListeners.delete(listener);
+  };
+}
+
+export function useProjectSettingsRequestCount(): number {
+  return useSyncExternalStore(
+    subscribeProjectSettings,
+    () => projectSettingsRequestCount,
+    () => 0,
+  );
+}
 
 export function ProjectsSettingsRedirect() {
   const navigate = useNavigate();
@@ -160,9 +193,9 @@ export function ProjectsSettingsRedirect() {
  * Klick klappt Arbeitskopie und Skripte darunter auf (keine Reiter).
  */
 export function ProjectCheckoutRows() {
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const developerMode = useClientSettings((settings) => settings.developerMode);
   const groups = useSettingsProjectGroups();
-  const [openKey, setOpenKey] = useState<string | null>(null);
   if (!developerMode || groups.length === 0) return null;
   const rows = groups
     .map((group) => ({ group, name: readableProjectName(group.displayName) }))
@@ -217,9 +250,9 @@ export function ProjectCheckoutRow({
   readonly open: boolean;
   readonly onToggle: () => void;
 }) {
-  const scriptNames = group.memberProjects.flatMap((member) =>
-    member.scripts.map((script) => script.name),
-  );
+  const scriptNames: string[] = [];
+  for (const member of group.memberProjects)
+    for (const script of member.scripts) scriptNames.push(script.name);
   return (
     <Row
       name={
@@ -289,7 +322,8 @@ export function ProjectCardRedirect({ projectKey }: { projectKey: string }) {
     const openCard = () => {
       doneRef.current = true;
       // Die Projektübersicht öffnet die Projekteinstellungen inline.
-      void navigate({ to: "/", hash: PROJECT_SETTINGS_HASH, replace: true });
+      requestProjectSettings();
+      void navigate({ to: "/", replace: true });
     };
     if (projectKey.startsWith(INSTANCE_PROJECT_KEY_PREFIX)) {
       if (instanceId !== null) {

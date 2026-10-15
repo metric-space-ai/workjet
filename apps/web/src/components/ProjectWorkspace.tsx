@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { XIcon } from "lucide-react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
@@ -26,8 +26,9 @@ import {
 import { SidebarInset } from "./ui/sidebar";
 import { Button } from "./ui/button";
 import {
-  PROJECT_SETTINGS_HASH,
   ProjectSettingsPanel,
+  takeProjectSettingsRequest,
+  useProjectSettingsRequestCount,
   useSettingsProjectGroups,
 } from "./settings/ProjectSettingsPanel";
 import { SettingsEmbeddedContext } from "./settings/settingsLayout";
@@ -75,13 +76,19 @@ function ProjectWorkspaceContent({
             (member) => member.environmentId === local.environmentId && member.id === local.id,
           ),
         );
-  const hash = useLocation({ select: (location) => location.hash });
-  const [editingProject, setEditingProject] = useState(false);
+  const settingsRequests = useProjectSettingsRequestCount();
+  const [settingsHandled, setSettingsHandled] = useState(() =>
+    takeProjectSettingsRequest() ? settingsRequests - 1 : settingsRequests,
+  );
+  const [openedHere, setOpenedHere] = useState(false);
+  const editingProject = openedHere || settingsRequests > settingsHandled;
   useEffect(() => {
-    if (hash !== PROJECT_SETTINGS_HASH) return;
-    setEditingProject(true);
-    void navigate({ to: ".", hash: "", replace: true, hashScrollIntoView: false });
-  }, [hash, navigate]);
+    if (settingsRequests > settingsHandled) takeProjectSettingsRequest();
+  }, [settingsHandled, settingsRequests]);
+  const setEditingProject = (open: boolean) => {
+    setOpenedHere(open);
+    if (!open) setSettingsHandled(settingsRequests);
+  };
   const settingsLinks = [
     ...(settingsGroup
       ? [

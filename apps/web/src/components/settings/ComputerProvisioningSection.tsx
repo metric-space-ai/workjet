@@ -11,10 +11,83 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
+import { Segment } from "../ui/segment";
 import { Spinner } from "../ui/spinner";
 
 type Stage = "target" | "fingerprint" | "preflight" | "components" | "operation";
 type RetryStep = "inspect" | "preflight" | "start" | "start-backend";
+
+/**
+ * D02: Die Desktop-App meldet englische Rohtexte. Bekannte Texte werden hier
+ * auf kurze deutsche Zeilen (≤ 12 Wörter) abgebildet; der Rohtext bleibt nur
+ * hinter „Details“.
+ */
+const PROVISIONING_MESSAGES_DE: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^Operation queued/i, "In der Warteschlange"],
+  [/^Requested components are ready/i, "Komponenten bereit"],
+  [/^Verified the approved target/i, "Ziel und Release-Kanal geprüft"],
+  [/^Requesting target authorization/i, "Rechte auf dem Rechner anfragen"],
+  [/^Creating a local-only Business OS pairing invite/i, "Kopplung wird vorbereitet"],
+  [/^CTOX \w+ completed/i, "CTOX fertig"],
+  [/^Confirm the current SSH host-key fingerprint/i, "Host-Schlüssel bestätigen"],
+  [/^The SSH host key changed/i, "Host-Schlüssel hat sich geändert"],
+  [/^The target did not publish an SSH host key/i, "Rechner liefert keinen Host-Schlüssel"],
+  [/^The SSH host key response was invalid/i, "Host-Schlüssel ungültig"],
+  [/^The SSH fingerprint could not be calculated/i, "Host-Schlüssel nicht prüfbar"],
+  [/^The target operating system is not supported/i, "Betriebssystem wird nicht unterstützt"],
+  [/^The target architecture is not supported/i, "Prozessor wird nicht unterstützt"],
+  [/^The target is missing required provisioning tools/i, "Auf dem Rechner fehlen Werkzeuge"],
+  [/^The target cannot reach the official CTOX release channel/i, "Rechner erreicht den CTOX-Release-Kanal nicht"],
+  [/administrator/i, "Administratorrechte nötig"],
+  [/^Windows will show a User Account Control/i, "Windows fragt gleich nach Administratorrechten"],
+  [/^No active graphical session/i, "Ohne Desktop: nur CTOX installierbar"],
+  [/^Workjet is unavailable on a headless target/i, "Ohne Desktop: nur CTOX installierbar"],
+  [/^Workjet cannot be installed without an active graphical session/i, "Ohne Desktop: nur CTOX installierbar"],
+  [/^Run the target preflight again/i, "Prüfung abgelaufen"],
+  [/installation journal|Saved installations could not be read/i, "Gespeicherte Installation nicht lesbar"],
+  [/^Target preflight failed/i, "Prüfung fehlgeschlagen"],
+  [/^Provisioning failed/i, "Einrichtung fehlgeschlagen"],
+  [/^Approved SSH (target|host key) is missing/i, "Bestätigung fehlt, neu prüfen"],
+  [/password|permission denied|authentication/i, "Anmeldung abgelehnt"],
+  [/timed? ?out|timeout/i, "Zeitüberschreitung"],
+  [/unreachable|no route|could not resolve|connection refused/i, "Rechner nicht erreichbar"],
+];
+
+const PROVISIONING_PHASES_DE: Readonly<Record<string, string>> = {
+  queued: "In der Warteschlange",
+  preflight: "Prüfung",
+  authorization: "Rechte anfragen",
+  download: "Download",
+  verification: "Überprüfung",
+  installation: "Installation",
+  service: "Dienst starten",
+  health: "Zustand prüfen",
+  pairing: "Kopplung",
+  replication: "Abgleich",
+  complete: "Fertig",
+  failed: "Fehlgeschlagen",
+};
+
+/** Deutscher Text zu einer Desktop-Meldung; `raw` nur, wenn er abweicht (für „Details“). */
+export function provisioningMessageDe(
+  message: string,
+  fallback = "Einrichtung fehlgeschlagen",
+): { readonly text: string; readonly raw: string | null } {
+  const trimmed = message.trim();
+  // Schon deutsch (Umlaute oder bekannte Wörter): unverändert.
+  if (trimmed !== "" && /[äöüß]|^(Prüf|Rechner|Einricht|Anmeld|Kein|Nicht)/i.test(trimmed))
+    return { text: trimmed, raw: null };
+  const match = PROVISIONING_MESSAGES_DE.find(([pattern]) => pattern.test(trimmed));
+  const text = match ? match[1] : fallback;
+  return { text, raw: trimmed !== "" && trimmed !== text ? trimmed : null };
+}
+
+function eventText(event: WorkjetProvisioningSnapshot["events"][number]): {
+  readonly text: string;
+  readonly raw: string | null;
+} {
+  return provisioningMessageDe(event.message, PROVISIONING_PHASES_DE[event.phase] ?? "Einrichtung");
+}
 
 function errorText(error: unknown): string {
   return error instanceof Error && error.message.trim()
@@ -23,7 +96,25 @@ function errorText(error: unknown): string {
 }
 
 function stageLabel(snapshot: WorkjetProvisioningSnapshot): string {
-  return snapshot.events.at(-1)?.message ?? "Wird vorbereitet";
+  const last = snapshot.events.at(-1);
+  return last ? eventText(last).text : "Wird vorbereitet";
+}
+
+const PLATFORM_DE: Readonly<Record<string, string>> = {
+  linux: "Linux",
+  macos: "macOS",
+  windows: "Windows",
+};
+
+/** Rohtext nur hinter „Details“ (D02, D13). */
+function RawDetails({ raw }: { readonly raw: string | null }) {
+  if (raw === null) return null;
+  return (
+    <details className="text-xs text-muted-foreground" data-slot="provisioning-details">
+      <summary className="cursor-pointer select-none">Details</summary>
+      <p className="mt-1 select-text break-all">{raw}</p>
+    </details>
+  );
 }
 
 /**
@@ -78,6 +169,7 @@ export function ComputerProvisioningSection({
     bridge.startProvisioningOperation !== undefined &&
     bridge.getProvisioningOperation !== undefined;
   const [kind, setKind] = useState<"local" | "ssh">(initialKind);
+  const knownTarget = fixedTargetKind && initialTarget !== undefined && initialTarget.host !== "";
   const [host, setHost] = useState(initialTarget?.host ?? "");
   const [username, setUsername] = useState(initialTarget?.username ?? "");
   const [port, setPort] = useState(String(initialTarget?.port ?? 22));
@@ -282,28 +374,24 @@ export function ComputerProvisioningSection({
       {stage === "target" ? (
         <div className="flex flex-wrap items-end gap-2">
           {!fixedTargetKind ? (
-            <div className="flex gap-1" role="radiogroup" aria-label="Ziel">
-              {(
-                [
-                  ["local", "Lokal"],
-                  ["ssh", "SSH"],
-                ] as const
-              ).map(([value, label]) => (
-                <Button
-                  key={value}
-                  type="button"
-                  size="sm"
-                  role="radio"
-                  aria-checked={kind === value}
-                  variant={kind === value ? "default" : "outline"}
-                  onClick={() => setKind(value)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
+            <Segment
+              aria-label="Ziel"
+              value={kind}
+              onValueChange={setKind}
+              options={[
+                { value: "local", label: "Lokal" },
+                { value: "ssh", label: "SSH" },
+              ]}
+            />
           ) : null}
-          {kind === "ssh" ? (
+          {kind === "ssh" && knownTarget ? (
+            // D13: bekanntes Ziel nur lesend, nicht erneut abfragen.
+            <span className="min-w-0 truncate text-muted-foreground" data-slot="provisioning-target">
+              {username.trim() ? `${username.trim()}@` : ""}
+              {host}
+              {port !== "22" ? `:${port}` : ""}
+            </span>
+          ) : kind === "ssh" ? (
             <>
               <label className="grid min-w-40 flex-1 gap-1 text-xs text-muted-foreground">
                 Adresse
@@ -351,18 +439,19 @@ export function ComputerProvisioningSection({
       ) : null}
 
       {stage === "fingerprint" && hostKey?._tag === "ready" ? (
-        <div className="flex flex-wrap items-center gap-2" data-slot="host-key-confirm">
-          <span className="text-muted-foreground">Host-Schlüssel</span>
-          <code className="min-w-0 select-all truncate rounded bg-muted px-1.5 py-0.5 text-xs">
-            {hostKey.algorithm} {hostKey.fingerprint}
-          </code>
-          <Button type="button" size="xs" disabled={busy} onClick={() => void runPreflight()}>
-            {busy ? <Spinner className="size-3" /> : null}
-            Bestätigen
-          </Button>
-          <Button type="button" size="xs" variant="outline" disabled={busy} onClick={reset}>
-            Abbrechen
-          </Button>
+        <div className="space-y-1" data-slot="host-key-confirm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">Host-Schlüssel bestätigen</span>
+            <Button type="button" size="xs" variant="outline" disabled={busy} onClick={reset}>
+              Abbrechen
+            </Button>
+            <Button type="button" size="xs" disabled={busy} onClick={() => void runPreflight()}>
+              {busy ? <Spinner className="size-3" /> : null}
+              Bestätigen
+            </Button>
+          </div>
+          {/* D13: Fingerabdruck als Rohwert nur hinter „Details“. */}
+          <RawDetails raw={`${hostKey.algorithm} ${hostKey.fingerprint}`} />
         </div>
       ) : null}
 
@@ -374,24 +463,24 @@ export function ComputerProvisioningSection({
 
       {stage === "components" && preflight ? (
         <div className="space-y-2" data-slot="provisioning-components">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="rounded bg-muted px-1.5 py-0.5">
-              {preflight.platform} · {preflight.architecture}
-            </span>
-            <span className="rounded bg-muted px-1.5 py-0.5">
-              {preflight.graphicalSession ? "Desktop" : "Headless"}
-            </span>
-            {preflight.ctoxInstalledVersion !== null ? (
-              <span className="rounded bg-muted px-1.5 py-0.5">
-                CTOX {preflight.ctoxInstalledVersion}
-              </span>
-            ) : null}
-          </div>
-          {preflight.warnings.map((warning) => (
-            <p key={warning} className="text-xs text-amber-600 dark:text-amber-400">
-              {warning}
-            </p>
-          ))}
+          <p className="text-xs text-muted-foreground" data-slot="provisioning-facts">
+            {[
+              PLATFORM_DE[preflight.platform] ?? preflight.platform,
+              preflight.graphicalSession ? null : "ohne Desktop",
+              preflight.ctoxInstalledVersion !== null
+                ? `CTOX ${preflight.ctoxInstalledVersion}`
+                : null,
+            ]
+              .filter((part): part is string => part !== null)
+              .join(" · ")}
+          </p>
+          {[...new Set(preflight.warnings.map((warning) => provisioningMessageDe(warning).text))].map(
+            (warning) => (
+              <p key={warning} className="text-xs text-amber-600 dark:text-amber-400">
+                {warning}
+              </p>
+            ),
+          )}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <label className="flex items-center gap-2">
               <Checkbox checked disabled />
@@ -451,7 +540,7 @@ export function ComputerProvisioningSection({
             {operation.events.map((event) => (
               <li key={event.sequence}>
                 <span className="mr-2 text-muted-foreground">{event.percent}%</span>
-                {event.message}
+                {eventText(event).text}
               </li>
             ))}
           </ol>
@@ -459,6 +548,9 @@ export function ComputerProvisioningSection({
             <p role="alert" className="text-xs text-destructive">
               Ergebnis unbekannt. Zustand auf dem Rechner prüfen.
             </p>
+          ) : null}
+          {operation.state === "failed" ? (
+            <RawDetails raw={operation.events.at(-1)?.message ?? null} />
           ) : null}
           {operation.state !== "running" && operation.state !== "queued" ? (
             <Button type="button" size="sm" variant="outline" onClick={reset}>
@@ -469,13 +561,16 @@ export function ComputerProvisioningSection({
       ) : null}
 
       {fehler ? (
-        <div className="flex flex-wrap items-center gap-2 text-xs" data-slot="provisioning-error">
-          <span role="alert" className="min-w-0 text-destructive">
-            {fehler.message}
-          </span>
-          <Button type="button" size="xs" variant="outline" disabled={busy} onClick={retry}>
-            Erneut versuchen
-          </Button>
+        <div className="space-y-1" data-slot="provisioning-error">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span role="alert" className="min-w-0 text-destructive">
+              {provisioningMessageDe(fehler.message).text}
+            </span>
+            <Button type="button" size="xs" variant="outline" disabled={busy} onClick={retry}>
+              Erneut versuchen
+            </Button>
+          </div>
+          <RawDetails raw={provisioningMessageDe(fehler.message).raw} />
         </div>
       ) : null}
     </div>

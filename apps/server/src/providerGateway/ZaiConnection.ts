@@ -62,6 +62,32 @@ function modelIds(body: unknown): ReadonlyArray<string> | undefined {
   return [...new Set(ids)];
 }
 
+/** Read-only account catalog. A configured plan URL is required to avoid mixing plans. */
+export async function discoverZaiModels(
+  apiKey: string,
+  preferredBaseUrl: string,
+  signal?: AbortSignal,
+): Promise<ReadonlyArray<string> | undefined> {
+  if (!ZAI_BASE_URLS.some((url) => url === preferredBaseUrl)) return undefined;
+  let response: Response | undefined;
+  try {
+    response = await fetch(`${preferredBaseUrl}/models`, {
+      redirect: "error",
+      headers: { authorization: `Bearer ${apiKey}`, "User-Agent": "Workjet" },
+      signal: AbortSignal.any([
+        AbortSignal.timeout(8_000),
+        ...(signal === undefined ? [] : [signal]),
+      ]),
+    });
+    if (!response.ok) return undefined;
+    return modelIds(await boundedJson(response));
+  } catch {
+    return undefined;
+  } finally {
+    await response?.body?.cancel().catch(() => undefined);
+  }
+}
+
 /** Both plans can return the same model list. Only a bounded inference proves access. */
 export async function discoverZaiConnection(
   apiKey: string,

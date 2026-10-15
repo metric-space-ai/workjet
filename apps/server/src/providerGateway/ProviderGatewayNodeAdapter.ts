@@ -10,8 +10,9 @@ import type {
   WorkjetGatewayInferenceProtocol,
   WorkjetGatewayInferenceResult,
 } from "@workjet/contracts";
-import { discoverKimiConnection } from "./KimiConnection.ts";
-import { discoverZaiConnection } from "./ZaiConnection.ts";
+import { discoverKimiConnection, discoverKimiModels } from "./KimiConnection.ts";
+import { discoverCodexModels } from "./CodexConnection.ts";
+import { discoverZaiConnection, discoverZaiModels } from "./ZaiConnection.ts";
 import { discoverApiKeyModels } from "./ApiKeyModelConnection.ts";
 import { readPublicModelCatalog } from "./LiveProviderCatalog.ts";
 import { discoverClaudeModels } from "./ClaudeConnection.ts";
@@ -200,7 +201,10 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
   publicModelCatalog: readPublicModelCatalog,
   discoverClaudeModels,
   discoverKimiConnection,
+  discoverKimiModels,
+  discoverCodexModels,
   discoverZaiConnection,
+  discoverZaiModels,
   discoverApiKeyModels,
   fingerprint: (value) => NodeCrypto.createHash("sha256").update(value).digest("hex"),
   providerModelCheck: async (endpoint, provider, accountId, modelId, signal) => {

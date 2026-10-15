@@ -1976,6 +1976,55 @@ export const WorkjetGatewayModelChecks = Schema.Struct({
   deferredCount: NonNegativeInt,
 });
 export type WorkjetGatewayModelChecks = typeof WorkjetGatewayModelChecks.Type;
+
+/** Read-only evidence for worker model draws; only `available` rows are eligible. */
+export const WorkjetOfficialCodingModelExport = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  observedAtMs: NonNegativeInt,
+  healthObservedAtMs: NonNegativeInt,
+  harnessProbedAt: TrimmedNonEmptyString,
+  models: Schema.Array(
+    Schema.Struct({
+      provider: WorkjetGatewayProvider,
+      modelId: TrimmedNonEmptyString,
+      accountId: WorkjetGatewayAccountId,
+      modelListCheckedAtMs: NonNegativeInt,
+      enabled: Schema.Boolean,
+      coding: Schema.Boolean,
+      available: Schema.Boolean,
+      routeId: Schema.NullOr(WorkjetLlmRouteId),
+      harness: Schema.NullOr(WorkjetHarness),
+      homeHarness: Schema.NullOr(WorkjetHarness),
+      computerId: Schema.NullOr(WorkjetComputerId),
+      reason: Schema.NullOr(
+        Schema.Literals([
+          "coding-route-unverified",
+          "route-disabled",
+          "harness-unavailable",
+          "account-unavailable",
+          "provider-unavailable",
+          "model-check-unverified",
+        ]),
+      ),
+    }),
+  ),
+  unverifiedAccounts: Schema.Array(
+    Schema.Struct({
+      accountId: WorkjetGatewayAccountId,
+      provider: WorkjetGatewayProvider,
+      reason: Schema.NullOr(
+        Schema.Literals([
+          "account-unavailable",
+          "account-disabled",
+          "provider-unsupported",
+          "catalog-unavailable",
+          "account-changed",
+        ]),
+      ),
+    }),
+  ),
+});
+export type WorkjetOfficialCodingModelExport = typeof WorkjetOfficialCodingModelExport.Type;
 export const WorkjetGatewayModelCheckInput = Schema.Struct({
   accountId: Schema.optional(WorkjetGatewayAccountId),
   modelId: Schema.optional(TrimmedNonEmptyString),

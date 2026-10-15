@@ -231,9 +231,14 @@ export function ProjectOverviewView(props: {
   const [marks, toggleMark] = useFeedBookmarks();
   const countOf = (key: FeedSourceKey) =>
     allFeed.filter((item) => feedSourceOf(item.kind) === key).length;
+  // One row per worker and state: several chats of the same worker in the same state are one entry.
+  const liveSeen = new Set<string>();
   const live = [...data.supervisors, ...data.parents, ...data.workers].flatMap((thread) => {
     const state = projectOverviewWorkerState(thread);
-    return state === "waiting" ? [] : [{ thread, state }];
+    const key = `${projectOverviewWorkerName(thread.title, data.title).name}\u0000${state}`;
+    if (state === "waiting" || liveSeen.has(key)) return [];
+    liveSeen.add(key);
+    return [{ thread, state }];
   });
   const de = language === "de";
   const card = "rounded-2xl bg-muted/50 px-4 py-3";
@@ -241,6 +246,8 @@ export function ProjectOverviewView(props: {
   const goalGroups: { title: string; goals: (typeof data.goals)[number][] }[] = [];
   for (const goal of data.goals) {
     const group = goalGroups.find((entry) => entry.title === goal.title);
+    if (group?.goals.some((entry) => entry.owner === goal.owner && entry.state === goal.state))
+      continue;
     if (group) group.goals.push(goal);
     else goalGroups.push({ title: goal.title, goals: [goal] });
   }
@@ -450,34 +457,34 @@ export function ProjectOverviewView(props: {
           </Button>
         </section>
         {missingKpis && !props.onRecomputeKpis ? null : (
-        <section className={card} data-workjet-overview-section="kpis">
-          <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.metrics}</h3>
-          {missingKpis ? (
-            <Button size="xs" variant="outline" onClick={props.onRecomputeKpis}>
-              <RefreshCwIcon aria-hidden className="size-3.5" />
-              {text.recompute}
-            </Button>
-          ) : (
-            <dl
-              className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 text-[14px]"
-              data-workjet-overview-kpis=""
-            >
-              {data.kpis
-                .filter((kpi) => kpi.value !== "—")
-                .map((kpi) => (
-                  <div key={kpi.id} className="contents" data-workjet-overview-kpi={kpi.id}>
-                    <dt className="min-w-0 break-words text-muted-foreground">
-                      {kpi.label}
-                      {kpi.note !== null && (
-                        <span className="block text-[12px] text-amber-400">{kpi.note}</span>
-                      )}
-                    </dt>
-                    <dd className="text-right font-bold tabular-nums">{kpi.value}</dd>
-                  </div>
-                ))}
-            </dl>
-          )}
-        </section>
+          <section className={card} data-workjet-overview-section="kpis">
+            <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.metrics}</h3>
+            {missingKpis ? (
+              <Button size="xs" variant="outline" onClick={props.onRecomputeKpis}>
+                <RefreshCwIcon aria-hidden className="size-3.5" />
+                {text.recompute}
+              </Button>
+            ) : (
+              <dl
+                className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 text-[14px]"
+                data-workjet-overview-kpis=""
+              >
+                {data.kpis
+                  .filter((kpi) => kpi.value !== "—")
+                  .map((kpi) => (
+                    <div key={kpi.id} className="contents" data-workjet-overview-kpi={kpi.id}>
+                      <dt className="min-w-0 break-words text-muted-foreground">
+                        {kpi.label}
+                        {kpi.note !== null && (
+                          <span className="block text-[12px] text-amber-400">{kpi.note}</span>
+                        )}
+                      </dt>
+                      <dd className="text-right font-bold tabular-nums">{kpi.value}</dd>
+                    </div>
+                  ))}
+              </dl>
+            )}
+          </section>
         )}
         {goalGroups.length === 0 ? null : (
           <section className={card} data-workjet-overview-section="goals">
@@ -974,7 +981,7 @@ function FeedSection(props: {
             <FeedSettingsButton language={props.language} onClick={props.onOpenSettings} />
           </div>
         </div>
-        <div role="tablist" aria-label={text.feedTitle} className="flex">
+        <div role="tablist" aria-label={text.feedTitle} className="flex overflow-x-auto">
           {visibleTabs.map((value) => (
             <button
               key={value}
@@ -983,7 +990,7 @@ function FeedSection(props: {
               aria-selected={tab === value}
               onClick={() => setTab(value)}
               className={
-                "relative flex flex-1 justify-center px-2 py-3.5 text-[15px] transition-colors hover:bg-muted/40 " +
+                "relative flex flex-1 shrink-0 justify-center px-3 py-3.5 text-[13.5px] whitespace-nowrap transition-colors hover:bg-muted/40 " +
                 (tab === value ? "font-bold text-foreground" : "font-medium text-muted-foreground")
               }
             >
@@ -1258,7 +1265,10 @@ function FeedCard(props: {
           </div>
         ) : null}
         {item.details ? (
-          <details className="mt-1.5 text-[12px] text-muted-foreground" data-workjet-feed-details="">
+          <details
+            className="mt-1.5 text-[12px] text-muted-foreground"
+            data-workjet-feed-details=""
+          >
             <summary className="w-fit cursor-pointer select-none hover:text-foreground">
               {text.feedDetails}
             </summary>
@@ -1296,7 +1306,10 @@ function FeedCard(props: {
             onClick={props.onToggleMark}
             className={"ml-auto" + (props.marked ? " text-blue-400" : " text-muted-foreground")}
           >
-            <BookmarkIcon aria-hidden className={"size-4" + (props.marked ? " fill-current" : "")} />
+            <BookmarkIcon
+              aria-hidden
+              className={"size-4" + (props.marked ? " fill-current" : "")}
+            />
           </Button>
         </div>
       </div>

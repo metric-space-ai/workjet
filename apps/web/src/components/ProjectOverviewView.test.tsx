@@ -112,9 +112,15 @@ describe("ProjectOverviewView feed without filler (#711, #703, #586)", () => {
     ])
       expect(html).not.toContain(filler);
     // Goals live once, in the side column; the feed has no empty "Ziel" cards.
-    expect(html).not.toContain("data-workjet-feed-item=\"goal:");
+    expect(html).not.toContain('data-workjet-feed-item="goal:');
     expect(html.match(/data-workjet-overview-goal=""/g)?.length).toBe(
-      new Set(buildProjectOwnerOverview({ ...overviewFixture("full"), language: "de", now: fixtureNow }).goals.map((goal) => goal.title)).size,
+      new Set(
+        buildProjectOwnerOverview({
+          ...overviewFixture("full"),
+          language: "de",
+          now: fixtureNow,
+        }).goals.map((goal) => goal.title),
+      ).size,
     );
   });
   it("shows the filters once, without counters", () => {
@@ -134,7 +140,9 @@ describe("ProjectOverviewView feed without filler (#711, #703, #586)", () => {
     for (const raw of ["Not logged in · Please run /login", "Build failed"]) {
       const html = renderFull({ lastError: raw });
       expect(visibleText(html)).not.toContain(raw.split(" · ")[0]);
-      expect(html).toMatch(/<details[^>]*data-workjet-feed-details=""[\s\S]*?<summary[^>]*>Details<\/summary>/);
+      expect(html).toMatch(
+        /<details[^>]*data-workjet-feed-details=""[\s\S]*?<summary[^>]*>Details<\/summary>/,
+      );
       expect(html).toContain(raw);
       expect(html).not.toContain("font-mono text-[12.5px]");
     }

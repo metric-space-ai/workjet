@@ -73,3 +73,4 @@ export * from "./supportBundle.ts";
 export * from "./projectTokenBudget.ts";
 export * from "./usage.ts";
 export * from "./rpc.ts";
+export * from "./workjetSecretRequests.ts";

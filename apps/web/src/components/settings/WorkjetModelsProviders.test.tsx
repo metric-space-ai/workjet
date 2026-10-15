@@ -5,7 +5,8 @@ import {
   type WorkjetGatewayAccountSummary,
 } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
+import { readProviderDraft, setProviderDraft } from "./providerDraft";
 import {
   WorkjetModelsProviders,
   WorkjetModelsKeyForm,
@@ -168,7 +169,7 @@ describe("Provider account table", () => {
     expect(rendered).not.toContain("Limit erreicht");
     expect(rendered).not.toContain('role="meter"');
   });
-  it("groups an instance outage once while local xAI remains active and verified", () => {
+  it("keeps instance rows without a status line while local xAI remains active and verified", () => {
     const failure = {
       _tag: "failed" as const,
       code: "guest_failed" as const,
@@ -199,19 +200,20 @@ describe("Provider account table", () => {
             installed: false,
             hasModels: false,
             checking: false,
-            start: () => {},
+            start: async () => null,
             checkAll: () => {},
             refresh: () => {},
           }}
         />
       ),
     });
-    expect(rendered.match(/data-workjet-instance-connection=/g)).toHaveLength(1);
+    // A transport outage is retried silently: no status line, the last rows stay.
+    expect(rendered).not.toContain("data-workjet-instance-connection");
+    expect(rendered).not.toContain("nicht erreichbar");
     expect(rendered).toContain("Instanz Welsch");
     expect(rendered).toContain("Dieser Rechner");
-    expect(rendered).toContain("Neu verbinden");
     expect(rendered).not.toContain("guest_failed");
-    expect(rendered).not.toContain("Not loaded");
+    expect(rendered).toContain("xAI · Welsch");
     expect(rendered).toContain("work@example.test");
     expect(rendered).toContain("grok-4.7");
     expect(rendered).toContain("200");
@@ -499,5 +501,55 @@ describe("shared provider models", () => {
     expect(rendered).toContain("Nicht in der Live-Modellliste des Kontos");
     expect(rendered).toContain('aria-label="kimi-for-coding für work@example.test verwenden"');
     expect(rendered).toContain('disabled=""');
+  });
+});
+
+describe("Provider draft card", () => {
+  const grok = {
+    row: <div>xAI · Welsch</div>,
+    label: "Welsch",
+    installed: false,
+    hasModels: false,
+    checking: false,
+    start: async () => "guest_failed",
+    checkAll: () => {},
+    refresh: () => {},
+  };
+  afterEach(() => setProviderDraft(null));
+
+  it("shows a chosen provider as a full row inside the account list, with the choice inline", () => {
+    setProviderDraft({ provider: "xai", mode: "subscription", keyFormOpen: false });
+    const rendered = html({ instanceGrok: grok });
+    const list = rendered.slice(rendered.indexOf('data-testid="models-accounts"'));
+    expect(list).toContain('data-provider-draft="xai"');
+    expect(list).toContain("xAI (Grok)");
+    expect(list).toContain("Abo");
+    expect(list).toContain("API-Key");
+    expect(list).toContain("Anmelden");
+    expect(list).toContain("Auf Welsch anmelden");
+    expect(list).toContain("Entfernen");
+    expect(list).toContain('role="switch"');
+  });
+
+  it("opens the key field in the same row for a key-only provider", () => {
+    setProviderDraft({ provider: "zai", mode: "key", keyFormOpen: true });
+    const rendered = html({ catalog: { ...state.catalog!, accounts: [] } });
+    expect(rendered).toContain('data-provider-draft="zai"');
+    expect(rendered).toContain("API-Key für Z.ai (GLM)");
+    expect(rendered).not.toContain("Keine Anbieter");
+  });
+
+  it("keeps the draft when the key form collapses and offers to reopen it", () => {
+    setProviderDraft({ provider: "kimi", mode: "key", keyFormOpen: false });
+    const rendered = html();
+    expect(rendered).toContain('data-provider-draft="kimi"');
+    expect(rendered).toContain("API-Key eingeben");
+  });
+
+  it("does not reset the draft when the section is rendered again", () => {
+    setProviderDraft({ provider: "xai", mode: "key", keyFormOpen: true });
+    html();
+    expect(readProviderDraft()?.provider).toBe("xai");
+    expect(html()).toContain('data-provider-draft="xai"');
   });
 });

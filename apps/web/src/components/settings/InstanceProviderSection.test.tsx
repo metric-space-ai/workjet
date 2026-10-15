@@ -27,7 +27,7 @@ function renderSection(
     hasModels: false,
     checking: false,
     connectionFailure: grokFailure,
-    start: vi.fn(),
+    start: vi.fn(async () => null),
     checkAll: vi.fn(),
     refresh: vi.fn(),
   };
@@ -56,13 +56,17 @@ describe("independent instance account capabilities", () => {
     expect(html).toContain("Bei der Instanz anmelden, um sie zu verbinden");
   });
 
-  it("does not reinterpret an actual transport failure or an untyped account error as support", () => {
+  it("retries transport failures silently and keeps the known rows without a status line", () => {
     for (const html of [
       renderSection({ _tag: "failed", code: "timeout" }),
+      renderSection({ _tag: "failed", code: "guest_failed" }, { _tag: "failed", code: "guest_failed" }),
       renderSection(undefined, undefined, "Account metadata unavailable"),
     ]) {
-      expect(html).not.toContain("data-grok-login");
-      expect(html).toContain("data-workjet-instance-connection");
+      expect(html).toContain("data-grok-login");
+      expect(html).not.toContain("data-workjet-instance-connection");
+      expect(html).not.toContain("nicht erreichbar");
+      expect(html).not.toContain("guest_failed");
+      expect(html).not.toContain("Account metadata unavailable");
       expect(html).not.toContain("data-workjet-provider-management-unavailable");
     }
   });

@@ -203,7 +203,7 @@ describe("Native provider account rows", () => {
   });
 
   it.each([undefined, "guest_failed"])(
-    "does not claim an empty account list before a successful read (error: %s)",
+    "shows no counter or raw error before a successful read (error: %s)",
     (error) => {
       vi.mocked(useInstanceProviders).mockReturnValue({
         registry: undefined,
@@ -217,12 +217,12 @@ describe("Native provider account rows", () => {
       const rendered = renderToStaticMarkup(
         <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,
       );
-      expect(rendered).toContain("Konten nicht geladen");
+      expect(rendered).not.toContain("Konten nicht geladen");
       expect(rendered).not.toContain("0 Konten");
-      if (error) expect(rendered).toContain(error);
+      if (error) expect(rendered).not.toContain(error);
     },
   );
-  it("shows zero accounts only after an actual empty registry reply", () => {
+  it("shows no account counter after an empty registry reply", () => {
     vi.mocked(useInstanceProviders).mockReturnValue({
       registry: { ...registry, accounts: [] },
       error: undefined,
@@ -235,12 +235,13 @@ describe("Native provider account rows", () => {
     const rendered = renderToStaticMarkup(
       <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,
     );
-    expect(rendered).toContain("0 Konten");
+    expect(rendered).not.toContain("0 Konten");
     expect(rendered).not.toContain("Konten nicht geladen");
   });
   it("keeps previously observed accounts visible when refreshing fails", () => {
     const rendered = html(registry.accounts[0]!, false, "guest_failed");
-    expect(rendered).toContain("1 Konten");
+    expect(rendered).not.toContain("1 Konten");
+    expect(rendered).not.toContain("guest_failed");
     expect(rendered).toContain("Konto 1");
     expect(rendered).not.toMatch(new RegExp(`>[^<]*${accountId.slice(0, 8)}`));
     expect(rendered).not.toContain("Konten nicht geladen");

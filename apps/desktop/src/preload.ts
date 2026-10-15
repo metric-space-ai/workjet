@@ -223,6 +223,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.DEEP_LINK_PENDING_CHANNEL, wrappedListener);
     };
   },
+  getLoginItemState: () => ipcRenderer.invoke(IpcChannels.GET_LOGIN_ITEM_STATE_CHANNEL),
+  setOpenAtLogin: (enabled) => ipcRenderer.invoke(IpcChannels.SET_OPEN_AT_LOGIN_CHANNEL, enabled),
+  setTrayProjects: (projects) =>
+    ipcRenderer.invoke(IpcChannels.SET_TRAY_PROJECTS_CHANNEL, projects),
   getWslState: () => ipcRenderer.invoke(IpcChannels.GET_WSL_STATE_CHANNEL),
   setWslBackendEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_WSL_BACKEND_ENABLED_CHANNEL, enabled),

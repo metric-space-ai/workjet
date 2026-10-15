@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { ProjectOverviewView, jourFixeJoinLocked } from "./ProjectOverviewView";
+import { ThreadId } from "@workjet/contracts";
+import { ProjectOverviewView, jourFixeJoinLocked, silentRetryDelayMs } from "./ProjectOverviewView";
 import { buildProjectOwnerOverview, projectOverviewNextMeetingDate } from "../projectOverviewModel";
 import { overviewFixture } from "../fixtures/project-overview.fixture-data";
 
@@ -59,5 +60,94 @@ describe("ProjectOverviewView join button", () => {
     // Mittwoch, 14.10.2026, 10:56 UTC = 12:56 Berlin: vier Minuten vor Beginn.
     const html = render(Date.parse("2026-10-14T10:56:00Z"));
     expect(html).toContain("Regeltermin beitreten");
+  });
+});
+
+describe("ProjectOverviewView feed without filler (#711, #703, #586)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const fixtureNow = Date.parse("2026-10-15T10:00:00Z");
+  const renderFull = (
+    options: { lastError?: string; connectionError?: boolean; duplicate?: boolean } = {},
+  ) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(fixtureNow);
+    const input = overviewFixture("full");
+    let threads = input.threads.map((thread) =>
+      options.lastError && thread.session?.status === "error"
+        ? { ...thread, session: { ...thread.session, lastError: options.lastError } }
+        : thread,
+    );
+    if (options.duplicate) {
+      const disrupted = threads.find((thread) => thread.session?.status === "error")!;
+      threads = [...threads, { ...disrupted, id: ThreadId.make("pinball-2") }];
+    }
+    const data = buildProjectOwnerOverview({ ...input, threads, language: "de", now: fixtureNow });
+    return renderToStaticMarkup(
+      <ProjectOverviewView
+        data={data}
+        onOpenChat={() => {}}
+        onOpenJourFixe={() => {}}
+        connectionError={options.connectionError ?? false}
+        connectionMessage="Core veraltet · aktuellen CTOX-Core auf der Instanz anwenden"
+        onRecomputeKpis={() => {}}
+      />,
+    );
+  };
+  const visibleText = (html: string) =>
+    html
+      .replace(/<details[\s\S]*?<\/details>/g, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+
+  it("renders no filler sentence or explainer card", () => {
+    const html = renderFull();
+    for (const filler of [
+      "Eine Zusammenfassung schreibt der Supervisor",
+      "liegt noch nicht vor",
+      "Der Supervisor berichtet im Regeltermin",
+      "Kennzahlen sind noch nicht berechnet",
+      "Gerade läuft nichts",
+    ])
+      expect(html).not.toContain(filler);
+    // Goals live once, in the side column; the feed has no empty "Ziel" cards.
+    expect(html).not.toContain("data-workjet-feed-item=\"goal:");
+    expect(html.match(/data-workjet-overview-goal=""/g)?.length).toBe(
+      new Set(buildProjectOwnerOverview({ ...overviewFixture("full"), language: "de", now: fixtureNow }).goals.map((goal) => goal.title)).size,
+    );
+  });
+  it("shows the filters once, without counters", () => {
+    const html = renderFull();
+    expect(html).not.toContain('data-workjet-overview-column="views"');
+    expect(html.match(/role="tab"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html).not.toContain(">Gemerkt<");
+  });
+  it("keeps a read error silent: no status sentence under the title", () => {
+    const html = renderFull({ connectionError: true });
+    expect(html).not.toContain("Projektdaten nicht geladen");
+    expect(html).not.toContain("Core veraltet");
+    expect(html).not.toContain("Erneut öffnen");
+    expect(html).not.toContain('role="status"');
+  });
+  it("keeps the raw error behind Details and offers one button", () => {
+    for (const raw of ["Not logged in · Please run /login", "Build failed"]) {
+      const html = renderFull({ lastError: raw });
+      expect(visibleText(html)).not.toContain(raw.split(" · ")[0]);
+      expect(html).toMatch(/<details[^>]*data-workjet-feed-details=""[\s\S]*?<summary[^>]*>Details<\/summary>/);
+      expect(html).toContain(raw);
+      expect(html).not.toContain("font-mono text-[12.5px]");
+    }
+    const login = renderFull({ lastError: "Not logged in · Please run /login" });
+    expect(login).toMatch(/<button[^>]*data-slot="button"[^>]*>[\s\S]{0,400}Im Chat anmelden/);
+  });
+  it("folds the same error of the same worker into one card", () => {
+    const html = renderFull({ duplicate: true });
+    expect(html.match(/data-workjet-feed-item="disruption:/g)?.length).toBe(1);
+  });
+  it("silent retry backs off and is capped", () => {
+    expect(silentRetryDelayMs(0)).toBe(15_000);
+    expect(silentRetryDelayMs(2)).toBe(60_000);
+    expect(silentRetryDelayMs(10)).toBe(300_000);
   });
 });

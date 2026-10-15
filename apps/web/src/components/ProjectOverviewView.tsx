@@ -14,7 +14,6 @@ import {
   ArrowUpRightIcon,
   BookmarkIcon,
   GitPullRequestIcon,
-  LinkIcon,
   MessageSquareIcon,
   RefreshCwIcon,
 } from "lucide-react";
@@ -75,6 +74,28 @@ function useMinuteNow(): number {
     return () => clearInterval(timer);
   }, []);
   return now;
+}
+
+/** Pause before the n-th silent re-read: 15 s, 30 s, 60 s … capped at five minutes. */
+export function silentRetryDelayMs(attempt: number): number {
+  return Math.min(15_000 * 2 ** attempt, 300_000);
+}
+
+/** A failed read is retried quietly in the background; the overview shows no status line. */
+function useSilentRetry(failed: boolean, retry: (() => void) | undefined) {
+  const attempt = useRef(0);
+  useEffect(() => {
+    if (!failed) {
+      attempt.current = 0;
+      return;
+    }
+    if (!retry) return;
+    const timer = setTimeout(() => {
+      attempt.current += 1;
+      retry();
+    }, silentRetryDelayMs(attempt.current));
+    return () => clearTimeout(timer);
+  }, [failed, retry]);
 }
 
 function zonedDay(timeZone: string, now: number): { date: string; weekday: number } {
@@ -147,7 +168,7 @@ export function ProjectOverviewView(props: {
   readonly onOpenJourFixe?: (() => void) | undefined;
   readonly decisions?: ReactNode;
   readonly connectionError?: boolean;
-  /** Why the overview data is missing (core outdated, timeout …), if known. */
+  /** Why the overview data is missing (core outdated, timeout …); diagnostics only, never shown. */
   readonly connectionMessage?: string | null;
   readonly actions?: ReactNode;
   readonly feedPosts?: readonly CtoxProjectFeedPost[];
@@ -204,6 +225,7 @@ export function ProjectOverviewView(props: {
         new Notification(item.headline ?? item.author, { body: item.body.slice(0, 180) });
     }
   });
+  useSilentRetry(props.connectionError === true, props.onRecomputeKpis);
   const [tab, setTab] = useState<FeedTab>(prefs.defaultTab);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [marks, toggleMark] = useFeedBookmarks();
@@ -215,6 +237,13 @@ export function ProjectOverviewView(props: {
   });
   const de = language === "de";
   const card = "rounded-2xl bg-muted/50 px-4 py-3";
+  // One entry per goal text; several owners of the same goal sit under it.
+  const goalGroups: { title: string; goals: (typeof data.goals)[number][] }[] = [];
+  for (const goal of data.goals) {
+    const group = goalGroups.find((entry) => entry.title === goal.title);
+    if (group) group.goals.push(goal);
+    else goalGroups.push({ title: goal.title, goals: [goal] });
+  }
   const workerNames = [...data.parents, ...data.workers].map((thread) =>
     localizedWorkerName(projectOverviewWorkerName(thread.title, data.title).name, language),
   );
@@ -283,51 +312,12 @@ export function ProjectOverviewView(props: {
         : null,
     },
   ];
-  const tabLabels: Record<FeedTab, string> = {
-    top: text.tabTop,
-    latest: text.tabLatest,
-    prs: text.tabPrs,
-    sessions: text.tabSessions,
-    disruptions: text.tabDisruptions,
-    saved: de ? "Gemerkt" : "Saved",
-  };
-  const tabCount = (value: FeedTab) => filterTab(feed, value, marks).length;
-  const activity = feed.slice(0, 4);
   return (
     <main
       className="relative flex h-full min-h-0 w-full min-w-0 flex-col items-center gap-4 text-[15px] lg:flex-row lg:items-stretch lg:justify-center lg:gap-3 lg:overflow-hidden lg:px-3"
       data-workjet-project-overview={data.projectId}
       lang={language}
     >
-      <nav
-        aria-label={de ? "Ansichten" : "Views"}
-        className="hidden w-[260px] shrink-0 flex-col gap-1 self-start rounded-xl border border-border bg-card p-3 xl:my-3 xl:flex"
-        data-workjet-overview-column="views"
-      >
-        <h2 className="px-2 pt-1 pb-2 text-[17px] font-bold">{de ? "Ansichten" : "Views"}</h2>
-        {FEED_TABS.map((value) => (
-          <button
-            key={value}
-            type="button"
-            aria-current={tab === value ? "page" : undefined}
-            onClick={() => setTab(value)}
-            className={
-              "flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-[14px] " +
-              (tab === value
-                ? "bg-blue-500/15 font-semibold text-foreground"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground")
-            }
-          >
-            {tabLabels[value]}
-            <span className="tabular-nums text-[13px] text-muted-foreground">
-              {tabCount(value)}
-            </span>
-          </button>
-        ))}
-        <div className="mt-2 border-t border-border pt-2">
-          <FeedSettingsButton language={language} onClick={() => setSettingsOpen(true)} />
-        </div>
-      </nav>
       <div
         className="flex min-h-[70vh] w-full max-w-[600px] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card lg:my-3 lg:min-h-0 lg:overflow-y-auto"
         data-workjet-overview-column="feed"
@@ -356,15 +346,6 @@ export function ProjectOverviewView(props: {
               )}
               {developerMode && (
                 <SupervisorTickStatus {...data.supervisorTick} language={language} text={text} />
-              )}
-              {props.connectionError && (
-                <p
-                  className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"
-                  role="status"
-                >
-                  <span className="size-1.5 shrink-0 rounded-full bg-amber-400" />
-                  {props.connectionMessage ?? text.unavailableConnection}
-                </p>
               )}
             </div>
           }
@@ -411,37 +392,9 @@ export function ProjectOverviewView(props: {
         data-workjet-overview-column="side"
       >
         <h2 className="px-1 text-[20px] font-bold tracking-tight">{text.sideTitle}</h2>
-        {activity.length > 0 ? (
-          <section className={card} data-workjet-overview-section="activity">
-            <h3 className="mb-1 text-[15px] font-bold text-foreground">
-              {de ? "Was läuft" : "What's happening"}
-            </h3>
-            <ul className="divide-y divide-border/60">
-              {activity.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    disabled={!item.thread}
-                    onClick={() => item.thread && open(item.thread)}
-                    className="block w-full py-2 text-left disabled:cursor-default"
-                  >
-                    <span className="block text-[12px] text-muted-foreground">
-                      {item.author} · {relativeTime(item.at, now, locale)}
-                    </span>
-                    <span className="line-clamp-2 text-[14px] font-semibold text-foreground">
-                      {item.headline ?? item.body}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-        <section className={card} data-workjet-overview-section="live">
-          <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.liveTitle}</h3>
-          {live.length === 0 ? (
-            <p className="text-[13px] text-muted-foreground">{text.liveEmpty}</p>
-          ) : (
+        {live.length === 0 ? null : (
+          <section className={card} data-workjet-overview-section="live">
+            <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.liveTitle}</h3>
             <ul className="divide-y divide-border/60">
               {live.map(({ thread, state }) => (
                 <li key={thread.id}>
@@ -472,8 +425,8 @@ export function ProjectOverviewView(props: {
                 </li>
               ))}
             </ul>
-          )}
-        </section>
+          </section>
+        )}
         <section className={card} data-workjet-overview-section="meeting">
           <h3 className="text-[15px] font-bold text-foreground">{text.nextMeeting}</h3>
           {data.recurring && weekday !== null ? (
@@ -495,22 +448,15 @@ export function ProjectOverviewView(props: {
           >
             {joinLocked && data.recurring ? data.recurring.time : text.join}
           </Button>
-          {!props.onOpenJourFixe ? (
-            <p className="mt-1 text-xs text-muted-foreground">{text.meetingConnectionRequired}</p>
-          ) : null}
         </section>
+        {missingKpis && !props.onRecomputeKpis ? null : (
         <section className={card} data-workjet-overview-section="kpis">
           <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.metrics}</h3>
           {missingKpis ? (
-            <div className="space-y-2">
-              <p className="text-[13px] text-muted-foreground">{text.kpisMissing}</p>
-              {props.onRecomputeKpis ? (
-                <Button size="xs" variant="outline" onClick={props.onRecomputeKpis}>
-                  <RefreshCwIcon aria-hidden className="size-3.5" />
-                  {text.recompute}
-                </Button>
-              ) : null}
-            </div>
+            <Button size="xs" variant="outline" onClick={props.onRecomputeKpis}>
+              <RefreshCwIcon aria-hidden className="size-3.5" />
+              {text.recompute}
+            </Button>
           ) : (
             <dl
               className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 text-[14px]"
@@ -532,29 +478,35 @@ export function ProjectOverviewView(props: {
             </dl>
           )}
         </section>
-        {data.goals.length === 0 ? null : (
+        )}
+        {goalGroups.length === 0 ? null : (
           <section className={card} data-workjet-overview-section="goals">
             <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.goals}</h3>
             <ul className="space-y-2 text-[13px]">
-              {data.goals.map((goal) => (
-                <li key={goal.id} className="min-w-0">
+              {goalGroups.map((group) => (
+                <li key={group.title} className="min-w-0" data-workjet-overview-goal="">
                   <p className="line-clamp-2 break-words font-semibold text-foreground">
-                    {goal.title}
+                    {group.title}
                   </p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-muted-foreground">
-                    {goal.thread ? (
-                      <button
-                        type="button"
-                        className="hover:text-foreground"
-                        onClick={() => open(goal.thread!)}
-                      >
-                        {goal.owner}
-                      </button>
-                    ) : (
-                      <span>{goal.owner}</span>
-                    )}
-                    <StatusChip status={goal.status} label={goal.state} />
-                  </p>
+                  {group.goals.map((goal) => (
+                    <p
+                      key={goal.id}
+                      className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-muted-foreground"
+                    >
+                      {goal.thread ? (
+                        <button
+                          type="button"
+                          className="hover:text-foreground"
+                          onClick={() => open(goal.thread!)}
+                        >
+                          {goal.owner}
+                        </button>
+                      ) : (
+                        <span>{goal.owner}</span>
+                      )}
+                      <StatusChip status={goal.status} label={goal.state} />
+                    </p>
+                  ))}
                 </li>
               ))}
             </ul>
@@ -622,8 +574,10 @@ type FeedItem = {
   readonly openItems?: readonly string[];
   readonly sources?: readonly ProjectFeedSource[];
   readonly actionLabel?: string | null;
-  /** Monospace excerpt (error line, diff stat …) shown inside the preview card. */
-  readonly code?: string | null;
+  /** Raw error text; shown only behind "Details". */
+  readonly details?: string | null;
+  /** Further chats of the same worker with the same error, folded into this card. */
+  readonly alsoThreads?: readonly ProjectOwnerOverview["members"][number][];
   /** Posts with the same key form one thread with a connecting line. */
   readonly groupKey?: string;
   /** Session excerpt shown as quote inside the preview card. */
@@ -678,7 +632,7 @@ function withPreviews(data: ProjectOwnerOverview, items: FeedItem[]): FeedItem[]
       const url = pr?.url ?? urls.find((entry) => entry && githubPrImage(entry));
       return { ...item, image: githubPrImage(url), stats: pr ? diffStats(pr, de) : null };
     }
-    if ((item.kind === "step" || item.kind === "session") && item.thread && !item.code) {
+    if ((item.kind === "step" || item.kind === "session") && item.thread) {
       const excerpt = plainPreview(item.thread.latestAssistantMessagePreview, 240);
       return excerpt && excerpt !== item.body ? { ...item, excerpt } : item;
     }
@@ -703,22 +657,27 @@ function buildFeed(
     };
   };
   const items: FeedItem[] = [];
+  // Same worker, same error: one card (#586).
+  const disruptionCards = new Map<string, FeedItem>();
   for (const thread of data.disruptions) {
-    const content = disruptionContent({
-      name: who(thread).author,
-      lastError: thread.session?.lastError,
-      language: data.language,
-    });
-    items.push({
+    const author = who(thread);
+    const lastError = thread.session?.lastError ?? null;
+    const key = `${author.author}\u0000${lastError?.trim() ?? ""}`;
+    const existing = disruptionCards.get(key);
+    if (existing) {
+      const newer = Date.parse(threadAt(thread)) > Date.parse(existing.at);
+      disruptionCards.set(key, {
+        ...existing,
+        ...(newer ? { at: threadAt(thread), thread } : {}),
+        alsoThreads: [...(existing.alsoThreads ?? []), newer ? existing.thread! : thread],
+      });
+      continue;
+    }
+    disruptionCards.set(key, {
       id: `disruption:${thread.id}`,
       at: threadAt(thread),
-      ...who(thread),
-      ...content,
-      code:
-        thread.session?.lastError
-          ?.split("\n")
-          .find((line) => line.trim())
-          ?.slice(0, 160) ?? null,
+      ...author,
+      ...disruptionContent({ name: author.author, lastError, language: data.language }),
       tone: "disrupted",
       kind: "disruption",
       badge: text.feedDisruption,
@@ -726,6 +685,7 @@ function buildFeed(
       url: undefined,
     });
   }
+  items.push(...disruptionCards.values());
   for (const thread of data.escalations) {
     items.push({
       id: `escalation:${thread.id}`,
@@ -742,20 +702,6 @@ function buildFeed(
       url: undefined,
     });
   }
-  for (const goal of data.goals)
-    if (goal.thread)
-      items.push({
-        id: `goal:${goal.id}`,
-        at: threadAt(goal.thread),
-        author: goal.owner,
-        harness: goal.harness,
-        body: projectOverviewFormat(text.feedGoal, { title: goal.title, state: goal.state }),
-        tone: "normal",
-        kind: "goal",
-        badge: null,
-        thread: goal.thread,
-        url: undefined,
-      });
   for (const thread of [...data.supervisors, ...data.parents, ...data.workers])
     if (thread.planProgress && projectOverviewWorkerState(thread) === "running")
       items.push({
@@ -824,6 +770,9 @@ function buildFeed(
               language: data.language,
             })
           : null;
+    // A finished step without a summary, "meeting completed" or "to-dos confirmed" carry no
+    // readable content of their own; a post appears only with real content.
+    if (content === null && event.kind !== "setup") continue;
     items.push({
       id: `event:${event.id}`,
       at: event.at,
@@ -842,38 +791,6 @@ function buildFeed(
     });
   }
   const supervisor = data.supervisors[0];
-  if (data.recurring) {
-    const de = data.language === "de";
-    const day = new Intl.DateTimeFormat(localeOf(data.language), {
-      weekday: "long",
-      timeZone: "UTC",
-    }).format(new Date(Date.UTC(2026, 0, 4 + data.recurring.weekday)));
-    const next = data.nextMeetingDate
-      ? new Intl.DateTimeFormat(localeOf(data.language), {
-          day: "2-digit",
-          month: "2-digit",
-          timeZone: "UTC",
-        }).format(new Date(data.nextMeetingDate + "T00:00:00Z"))
-      : null;
-    items.push({
-      id: "meeting:recurring",
-      at: supervisor?.createdAt ?? nowIso,
-      author: text.feedSystem,
-      harness: de ? "regeltermin" : "standup",
-      headline: de
-        ? `Regeltermin jeden ${day} um ${data.recurring.time}`
-        : `Standing meeting every ${day} at ${data.recurring.time}`,
-      body: de
-        ? `Der Supervisor berichtet im Regeltermin, was die Worker erledigt haben, und holt dort deine Entscheidungen ab.${next ? ` Nächster Termin: ${next}, ${data.recurring.time} (${data.recurring.timezone}).` : ""}`
-        : `The supervisor reports what the workers did and collects your decisions in the standing meeting.${next ? ` Next: ${next}, ${data.recurring.time} (${data.recurring.timezone}).` : ""}`,
-      tone: "normal",
-      kind: "meeting",
-      badge: null,
-      thread: undefined,
-      url: undefined,
-      ...(supervisor ? { groupKey: supervisor.id } : {}),
-    });
-  }
   for (const item of items)
     if (!item.groupKey && !item.thread && item.kind === "setup" && supervisor)
       (item as { groupKey?: string }).groupKey = supervisor.id;
@@ -1019,9 +936,17 @@ function FeedSection(props: {
     prs: text.tabPrs,
     sessions: text.tabSessions,
     disruptions: text.tabDisruptions,
-    saved: props.language === "de" ? "Gemerkt" : "Saved",
+    saved: text.feedMarked,
   };
   const items = filterTab(props.feed, tab, marks);
+  // One filter row: a tab appears only when it would show something (the current one stays).
+  const visibleTabs = FEED_TABS.filter(
+    (value) =>
+      value === "top" ||
+      value === "latest" ||
+      value === tab ||
+      filterTab(props.feed, value, marks).length > 0,
+  );
   // Posts about the same chat (or the supervisor's setup) form one thread, ordered by the
   // first post's rank; follow-ups hang below it with a connecting line.
   const groupOf = new Map<string, FeedItem[]>();
@@ -1045,12 +970,12 @@ function FeedSection(props: {
       <div className="sticky top-0 z-10 border-b border-border bg-card/90 backdrop-blur">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">{props.header}</div>
-          <div className="pt-3 pr-3 xl:hidden">
+          <div className="pt-3 pr-3">
             <FeedSettingsButton language={props.language} onClick={props.onOpenSettings} />
           </div>
         </div>
         <div role="tablist" aria-label={text.feedTitle} className="flex">
-          {FEED_TABS.filter((value) => value !== "saved").map((value) => (
+          {visibleTabs.map((value) => (
             <button
               key={value}
               type="button"
@@ -1078,13 +1003,11 @@ function FeedSection(props: {
       {props.decisions}
       <div className="min-h-0 flex-1">
         {groups.length === 0 ? (
-          <p className="px-4 py-8 text-[15px] text-muted-foreground">
+          <p className="px-4 py-8 text-[15px] font-semibold text-muted-foreground">
             {props.feed.length === 0
               ? text.feedEmpty
               : tab === "saved"
-                ? props.language === "de"
-                  ? "Noch nichts gemerkt. „Merken“ an einem Beitrag legt ihn hier ab."
-                  : "Nothing saved yet. “Save” on a post keeps it here."
+                ? text.savedEmpty
                 : tab === "sessions"
                   ? text.sessionsEmpty
                   : text.tabEmpty}
@@ -1118,9 +1041,10 @@ function FeedSection(props: {
                     ))}
                   </ol>
                   {group.length > 3 && props.threadMode !== "all" ? (
-                    <button
-                      type="button"
-                      className="mb-3 ml-[4.25rem] text-[15px] text-blue-400 hover:text-blue-300"
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      className="mb-3 ml-[4.25rem]"
                       aria-expanded={expanded}
                       onClick={() =>
                         setExpandedThreads((current) => {
@@ -1132,7 +1056,7 @@ function FeedSection(props: {
                       }
                     >
                       {expanded ? text.hideThread : text.showThread}
-                    </button>
+                    </Button>
                   ) : null}
                 </li>
               );
@@ -1166,27 +1090,6 @@ function sourceHost(url: string) {
   }
 }
 
-const KIND_LABEL: Record<FeedItem["kind"], { de: string; en: string }> = {
-  disruption: { de: "Störung", en: "Disruption" },
-  escalation: { de: "Wartet auf dich", en: "Waiting for you" },
-  goal: { de: "Ziel", en: "Goal" },
-  pr: { de: "Pull Request", en: "Pull request" },
-  step: { de: "Arbeitsschritt", en: "Work step" },
-  meeting: { de: "Regeltermin", en: "Standing meeting" },
-  setup: { de: "Projekt eingerichtet", en: "Project set up" },
-  session: { de: "Sitzung", en: "Session" },
-};
-const CARD_BANDS: Record<FeedItem["kind"], string> = {
-  disruption: "from-[#4a1d24] via-[#2e1820] to-[#1a1418]",
-  escalation: "from-[#4a3a1d] via-[#2e2618] to-[#1a1714]",
-  goal: "from-[#1f4d4a] via-[#18323a] to-[#141c26]",
-  pr: "from-[#1e3a6e] via-[#1b2f55] to-[#151d33]",
-  step: "from-[#1e3a6e] via-[#1b2f55] to-[#151d33]",
-  meeting: "from-[#3b2a6e] via-[#2a2150] to-[#171630]",
-  setup: "from-[#1f4d3a] via-[#18332c] to-[#141c1c]",
-  session: "from-[#1e3a6e] via-[#1b2f55] to-[#151d33]",
-};
-
 function FeedCard(props: {
   readonly threadLine: boolean;
   readonly item: FeedItem;
@@ -1202,6 +1105,7 @@ function FeedCard(props: {
   const { item, text } = props;
   const de = props.locale.startsWith("de");
   const [expanded, setExpanded] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
   const long = !props.fullBody && item.body.length > 280;
   const initials =
     item.author
@@ -1214,58 +1118,50 @@ function FeedCard(props: {
   const preview = linked.find((source) => source.type === "pr") ?? linked[0];
   const chips = linked.filter((source) => source !== preview);
   const prUrl = item.url ?? (preview?.type === "pr" ? preview.url : undefined);
-  const kindLabel = KIND_LABEL[item.kind][de ? "de" : "en"];
-  const cardTitle = item.headline ?? preview?.label ?? kindLabel;
-  const cardMeta = preview?.url
-    ? sourceHost(preview.url)
-    : `${kindLabel}${item.thread ? " · " + (de ? "Chat" : "chat") : ""}`;
+  const image = item.image && !imageFailed ? item.image : null;
+  // A preview card appears only with real content: an image, a quote or a linked source.
+  const hasCard = image !== null || Boolean(item.excerpt) || Boolean(preview?.url);
+  const cardTitle = item.headline ?? preview?.label ?? null;
   const cardInner = (
     <>
-      {item.image ? (
+      {image ? (
         <img
-          src={item.image}
+          src={image}
           alt=""
           loading="lazy"
+          onError={() => setImageFailed(true)}
           className="block aspect-[2/1] w-full border-b border-border bg-muted object-cover"
         />
       ) : item.excerpt ? (
-        <span className="block border-b border-border bg-muted/30 px-3 py-3 text-[14px] leading-5 text-foreground/85 italic">
+        <span className="block border-b border-border bg-muted/30 px-3 py-3 text-[13.5px] leading-5 text-foreground/85 italic">
           „{item.excerpt}“
         </span>
-      ) : item.code ? (
-        <span
-          aria-hidden
-          className="block border-b border-border bg-[#0d1117] px-3 py-3 font-mono text-[12.5px] leading-5 break-all text-red-300/90"
-        >
-          {item.code}
-        </span>
-      ) : (
-        <span
-          aria-hidden
-          className={"block h-[120px] bg-gradient-to-br " + CARD_BANDS[item.kind]}
-        ></span>
-      )}
-      <span className="block px-3 py-2.5">
-        <span className="block text-[13px] text-muted-foreground">
-          {cardMeta}
-          {item.stats ? (
-            <span className="ml-2 font-mono text-[12px]">
-              <span className="text-emerald-400">{item.stats.split(" ")[0]}</span>{" "}
-              <span className="text-red-400">{item.stats.split(" ")[1]}</span>
-              {item.stats.split(" ").slice(2).join(" ")
-                ? " " + item.stats.split(" ").slice(2).join(" ")
-                : ""}
+      ) : null}
+      {preview?.url || cardTitle ? (
+        <span className="block px-3 py-2.5">
+          {preview?.url ? (
+            <span className="block text-[12px] text-muted-foreground">
+              {sourceHost(preview.url)}
+              {item.stats ? (
+                <span className="ml-2 font-mono text-[12px]">
+                  <span className="text-emerald-400">{item.stats.split(" ")[0]}</span>{" "}
+                  <span className="text-red-400">{item.stats.split(" ")[1]}</span>
+                  {item.stats.split(" ").slice(2).join(" ")
+                    ? " " + item.stats.split(" ").slice(2).join(" ")
+                    : ""}
+                </span>
+              ) : null}
             </span>
           ) : null}
+          {cardTitle ? (
+            <span className="block text-[13.5px] break-words text-foreground">{cardTitle}</span>
+          ) : null}
         </span>
-        <span className="block text-[15px] break-words text-foreground">{cardTitle}</span>
-      </span>
+      ) : null}
     </>
   );
   const cardClass =
-    "mt-3 block w-full overflow-hidden rounded-2xl border border-border text-left hover:bg-muted/20";
-  const actionClass =
-    "inline-flex items-center gap-1.5 rounded-full py-1 hover:text-foreground focus-visible:text-foreground";
+    "mt-2 block w-full overflow-hidden rounded-xl border border-border text-left hover:bg-muted/20";
   return (
     <li
       className="relative flex gap-3 px-4"
@@ -1276,7 +1172,7 @@ function FeedCard(props: {
         <span
           aria-hidden
           className={
-            "flex size-10 items-center justify-center rounded-full text-[14px] font-bold text-white " +
+            "flex size-10 items-center justify-center rounded-full text-[13.5px] font-bold text-white " +
             avatarColor(item)
           }
         >
@@ -1291,7 +1187,7 @@ function FeedCard(props: {
         ) : null}
       </div>
       <div className="min-w-0 flex-1 pb-3">
-        <p className="flex flex-wrap items-baseline gap-x-1 text-[15px] leading-5">
+        <p className="flex flex-wrap items-baseline gap-x-1 text-[13.5px] leading-5">
           <span className="font-bold text-foreground">{item.author}</span>
           {item.harness ? <span className="text-muted-foreground">@{item.harness}</span> : null}
           <span className="text-muted-foreground">·</span>
@@ -1299,26 +1195,34 @@ function FeedCard(props: {
             {relativeTime(item.at, props.now, props.locale)}
           </time>
           {item.badge ? (
-            <span className="ml-1 rounded-full bg-red-500/15 px-2 py-px text-[12px] font-semibold text-red-400">
+            <span className="ml-1 rounded-full bg-red-500/15 px-2 py-px text-[11px] font-semibold text-red-400">
               {item.badge}
             </span>
           ) : null}
         </p>
-        <p className="mt-1 text-[15px] break-words leading-[1.4] whitespace-pre-line text-foreground [overflow-wrap:anywhere]">
-          {long && !expanded ? `${item.body.slice(0, 280).trimEnd()} …` : item.body}
-          {long ? (
-            <button
-              type="button"
-              className="ml-1 text-blue-400 hover:text-blue-300"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((value) => !value)}
-            >
-              {expanded ? text.feedLess : text.feedMore}
-            </button>
-          ) : null}
-        </p>
+        {item.headline && !hasCard ? (
+          <p className="mt-1 text-[13.5px] font-semibold break-words text-foreground">
+            {item.headline}
+          </p>
+        ) : null}
+        {item.body ? (
+          <p className="mt-1 text-[13.5px] break-words leading-[1.4] whitespace-pre-line text-foreground [overflow-wrap:anywhere]">
+            {long && !expanded ? `${item.body.slice(0, 280).trimEnd()} …` : item.body}
+          </p>
+        ) : null}
+        {long ? (
+          <Button
+            size="xs"
+            variant="outline"
+            className="mt-1"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? text.feedLess : text.feedMore}
+          </Button>
+        ) : null}
         {item.openItems && item.openItems.length > 0 ? (
-          <ul className="mt-1 space-y-0.5 text-[15px] text-muted-foreground">
+          <ul className="mt-1 space-y-0.5 text-[13.5px] text-muted-foreground">
             {item.openItems.map((entry) => (
               <li key={entry}>
                 {text.feedOpen}: {entry}
@@ -1326,7 +1230,7 @@ function FeedCard(props: {
             ))}
           </ul>
         ) : null}
-        {preview?.url ? (
+        {!hasCard ? null : preview?.url ? (
           <a href={preview.url} target="_blank" rel="noopener noreferrer" className={cardClass}>
             {cardInner}
           </a>
@@ -1345,7 +1249,7 @@ function FeedCard(props: {
                 href={source.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-[13px] text-foreground hover:bg-muted/70"
+                className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-[12px] text-foreground hover:bg-muted/70"
               >
                 <span aria-hidden className={"size-2.5 rounded-sm " + SOURCE_COLORS[source.type]} />
                 {source.label}
@@ -1353,45 +1257,47 @@ function FeedCard(props: {
             ))}
           </div>
         ) : null}
-        <div className="mt-2 flex flex-wrap items-center gap-x-10 gap-y-1 text-[13px] text-muted-foreground">
+        {item.details ? (
+          <details className="mt-1.5 text-[12px] text-muted-foreground" data-workjet-feed-details="">
+            <summary className="w-fit cursor-pointer select-none hover:text-foreground">
+              {text.feedDetails}
+            </summary>
+            <pre className="mt-1 max-h-40 overflow-auto rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[12px] whitespace-pre-wrap [overflow-wrap:anywhere]">
+              {item.details}
+            </pre>
+          </details>
+        ) : null}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           {props.onOpen ? (
-            <button
-              type="button"
-              onClick={props.onOpen}
-              className={
-                actionClass + " " + (item.tone === "disrupted" ? "font-semibold text-red-400" : "")
-              }
-            >
-              <MessageSquareIcon aria-hidden className="size-[18px]" />
+            <Button size="sm" variant="outline" onClick={props.onOpen}>
+              <MessageSquareIcon aria-hidden className="size-3.5" />
               {item.actionLabel ?? text.openChat}
-              {props.replies > 0 ? <span className="tabular-nums">{props.replies}</span> : null}
-            </button>
-          ) : null}
-          {linked.length > 0 ? (
-            <span className={actionClass}>
-              <LinkIcon aria-hidden className="size-[18px]" />
-              {de ? "Quellen" : "Sources"}
-              <span className="tabular-nums">{linked.length}</span>
-            </span>
+              {props.replies > 0 ? (
+                <span className="text-muted-foreground tabular-nums">{props.replies}</span>
+              ) : null}
+            </Button>
           ) : null}
           {prUrl ? (
-            <a href={prUrl} target="_blank" rel="noopener noreferrer" className={actionClass}>
-              <GitPullRequestIcon aria-hidden className="size-[18px]" />
+            <Button
+              size="sm"
+              variant="outline"
+              render={<a href={prUrl} target="_blank" rel="noopener noreferrer" />}
+            >
+              <GitPullRequestIcon aria-hidden className="size-3.5" />
               {text.feedOpenPr}
-            </a>
+            </Button>
           ) : null}
-          <button
-            type="button"
+          <Button
+            size="icon-sm"
+            variant="ghost"
             aria-pressed={props.marked}
+            aria-label={props.marked ? text.feedMarked : text.feedMark}
+            title={props.marked ? text.feedMarked : text.feedMark}
             onClick={props.onToggleMark}
-            className={actionClass + (props.marked ? " text-blue-400" : "")}
+            className={"ml-auto" + (props.marked ? " text-blue-400" : " text-muted-foreground")}
           >
-            <BookmarkIcon
-              aria-hidden
-              className={"size-[18px]" + (props.marked ? " fill-current" : "")}
-            />
-            {props.marked ? text.feedMarked : text.feedMark}
-          </button>
+            <BookmarkIcon aria-hidden className={"size-4" + (props.marked ? " fill-current" : "")} />
+          </Button>
         </div>
       </div>
     </li>

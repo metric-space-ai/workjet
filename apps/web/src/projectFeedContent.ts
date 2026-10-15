@@ -33,51 +33,44 @@ export function plainPreview(raw: string | null | undefined, max = 420): string 
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 
+/**
+ * A disruption in one plain sentence plus one action; the raw error stays in `details`
+ * (shown only behind "Details").
+ */
 export function disruptionContent(input: {
   readonly name: string;
   readonly lastError: string | null | undefined;
   readonly language: ProjectOverviewLanguage;
-}): ProjectFeedContent & { readonly actionLabel: string | null } {
+}): ProjectFeedContent & { readonly actionLabel: string | null; readonly details: string | null } {
   const de = input.language === "de";
-  const plain = input.lastError
-    ? projectOverviewSessionError(input.lastError, input.language)
-    : null;
-  const login = plain?.action != null;
-  const why = plain?.text ?? (de ? "Der letzte Lauf ist abgebrochen." : "The last run stopped.");
-  const todo = login
-    ? de
-      ? "Du meldest dich einmal im Chat an (/login); danach läuft er weiter."
-      : "Sign in once in the chat (/login); it continues afterwards."
-    : de
-      ? "Öffne den Chat und starte den Schritt neu oder gib eine Anweisung."
-      : "Open the chat and restart the step or give an instruction.";
+  const raw = input.lastError?.trim() || null;
+  const plain = projectOverviewSessionError(raw ?? "", input.language);
   return {
     headline: de ? `${input.name} hängt` : `${input.name} is stuck`,
-    body: `${why} ${todo}`,
+    body: plain.text,
     openItems: [],
     sources: [],
-    actionLabel: plain?.action ?? null,
+    actionLabel: plain.action,
+    details: raw,
   };
 }
 
+/** A finished step is a post only with a real summary; without one there is nothing to read. */
 export function stepContent(input: {
   readonly name: string;
   readonly preview: string | null | undefined;
   readonly goal: string | null;
   readonly goalDone: boolean;
   readonly language: ProjectOverviewLanguage;
-}): ProjectFeedContent {
+}): ProjectFeedContent | null {
   const de = input.language === "de";
   const summary = plainPreview(input.preview);
+  if (summary === null) return null;
   return {
     headline: de
       ? `${input.name} hat einen Arbeitsschritt abgeschlossen`
       : `${input.name} finished a work step`,
-    body:
-      summary ??
-      (de
-        ? "Der Schritt ist abgeschlossen; eine Zusammenfassung liegt noch nicht vor."
-        : "The step is done; no summary is available yet."),
+    body: summary,
     openItems:
       input.goal && !input.goalDone ? [de ? `Ziel: ${input.goal}` : `Goal: ${input.goal}`] : [],
     sources: [{ type: "session", label: de ? "Session" : "Session" }],
@@ -130,14 +123,10 @@ export function mergedPrContent(input: {
   readonly body?: string | null;
   readonly language: ProjectOverviewLanguage;
 }): ProjectFeedContent {
-  const de = input.language === "de";
   return {
     headline: `#${input.number} ${input.title}`,
-    body:
-      prSummaryFromBody(input.body) ??
-      (de
-        ? "Nach main gemergt. Eine Zusammenfassung schreibt der Supervisor, sobald CTOX Feed-Posts liefert."
-        : "Merged to main. The supervisor writes a summary once CTOX delivers feed posts."),
+    // Without a summary the PR card (title + link) is the content; no filler sentence.
+    body: prSummaryFromBody(input.body) ?? "",
     openItems: [],
     sources: [{ type: "pr", label: `PR #${input.number}`, url: input.url }],
   };

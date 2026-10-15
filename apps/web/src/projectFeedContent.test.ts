@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   disruptionContent,
+  mergedPrContent,
   plainPreview,
   prSummaryFromBody,
   stepContent,
@@ -15,9 +16,25 @@ describe("project feed content", () => {
     });
     expect(c.headline).toBe("Projekt-Supervisor hängt");
     expect(c.body).toContain("nicht angemeldet");
-    expect(c.body).toContain("/login");
     expect(c.body).not.toContain("Please run");
+    expect(c.body.split(/\s+/).length).toBeLessThanOrEqual(12);
     expect(c.actionLabel).toBe("Im Chat anmelden");
+    expect(c.details).toBe("Not logged in · Please run /login");
+  });
+  it("never shows an unknown English error as the visible line", () => {
+    const c = disruptionContent({ name: "Pinball", lastError: "Build failed", language: "de" });
+    expect(c.body).toBe("Der letzte Lauf ist abgebrochen.");
+    expect(c.body).not.toContain("Build failed");
+    expect(c.details).toBe("Build failed");
+    expect(c.actionLabel).toBeNull();
+  });
+  it("has no filler for a step without summary or a PR without description", () => {
+    expect(
+      stepContent({ name: "X", preview: null, goal: null, goalDone: false, language: "de" }),
+    ).toBeNull();
+    expect(
+      mergedPrContent({ number: 1, title: "T", url: "https://x", body: null, language: "de" }).body,
+    ).toBe("");
   });
   it("summarizes a step from the assistant preview without markdown", () => {
     const c = stepContent({
@@ -27,8 +44,8 @@ describe("project feed content", () => {
       goalDone: false,
       language: "en",
     });
-    expect(c.body).toBe("Done Validated cases.csv against lab");
-    expect(c.openItems).toEqual(["Goal: Verify cases"]);
+    expect(c?.body).toBe("Done Validated cases.csv against lab");
+    expect(c?.openItems).toEqual(["Goal: Verify cases"]);
   });
   it("bounds long previews", () => {
     expect(plainPreview("a ".repeat(400), 50)?.length).toBe(50);

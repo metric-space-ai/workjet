@@ -17,6 +17,12 @@ vi.mock("./workjetProjectControl", () => ({
   requestWorkjetProjectControl: vi.fn(
     async (_instance: string, request: { action: string; requestId?: string }) => {
       sent.push(request);
+      if (request.action === "secret.put" || request.action === "secret.delete") {
+        return {
+          _tag: "completed",
+          response: { action: request.action, name: (request as unknown as { name: string }).name },
+        };
+      }
       if (request.action === "secret.request.list") {
         return { _tag: "completed", response: { action: "secret.request.list", requests: [] } };
       }
@@ -82,6 +88,14 @@ describe("secret request canary", () => {
       session: Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i)),
     });
     expect(dump).not.toContain(CANARY);
+    expect(logs.join("\n")).not.toContain(CANARY);
+  });
+
+  it("settings put sends the value once and keeps it out of storage and logs", async () => {
+    const { putCredential } = await import("./workjetSecretRequests");
+    expect(await putCredential("inst-1", "CUSTOM_KEY", CANARY)).toBe(true);
+    expect(sent.filter((r) => JSON.stringify(r).includes(CANARY))).toHaveLength(1);
+    expect(JSON.stringify(Object.entries(localStorage))).not.toContain(CANARY);
     expect(logs.join("\n")).not.toContain(CANARY);
   });
 

@@ -4,6 +4,13 @@ import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema
 import type { SlideDocument } from "@workjet/slide-engine/schema";
 import "@workjet/slide-engine/styles/core.css";
 import { Button } from "./ui/button";
+import {
+  JOUR_FIXE_CANVAS_LANG_CODE,
+  JOUR_FIXE_CANVAS_MESSAGES,
+} from "../lib/jourFixeCanvasMessages";
+
+/** Feste deutsche Zeile; der Rohtext der Engine bleibt in der Konsole. */
+export const JOUR_FIXE_SLIDE_LOAD_FAILED = "Folie nicht geladen";
 
 export interface JourFixeCanvasStageProps {
   readonly document: SlideDocument;
@@ -20,7 +27,7 @@ export interface JourFixeCanvasStageProps {
 const RUNTIME_BASE = `${import.meta.env.BASE_URL}vendor/excalidraw/`;
 
 /**
- * One slide of a Jour fixe presentation: the hand-drawn canvas with its 3D scenes.
+ * One slide of a Regeltermin presentation: the hand-drawn canvas with its 3D scenes.
  * The meeting stage owns edit mode and saving; this component only draws the slide.
  */
 export default function JourFixeCanvasStage({
@@ -32,21 +39,23 @@ export default function JourFixeCanvasStage({
   captureRef,
 }: JourFixeCanvasStageProps) {
   const [runtime, setRuntime] = useState<CanvasRuntime | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const slide = document.slides.find((item) => item.id === slideId);
 
   useEffect(() => {
     let alive = true;
-    loadCanvasRuntime({ assetBaseUrl: RUNTIME_BASE }).then(
+    loadCanvasRuntime({ assetBaseUrl: RUNTIME_BASE, messages: JOUR_FIXE_CANVAS_MESSAGES }).then(
       (value) => {
         if (alive) {
           setRuntime(value);
-          setLoadError(null);
+          setLoadFailed(false);
         }
       },
       (reason: unknown) => {
-        if (alive) setLoadError(reason instanceof Error ? reason.message : String(reason));
+        if (!alive) return;
+        console.warn("Regeltermin-Folie nicht geladen", reason);
+        setLoadFailed(true);
       },
     );
     return () => {
@@ -65,7 +74,7 @@ export default function JourFixeCanvasStage({
           assets={document.assets}
           mode={mode}
           theme={theme}
-          langCode="en"
+          langCode={JOUR_FIXE_CANVAS_LANG_CODE}
           onSceneChange={onSceneChange}
           captureRef={captureRef}
           className="absolute inset-0"
@@ -73,23 +82,20 @@ export default function JourFixeCanvasStage({
       ) : (
         <div
           role="status"
-          className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-[#52525b] dark:text-[#a8a79f]"
+          className="absolute inset-0 grid place-items-center px-6 text-center text-[13.5px] text-stage-muted"
         >
-          {loadError ? (
-            <div className="grid justify-items-center gap-3">
-              <p>Folie nicht geladen: {loadError}</p>
+          {loadFailed ? (
+            <div className="flex items-center gap-2">
+              <span>{JOUR_FIXE_SLIDE_LOAD_FAILED}</span>
               <Button
                 size="sm"
                 variant="outline"
-                className="border-[#d4d4d8] bg-white text-[#18181b] hover:bg-white dark:border-[#3f3e3a] dark:bg-[#232220] dark:text-[#eceae3] dark:hover:bg-[#232220]"
                 onClick={() => setAttempt((count) => count + 1)}
               >
                 Erneut versuchen
               </Button>
             </div>
-          ) : (
-            "Folie wird geladen …"
-          )}
+          ) : null}
         </div>
       )}
     </div>

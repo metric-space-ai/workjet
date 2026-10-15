@@ -102,9 +102,20 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(workjet-
   --workspace-native-controls-inset: 0px;
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
+  /* Regeltermin-Bühne: Papier im Hellen, Tafel im Dunklen. */
+  --stage-surface: #f5f3ee;
+  --stage-foreground: #18181b;
+  --stage-muted: #71717a;
+  --stage-control: #ffffff;
+  --stage-border: #d4d4d8;
 }
 
 .dark {
+  --stage-surface: #1b1a17;
+  --stage-foreground: #eceae3;
+  --stage-muted: #9b9a94;
+  --stage-control: #232220;
+  --stage-border: #3f3e3a;
   --app-scrollbar-thumb: rgb(255 255 255 / 8%);
   --app-scrollbar-thumb-hover: rgb(255 255 255 / 12%);
   --glass-blur: 16px;
@@ -210,6 +221,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(workjet-
 
 @theme inline {
   --color-zinc-25: oklch(99.2% 0 0);
+  --color-stage-surface: var(--stage-surface);
+  --color-stage-foreground: var(--stage-foreground);
+  --color-stage-muted: var(--stage-muted);
+  --color-stage-control: var(--stage-control);
+  --color-stage-border: var(--stage-border);
   --animate-skeleton: skeleton 2s infinite linear;
   /* Duty-cycled indicator animations: long holds with stepped ramps, so the
      compositor updates discrete frames instead of every vsync. */

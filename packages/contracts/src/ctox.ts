@@ -23,6 +23,10 @@ import {
 } from "./workjetSpeechSettings.ts";
 export * from "./workjetSpeechSettings.ts";
 import { WorkjetDictationRequests, WorkjetDictationResponse } from "./workjetDictation.ts";
+import {
+  WorkjetSecretRequestRequests,
+  WorkjetSecretRequestResponses,
+} from "./workjetSecretRequests.ts";
 export * from "./workjetDictation.ts";
 import {
   WorkjetJourFixeNarrationReadRequest,
@@ -870,6 +874,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetCalendarNativeRequests,
   ...WorkjetSpeechSettingsRequests,
   ...WorkjetDictationRequests,
+  ...WorkjetSecretRequestRequests,
   ...WorkjetSupervisorRouteRequests,
   Schema.Struct({
     action: Schema.Literal("project.kpis.read"),
@@ -1083,6 +1088,7 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetSpeechSettingsResponse,
   WorkjetSpeechPlaybackResponse,
   WorkjetDictationResponse,
+  ...WorkjetSecretRequestResponses,
   ...WorkjetSupervisorRouteResponses,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),

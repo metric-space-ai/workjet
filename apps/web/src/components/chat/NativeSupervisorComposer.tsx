@@ -25,6 +25,8 @@ import { ComposerDictationButton } from "./ComposerDictationButton";
 import { ComposerControl } from "./ComposerControl";
 import { shouldSubmitComposerOnEnter } from "../../composer-logic";
 import { createPortal } from "react-dom";
+import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
+import { SecretRequestCards } from "./SecretRequestCard";
 import {
   appendSupervisorExecutionEvents,
   reconstructSupervisorPublicReplies,
@@ -98,6 +100,7 @@ export function NativeSupervisorComposer(props: {
   readonly conversationTarget?: HTMLElement | null;
   readonly workerSourceControl?: ReactElement<ComponentProps<typeof NativeWorkerSourceControl>>;
 }) {
+  const secretLanguage = useProjectOverviewLanguage();
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
@@ -775,6 +778,11 @@ export function NativeSupervisorComposer(props: {
 
   return (
     <section className="mx-auto w-full max-w-5xl p-3" aria-label="Supervisor-Aufgabe">
+      <SecretRequestCards
+        instanceId={props.instanceId}
+        threadKey={props.scope?.threadId ?? null}
+        language={secretLanguage}
+      />
       {props.conversationTarget && conversation
         ? createPortal(conversation, props.conversationTarget)
         : null}

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Checkbox } from "./ui/checkbox";
 import { OptionSelect } from "./ui/option-select";
-import { ArrowUpRightIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { CalendarPlusIcon, ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import type { GalleryProject } from "../projectOverview";
 import type { CtoxWorkjetSessionProjection, WorkjetCalendarEvent } from "@workjet/contracts";
 import {
@@ -287,7 +287,57 @@ function groupByDate(
     if (group) group.push(event);
     else groups.set(event.date, [event]);
   }
+  // Each day reads top to bottom: all-day first, then by start time (Audit A-07).
+  for (const group of groups.values())
+    group.sort(
+      (a, b) =>
+        Number(b.allDay === true) - Number(a.allDay === true) ||
+        a.startMs - b.startMs ||
+        a.title.localeCompare(b.title),
+    );
   return groups;
+}
+
+/** One colour per calendar, the same in the side list and on the event (Audit A-47). */
+const ACCOUNT_CALENDAR_TONES = [
+  { dot: "bg-violet-500", block: "border-violet-500/40 bg-violet-500/12 hover:bg-violet-500/20" },
+  { dot: "bg-amber-500", block: "border-amber-500/40 bg-amber-500/12 hover:bg-amber-500/20" },
+  { dot: "bg-sky-500", block: "border-sky-500/40 bg-sky-500/12 hover:bg-sky-500/20" },
+  { dot: "bg-rose-500", block: "border-rose-500/40 bg-rose-500/12 hover:bg-rose-500/20" },
+] as const;
+export function calendarTone(calendarId: string): { readonly dot: string; readonly block: string } {
+  if (calendarId === PROJECT_CALENDAR_ID)
+    return { dot: "bg-primary", block: "border-primary/30 bg-primary/12 hover:bg-primary/20" };
+  if (calendarId === SESSION_CALENDAR_ID)
+    return {
+      dot: "bg-emerald-500",
+      block: "border-emerald-500/40 bg-emerald-500/12 hover:bg-emerald-500/20",
+    };
+  let hash = 0;
+  for (const char of calendarId) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+  return ACCOUNT_CALENDAR_TONES[Math.abs(hash) % ACCOUNT_CALENDAR_TONES.length]!;
+}
+
+/** Below 768 px the week grid would scroll sideways; it shows one day instead (A-46). */
+function useNarrowViewport(): boolean {
+  const query = "(max-width: 767px)";
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.(query).matches === true,
+  );
+  useEffect(() => {
+    const media = typeof window !== "undefined" ? window.matchMedia?.(query) : undefined;
+    if (!media) return;
+    const update = () => setNarrow(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return narrow;
+}
+
+/** The raw zone appears only when it differs from the viewer's own (Audit A-49). */
+function eventTitle(event: CalendarEvent): string {
+  return event.timeZone === localTimeZone() ? event.title : `${event.title} · ${event.timeZone}`;
 }
 
 function EventButton({
@@ -305,36 +355,46 @@ function EventButton({
       <button
         type="button"
         onClick={event.onOpen}
-        title={`${event.title} · ${event.timeZone}`}
+        title={eventTitle(event)}
         aria-label={label}
         data-workjet-action={`project.open.calendar:${event.projectKey}`}
-        className="block w-full truncate rounded-sm bg-primary/12 px-1.5 py-0.5 text-left text-xs text-foreground transition-colors hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-ring"
+        className={`block w-full truncate rounded-sm px-1.5 py-0.5 text-left text-[12px] text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-ring ${calendarTone(event.calendarId).block}`}
       >
         {event.allDay ? "" : formatTime(event.startMs)} {event.title}
       </button>
     );
   }
+  const height = Math.max(
+    Math.min(
+      ((event.endMs - event.startMs) / 3_600_000) * HOUR_HEIGHT - 2,
+      ((1440 - event.minutes) / 60) * HOUR_HEIGHT - 2,
+    ),
+    20,
+  );
+  // Short events (under two text lines) read on one line: "08:15 Titel" (Audit A-08).
+  const oneLine = height < 38;
   return (
     <button
       type="button"
       onClick={event.onOpen}
-      title={`${event.title} · ${event.timeZone}`}
+      title={eventTitle(event)}
       aria-label={label}
       data-workjet-action={`project.open.calendar:${event.projectKey}`}
-      className="absolute inset-x-0.5 overflow-hidden rounded-md border border-primary/30 bg-primary/12 px-2 py-1 text-left text-xs transition-colors hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-ring"
-      style={{
-        top: (event.minutes / 60) * HOUR_HEIGHT + 1,
-        height: Math.max(
-          Math.min(
-            ((event.endMs - event.startMs) / 3_600_000) * HOUR_HEIGHT - 2,
-            ((1440 - event.minutes) / 60) * HOUR_HEIGHT - 2,
-          ),
-          20,
-        ),
-      }}
+      data-calendar-event-layout={oneLine ? "line" : "block"}
+      className={`absolute inset-x-0.5 overflow-hidden rounded-md border px-2 text-left text-[12px] transition-colors focus-visible:outline-2 focus-visible:outline-ring ${oneLine ? "py-0.5" : "py-1"} ${calendarTone(event.calendarId).block}`}
+      style={{ top: (event.minutes / 60) * HOUR_HEIGHT + 1, height }}
     >
-      <span className="block font-medium tabular-nums">{formatTime(event.startMs)}</span>
-      <span className="block truncate">{event.title}</span>
+      {oneLine ? (
+        <span className="block truncate">
+          <span className="font-medium tabular-nums">{formatTime(event.startMs)}</span>{" "}
+          {event.title}
+        </span>
+      ) : (
+        <>
+          <span className="block font-medium tabular-nums">{formatTime(event.startMs)}</span>
+          <span className="block truncate">{event.title}</span>
+        </>
+      )}
     </button>
   );
 }
@@ -713,8 +773,11 @@ export function ProjectCalendar({
   };
 
   const unscheduled = projects.filter((project) => project.configuration?.jourFixe == null);
+  const narrow = useNarrowViewport();
   const columnDays =
-    view === "week" ? WEEKDAY_OFFSETS.map((index) => addDays(range.from, index)) : [anchor];
+    view === "week" && !narrow
+      ? WEEKDAY_OFFSETS.map((index) => addDays(range.from, index))
+      : [anchor];
 
   return (
     <CalendarFormatContext.Provider value={format}>
@@ -759,7 +822,10 @@ export function ProjectCalendar({
                   });
                 }}
               />
-              <span className="size-2.5 shrink-0 rounded-full bg-primary" aria-hidden />
+              <span
+                className={`size-2.5 shrink-0 rounded-full ${calendarTone(PROJECT_CALENDAR_ID).dot}`}
+                aria-hidden
+              />
               <span className="min-w-0 break-words">{text.regularMeetings}</span>
             </label>
             <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
@@ -774,7 +840,11 @@ export function ProjectCalendar({
                   })
                 }
               />
-              {text.projectSessions}
+              <span
+                className={`size-2.5 shrink-0 rounded-full ${calendarTone(SESSION_CALENDAR_ID).dot}`}
+                aria-hidden
+              />
+              <span className="min-w-0 break-words">{text.projectSessions}</span>
             </label>
             {accountCalendars.length > 0 && (
               <h3
@@ -788,10 +858,7 @@ export function ProjectCalendar({
               const problem = accountCalendarProblem(calendar, text);
               return (
                 <div key={calendar.id} className="mt-2 text-sm">
-                  <label
-                    className="flex cursor-pointer items-center gap-2"
-                    title={accountCalendarStatusTitle(calendar, timeFormat, locale)}
-                  >
+                  <label className="flex cursor-pointer items-center gap-2">
                     <Checkbox
                       checked={!hiddenCalendars.has(calendar.id)}
                       onCheckedChange={(checked) =>
@@ -802,6 +869,10 @@ export function ProjectCalendar({
                           return next;
                         })
                       }
+                    />
+                    <span
+                      className={`size-2.5 shrink-0 rounded-full ${calendarTone(calendar.id).dot}`}
+                      aria-hidden
                     />
                     <span className="min-w-0 break-words">{calendar.label}</span>
                   </label>
@@ -849,7 +920,7 @@ export function ProjectCalendar({
                     aria-label={text.setMeeting(project.title)}
                   >
                     {project.title}
-                    <ArrowUpRightIcon className="size-3" />
+                    <CalendarPlusIcon aria-hidden className="size-3.5" />
                   </Button>
                 ))}
               </div>
@@ -876,8 +947,14 @@ export function ProjectCalendar({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <h2 className="font-semibold">{selectedEvent.title}</h2>
-                    <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>
-                      {text.close}
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={text.close}
+                      title={text.close}
+                      onClick={() => setSelectedEvent(null)}
+                    >
+                      <XIcon aria-hidden className="size-4" />
                     </Button>
                   </div>
                   <p className="mt-2 text-sm">
@@ -903,6 +980,7 @@ export function ProjectCalendar({
               size="icon-sm"
               variant="ghost"
               aria-label={text.previous}
+              title={text.previous}
               onClick={() => setAnchor((previous) => shiftAnchor(view, previous, -1))}
             >
               <ChevronLeftIcon />
@@ -911,6 +989,7 @@ export function ProjectCalendar({
               size="icon-sm"
               variant="ghost"
               aria-label={text.next}
+              title={text.next}
               onClick={() => setAnchor((previous) => shiftAnchor(view, previous, 1))}
             >
               <ChevronRightIcon />
@@ -918,23 +997,14 @@ export function ProjectCalendar({
             <h2 className="min-w-0 flex-1 truncate text-base font-semibold" aria-live="polite">
               {rangeTitle(view, anchor, format)}
             </h2>
-            <div
-              role="group"
+            {/* A select, not a second segment bar under the gallery switcher (Audit A-45). */}
+            <OptionSelect
               aria-label={text.viewGroup}
-              className="inline-flex gap-1 rounded-md border border-border p-1"
-            >
-              {VIEWS.map((option) => (
-                <Button
-                  key={option}
-                  size="sm"
-                  variant={view === option ? "secondary" : "ghost"}
-                  aria-pressed={view === option}
-                  onClick={() => setView(option)}
-                >
-                  {text.views[option]}
-                </Button>
-              ))}
-            </div>
+              value={view}
+              options={VIEWS.map((option) => ({ value: option, label: text.views[option] }))}
+              className="w-28"
+              onValueChange={setView}
+            />
           </div>
           {view === "month" ? (
             <MonthGrid

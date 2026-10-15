@@ -39,7 +39,6 @@ describe("project calendar", () => {
     expect(html).toContain('data-calendar-day="2026-10-07"');
     expect(html).toContain('aria-label="ctox.dev, ');
     expect(html).toContain('aria-label="greppy.xyz, ');
-    expect(html).toContain('title="ctox.dev · Europe/Berlin"');
     expect(html).toContain('title="greppy.xyz · America/New_York"');
   });
 

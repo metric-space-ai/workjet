@@ -10,6 +10,8 @@ import {
   type NativeProviderInput,
 } from "../../lib/workjetNativeProviders";
 
+const INSTANCE_PROVIDERS_RETRY_MS = 15_000;
+
 // Quota refresh failures never replace a genuine model-check result or classify provider auth.
 async function readReportedLimits(instanceId: string, signal: AbortSignal) {
   try {
@@ -189,6 +191,15 @@ export function useInstanceProviders(instanceId: string | null) {
       controller.current?.abort();
     };
   }, [instanceId, run]);
+  // Ein Verbindungsfehler wird still wiederholt; die letzten Konten bleiben stehen.
+  const failed = error !== undefined && error.accountId === null;
+  useEffect(() => {
+    if (!failed || busy || !instanceId) return;
+    const timer = setTimeout(() => {
+      void run({ action: "instance.providers.read" });
+    }, INSTANCE_PROVIDERS_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [failed, busy, instanceId, run]);
   const refresh = useCallback(() => run({ action: "instance.providers.adopt" }), [run]);
   return {
     registry: snapshot?.instanceId === instanceId ? snapshot.registry : undefined,

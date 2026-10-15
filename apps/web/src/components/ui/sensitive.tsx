@@ -24,7 +24,7 @@ export function PrivacyModeToggle({ mac }: { readonly mac: boolean }) {
       aria-label={label}
       aria-pressed={on}
       title={label}
-      className="no-drag flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring aria-pressed:text-foreground"
+      className="no-drag flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring aria-pressed:text-foreground"
       data-workjet-header-privacy=""
       onClick={togglePrivacyMode}
     >
@@ -33,6 +33,7 @@ export function PrivacyModeToggle({ mac }: { readonly mac: boolean }) {
       ) : (
         <EyeIcon className="size-4" aria-hidden />
       )}
+      <span>{uiLanguage() === "en" ? "Private" : "Privat"}</span>
     </button>
   );
 }

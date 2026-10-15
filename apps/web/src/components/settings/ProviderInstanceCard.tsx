@@ -1,4 +1,5 @@
-"use client";
+import { workjetUiLanguage } from "../../workjetProjectControl";
+("use client");
 
 import {
   ArrowUpCircleIcon,
@@ -673,7 +674,7 @@ export function ProviderInstanceCard({
                 render={
                   <Button
                     type="button"
-                    size="icon-xs"
+                    size="xs"
                     variant="ghost"
                     className="text-muted-foreground hover:text-foreground"
                     onClick={() =>
@@ -681,9 +682,9 @@ export function ProviderInstanceCard({
                         providerName: displayName,
                       })
                     }
-                    aria-label="Befehl kopieren"
                   >
-                    <CopyIcon className="size-3" />
+                    <CopyIcon aria-hidden className="size-3" />
+                    {workjetUiLanguage() === "en" ? "Copy command" : "Befehl kopieren"}
                   </Button>
                 }
               />

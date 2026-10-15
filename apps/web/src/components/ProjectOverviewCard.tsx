@@ -5,7 +5,7 @@ import {
   type ProjectCardConfigurationValues,
 } from "./ProjectOverviewEditor";
 import type { ProjectOverview } from "@workjet/contracts";
-import { EllipsisIcon, XIcon } from "lucide-react";
+import { EllipsisIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
@@ -274,14 +274,13 @@ export function ProjectOverviewCard({
           }
         >
           <Button
-            size="icon-xs"
+            size="xs"
             variant="ghost"
-            aria-label={t("Schließen", "Close")}
             onClick={closeEditing}
             data-workjet-action={`project.card.close:${project.key}`}
             className="absolute top-2 right-2 z-10"
           >
-            <XIcon className="size-4" aria-hidden="true" />
+            {t("Fertig", "Done")}
           </Button>
           {editing === "exit" ? (
             <ProjectExitModelCardPanel

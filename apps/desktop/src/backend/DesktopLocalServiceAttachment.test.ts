@@ -279,18 +279,16 @@ it.effect("requires both an affirmative migration button and stopped-runtime con
   Effect.gen(function* () {
     for (const response of [0, 1]) {
       for (const checkboxChecked of [false, true]) {
-        const consent = yield* requestProfileMigrationConsent(
-          {
-            showMessageBox: (options) => {
-              assert.equal(options.defaultId, 0);
-              assert.equal(options.cancelId, 0);
-              assert.equal(options.checkboxChecked, false);
-              assert.include(options.detail, "/existing-profile");
-              return Effect.succeed({ response, checkboxChecked });
-            },
+        const consent = yield* requestProfileMigrationConsent({
+          showMessageBox: (options) => {
+            assert.equal(options.defaultId, 0);
+            assert.equal(options.cancelId, 0);
+            assert.equal(options.checkboxChecked, false);
+            // D44: keine Profilpfade im nativen Dialog.
+            assert.notInclude(options.detail ?? "", "/");
+            return Effect.succeed({ response, checkboxChecked });
           },
-          "/existing-profile",
-        );
+        });
         assert.equal(consent, response === 1 && checkboxChecked);
       }
     }

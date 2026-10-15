@@ -11,6 +11,7 @@ import { InlineSaveFooter } from "../ui/inline-panel";
 import { useEffect, useRef, useState } from "react";
 
 import { randomUUID } from "../../lib/utils";
+import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -143,17 +144,6 @@ export async function persistWorkjetComputerDraft(
     }),
   );
 }
-
-const PRESENTATION_OPTIONS: ReadonlyArray<{
-  readonly id: WorkjetComputerPresentationKind;
-  readonly label: string;
-}> = [
-  { id: "local", label: "Lokal" },
-  { id: "workjet-connect", label: "Relay-Verbindung" },
-  { id: "ssh", label: "SSH" },
-  { id: "tailscale", label: "Tailscale" },
-  { id: "remote", label: "Fernzugriff" },
-];
 
 /**
  * Shows the DISAGREEMENT between the switch and the probe, and only that.
@@ -292,16 +282,6 @@ export function WorkjetComputerEditor({
               }}
             />
           </div>
-          <div className={cn("space-y-1.5", !compact && "sm:col-span-2")}>
-            <Label htmlFor="workjet-computer-kind">Verbindung</Label>
-            <p id="workjet-computer-kind" className="text-sm text-muted-foreground">
-              {PRESENTATION_OPTIONS.find(
-                (option) =>
-                  option.id ===
-                  (computer?.presentationKind ?? selectedEnvironment?.presentationKind),
-              )?.label ?? "—"}
-            </p>
-          </div>
         </div>
 
         <div className="space-y-2">
@@ -323,24 +303,27 @@ export function WorkjetComputerEditor({
                 )}
               >
                 <Label htmlFor={inputId}>{label}</Label>
-                {/* Den Programmpfad erkennt der Rechner selbst (Erkennen statt
-                  fragen). Nur ein schon gesetzter Pfad bleibt sichtbar, damit er
-                  geleert werden kann; kein „Erweitert“-Aufklapper. */}
+                {/* D20: Den Programmpfad erkennt der Rechner selbst (Erkennen statt
+                  fragen); kein Feld. Ein alter, gesetzter Pfad lässt sich nur
+                  zurücksetzen. */}
                 {configuration.executableOverride ? (
-                  <Input
+                  <Button
                     id={inputId}
-                    nativeInput
-                    value={configuration.executableOverride}
-                    onChange={(event) =>
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    className="justify-self-start"
+                    title={configuration.executableOverride}
+                    onClick={() =>
                       setDraft((current) =>
                         updateWorkjetComputerHarness(current, configuration.harness, {
-                          executableOverride: event.target.value,
+                          executableOverride: "",
                         }),
                       )
                     }
-                    placeholder="Programmpfad"
-                    aria-label={`${label}: Programmpfad`}
-                  />
+                  >
+                    Pfad zurücksetzen
+                  </Button>
                 ) : (
                   <span aria-hidden="true" />
                 )}

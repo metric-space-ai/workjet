@@ -14,8 +14,11 @@ import { AuthSurfaceShell } from "../auth/AuthSurfaceShell";
 import { resolveClerkSignInProps } from "../clerk/authRedirect";
 import { Button } from "../ui/button";
 
+/**
+ * Titel und eine Zeile; keine Schrittzähler oder Eyebrows (D41). `eyebrow`
+ * bleibt als Prop für bestehende Aufrufer, wird aber nicht mehr gezeigt.
+ */
 function ConnectCliAuthMessage({
-  eyebrow,
   title,
   description,
 }: {
@@ -25,13 +28,8 @@ function ConnectCliAuthMessage({
 }) {
   return (
     <>
-      {eyebrow ? (
-        <p className="text-[10px] font-semibold tracking-[0.18em] text-blue-600 uppercase dark:text-blue-400">
-          {eyebrow}
-        </p>
-      ) : null}
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
+      <h1 className="font-semibold text-[22px] leading-tight">{title}</h1>
+      <p className="text-muted-foreground">{description}</p>
     </>
   );
 }

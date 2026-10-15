@@ -164,13 +164,13 @@ describe("instance-first network navigation", () => {
         onRetry={() => {}}
       />,
     );
-    expect(html).toContain("Instanz verbinden");
+    expect(html).not.toContain("Instanz verbinden");
     expect(html).toContain("Instanz hinzufügen");
     expect(html.match(/<a\b|<button\b/g)).toHaveLength(1);
     expect(html).not.toContain("Netzwerk");
     expect(html).not.toContain("network");
   });
-  it("offers a retry and the instance settings when the selected instance fails", () => {
+  it("offers exactly one retry when the selected instance fails", () => {
     const html = renderToStaticMarkup(
       <InstanceOnboardingView
         state="failed"
@@ -182,7 +182,8 @@ describe("instance-first network navigation", () => {
     );
     expect(html).toContain("ist nicht erreichbar");
     expect(html).toContain("Erneut verbinden");
-    expect(html).toContain("Instanzen verwalten");
+    expect(html).not.toContain("Instanzen verwalten");
+    expect(html.match(/<button\b/g)).toHaveLength(1);
     expect(html).not.toContain("Netzwerk");
   });
   it("routes different entry points through one resettable setup request", () => {
@@ -201,15 +202,16 @@ describe("instance-first network navigation", () => {
 describe("network evidence labels", () => {
   it("does not infer an SSH host from a display name or a pairing label", () => {
     expect(instanceHostLabel(alpha)).toBe("Dieser Rechner");
+    // D27: fehlender Wert fällt weg statt Zustandssatz.
     expect(instanceHostLabel({ ...alpha, source: "pairing_invite", displayName: "gpu3" })).toBe(
-      "Hostname noch nicht gemeldet",
+      null,
     );
   });
   it("does not turn an empty cache or a failed query into zero live apps", () => {
-    expect(instanceAppsLabel(null)).toBe("Apps: noch nicht geprüft");
+    expect(instanceAppsLabel(null)).toBe(null);
     expect(
       instanceAppsLabel({ _tag: "completed", instanceId: "alpha", source: "cache", apps: [] }),
-    ).toBe("Apps: noch nicht geprüft");
+    ).toBe(null);
     expect(
       instanceAppsLabel({ _tag: "completed", instanceId: "alpha", source: "live", apps: [] }),
     ).toBe("0 Apps");
@@ -244,7 +246,7 @@ describe("instance onboarding ends every wait", () => {
   });
 
   it.each(["loading", "connecting"] as const)(
-    "offers „Erneut verbinden“ and „Instanzen verwalten“ once %s is slow",
+    "offers only „Erneut verbinden“ once %s is slow",
     (state) => {
       const waiting = renderToStaticMarkup(
         <InstanceOnboardingView
@@ -267,8 +269,8 @@ describe("instance onboarding ends every wait", () => {
         />,
       );
       expect(slow).toContain("Erneut verbinden");
-      expect(slow).toContain("Instanzen verwalten");
-      expect(slow).toContain("data-workjet-onboarding-status");
+      expect(slow).not.toContain("Instanzen verwalten");
+      expect(slow).not.toContain("data-workjet-onboarding-status");
     },
   );
 

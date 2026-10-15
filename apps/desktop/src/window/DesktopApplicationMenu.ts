@@ -8,7 +8,6 @@ import type * as Electron from "electron";
 
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
-import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -39,7 +38,6 @@ type DesktopApplicationMenuRuntimeServices =
   | DesktopSupportBundle.DesktopSupportBundle
   | DesktopUpdates.DesktopUpdates
   | DesktopWindow.DesktopWindow
-  | ElectronDialog.ElectronDialog
   | ElectronShell.ElectronShell;
 
 const { logInfo: logUpdaterInfo } = makeComponentLogger("desktop-updater");
@@ -60,104 +58,104 @@ const zoomMainWindow = Effect.fn("desktop.menu.zoomMainWindow")(function* (
   yield* desktopWindow.zoomMain(direction);
 });
 
-const checkForUpdatesFromMenu = Effect.fn("desktop.menu.checkForUpdates")(function* (
-  appName: string,
-) {
+/**
+ * Menüaktionen, die der Renderer als einzeiligen Toast meldet. Native
+ * Dialoge gibt es hier nicht mehr (Owner-Regel: nichts außerhalb der App).
+ */
+export const DESKTOP_MENU_FEEDBACK = {
+  updateUpToDate: "update-up-to-date",
+  updateCheckFailed: "update-check-failed",
+  updatesUnavailable: "updates-unavailable",
+  supportBundleCreated: "support-bundle-created",
+  supportBundleFailed: "support-bundle-failed",
+} as const;
+
+/** Deutsche Beschriftungen der Menüleiste; Rollen erhalten explizite Labels. */
+export const DESKTOP_MENU_LABELS = {
+  about: (appName: string) => `Über ${appName}`,
+  checkForUpdates: "Nach Updates suchen …",
+  settings: "Einstellungen …",
+  services: "Dienste",
+  hide: (appName: string) => `${appName} ausblenden`,
+  hideOthers: "Andere ausblenden",
+  unhide: "Alle einblenden",
+  quit: (appName: string) => `${appName} beenden`,
+  fileDarwin: "Ablage",
+  file: "Datei",
+  closeWindow: "Fenster schließen",
+  edit: "Bearbeiten",
+  undo: "Widerrufen",
+  redo: "Wiederholen",
+  cut: "Ausschneiden",
+  copy: "Kopieren",
+  paste: "Einsetzen",
+  pasteAndMatchStyle: "Einsetzen und Stil anpassen",
+  delete: "Löschen",
+  selectAll: "Alles auswählen",
+  view: "Darstellung",
+  reload: "Neu laden",
+  forceReload: "Neu laden ohne Cache",
+  toggleDevTools: "Entwicklerwerkzeuge",
+  actualSize: "Originalgröße",
+  zoomIn: "Vergrößern",
+  zoomOut: "Verkleinern",
+  fullscreen: "Vollbild",
+  window: "Fenster",
+  minimize: "Im Dock ablegen",
+  minimizeOther: "Minimieren",
+  zoom: "Zoomen",
+  front: "Alle nach vorne bringen",
+  help: "Hilfe",
+  supportBundle: "Support-Paket erstellen …",
+} as const;
+
+const checkForUpdatesFromMenu = Effect.fn("desktop.menu.checkForUpdates")(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
-  const electronDialog = yield* ElectronDialog.ElectronDialog;
   const result = yield* updates.check("menu");
   const updateState = result.state;
 
   if (updateState.status === "up-to-date") {
-    yield* electronDialog.showMessageBox({
-      type: "info",
-      title: "You're up to date!",
-      message: `${appName} ${updateState.currentVersion} is currently the newest version available.`,
-      buttons: ["OK"],
-    });
+    yield* dispatchMenuAction(DESKTOP_MENU_FEEDBACK.updateUpToDate);
   } else if (updateState.status === "error") {
-    yield* electronDialog.showMessageBox({
-      type: "warning",
-      title: "Update check failed",
-      message: "Could not check for updates.",
-      detail: updateState.message ?? "An unknown error occurred. Please try again later.",
-      buttons: ["OK"],
-    });
+    yield* dispatchMenuAction(DESKTOP_MENU_FEEDBACK.updateCheckFailed);
   }
 });
 
 const handleCheckForUpdatesMenuClick = Effect.fn("desktop.menu.handleCheckForUpdatesClick")(
-  function* (appName: string) {
+  function* () {
     const updates = yield* DesktopUpdates.DesktopUpdates;
-    const electronDialog = yield* ElectronDialog.ElectronDialog;
     const disabledReason = yield* updates.disabledReason;
     if (Option.isSome(disabledReason)) {
       yield* logUpdaterInfo("manual update check requested, but updates are disabled", {
         disabledReason: disabledReason.value,
       });
-      yield* electronDialog.showMessageBox({
-        type: "info",
-        title: "Updates unavailable",
-        message: "Automatic updates are not available right now.",
-        detail: disabledReason.value,
-        buttons: ["OK"],
-      });
+      yield* dispatchMenuAction(DESKTOP_MENU_FEEDBACK.updatesUnavailable);
       return;
     }
 
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
     yield* desktopWindow.ensureMain;
-    yield* checkForUpdatesFromMenu(appName);
+    yield* checkForUpdatesFromMenu();
   },
 );
 
 /**
- * Builds a support bundle from the Help menu and TELLS THE USER THE PATH.
- *
- * The dialog is the delivery mechanism, not a courtesy: a bundle the user
- * cannot find is a bundle they cannot inspect before sharing, and inspecting
- * it is the whole safety story. "Copy Path" is offered because a path inside
- * an application-support directory is not something anyone retypes.
- *
- * Nothing here sends anything. The message says so explicitly, so the user
- * does not have to infer it from the absence of a progress bar.
+ * Erstellt das Support-Paket aus dem Hilfe-Menü. Der Pfad landet in der
+ * Zwischenablage (niemand tippt einen Application-Support-Pfad ab), die App
+ * meldet das als einzeiligen Toast. Es wird nichts hochgeladen.
  */
 const createSupportBundleFromMenu = Effect.fn("desktop.menu.createSupportBundle")(function* () {
   const supportBundle = yield* DesktopSupportBundle.DesktopSupportBundle;
-  const electronDialog = yield* ElectronDialog.ElectronDialog;
   const electronShell = yield* ElectronShell.ElectronShell;
 
   const result = yield* supportBundle.create.pipe(Effect.option);
   if (Option.isNone(result)) {
-    yield* electronDialog.showMessageBox({
-      type: "warning",
-      title: "Support bundle failed",
-      message: "The support bundle could not be written.",
-      detail: "Check that the application state directory is writable, then try again.",
-      buttons: ["OK"],
-    });
+    yield* dispatchMenuAction(DESKTOP_MENU_FEEDBACK.supportBundleFailed);
     return;
   }
 
-  const { filePath, byteLength, redactedFieldCount, omittedFieldCount } = result.value;
-  const choice = yield* electronDialog.showMessageBox({
-    type: "info",
-    title: "Support bundle created",
-    message: "The support bundle was saved on this computer. Nothing was uploaded.",
-    detail: [
-      filePath,
-      "",
-      `${Math.max(1, Math.round(byteLength / 1024))} KB - ${redactedFieldCount} field(s) redacted, ${omittedFieldCount} omitted.`,
-      "Open the file and read it before sending it to anyone.",
-    ].join("\n"),
-    buttons: ["Copy Path", "OK"],
-    defaultId: 1,
-    cancelId: 1,
-  });
-
-  if (choice.response === 0) {
-    yield* electronShell.copyText(filePath);
-  }
+  yield* electronShell.copyText(result.value.filePath);
+  yield* dispatchMenuAction(DESKTOP_MENU_FEEDBACK.supportBundleCreated);
 });
 
 export const make = Effect.gen(function* () {
@@ -188,8 +186,10 @@ export const make = Effect.gen(function* () {
     // configures the CTOX app name and About panel after this service is
     // acquired, so an early read would label the menu with Electron's default.
     const appName = yield* electronApp.name;
+    const isDarwin = environment.platform === "darwin";
+    const L = DESKTOP_MENU_LABELS;
     const checkForUpdatesClick = () => {
-      runMenuEffect("check-for-updates", handleCheckForUpdatesMenuClick(appName));
+      runMenuEffect("check-for-updates", handleCheckForUpdatesMenuClick());
     };
     // macOS gets the About entry from the { role: "about" } app-menu item.
     // Windows and Linux have no app menu, so the Help menu carries it and
@@ -207,98 +207,127 @@ export const make = Effect.gen(function* () {
     const zoomClick = (direction: DesktopWindow.MainWindowZoomDirection) => () => {
       runMenuEffect(`zoom-${direction}`, zoomMainWindow(direction));
     };
+    const settingsItem: Electron.MenuItemConstructorOptions = {
+      label: L.settings,
+      accelerator: "CmdOrCtrl+,",
+      click: settingsClick,
+    };
+    // Genau ein „Nach Updates suchen“: auf macOS im App-Menü, sonst unter Hilfe.
+    const checkForUpdatesItem: Electron.MenuItemConstructorOptions = {
+      label: L.checkForUpdates,
+      click: checkForUpdatesClick,
+    };
     const template: Electron.MenuItemConstructorOptions[] = [];
 
-    if (environment.platform === "darwin") {
+    if (isDarwin) {
       template.push({
         label: appName,
         submenu: [
-          { role: "about" },
-          {
-            label: "Check for Updates...",
-            click: checkForUpdatesClick,
-          },
+          { role: "about", label: L.about(appName) },
+          checkForUpdatesItem,
           { type: "separator" },
-          {
-            label: "Settings...",
-            accelerator: "CmdOrCtrl+,",
-            click: settingsClick,
-          },
+          settingsItem,
           { type: "separator" },
-          { role: "services" },
+          { role: "services", label: L.services },
           { type: "separator" },
-          { role: "hide" },
-          { role: "hideOthers" },
-          { role: "unhide" },
+          { role: "hide", label: L.hide(appName) },
+          { role: "hideOthers", label: L.hideOthers },
+          { role: "unhide", label: L.unhide },
           { type: "separator" },
-          { role: "quit" },
+          { role: "quit", label: L.quit(appName) },
         ],
       });
     }
 
+    // Neu laden und Entwicklerwerkzeuge nur im Entwicklermodus.
+    const developerItems: Electron.MenuItemConstructorOptions[] = environment.isDevelopment
+      ? [
+          { role: "reload", label: L.reload },
+          { role: "forceReload", label: L.forceReload },
+          { role: "toggleDevTools", label: L.toggleDevTools },
+          { type: "separator" },
+        ]
+      : [];
+
     template.push(
       {
-        label: "File",
+        label: isDarwin ? L.fileDarwin : L.file,
         submenu: [
-          ...(environment.platform === "darwin"
-            ? []
-            : [
-                {
-                  label: "Settings...",
-                  accelerator: "CmdOrCtrl+,",
-                  click: settingsClick,
-                },
-                { type: "separator" as const },
-              ]),
-          { role: environment.platform === "darwin" ? "close" : "quit" },
+          ...(isDarwin ? [] : [settingsItem, { type: "separator" as const }]),
+          isDarwin
+            ? { role: "close" as const, label: L.closeWindow }
+            : { role: "quit" as const, label: L.quit(appName) },
         ],
       },
-      { role: "editMenu" },
       {
-        label: "View",
+        label: L.edit,
         submenu: [
-          { role: "reload" },
-          { role: "forceReload" },
-          { role: "toggleDevTools" },
+          { role: "undo", label: L.undo },
+          { role: "redo", label: L.redo },
           { type: "separator" },
+          { role: "cut", label: L.cut },
+          { role: "copy", label: L.copy },
+          { role: "paste", label: L.paste },
+          ...(isDarwin
+            ? [{ role: "pasteAndMatchStyle" as const, label: L.pasteAndMatchStyle }]
+            : []),
+          { role: "delete", label: L.delete },
+          { type: "separator" },
+          { role: "selectAll", label: L.selectAll },
+        ],
+      },
+      {
+        label: L.view,
+        submenu: [
+          ...developerItems,
           /*
             Not the zoom roles: those act on the focused webContents, so with
             an embedded preview WebContentsView focused they zoom the guest
             page and the app UI appears stuck. These always zoom the main
             window (see DesktopWindow.zoomMain).
           */
-          { label: "Actual Size", accelerator: "CmdOrCtrl+0", click: zoomClick("reset") },
-          { label: "Zoom In", accelerator: "CmdOrCtrl+=", click: zoomClick("in") },
+          { label: L.actualSize, accelerator: "CmdOrCtrl+0", click: zoomClick("reset") },
+          { label: L.zoomIn, accelerator: "CmdOrCtrl+=", click: zoomClick("in") },
           {
-            label: "Zoom In",
+            label: L.zoomIn,
             accelerator: "CmdOrCtrl+Plus",
             visible: false,
             click: zoomClick("in"),
           },
-          { label: "Zoom Out", accelerator: "CmdOrCtrl+-", click: zoomClick("out") },
+          { label: L.zoomOut, accelerator: "CmdOrCtrl+-", click: zoomClick("out") },
           { type: "separator" },
-          { role: "togglefullscreen" },
+          { role: "togglefullscreen", label: L.fullscreen },
         ],
       },
-      { role: "windowMenu" },
+      {
+        label: L.window,
+        role: "window",
+        submenu: [
+          { role: "minimize", label: isDarwin ? L.minimize : L.minimizeOther },
+          ...(isDarwin
+            ? [
+                { role: "zoom" as const, label: L.zoom },
+                { type: "separator" as const },
+                { role: "front" as const, label: L.front },
+              ]
+            : [{ role: "close" as const, label: L.closeWindow }]),
+        ],
+      },
       {
         role: "help",
+        label: L.help,
         submenu: [
+          ...(isDarwin ? [] : [checkForUpdatesItem, { type: "separator" as const }]),
           {
-            label: "Check for Updates...",
-            click: checkForUpdatesClick,
-          },
-          { type: "separator" },
-          {
-            label: "Create Support Bundle...",
+            label: L.supportBundle,
             click: createSupportBundleClick,
           },
-          ...(environment.platform === "darwin"
+          ...(isDarwin
             ? []
             : [
                 { type: "separator" as const },
                 {
-                  label: `About ${appName}`,
+                  label: L.about(appName),
                   click: showAboutPanelClick,
                 },
               ]),

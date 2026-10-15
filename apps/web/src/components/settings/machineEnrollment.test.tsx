@@ -115,7 +115,7 @@ describe("Fehlerzeilen", () => {
     });
     expect(machineEnrollmentError("password_rejected")).toMatchObject({
       text: "Passwort falsch",
-      actionLabel: "Erneut",
+      actionLabel: "Passwort ändern",
     });
     expect(machineEnrollmentError("host_key_changed")).toMatchObject({
       text: "Host-Schlüssel geändert",
@@ -123,7 +123,7 @@ describe("Fehlerzeilen", () => {
     });
     expect(machineEnrollmentError("unreachable")).toMatchObject({
       text: "Rechner nicht erreichbar",
-      actionLabel: "Erneut",
+      actionLabel: "Erneut versuchen",
     });
   });
 });

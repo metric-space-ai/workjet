@@ -280,11 +280,7 @@ export function InstanceAddPanel({
           })}
     >
       {option === "ctox-dev" ? (
-        <RemovedManagedInstances
-          instances={removedManaged}
-          busy={submitting}
-          onRestore={restore}
-        />
+        <RemovedManagedInstances instances={removedManaged} busy={submitting} onRestore={restore} />
       ) : null}
       {option === "link" ? (
         <Field>

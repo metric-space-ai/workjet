@@ -310,8 +310,8 @@ export function machineEnrollmentError(
         : entry.action === "password"
           ? labels.changePassword
           : entry.action === "details"
-          ? labels.details
-          : labels.retry,
+            ? labels.details
+            : labels.retry,
   };
 }
 

@@ -294,7 +294,9 @@ describe("DesktopApplicationMenu", () => {
         throw new Error("Expected Help menu submenu to be an array.");
       }
 
-      const bundleItem = helpMenu.submenu.find((item) => item.label === "Support-Paket erstellen …");
+      const bundleItem = helpMenu.submenu.find(
+        (item) => item.label === "Support-Paket erstellen …",
+      );
       assert.isDefined(bundleItem);
       if (typeof bundleItem.click !== "function") {
         throw new Error("Expected the support bundle menu item to have a click handler.");

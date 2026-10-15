@@ -284,7 +284,10 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
             Effect.flatMap((shown) =>
               shown
                 ? Effect.void
-                : electronDialog.showErrorBox("Workjet-Dienst blockiert", "Workjet bitte neu öffnen."),
+                : electronDialog.showErrorBox(
+                    "Workjet-Dienst blockiert",
+                    "Workjet bitte neu öffnen.",
+                  ),
             ),
           ),
       // Keep this lazy. The pool layer is initialized before startup loads

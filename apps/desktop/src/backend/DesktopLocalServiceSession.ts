@@ -156,7 +156,8 @@ export const requestLocalSessionRecoveryConsent = (
       type: "question",
       title: "Verbindung wiederherstellen",
       message: "Verbindung zum lokalen Hintergrunddienst wiederherstellen?",
-      detail: "Andere Workjet-Installationen vorher schließen. Projekte und Arbeit bleiben erhalten.",
+      detail:
+        "Andere Workjet-Installationen vorher schließen. Projekte und Arbeit bleiben erhalten.",
       buttons: ["Abbrechen", "Wiederherstellen"],
       defaultId: 0,
       cancelId: 0,

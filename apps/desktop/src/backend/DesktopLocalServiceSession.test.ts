@@ -83,16 +83,14 @@ it.effect(
     Effect.gen(function* () {
       for (const response of [0, 1]) {
         for (const checkboxChecked of [false, true]) {
-          const consent = yield* requestLocalSessionRecoveryConsent(
-            {
-              showMessageBox: (options) => {
-                assert.equal(options.defaultId, 0);
-                assert.equal(options.cancelId, 0);
-                assert.equal(options.checkboxChecked, false);
-                return Effect.succeed({ response, checkboxChecked });
-              },
+          const consent = yield* requestLocalSessionRecoveryConsent({
+            showMessageBox: (options) => {
+              assert.equal(options.defaultId, 0);
+              assert.equal(options.cancelId, 0);
+              assert.equal(options.checkboxChecked, false);
+              return Effect.succeed({ response, checkboxChecked });
             },
-          );
+          });
           assert.equal(consent, response === 1 && checkboxChecked);
         }
       }

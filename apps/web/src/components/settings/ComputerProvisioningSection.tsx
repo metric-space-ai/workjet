@@ -37,14 +37,23 @@ const PROVISIONING_MESSAGES_DE: ReadonlyArray<readonly [RegExp, string]> = [
   [/^The target operating system is not supported/i, "Betriebssystem wird nicht unterstützt"],
   [/^The target architecture is not supported/i, "Prozessor wird nicht unterstützt"],
   [/^The target is missing required provisioning tools/i, "Auf dem Rechner fehlen Werkzeuge"],
-  [/^The target cannot reach the official CTOX release channel/i, "Rechner erreicht den CTOX-Release-Kanal nicht"],
+  [
+    /^The target cannot reach the official CTOX release channel/i,
+    "Rechner erreicht den CTOX-Release-Kanal nicht",
+  ],
   [/administrator/i, "Administratorrechte nötig"],
   [/^Windows will show a User Account Control/i, "Windows fragt gleich nach Administratorrechten"],
   [/^No active graphical session/i, "Ohne Desktop: nur CTOX installierbar"],
   [/^Workjet is unavailable on a headless target/i, "Ohne Desktop: nur CTOX installierbar"],
-  [/^Workjet cannot be installed without an active graphical session/i, "Ohne Desktop: nur CTOX installierbar"],
+  [
+    /^Workjet cannot be installed without an active graphical session/i,
+    "Ohne Desktop: nur CTOX installierbar",
+  ],
   [/^Run the target preflight again/i, "Prüfung abgelaufen"],
-  [/installation journal|Saved installations could not be read/i, "Gespeicherte Installation nicht lesbar"],
+  [
+    /installation journal|Saved installations could not be read/i,
+    "Gespeicherte Installation nicht lesbar",
+  ],
   [/^Target preflight failed/i, "Prüfung fehlgeschlagen"],
   [/^Provisioning failed/i, "Einrichtung fehlgeschlagen"],
   [/^Approved SSH (target|host key) is missing/i, "Bestätigung fehlt, neu prüfen"],
@@ -386,7 +395,10 @@ export function ComputerProvisioningSection({
           ) : null}
           {kind === "ssh" && knownTarget ? (
             // D13: bekanntes Ziel nur lesend, nicht erneut abfragen.
-            <span className="min-w-0 truncate text-muted-foreground" data-slot="provisioning-target">
+            <span
+              className="min-w-0 truncate text-muted-foreground"
+              data-slot="provisioning-target"
+            >
               {username.trim() ? `${username.trim()}@` : ""}
               {host}
               {port !== "22" ? `:${port}` : ""}
@@ -474,13 +486,13 @@ export function ComputerProvisioningSection({
               .filter((part): part is string => part !== null)
               .join(" · ")}
           </p>
-          {[...new Set(preflight.warnings.map((warning) => provisioningMessageDe(warning).text))].map(
-            (warning) => (
-              <p key={warning} className="text-xs text-amber-600 dark:text-amber-400">
-                {warning}
-              </p>
-            ),
-          )}
+          {[
+            ...new Set(preflight.warnings.map((warning) => provisioningMessageDe(warning).text)),
+          ].map((warning) => (
+            <p key={warning} className="text-xs text-amber-600 dark:text-amber-400">
+              {warning}
+            </p>
+          ))}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <label className="flex items-center gap-2">
               <Checkbox checked disabled />

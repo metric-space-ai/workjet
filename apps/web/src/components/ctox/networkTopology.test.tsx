@@ -127,7 +127,11 @@ describe("networkCapabilityTags", () => {
   it("shows chips only for reported capabilities", () => {
     expect(computers[0]!.tags).toEqual([]);
     expect(computers[1]!.tags.map((tag) => tag.label)).toEqual(["GPU A6000"]);
-    expect(computers[2]!.tags.map((tag) => tag.label)).toEqual(["Build", "Speicher", "GPU A4500 · 20 GB"]);
+    expect(computers[2]!.tags.map((tag) => tag.label)).toEqual([
+      "Build",
+      "Speicher",
+      "GPU A4500 · 20 GB",
+    ]);
   });
 
   it("prefers local detection over the instance entry", () => {

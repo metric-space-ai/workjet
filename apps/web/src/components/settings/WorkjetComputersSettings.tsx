@@ -609,7 +609,9 @@ export function WorkjetComputersSettingsView({
     | undefined;
   /** Trennen/Verbinden als eigener ⋯-Eintrag (D14). */
   readonly connectionAction?:
-    | ((row: ComputerMachineRow) => { readonly label: string; readonly onSelect: () => void } | null)
+    | ((
+        row: ComputerMachineRow,
+      ) => { readonly label: string; readonly onSelect: () => void } | null)
     | undefined;
   /** Lädt die Rechnerliste neu, wenn das Laden nach 10 s nicht endet (D17). */
   readonly onRetryLoad?: (() => void) | undefined;
@@ -658,7 +660,11 @@ export function WorkjetComputersSettingsView({
     void onRemove(row, mode)
       .then(
         (outcome) =>
-          showNotice(row.key, { ...outcome, label, ...(outcome.tone === "error" ? { retry } : {}) }),
+          showNotice(row.key, {
+            ...outcome,
+            label,
+            ...(outcome.tone === "error" ? { retry } : {}),
+          }),
         (failure: unknown) =>
           showNotice(row.key, {
             tone: "error",

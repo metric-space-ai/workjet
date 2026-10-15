@@ -45,8 +45,6 @@
     "d|components/settings/WorkjetModelsQuota.ts|= window.observedAtMs && now - window.observedAtMs",
     "d|components/settings/WorkjetModelsQuota.ts|now; const expired = window.resetsAtMs !== null && window.resetsAtMs",
     "d|components/settings/WorkjetSettings.tsx|( stashedWorkerEditor !== null && stashedWorkerEditor !== \"new\" ? stashedWorkerEditor : null, ); const [addingWorker, se",
-    "d|components/settings/WorkjetSettings.tsx|) : checkedInspection?.status === \"invalid\" ? (",
-    "d|components/settings/WorkjetSettings.tsx|) : checkedInspection?.status === \"valid\" ? (",
     "d|components/settings/WorkjetWorkerEditor.tsx|; /** The account holder, independent of the worker's target computer. */ readonly gatewayEnvironmentId?: EnvironmentId ",
     "d|components/settings/WorkjetWorkerOrganigram.tsx|position.workerId === worker.id)!, ); const seen = new Set",
     "d|components/settings/WorkjetWorkerPersonalization.tsx|(\"to-target\"); const [showMatrices, setShowMatrices] = useState(false); const [matrixW, setMatrixW] = useState(\"\"); cons",

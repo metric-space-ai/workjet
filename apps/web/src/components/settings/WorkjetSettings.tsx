@@ -28,7 +28,6 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   CheckCircle2Icon,
   KeyRoundIcon,
-  PlusIcon,
   RefreshCwIcon,
   TerminalIcon,
   TriangleAlertIcon,
@@ -70,6 +69,8 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsL
 import { useClientSettings } from "../../hooks/useSettings";
 import { useUiText } from "../../hooks/useUiText";
 import { searchableSetting } from "./settingsSearch";
+import { SettingsAddButton } from "./settingsAdd";
+import { ManagerThreadSelect } from "./ManagerThreadSelect";
 import {
   joinManagedPrompt,
   replaceSectionBody,
@@ -123,7 +124,7 @@ export function greppyOperationFailureDescription(error: unknown): string {
     case "unsupported-host":
       return "Auf diesem Server nicht unterstützt.";
     case "override-invalid":
-      return "WORKJET_GREPPY_EXECUTABLE ist ungültig.";
+      return "greppy nicht startbar.";
     case "managed-invalid":
       return "Reparatur fehlgeschlagen.";
     case "timeout":
@@ -238,7 +239,7 @@ function RuntimeStatus({
     return <span role="status">Installation hier nicht unterstützt.</span>;
   }
   if (snapshot.reason === "override-invalid") {
-    return <span role="alert">WORKJET_GREPPY_EXECUTABLE ist ungültig.</span>;
+    return <span role="alert">greppy nicht startbar.</span>;
   }
   if (snapshot.reason === "managed-invalid") {
     return <span role="alert">Reparatur nötig.</span>;
@@ -695,96 +696,6 @@ export function performAutomaticWorktreeStorageAction(
   }
 }
 
-export function AutomaticWorktreeStorageSettings({
-  storage,
-}: {
-  readonly storage: AutomaticWorktreeStorageState;
-}) {
-  const [draftRoot, setDraftRoot] = useState(storage.configuredRoot);
-
-  useEffect(() => {
-    setDraftRoot(storage.configuredRoot);
-  }, [storage.configuredRoot]);
-
-  const { checkedInspection, canApply, canCheck, canReset } = automaticWorktreeStorageControlState(
-    storage,
-    draftRoot,
-  );
-
-  return (
-    <SettingsRow
-      title={searchableSetting("automatic-worktree-storage").title}
-      status={
-        storage.selectedServerId === null ? (
-          <span role="alert">Kein Rechner gewählt.</span>
-        ) : (
-          `Rechner: ${storage.selectedServerLabel ?? "—"}`
-        )
-      }
-    >
-      <div className="mt-3 max-w-3xl space-y-3 pb-3.5">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Input
-            nativeInput
-            type="text"
-            aria-label="Worktree-Pfad"
-            placeholder={storage.inspection?.defaultRoot ?? "/pfad"}
-            value={draftRoot}
-            onChange={(event) => setDraftRoot(event.target.value)}
-            className="min-w-0 flex-1 font-mono text-xs"
-          />
-          <div className="flex shrink-0 gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!canCheck}
-              onClick={() => performAutomaticWorktreeStorageAction(storage, "check", draftRoot)}
-            >
-              {storage.isChecking ? <Spinner className="size-3.5" /> : null}
-              Prüfen
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!canApply}
-              onClick={() => performAutomaticWorktreeStorageAction(storage, "apply", draftRoot)}
-            >
-              {storage.isApplying ? <Spinner className="size-3.5" /> : null}
-              Übernehmen
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!canReset}
-              onClick={() => performAutomaticWorktreeStorageAction(storage, "reset", draftRoot)}
-            >
-              Standard
-            </Button>
-          </div>
-        </div>
-
-        {storage.error ? (
-          <p role="alert" className="text-xs text-destructive">
-            {storage.error}
-          </p>
-        ) : checkedInspection?.status === "invalid" ? (
-          <p role="alert" className="flex items-start gap-1.5 text-xs text-destructive">
-            <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-            {checkedInspection.message}
-          </p>
-        ) : checkedInspection?.status === "valid" ? (
-          <p className="flex items-center gap-1.5 text-xs text-foreground">
-            <CheckCircle2Icon className="size-3.5 text-success" />
-            Beschreibbar · {formatAvailableBytes(checkedInspection.availableBytes)} frei
-          </p>
-        ) : null}
-      </div>
-    </SettingsRow>
-  );
-}
-
 function uiText(de: string, en: string): string {
   return workjetUiLanguage() === "en" ? en : de;
 }
@@ -988,7 +899,15 @@ export function WorkjetSettingsView({
       </div>
 
       {activeSection === "workers" ? (
-        <SettingsSection id={searchableSetting("workjet-workers").id} title="">
+        <SettingsSection
+          id={searchableSetting("workjet-workers").id}
+          title=""
+          headerAction={
+            addingWorker || configuration.workerProfiles.length === 0 ? null : (
+              <SettingsAddButton action="presets.add" onClick={openAddWorker} />
+            )
+          }
+        >
           {/* Inline-Panel-Muster: der Auslöser steht dort, wo das Formular
               aufklappt; Bearbeiten klappt direkt unter der Zeile auf. Kein
               Dialog, kein Popover. */}
@@ -1004,27 +923,16 @@ export function WorkjetSettingsView({
           >
             {addingWorker ? workerEditor : null}
           </InlineExpand>
-          {addingWorker ? null : configuration.workerProfiles.length === 0 ? null : (
-            <div className="px-3 sm:px-4">
-              <Button type="button" size="sm" variant="outline" onClick={openAddWorker}>
-                <PlusIcon className="size-3.5" />
-                {t("Preset hinzufügen", "Add preset")}
-              </Button>
-            </div>
-          )}
           {configuration.workerProfiles.length === 0 ? (
             addingWorker ? null : (
               <Empty className="p-4">
                 <EmptyHeader>
-                  <EmptyTitle className="text-base">
-                    {t("Keine Worker-Presets", "No worker presets")}
+                  <EmptyTitle className="text-[13.5px]">
+                    {t("Keine Presets", "No presets")}
                   </EmptyTitle>
                 </EmptyHeader>
                 <EmptyContent>
-                  <Button type="button" onClick={openAddWorker}>
-                    <PlusIcon className="size-3.5" />
-                    {t("Preset hinzufügen", "Add preset")}
-                  </Button>
+                  <SettingsAddButton action="presets.add" onClick={openAddWorker} />
                 </EmptyContent>
               </Empty>
             )
@@ -1069,11 +977,14 @@ export function WorkjetSettingsView({
                   <Fragment key={worker.id}>
                     <Row
                       name={worker.name}
+                      // Fehlende Werte fallen weg; der rote Punkt trägt „Rechner fehlt“ (Audit C 26).
                       meta={[
                         worker.modelId,
                         workjetHarnessDisplayLabel(worker.harness),
-                        computer?.label ?? t("Rechner: —", "Computer: —"),
-                      ].join(" · ")}
+                        computer?.label,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                       // One signal: a red dot only when the preset cannot run; the reason is its label.
                       {...(warning === null
                         ? {}
@@ -1119,23 +1030,19 @@ export function WorkjetSettingsView({
           id={searchableSetting("workjet-prompt").id}
           title={searchableSetting("workjet-prompt").title}
         >
-          <SettingsRow title="Workjet Manager">
-            <div className="mt-2 max-w-3xl pb-3.5">
-              <Textarea
-                key={configuration.managerThreadReference}
-                defaultValue={configuration.managerThreadReference}
-                rows={2}
-                placeholder="workjet://app/threads/…"
-                aria-label="Workjet-Manager-Thread"
-                onBlur={(event) => {
-                  const managerThreadReference = event.target.value.trim();
+          <SettingsRow
+            title="Workjet Manager"
+            control={
+              <ManagerThreadSelect
+                value={configuration.managerThreadReference}
+                onChange={(managerThreadReference) => {
                   if (managerThreadReference !== configuration.managerThreadReference) {
                     onChange({ ...configuration, managerThreadReference });
                   }
                 }}
               />
-            </div>
-          </SettingsRow>
+            }
+          />
 
           {/* The Swift page shows this prompt as named cards, each with its own
               edit affordance, instead of one 6 KB scroll box. Same here — but
@@ -1172,7 +1079,7 @@ export function WorkjetSettingsView({
               question "what will this worker be told" is answered by both
               together, and they lived on different pages here. */}
           {configuration.workerProfiles.length === 0 ? null : (
-            <SettingsRow title="Preset-Aufgaben">
+            <SettingsRow title="Aufgaben je Preset">
               <div className="mt-2 space-y-2 pb-3.5">
                 {configuration.workerProfiles.map((worker, workerIndex) => {
                   // The rules are stored PER MODEL — two workers on the same
@@ -1196,9 +1103,11 @@ export function WorkjetSettingsView({
                             workjetHarnessDisplayLabel(worker.harness),
                             configuration.computers.find(
                               (computer) => computer.id === worker.computerId,
-                            )?.label ?? "—",
+                            )?.label,
                             workjetReasoningDisplayLabel(worker.reasoning),
-                          ].join(" · ")}
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </span>
                       </div>
                       {/* Model rules — the Swift page's "MODELL · …" block:
@@ -1208,9 +1117,9 @@ export function WorkjetSettingsView({
                       <div className="mt-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                         Modellregeln · {worker.modelId}
                       </div>
-                      {modelRulesEditorHere ? null : (
+                      {modelRulesEditorHere || !modelRulesOwner ? null : (
                         <p className="mt-1 text-[11px] text-muted-foreground">
-                          Geteilt mit {modelRulesOwner?.name ?? "—"}
+                          Geteilt mit {modelRulesOwner.name}
                         </p>
                       )}
                       {!modelRulesEditorHere ? null : (
@@ -1303,11 +1212,11 @@ export function WorkjetSettingsView({
           title={searchableSetting("workjet-execution").title}
         >
           <SettingsRow
-            title="Prüf-Timeout"
+            title="Prüfzeit"
             control={
               <div className="flex items-center gap-2">
                 <PositiveIntegerInput
-                  ariaLabel="Prüf-Timeout (Sekunden)"
+                  ariaLabel="Prüfzeit (Sekunden)"
                   value={configuration.execution.probeTimeoutSeconds}
                   onCommit={(probeTimeoutSeconds) =>
                     onChange({
@@ -1322,11 +1231,11 @@ export function WorkjetSettingsView({
             }
           />
           <SettingsRow
-            title="Turn-Timeout"
+            title="Zeitlimit je Zug"
             control={
               <div className="flex items-center gap-2">
                 <PositiveIntegerInput
-                  ariaLabel="Turn-Timeout (Sekunden)"
+                  ariaLabel="Zeitlimit je Zug (Sekunden)"
                   value={configuration.execution.turnTimeoutSeconds}
                   onCommit={(turnTimeoutSeconds) =>
                     onChange({
@@ -1341,7 +1250,7 @@ export function WorkjetSettingsView({
             }
           />
           <SettingsRow
-            title="Degradation erlauben"
+            title="Ersatz-Worker erlauben"
             control={
               <Switch
                 checked={configuration.execution.degradationAllowed}
@@ -1354,7 +1263,7 @@ export function WorkjetSettingsView({
                     },
                   })
                 }
-                aria-label="Degradation erlauben"
+                aria-label="Ersatz-Worker erlauben"
               />
             }
           />
@@ -1518,10 +1427,10 @@ function ScopedWorkjetSettings({
       });
       const failure =
         result._tag === "Failure"
-          ? uiText("Worker-Presets nicht gespeichert.", "Worker presets not saved.")
+          ? uiText("Presets nicht gespeichert.", "Presets not saved.")
           : result.value.status === "conflict"
             ? uiText(
-                "Worker-Presets wurden anderswo geändert. Bitte neu laden.",
+                "Presets wurden anderswo geändert. Bitte neu laden.",
                 "Worker presets changed elsewhere. Please reload.",
               )
             : null;
@@ -1578,7 +1487,7 @@ function ScopedWorkjetSettings({
       >
         {instance.isPending ? (
           <EmptyLoading
-            title={uiText("Worker-Presets werden geladen", "Loading worker presets")}
+            title={uiText("Presets werden geladen", "Loading presets")}
             slowMessage={uiText(
               "Keine Antwort von der Instanz.",
               "The instance is not responding.",

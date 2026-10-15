@@ -48,13 +48,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { randomUUID } from "../../lib/utils";
 import { Banner } from "../ui/banner";
 import { Button } from "../ui/button";
-import {
-  Empty,
-  EmptyContent,
-  EmptyHeader,
-  EmptyLoading,
-  EmptyTitle,
-} from "../ui/empty";
+import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
 import { InlineExpand } from "../ui/inline-expand";
 import { Input } from "../ui/input";
 import { Row } from "../ui/row";
@@ -1411,7 +1405,9 @@ export function WorkjetSettings({
       ? { connectionId: connection.connectionId, instanceId: connection.instanceId }
       : null;
   const lastKnownKey =
-    environment === null ? null : `${environment.environmentId}:${scope.presentationInstanceId ?? ""}`;
+    environment === null
+      ? null
+      : `${environment.environmentId}:${scope.presentationInstanceId ?? ""}`;
   const liveConnectionId = liveTarget?.connectionId ?? null;
   const liveInstanceId = liveTarget?.instanceId ?? null;
   useEffect(() => {
@@ -1423,10 +1419,14 @@ export function WorkjetSettings({
   }, [lastKnownKey, liveConnectionId, liveInstanceId]);
   // Fällt die Verbindung kurz aus, bleiben die zuletzt bekannten Presets stehen.
   const target =
-    liveTarget ?? (lastKnownKey === null ? null : (LAST_KNOWN_PRESET_TARGETS.get(lastKnownKey) ?? null));
+    liveTarget ??
+    (lastKnownKey === null ? null : (LAST_KNOWN_PRESET_TARGETS.get(lastKnownKey) ?? null));
   const authenticationRequired =
     scope.phase === "ready" &&
-    presetConnectionNeedsAuthentication(connections.data?.connections, scope.presentationInstanceId);
+    presetConnectionNeedsAuthentication(
+      connections.data?.connections,
+      scope.presentationInstanceId,
+    );
   // Still wiederholen statt einen Zustandstext zu zeigen.
   const refreshConnections = connections.refresh;
   useEffect(() => {

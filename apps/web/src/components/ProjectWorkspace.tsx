@@ -26,10 +26,7 @@ import { SidebarInset } from "./ui/sidebar";
 import { InlinePanel } from "./ui/inline-panel";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import {
-  ProjectSettingsPanel,
-  useSettingsProjectGroups,
-} from "./settings/ProjectSettingsPanel";
+import { ProjectSettingsPanel, useSettingsProjectGroups } from "./settings/ProjectSettingsPanel";
 import { SettingsEmbeddedContext } from "./settings/settingsLayout";
 
 type Props = {
@@ -254,7 +251,9 @@ function ProjectWorkspaceContent({
             </InlinePanel>
             {editingProject && settingsGroup ? (
               <div className="basis-full" data-workjet-project-edit-inline="">
-                <SettingsEmbeddedContext.Provider value={{ onClose: () => setEditingProject(false) }}>
+                <SettingsEmbeddedContext.Provider
+                  value={{ onClose: () => setEditingProject(false) }}
+                >
                   <ProjectSettingsPanel projectKey={settingsGroup.projectKey} part="project" />
                 </SettingsEmbeddedContext.Provider>
               </div>

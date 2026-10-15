@@ -48,7 +48,9 @@ describe("project places are inline", () => {
   it("lives in the project, not in Einstellungen; old routes redirect (#569, 15.10.)", () => {
     expect(settingsProjectsSource).toContain('createFileRoute("/settings/projects")');
     expect(settingsProjectsSource).toContain("ProjectsSettingsRedirect");
-    expect(projectWorkspaceSource).toContain('<ProjectSettingsPanel projectKey={settingsGroup.projectKey} part="project"');
+    expect(projectWorkspaceSource).toContain(
+      '<ProjectSettingsPanel projectKey={settingsGroup.projectKey} part="project"',
+    );
     expect(settingsProjectSource).toContain('createFileRoute("/settings/projects/$projectKey")');
     expect(sidebarSource).toContain('to: "/settings/projects/$projectKey"');
     expect(settingsProjectSource).toContain("ProjectCardRedirect");

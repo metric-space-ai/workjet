@@ -254,7 +254,16 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "workjet-workers",
     title: "Presets",
-    searchAliases: ["lumas", "luma", "worker", "workers", "agent", "agents", "Denkstufe", "Werkzeuge"],
+    searchAliases: [
+      "lumas",
+      "luma",
+      "worker",
+      "workers",
+      "agent",
+      "agents",
+      "Denkstufe",
+      "Werkzeuge",
+    ],
     to: "/settings/workjet",
   },
   {

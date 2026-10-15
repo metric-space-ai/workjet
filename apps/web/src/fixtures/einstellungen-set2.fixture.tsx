@@ -25,7 +25,10 @@ function Nav() {
     <div className="flex flex-wrap gap-6 p-4">
       <nav className="w-56 shrink-0 space-y-0.5" data-fixture="nav">
         {settingsNavItems(true).map((item) => (
-          <div key={item.to} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13.5px]">
+          <div
+            key={item.to}
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13.5px]"
+          >
             <item.icon className="size-3.5 text-muted-foreground/70" />
             {item.label}
           </div>
@@ -81,20 +84,20 @@ function Checkouts() {
 
 function Fixture() {
   return (
-  <div className="flex min-h-screen flex-col bg-background text-foreground">
-    {view === "presets" ? (
-      <WorkjetPresetsUnavailableView
-        title="Presets"
-        state="authentication"
-        onRetry={() => undefined}
-        onReconnect={() => undefined}
-      />
-    ) : view === "projects" ? (
-      <Checkouts />
-    ) : (
-      <Nav />
-    )}
-  </div>
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      {view === "presets" ? (
+        <WorkjetPresetsUnavailableView
+          title="Presets"
+          state="authentication"
+          onRetry={() => undefined}
+          onReconnect={() => undefined}
+        />
+      ) : view === "projects" ? (
+        <Checkouts />
+      ) : (
+        <Nav />
+      )}
+    </div>
   );
 }
 

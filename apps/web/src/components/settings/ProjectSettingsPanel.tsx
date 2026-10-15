@@ -863,7 +863,9 @@ function ProjectDetail({
   // Projekt (Name, Symbol, neue Unterhaltungen, Entfernen) lebt im Projekt;
   // Arbeitskopie und Skripte nur im Entwicklermodus unter Rechner (15.10.).
   const showTab = (id: "general" | "threads" | "checkout" | "scripts") =>
-    part === "project" ? id === "general" || id === "threads" : id === "checkout" || id === "scripts";
+    part === "project"
+      ? id === "general" || id === "threads"
+      : id === "checkout" || id === "scripts";
   const titleIcon = (
     <ProjectFavicon
       environmentId={representative.environmentId}

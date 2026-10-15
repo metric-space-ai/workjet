@@ -207,7 +207,9 @@ describe("worker source silent renewal", () => {
     expect(
       workerSourceNeedsRenewal({ ...ready, connectionId: `ctox-dev:${tenant}` }, undefined, now),
     ).toBe(false);
-    expect(workerSourceNeedsRenewal({ ...ready, source: "local_ctox" }, undefined, now)).toBe(false);
+    expect(workerSourceNeedsRenewal({ ...ready, source: "local_ctox" }, undefined, now)).toBe(
+      false,
+    );
     expect(workerSourceNeedsRenewal({ ...ready, status: "unsupported" }, undefined, now)).toBe(
       false,
     );

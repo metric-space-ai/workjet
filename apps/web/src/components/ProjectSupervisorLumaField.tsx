@@ -166,8 +166,8 @@ export function ProjectSupervisorLumaSummaryView({
       {selected
         ? `Konfiguriert · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
         : phase === "loading"
-          ? "Luma wird geladen …"
-          : "Luma nicht verfügbar"}
+          ? "Preset wird geladen …"
+          : "Preset nicht verfügbar"}
     </span>
   );
 }
@@ -188,14 +188,14 @@ export function ProjectSupervisorLumaSelect({
     <div className="grid min-w-0 gap-1">
       <OptionSelect
         id={id}
-        aria-label="Supervisor Luma"
+        aria-label="Supervisor-Preset"
         className="w-auto"
         value={value ?? ""}
         disabled={disabled || phase !== "ready"}
         options={[
           { value: "", label: "Instanz-Standard" },
           ...(value !== null && selected === undefined
-            ? [{ value, label: `Gespeicherte Luma fehlt · ${value}` }]
+            ? [{ value, label: `Gespeichertes Preset fehlt · ${value}` }]
             : []),
           ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
         ]}
@@ -203,13 +203,13 @@ export function ProjectSupervisorLumaSelect({
       />
       <span className="break-words text-xs text-muted-foreground" role="status">
         {phase === "loading"
-          ? "Lumas werden geladen …"
+          ? "Presets werden geladen …"
           : phase === "unavailable"
-            ? "Lumas nicht verfügbar · Auswahl bleibt"
+            ? "Presets nicht verfügbar · Auswahl bleibt"
             : selected
               ? `Konfiguriert · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId} · ${selected.computerId}`
               : value !== null
-                ? "Luma fehlt in dieser Instanz"
+                ? "Preset fehlt in dieser Instanz"
                 : "Instanz-Standard"}
       </span>
     </div>

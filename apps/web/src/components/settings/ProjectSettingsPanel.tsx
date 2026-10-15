@@ -25,7 +25,7 @@ import { DEFAULT_RESOLVED_KEYBINDINGS } from "@workjet/shared/keybindings";
 import { Link, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useAvailableProjectContext } from "../../availableProjects";
@@ -97,12 +97,8 @@ import { recordWorkjetProjectProjection, selectWorkjetProject } from "../../work
 import { selectProjectOverviewRef } from "../../projectOverviewSelection";
 import { readActiveWorkjetScope } from "../../activeWorkjetScope";
 import { cn } from "../../lib/utils";
-import {
-  INSTANCE_PROJECT_KEY_PREFIX,
-  InstanceProjectRow,
-  instanceProjectSettingsKey,
-  useInstanceOnlyProjects,
-} from "./InstanceProjectSettings";
+import { INSTANCE_PROJECT_KEY_PREFIX } from "./InstanceProjectSettings";
+import { searchableSetting } from "./settingsSearch";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Nach Repository",
@@ -139,85 +135,162 @@ function memberKey(member: { environmentId: string; id: string }): string {
   return `${member.environmentId}:${member.id}`;
 }
 
-/**
- * Einstellungen › Projekte: every project as one Row. A click on the name
- * opens Einstellungen › Projekte › <Projekt>.
- */
 function compareByName(a: { readonly name: string }, b: { readonly name: string }) {
   return a.name.localeCompare(b.name);
 }
 
-export function ProjectsSettingsList() {
-  const groups = useSettingsProjectGroups();
-  const instanceProjects = useInstanceOnlyProjects().projects;
-  const [openKey, setOpenKey] = useState<string | null>(null);
-  const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
+/**
+ * Einstellungen › Projekte entfällt (Michael, 15.10.): Projekte werden in der
+ * Projektübersicht und über das Einstellungs-Symbol im Projekt verwaltet.
+ * Alte Links landen auf der Projektübersicht.
+ */
+/**
+ * Das Icon „Projekteinstellungen“ öffnet die Projektübersicht mit den
+ * Einstellungen inline: die Anfrage überlebt den Wechsel auf die Übersicht.
+ */
+let projectSettingsRequestCount = 0;
+let projectSettingsRequestPending = false;
+const projectSettingsListeners = new Set<() => void>();
+
+export function requestProjectSettings(): void {
+  projectSettingsRequestCount += 1;
+  projectSettingsRequestPending = true;
+  for (const listener of projectSettingsListeners) listener();
+}
+
+/** Nimmt eine offene Anfrage genau einmal entgegen. */
+export function takeProjectSettingsRequest(): boolean {
+  const pending = projectSettingsRequestPending;
+  projectSettingsRequestPending = false;
+  return pending;
+}
+
+function subscribeProjectSettings(listener: () => void) {
+  projectSettingsListeners.add(listener);
+  return () => {
+    projectSettingsListeners.delete(listener);
+  };
+}
+
+export function useProjectSettingsRequestCount(): number {
+  return useSyncExternalStore(
+    subscribeProjectSettings,
+    () => projectSettingsRequestCount,
+    () => 0,
+  );
+}
+
+export function ProjectsSettingsRedirect() {
   const navigate = useNavigate();
-  const openProjectCard = (projectKey: string) =>
-    void navigate({ to: "/settings/projects/$projectKey", params: { projectKey } });
-  const rows = [
-    ...groups.map((group) => ({
-      name: readableProjectName(group.displayName),
-      key: group.projectKey,
-      row: localProjectRow(group, openKey === group.projectKey, toggle),
-    })),
-    ...instanceProjects.map((project) => {
-      const key = instanceProjectSettingsKey(project.id);
-      return {
-        name: project.title,
-        key,
-        row: (
-          <InstanceProjectRow
-            key={project.key}
-            project={project}
-            onOpenCard={() => openProjectCard(key)}
-          />
-        ),
-      };
-    }),
-  ].toSorted(compareByName);
+  useEffect(() => {
+    void navigate({ to: "/", replace: true });
+  }, [navigate]);
+  return null;
+}
+
+/**
+ * Rechner › Dieser Rechner im Entwicklermodus: je Projekt eine Zeile; ein
+ * Klick klappt Arbeitskopie und Skripte darunter auf (keine Reiter).
+ */
+export function ProjectCheckoutRows() {
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const developerMode = useClientSettings((settings) => settings.developerMode);
+  const groups = useSettingsProjectGroups();
+  if (!developerMode || groups.length === 0) return null;
+  const rows = groups
+    .map((group) => ({ group, name: readableProjectName(group.displayName) }))
+    .toSorted(compareByName);
   return (
-    <SettingsPageContainer>
-      <SettingsSection title={workjetUiLanguage() === "en" ? "Projects" : "Projekte"}>
-        {rows.length === 0 ? (
-          <Empty className="py-8">
-            <EmptyHeader>
-              <EmptyTitle className="text-[13.5px]">
-                {workjetUiLanguage() === "en" ? "No projects yet" : "Noch keine Projekte"}
-              </EmptyTitle>
-            </EmptyHeader>
-            <Button size="sm" variant="outline" render={<Link to="/" />}>
-              <PlusIcon className="size-4" />
-              {workjetUiLanguage() === "en" ? "Create project" : "Projekt anlegen"}
-            </Button>
-          </Empty>
-        ) : (
-          <div className="divide-y divide-border/60" data-workjet-settings-projects="">
-            {rows.map((entry) => (
-              <div key={entry.key}>
-                {entry.row}
-                <InlineExpand
-                  hideCollapseControl
-                  label={entry.name}
-                  open={openKey === entry.key}
-                  onOpenChange={(open) => {
-                    if (!open) setOpenKey((current) => (current === entry.key ? null : current));
-                  }}
-                >
-                  {openKey === entry.key ? (
-                    <div className="px-3 sm:px-4" data-workjet-project-settings-inline="">
-                      <SettingsEmbeddedContext.Provider value={{ onClose: () => setOpenKey(null) }}>
-                        <ProjectSettingsPanel projectKey={entry.key} />
-                      </SettingsEmbeddedContext.Provider>
-                    </div>
-                  ) : null}
-                </InlineExpand>
-              </div>
-            ))}
+    <div
+      className="divide-y divide-border/60 border-t border-border/60"
+      id={searchableSetting("project-working-copies").id}
+      data-workjet-project-checkouts=""
+    >
+      {rows.map(({ group, name }) => {
+        const open = openKey === group.projectKey;
+        return (
+          <div key={group.projectKey}>
+            <ProjectCheckoutRow
+              group={group}
+              name={name}
+              open={open}
+              onToggle={() => setOpenKey(open ? null : group.projectKey)}
+            />
+            <InlineExpand
+              hideCollapseControl
+              label={name}
+              open={open}
+              onOpenChange={(next) => {
+                if (!next) setOpenKey((current) => (current === group.projectKey ? null : current));
+              }}
+            >
+              {open ? (
+                <div className="px-3 sm:px-4" data-workjet-project-checkout-inline="">
+                  <SettingsEmbeddedContext.Provider value={{ onClose: () => setOpenKey(null) }}>
+                    <ProjectSettingsPanel projectKey={group.projectKey} part="checkout" />
+                  </SettingsEmbeddedContext.Provider>
+                </div>
+              ) : null}
+            </InlineExpand>
           </div>
-        )}
-      </SettingsSection>
-    </SettingsPageContainer>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ProjectCheckoutRow({
+  group,
+  name,
+  open,
+  onToggle,
+}: {
+  readonly group: Pick<SidebarProjectSnapshot, "projectKey" | "memberProjects">;
+  readonly name: string;
+  readonly open: boolean;
+  readonly onToggle: () => void;
+}) {
+  const scriptNames: string[] = [];
+  for (const member of group.memberProjects)
+    for (const script of member.scripts) scriptNames.push(script.name);
+  return (
+    <Row
+      name={
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={onToggle}
+          className="flex min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-workjet-action={`project.checkout:${group.projectKey}`}
+        >
+          <span className="truncate">{name}</span>
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+      }
+      meta={group.memberProjects
+        .map((member) => member.environmentLabel ?? "Dieser Rechner")
+        .join(" · ")}
+      chips={
+        scriptNames.length > 0 ? (
+          <span className="flex min-w-0 flex-wrap gap-1">
+            {[...new Set(scriptNames)].map((script) => (
+              <span
+                key={script}
+                className="rounded-sm border border-border/60 px-1.5 py-px text-[11px] text-muted-foreground"
+              >
+                {script}
+              </span>
+            ))}
+          </span>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -234,52 +307,6 @@ export function readableProjectName(name: string): string {
   return name.replace(/-[0-9a-f]{4,}$/i, "");
 }
 
-function localProjectRow(
-  group: SidebarProjectSnapshot,
-  open: boolean,
-  toggle: (key: string) => void,
-) {
-  return (
-    <Row
-      name={
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => toggle(group.projectKey)}
-          className="flex min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          data-workjet-action={`project.settings:${group.projectKey}`}
-        >
-          {/* Projects live in CTOX, not on a machine: no folder icon that marks
-              local checkouts, so every row looks the same (Michael, 2026-10-13). */}
-          <span className="truncate">{readableProjectName(group.displayName)}</span>
-          <ChevronDownIcon
-            aria-hidden
-            className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-180",
-            )}
-          />
-        </button>
-      }
-      status="ok"
-      statusLabel={workjetUiLanguage() === "en" ? "Ready here" : "Hier bereit"}
-      meta={
-        workjetUiLanguage() === "en"
-          ? "In CTOX · working copy on this computer"
-          : "In CTOX · Arbeitskopie auf diesem Rechner"
-      }
-      chips={
-        group.memberProjects.length > 1 ? (
-          <span className="rounded-sm border border-border/60 px-1.5 py-px text-[11px] text-muted-foreground">
-            {group.memberProjects.length}{" "}
-            {workjetUiLanguage() === "en" ? "working copies" : "Arbeitskopien"}
-          </span>
-        ) : undefined
-      }
-    />
-  );
-}
-
 /**
  * Regeltermin, Budget und Supervisor bearbeitet nur noch die Projektkarte
  * (#569): der frühere Einstellungs-Link auf ein Projekt öffnet die Karte.
@@ -294,6 +321,8 @@ export function ProjectCardRedirect({ projectKey }: { projectKey: string }) {
     const instanceId = readActiveWorkjetScope().selectedInstanceId;
     const openCard = () => {
       doneRef.current = true;
+      // Die Projektübersicht öffnet die Projekteinstellungen inline.
+      requestProjectSettings();
       void navigate({ to: "/", replace: true });
     };
     if (projectKey.startsWith(INSTANCE_PROJECT_KEY_PREFIX)) {
@@ -315,17 +344,25 @@ export function ProjectCardRedirect({ projectKey }: { projectKey: string }) {
       openCard();
       return;
     }
-    // Projects hydrate asynchronously; an unknown key lands on the list.
+    // Projects hydrate asynchronously; an unknown key lands on the overview.
     const timer = window.setTimeout(() => {
       doneRef.current = true;
-      void navigate({ to: "/settings/projects", replace: true });
+      void navigate({ to: "/", replace: true });
     }, 1500);
     return () => window.clearTimeout(timer);
   }, [group, navigate, projectKey]);
   return null;
 }
 
-export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
+export type ProjectSettingsPart = "project" | "checkout";
+
+export function ProjectSettingsPanel({
+  projectKey,
+  part = "project",
+}: {
+  readonly projectKey: string;
+  readonly part?: ProjectSettingsPart;
+}) {
   const groups = useSettingsProjectGroups();
   const navigate = useNavigate();
 
@@ -344,8 +381,9 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
 
   // A grouping-rule change replaces the group key mid-visit; follow the
   // project to its new key instead of parking on the not-found state.
+  const embedded = useSettingsEmbedded();
   useEffect(() => {
-    if (selected !== null) return;
+    if (selected !== null || embedded) return;
     const last = lastSelectionRef.current;
     if (last?.key !== projectKey) return;
     const successor = groups.find((group) =>
@@ -359,7 +397,7 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
         hashScrollIntoView: false,
       });
     }
-  }, [groups, navigate, projectKey, selected]);
+  }, [embedded, groups, navigate, projectKey, selected]);
 
   if (!selected) {
     return (
@@ -367,26 +405,24 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
         <EmptyHeader>
           <EmptyTitle className="text-[13.5px]">Projekt nicht gefunden</EmptyTitle>
         </EmptyHeader>
-        <Button size="sm" variant="outline" render={<Link to="/settings/projects" />}>
+        <Button size="sm" variant="outline" render={<Link to="/" />}>
           Alle Projekte
         </Button>
       </Empty>
     );
   }
-  return <ProjectDetail key={selected.projectKey} group={selected} />;
+  return <ProjectDetail key={selected.projectKey} group={selected} part={part} />;
 }
 
-function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
+function ProjectDetail({
+  group,
+  part,
+}: {
+  readonly group: SidebarProjectSnapshot;
+  readonly part: ProjectSettingsPart;
+}) {
   const embedded = useSettingsEmbedded();
   const t = useUiText();
-  type ProjectTab = "general" | "threads" | "checkout" | "scripts";
-  const projectTabs: ReadonlyArray<readonly [ProjectTab, string]> = [
-    ["general", t("Allgemein", "General")],
-    ["threads", t("Unterhaltungen", "Threads")],
-    ["checkout", t("Arbeitskopie", "Working copy")],
-    ["scripts", t("Skripte", "Scripts")],
-  ];
-  const [tab, setTab] = useState<ProjectTab>("general");
   const navigate = useNavigate();
   const settings = usePrimarySettings();
   const { workjetProjectRegistry, workjetProjects } = useAvailableProjectContext();
@@ -843,10 +879,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         draftStore.clearProjectDraftThreadId(projectRef);
       }
 
-      // The project's settings page just deleted itself; fall back to the
-      // project list in Einstellungen › Projekte.
+      // The project just deleted itself; fall back to the project overview.
       if (isWholeGroup) {
-        void navigate({ to: "/settings/projects", replace: true });
+        void navigate({ to: "/", replace: true });
       }
     },
     [deleteProject, group.memberProjects.length, navigate, reportFailure, threads],
@@ -863,7 +898,12 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     group.memberProjects.length > 1 ? "Alle Einträge entfernen" : "Projekt entfernen";
 
   // Regeltermin, Budget und Supervisor bearbeitet nur die Projektkarte (#569).
-  const showTab = (id: ProjectTab) => !embedded || id === tab;
+  // Projekt (Name, Symbol, neue Unterhaltungen, Entfernen) lebt im Projekt;
+  // Arbeitskopie und Skripte nur im Entwicklermodus unter Rechner (15.10.).
+  const showTab = (id: "general" | "threads" | "checkout" | "scripts") =>
+    part === "project"
+      ? id === "general" || id === "threads"
+      : id === "checkout" || id === "scripts";
   const titleIcon = (
     <ProjectFavicon
       environmentId={representative.environmentId}
@@ -1322,7 +1362,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       ) : null}
     </>
   );
-  // Embedded in the project list: compact tabs, at most ~30% of the viewport, autosave (#624).
   if (!embedded) {
     return (
       <SettingsPageContainer title={group.displayName} titleIcon={titleIcon}>
@@ -1331,29 +1370,8 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     );
   }
   return (
-    <div className="space-y-2" data-workjet-project-settings-tabs="">
-      <div role="tablist" className="flex gap-1 border-b border-border/60">
-        {projectTabs.map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            onClick={() => setTab(id)}
-            className={cn(
-              "-mb-px border-b-2 px-2.5 py-1.5 text-xs font-medium",
-              tab === id
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" className="max-h-[30vh] overflow-y-auto pr-1">
-        {content}
-      </div>
+    <div className="max-h-[40vh] overflow-y-auto pr-1" data-workjet-project-settings-inline="">
+      {content}
     </div>
   );
 }

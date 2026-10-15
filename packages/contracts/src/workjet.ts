@@ -333,8 +333,23 @@ export const WorkjetExecutionConfiguration = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type WorkjetExecutionConfiguration = typeof WorkjetExecutionConfiguration.Type;
 
+/**
+ * Workjet überträgt keine Claude-Code-Ereignisse (Michael, 15.10.2026): der
+ * Wert ist immer false, auch wenn eine ältere Konfiguration true gespeichert hat.
+ */
+const DisabledClaudeCodeEvents = Schema.Boolean.pipe(
+  Schema.decodeTo(
+    Schema.Boolean,
+    SchemaTransformation.transform<boolean, boolean>({
+      decode: () => false,
+      encode: () => false,
+    }),
+  ),
+  Schema.withDecodingDefault(Effect.succeed(false)),
+);
+
 export const WorkjetTelemetryConfiguration = Schema.Struct({
-  claudeCodeEvents: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  claudeCodeEvents: DisabledClaudeCodeEvents,
   sidecarEvents: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   retentionDays: PositiveInt.pipe(Schema.withDecodingDefault(Effect.succeed(14))),
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));

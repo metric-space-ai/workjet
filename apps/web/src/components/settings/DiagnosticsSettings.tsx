@@ -307,7 +307,7 @@ function formatProcessName(command: string): string {
 
 function formatProcessType(process: ServerProcessDiagnosticsEntry): string {
   if (process.depth > 0) return "Unterprozess";
-  if (/\b(codex|claude|opencode|cursor)\b/i.test(process.command)) return "Luma";
+  if (/\b(codex|claude|opencode|cursor)\b/i.test(process.command)) return "Preset";
   return "Prozess";
 }
 

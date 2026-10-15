@@ -487,7 +487,7 @@ function CollapsedWorkflowSection({
           {failed > 0 ? (
             <span className="text-destructive-foreground">{failed} fehlgeschlagen</span>
           ) : null}
-          <span>{members.length} Lumas</span>
+          <span>{members.length} Presets</span>
           <span className="tabular-nums">· {formatSubagentTokenCount(totalTokens)} tok</span>
           {elapsed ? <span className="tabular-nums">· {elapsed}</span> : null}
           <ChevronRight aria-hidden className="size-3" />
@@ -533,7 +533,7 @@ export function AgentsPanel({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <Bot aria-hidden className="size-6 text-muted-foreground/60" />
-        <p className="text-sm font-medium">Noch keine Lumas</p>
+        <p className="text-sm font-medium">Noch keine Presets</p>
       </div>
     );
   }

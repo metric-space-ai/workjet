@@ -101,7 +101,7 @@ export function MeetingPreparationField({
             options={[
               ...(models.includes(config.model)
                 ? []
-                : [{ value: config.model, label: `${config.model} · Luma fehlt` }]),
+                : [{ value: config.model, label: `${config.model} · Preset fehlt` }]),
               ...models.map((model) => ({ value: model, label: model })),
             ]}
             onValueChange={(model) => {
@@ -112,15 +112,15 @@ export function MeetingPreparationField({
         </label>
       </div>
       <label className="grid min-w-0 gap-1 text-xs">
-        Luma und Kontoroute
+        Preset und Kontoroute
         <OptionSelect<string>
-          aria-label="Vorbereitungs-Luma"
+          aria-label="Vorbereitungs-Preset"
           className="w-auto min-w-0"
           value={config.workerProfileId ?? ""}
           options={[
-            { value: "", label: "Passende Luma" },
+            { value: "", label: "Passendes Preset" },
             ...(config.workerProfileId && !available.some((p) => p.id === config.workerProfileId)
-              ? [{ value: config.workerProfileId, label: "Gespeicherte Luma fehlt" }]
+              ? [{ value: config.workerProfileId, label: "Gespeichertes Preset fehlt" }]
               : []),
             ...available.map((p) => ({ value: p.id, label: `${p.name} · ${p.computerId}` })),
           ]}
@@ -188,10 +188,10 @@ export function MeetingPreparationField({
         {oneShotHarnessUnavailableReason(config.harness) ??
           (phase === "loading"
             ? loadingSlow
-              ? "Lumas nicht erreichbar"
-              : "Lumas werden geladen …"
+              ? "Presets nicht erreichbar"
+              : "Presets werden geladen …"
             : available.length === 0
-              ? "Keine passende Luma"
+              ? "Kein passendes Preset"
               : "")}
       </p>
     </fieldset>

@@ -1,67 +1,32 @@
 /**
- * Anonymous PostHog telemetry service.
+ * Analytics service without any delivery.
  *
- * Persists an installation-scoped anonymous identifier, buffers events in
- * memory, and flushes batches over Effect's HTTP client.
+ * Owner rule (Michael, 2026-10-15): Workjet transmits no data anywhere. The
+ * service keeps its interface so callers stay unchanged, but `record` and
+ * `flush` never buffer, identify, or send anything, regardless of a stored
+ * `posthogConsent` or any environment variable. There is no built-in key and
+ * no endpoint.
  *
  * @module AnalyticsService
  */
-import { HostProcessArchitecture, HostProcessPlatform } from "@workjet/shared/hostProcess";
-import * as Config from "effect/Config";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as Path from "effect/Path";
-import * as Ref from "effect/Ref";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
-
-import packageJson from "../../package.json" with { type: "json" };
-import * as ServerConfig from "../config.ts";
-import { ServerSettingsService } from "../serverSettings.ts";
-import { getTelemetryIdentifier } from "./Identify.ts";
-
-interface BufferedAnalyticsEvent {
-  readonly event: string;
-  readonly properties?: Readonly<Record<string, unknown>>;
-  readonly capturedAt: string;
-}
-
-const TelemetryEnvConfig = Config.all({
-  posthogKey: Config.string("WORKJET_POSTHOG_KEY").pipe(
-    Config.withDefault("phc_XOWci4oZP4VvLiEyrFqkFjP4CZn55mjYYBMREK5Wd6m"),
-  ),
-  posthogHost: Config.string("WORKJET_POSTHOG_HOST").pipe(
-    Config.withDefault("https://us.i.posthog.com"),
-  ),
-  // The legacy environment flag can veto consent, but can never grant it.
-  enabled: Config.boolean("WORKJET_TELEMETRY_ENABLED").pipe(Config.option),
-  flushBatchSize: Config.number("WORKJET_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
-  maxBufferedEvents: Config.number("WORKJET_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
-    Config.withDefault(1_000),
-  ),
-  wslDistroName: Config.string("WSL_DISTRO_NAME").pipe(Config.option),
-});
 
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
   {
-    /** Record an anonymous event for best-effort buffered delivery. */
+    /** Accepts an event and drops it; nothing leaves this machine. */
     readonly record: (
       event: string,
       properties?: Readonly<Record<string, unknown>>,
     ) => Effect.Effect<void>;
 
-    /** Flush all currently queued telemetry events. */
+    /** Nothing is ever queued, so there is nothing to flush. */
     readonly flush: Effect.Effect<void>;
   }
 >()("workjet/telemetry/AnalyticsService") {
-  /** No-op layer for callers that intentionally disable telemetry. */
+  /** No-op layer; identical to the production layer. */
   static readonly layerTest = Layer.succeed(
     AnalyticsService,
     AnalyticsService.of({
@@ -71,145 +36,7 @@ export class AnalyticsService extends Context.Service<
   );
 }
 
-export const make = Effect.gen(function* () {
-  const telemetryConfig = yield* TelemetryEnvConfig;
-  const httpClient = yield* HttpClient.HttpClient;
-  const serverConfig = yield* ServerConfig.ServerConfig;
-  const settings = yield* ServerSettingsService;
-  const hasConsent = settings.getSettings.pipe(
-    Effect.map(
-      (current) => current.posthogConsent && !Option.contains(telemetryConfig.enabled, false),
-    ),
-    Effect.orElseSucceed(() => false),
-  );
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
-  // Capture local services now; inspect identities only after consent.
-  const resolveIdentifier = yield* Effect.cached(
-    getTelemetryIdentifier.pipe(
-      Effect.provideService(ServerConfig.ServerConfig, serverConfig),
-      Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(Path.Path, path),
-      Effect.provideService(Crypto.Crypto, crypto),
-    ),
-  );
-  const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
-  const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
-  const hostPlatform = yield* HostProcessPlatform;
-  const hostArchitecture = yield* HostProcessArchitecture;
-
-  const enqueueBufferedEvent = (event: string, properties?: Readonly<Record<string, unknown>>) =>
-    Effect.flatMap(DateTime.now, (now) =>
-      Ref.modify(bufferRef, (current) => {
-        const appended = [
-          ...current,
-          {
-            event,
-            ...(properties ? { properties } : {}),
-            capturedAt: DateTime.formatIso(now),
-          } satisfies BufferedAnalyticsEvent,
-        ];
-
-        const next =
-          appended.length > telemetryConfig.maxBufferedEvents
-            ? appended.slice(appended.length - telemetryConfig.maxBufferedEvents)
-            : appended;
-
-        return [
-          {
-            size: next.length,
-            dropped: next.length !== appended.length,
-          } as const,
-          next,
-        ] as const;
-      }),
-    );
-
-  const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
-    events: ReadonlyArray<BufferedAnalyticsEvent>,
-  ) {
-    if (!(yield* hasConsent)) return;
-    const identifier = yield* resolveIdentifier;
-    if (!identifier) return;
-
-    const payload = {
-      api_key: telemetryConfig.posthogKey,
-      batch: events.map((event) => ({
-        event: event.event,
-        distinct_id: identifier,
-        properties: {
-          ...event.properties,
-          $process_person_profile: false,
-          platform: hostPlatform,
-          wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
-          arch: hostArchitecture,
-          workjetVersion: packageJson.version,
-          clientType,
-        },
-        timestamp: event.capturedAt,
-      })),
-    };
-
-    yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
-      HttpClientRequest.bodyJson(payload),
-      Effect.flatMap(httpClient.execute),
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
-    );
-  });
-
-  const flush: AnalyticsService["Service"]["flush"] = Effect.gen(function* () {
-    if (!(yield* hasConsent)) {
-      yield* Ref.set(bufferRef, []);
-      return;
-    }
-    while (true) {
-      const batch = yield* Ref.modify(bufferRef, (current) => {
-        if (current.length === 0) {
-          return [[] as ReadonlyArray<BufferedAnalyticsEvent>, current] as const;
-        }
-        const nextBatch = current.slice(0, telemetryConfig.flushBatchSize);
-        const remaining = current.slice(nextBatch.length);
-        return [nextBatch, remaining] as const;
-      });
-
-      if (batch.length === 0) {
-        return;
-      }
-
-      yield* sendBatch(batch).pipe(
-        Effect.catch((error) =>
-          Ref.update(bufferRef, (current) => [...batch, ...current]).pipe(
-            Effect.flatMap(() => Effect.fail(error)),
-          ),
-        ),
-      );
-    }
-  }).pipe(Effect.catch((cause) => Effect.logError("Failed to flush telemetry", { cause })));
-
-  const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
-    function* (event, properties) {
-      if (!(yield* hasConsent)) return;
-
-      const enqueueResult = yield* enqueueBufferedEvent(event, properties);
-      if (enqueueResult.dropped) {
-        yield* Effect.logDebug("analytics buffer full; dropping oldest event", {
-          size: enqueueResult.size,
-          event,
-        });
-      }
-    },
-  );
-
-  yield* Effect.forever(Effect.sleep(1000).pipe(Effect.flatMap(() => flush)), {
-    disableYield: true,
-  }).pipe(Effect.forkScoped);
-
-  yield* Effect.addFinalizer(() => flush);
-
-  return AnalyticsService.of({ record, flush });
-});
-
-export const layer = Layer.effect(AnalyticsService, make);
+/** Production layer: never sends, even with stored consent. */
+export const layer = AnalyticsService.layerTest;
 
 export const layerTest = AnalyticsService.layerTest;

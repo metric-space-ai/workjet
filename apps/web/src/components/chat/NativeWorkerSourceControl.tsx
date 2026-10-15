@@ -83,7 +83,7 @@ export function NativeWorkerSourceControl(props: {
       (entry) =>
         entry.status === "ready" && workerSourceConnectionForInstance([entry], props.instanceId),
     ).length > 1
-      ? "Mehrere Luma-Verbindungen passen zur Instanz"
+      ? "Mehrere Preset-Verbindungen passen zur Instanz"
       : source?.status === "ready"
         ? workerSourceBindingError(props.config, props.instanceId, source)
         : null);
@@ -118,7 +118,7 @@ export function NativeWorkerSourceControl(props: {
     )
       return;
     if (!selected && (!ready || renew) && !provision) {
-      setError({ scope, message: "Lumas nur in Workjet Desktop verbindbar" });
+      setError({ scope, message: "Presets nur in Workjet Desktop verbindbar" });
       return;
     }
     const requestedScope = scope;
@@ -136,7 +136,7 @@ export function NativeWorkerSourceControl(props: {
             scope: requestedScope,
             authenticationRequired: result.code === "signed_out",
             message:
-              result.code === "signed_out" ? "Bei Business OS anmelden" : "Lumas nicht verbunden",
+              result.code === "signed_out" ? "Bei Business OS anmelden" : "Presets nicht verbunden",
           });
           return;
         }
@@ -145,7 +145,7 @@ export function NativeWorkerSourceControl(props: {
       if (!accepted || accepted.status !== "ready") {
         setError({
           scope: requestedScope,
-          message: "Luma-Verbindung nicht bereit",
+          message: "Preset-Verbindung nicht bereit",
         });
         return;
       }
@@ -169,7 +169,7 @@ export function NativeWorkerSourceControl(props: {
       if (currentContext.current.scope === requestedScope) {
         setError({
           scope: requestedScope,
-          message: "Lumas nicht verbunden",
+          message: "Presets nicht verbunden",
         });
       }
     } finally {
@@ -208,15 +208,15 @@ export function NativeWorkerSourceControl(props: {
           (error?.scope === scope ? error.message : null) ??
           (!query.isPending && source !== undefined && !ready
             ? source.status === "needs_auth"
-              ? "Luma-Verbindung braucht Freigabe"
-              : "Luma-Verbindung nicht verfügbar"
+              ? "Preset-Verbindung braucht Freigabe"
+              : "Preset-Verbindung nicht verfügbar"
             : !query.isPending &&
                 ready &&
                 props.config.schemaVersion === 2 &&
                 props.config.capabilityBindings.some(
                   (binding) => binding.capabilityId === "ctox-business-os",
                 )
-              ? "Neue Luma-Verbindung bereit"
+              ? "Neue Preset-Verbindung bereit"
               : null));
   const canRetry = !selectionError && !(error?.scope === scope && error.retryable === false);
   useEffect(() => {
@@ -226,7 +226,7 @@ export function NativeWorkerSourceControl(props: {
             message: chooseConnection
               ? error?.scope === scope
                 ? error.message
-                : "Luma-Zugang wählen"
+                : "Preset-Zugang wählen"
               : currentError!,
             authenticationRequired:
               !chooseConnection &&
@@ -284,7 +284,7 @@ export function NativeWorkerSourceControl(props: {
       ) : currentError ? (
         <button
           type="button"
-          aria-label="Lumas neu verbinden"
+          aria-label="Presets neu verbinden"
           title={currentError}
           className="rounded border px-2 py-1 text-amber-500 disabled:opacity-50"
           disabled={props.unavailable || busy || query.isPending || request === null}

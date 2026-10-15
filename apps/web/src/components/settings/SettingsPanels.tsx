@@ -1,4 +1,5 @@
 import { SupportBundleSection } from "./SupportBundleSection";
+import { ProjectCheckoutRows } from "./ProjectSettingsPanel";
 import { workjetUiLanguage } from "../../workjetProjectControl";
 import { useUiText } from "../../hooks/useUiText";
 import { ArchiveX } from "lucide-react";
@@ -8,7 +9,6 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   type BackgroundActivityProfile,
   type DesktopUpdateChannel,
-  ProviderDriverKind,
   type ScopedThreadRef,
 } from "@workjet/contracts";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
@@ -26,7 +26,6 @@ import {
   MIN_INTERFACE_FONT_SIZE,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
 } from "@workjet/contracts/settings";
-import { createModelSelection } from "@workjet/shared/model";
 import * as Equal from "effect/Equal";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import {
@@ -35,8 +34,6 @@ import {
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
-import { ProviderModelPicker } from "../chat/ProviderModelPicker";
-import { TraitsPicker } from "../chat/TraitsPicker";
 import {
   resolveEnvironmentIdentificationPillLabel,
   useEnvironmentStageLabel,
@@ -60,17 +57,8 @@ import {
 } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
-import {
-  getCustomModelOptionsByInstance,
-  resolveAppModelSelectionState,
-} from "../../modelSelection";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  sortProviderInstanceEntries,
-} from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
-import { primaryServerConfigAtom, primaryServerProvidersAtom } from "../../state/server";
+import { primaryServerConfigAtom } from "../../state/server";
 import { formatVersionChipLabel } from "../VersionChip";
 import { useProjects } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
@@ -116,7 +104,6 @@ const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, stri
   "battery-saver": "Akku sparen",
 };
 
-const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 function archiveText(de: string, en: string): string {
   return workjetUiLanguage() === "en" ? en : de;
 }
@@ -876,111 +863,6 @@ function LegacyFeaturesSection() {
   );
 }
 
-/** Textmodell (#550): lebt auf „Modelle“, nicht mehr in „Allgemein“. */
-export function TextGenerationModelSection() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const serverProviders = useAtomValue(primaryServerProvidersAtom);
-  const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
-  const textGenInstanceId = textGenerationModelSelection.instanceId;
-  const textGenModel = textGenerationModelSelection.model;
-  const textGenModelOptions = textGenerationModelSelection.options;
-  const textGenerationModelInstanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
-  );
-  const textGenInstanceEntry = textGenerationModelInstanceEntries.find((entry) => {
-    return entry.instanceId === textGenInstanceId;
-  });
-  const textGenProvider: ProviderDriverKind =
-    textGenInstanceEntry?.driverKind ?? DEFAULT_DRIVER_KIND;
-  const textGenerationModelOptionsByInstance = getCustomModelOptionsByInstance(
-    settings,
-    serverProviders,
-    textGenInstanceId,
-    textGenModel,
-  );
-  const isTextGenerationModelDirty = !Equal.equals(
-    settings.textGenerationModelSelection ?? null,
-    DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
-  );
-  return (
-    <SettingsSection title="Textmodell">
-      <SettingsRow
-        {...searchableSetting("text-generation-model")}
-        resetAction={
-          isTextGenerationModelDirty ? (
-            <SettingResetButton
-              label="Textmodell"
-              onClick={() =>
-                updateSettings({
-                  textGenerationModelSelection:
-                    DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-                })
-              }
-            />
-          ) : null
-        }
-        control={
-          <div className="flex flex-wrap items-center justify-end gap-1.5">
-            <ProviderModelPicker
-              activeInstanceId={textGenInstanceId}
-              model={textGenModel}
-              lockedProvider={null}
-              instanceEntries={textGenerationModelInstanceEntries}
-              modelOptionsByInstance={textGenerationModelOptionsByInstance}
-              triggerVariant="outline"
-              triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-              onInstanceModelChange={(instanceId, model) => {
-                updateSettings({
-                  textGenerationModelSelection: resolveAppModelSelectionState(
-                    {
-                      ...settings,
-                      textGenerationModelSelection: createModelSelection(instanceId, model),
-                    },
-                    serverProviders,
-                  ),
-                });
-              }}
-            />
-            <TraitsPicker
-              provider={textGenProvider}
-              models={
-                // Use the exact instance's models (rather than the
-                // first-kind-match) so a custom text-gen instance like
-                // `codex_personal` gets its own model list, not the
-                // default Codex one.
-                textGenInstanceEntry?.models ?? []
-              }
-              model={textGenModel}
-              prompt=""
-              onPromptChange={() => {}}
-              modelOptions={textGenModelOptions}
-              allowPromptInjectedEffort={false}
-              triggerVariant="outline"
-              triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-              onModelOptionsChange={(nextOptions) => {
-                updateSettings({
-                  textGenerationModelSelection: resolveAppModelSelectionState(
-                    {
-                      ...settings,
-                      textGenerationModelSelection: createModelSelection(
-                        textGenInstanceId,
-                        textGenModel,
-                        nextOptions,
-                      ),
-                    },
-                    serverProviders,
-                  ),
-                });
-              }}
-            />
-          </div>
-        }
-      />
-    </SettingsSection>
-  );
-}
-
 export function GeneralSettingsPanel() {
   const t = useUiText();
   const settings = usePrimarySettings();
@@ -1022,17 +904,6 @@ export function GeneralSettingsPanel() {
           }
         />
         <AppearanceRows />
-        <SettingsRow
-          {...searchableSetting("posthog-consent")}
-          control={
-            <Switch
-              checked={settings.posthogConsent}
-              onCheckedChange={(checked) => updateSettings({ posthogConsent: checked })}
-              aria-label={searchableSetting("posthog-consent").title}
-            />
-          }
-        />
-
         <SettingsRow
           {...searchableSetting("developer-mode")}
           control={
@@ -1592,25 +1463,40 @@ export function ProjectFolderSettingRow() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   return (
+    <>
+      <ProjectFolderRow
+        value={settings.addProjectBaseDirectory}
+        onCommit={(addProjectBaseDirectory) => updateSettings({ addProjectBaseDirectory })}
+      />
+      {/* Arbeitskopien und Projekt-Skripte: nur im Entwicklermodus (15.10.). */}
+      <ProjectCheckoutRows />
+    </>
+  );
+}
+
+function ProjectFolderRow({
+  value,
+  onCommit,
+}: {
+  readonly value: string;
+  readonly onCommit: (next: string) => void;
+}) {
+  return (
     <SettingsRow
       {...searchableSetting("add-project-starts-in")}
       resetAction={
-        settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+        value !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
           <SettingResetButton
             label="Projektordner"
-            onClick={() =>
-              updateSettings({
-                addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-              })
-            }
+            onClick={() => onCommit(DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory)}
           />
         ) : null
       }
       control={
         <DraftInput
           className="w-full sm:w-72"
-          value={settings.addProjectBaseDirectory}
-          onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
+          value={value}
+          onCommit={onCommit}
           placeholder="~/"
           spellCheck={false}
           aria-label={searchableSetting("add-project-starts-in").title}

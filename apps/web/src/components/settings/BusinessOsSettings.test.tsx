@@ -143,7 +143,7 @@ describe("Business OS settings scope", () => {
         activeInstanceId="paired:backend-alpha"
       />,
     );
-    for (const duplicate of [">Modelle<", ">Harnesses<", ">Lumas<", "instance-hub:"])
+    for (const duplicate of [">Modelle<", ">Harnesses<", ">Presets<", "instance-hub:"])
       expect(markup).not.toContain(duplicate);
     for (const english of [
       "Settings for",

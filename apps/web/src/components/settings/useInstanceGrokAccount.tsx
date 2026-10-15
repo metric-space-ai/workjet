@@ -23,6 +23,7 @@ import { WORKJET_GATEWAY_PROVIDER_ICONS } from "./WorkjetGatewayAccounts";
 import { Button } from "../ui/button";
 
 type Check = NonNullable<WorkjetInstanceGrokResponse["check"]>;
+const INSTANCE_RETRY_MS = 15_000;
 const columns =
   "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
 
@@ -40,6 +41,8 @@ export function useInstanceGrokAccount(
   const alive = useRef(true);
   const controller = useRef<AbortController | undefined>(undefined);
   const retained = useRef<WorkjetInstanceGrokResponse | undefined>(undefined);
+  /** Rohcode des letzten Fehlers, nur für „Details“. */
+  const lastFailure = useRef<string | null>(null);
   const apply = useCallback((result: WorkjetInstanceGrokResponse) => {
     retained.current = result;
     setState(result);
@@ -60,13 +63,20 @@ export function useInstanceGrokAccount(
       controller.current = active;
       setBusy(input.action === "instance.grok.check" ? input.modelId : input.action);
       setError(undefined);
-      setConnectionFailure(undefined);
+      lastFailure.current = null;
       try {
         const result = await requestInstanceGrok(instanceId, input, active.signal);
         if (active.signal.aborted || !alive.current) return undefined;
+        setConnectionFailure(undefined);
         apply(result);
         return result;
       } catch (failure) {
+        lastFailure.current =
+          failure instanceof WorkjetProjectControlError
+            ? failure.failure.code
+            : failure instanceof Error
+              ? failure.message
+              : "unknown";
         if (!active.signal.aborted && alive.current) {
           if (failure instanceof WorkjetProjectControlError) setConnectionFailure(failure.failure);
           else setError(failure instanceof Error ? failure.message : "Grok-Aktion fehlgeschlagen.");
@@ -152,18 +162,29 @@ export function useInstanceGrokAccount(
       }
     })();
   };
-  const start = () => {
+  // Ein Verbindungsfehler wird still wiederholt; die letzte bekannte Zeile bleibt stehen.
+  useEffect(() => {
+    if (!connectionFailure || busy !== undefined) return;
+    const timer = setTimeout(() => {
+      void run({ action: "instance.grok.read" });
+    }, INSTANCE_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [connectionFailure, busy, run]);
+
+  /** Startet das Abo auf der Instanz; liefert den Rohcode eines Fehlers oder null. */
+  const start = async (): Promise<string | null> => {
     setConfirmRemove(false);
-    void run({ action: "instance.grok.start" }).then((result) => {
-      if (
-        result?.login?.phase === "accepted" &&
-        result.installed &&
-        result.models.includes("grok-4.7")
-      ) {
-        setChecks({});
-        void run({ action: "instance.grok.check", modelId: "grok-4.7" });
-      }
-    });
+    const result = await run({ action: "instance.grok.start" });
+    if (!result) return lastFailure.current ?? "unknown";
+    if (
+      result.login?.phase === "accepted" &&
+      result.installed &&
+      result.models.includes("grok-4.7")
+    ) {
+      setChecks({});
+      void run({ action: "instance.grok.check", modelId: "grok-4.7" });
+    }
+    return null;
   };
   const Icon = WORKJET_GATEWAY_PROVIDER_ICONS.xai;
   const login = state?.login;
@@ -184,15 +205,14 @@ export function useInstanceGrokAccount(
                 aria-label={`Grok-Konto auf ${label} hinzufügen`}
                 data-workjet-action="models.instance.xai.add-account"
                 disabled={!!busy || phase === "pending"}
-                onClick={start}
+                onClick={() => void start()}
               >
                 <PlusIcon className="size-3" />
               </Button>
             )}
           </div>
           <span className="block break-words text-[11px] text-muted-foreground">
-            {label} ·{" "}
-            {state ? (state.installed ? state.accountLabel : "OAuth-Abo") : "Nicht geladen"}
+            {label} · {state ? (state.installed ? state.accountLabel : "OAuth-Abo") : "—"}
           </span>
         </div>
         <div role="cell" className="flex min-w-0 flex-wrap gap-1">
@@ -253,7 +273,7 @@ export function useInstanceGrokAccount(
               variant="outline"
               disabled={!!busy}
               data-workjet-action="models.instance.xai.sign-in"
-              onClick={start}
+              onClick={() => void start()}
             >
               Grok Build OAuth
             </Button>
@@ -371,12 +391,13 @@ export function useInstanceGrokAccount(
     </div>
   );
   return {
-    row: connectionFailure ? null : row,
+    row,
     connectionFailure,
     label,
     installed: state?.installed ?? false,
     hasModels: !!state?.models.length,
-    checking: busy !== undefined,
+    // Nur echte Modellprüfungen; stilles Neuladen ist kein „Prüft“.
+    checking: busy !== undefined && !busy.startsWith("instance.grok."),
     start,
     checkAll,
     refresh: () => {

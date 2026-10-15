@@ -78,9 +78,33 @@ describe("provider quota evidence → remaining", () => {
     expect(result.unknownReason).toContain("eindeutigen Restwert");
     expect(result.exhausted).toBe(false);
   });
-  it.each(["xai", "kimi"] as const)("%s has no quota reading", (provider) => {
+  it("reads Kimi Code windows as consumed share with German names", () => {
+    const quotas = [
+      window({ name: "limit_5h", source: raw("used_percent", 30, null) }),
+      window({ name: "limit_7d", source: raw("used_percent", 55, null) }),
+      window({ name: "limit_month_total", source: raw("used_percent", 90, null) }),
+    ];
+    const result = normalizeModelsQuota("kimi", quotas, now);
+    expect(result.map((w) => [w.label, w.remainingPercent, w.unknownReason])).toEqual([
+      ["5 Std.", 70, null],
+      ["7 Tage", 45, null],
+      ["Monat", 10, null],
+    ]);
+  });
+  it("reads SuperGrok weekly and monthly windows as consumed share", () => {
+    const quotas = [
+      window({ name: "weekly", source: raw("used_percent", 100, 604_800) }),
+      window({ name: "monthly", source: raw("used_percent", 12, null) }),
+    ];
+    const result = normalizeModelsQuota("xai", quotas, now);
+    expect(result.map((w) => [w.label, w.remainingPercent])).toEqual([
+      ["Woche", 0],
+      ["Monat", 88],
+    ]);
+  });
+  it.each(["xai", "kimi"] as const)("%s never guesses an unknown field's direction", (provider) => {
     expect(normalizeModelsQuota(provider, [], now)).toEqual([]);
-    const unexpected = normalize(provider, { source: raw("used_percent", 0, 18_000) });
+    const unexpected = normalize(provider, { source: raw("percentage", 0, 18_000) });
     expect(unexpected.remainingPercent).toBeNull();
     expect(unexpected.unknownReason).toContain("Richtung");
   });

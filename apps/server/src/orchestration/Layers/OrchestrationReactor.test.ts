@@ -15,6 +15,9 @@ import { WorkerSupervisorDecisionReactor } from "./WorkerSupervisorDecisionReact
 import { PersistentGoalReactor } from "./PersistentGoalReactor.ts";
 import { SupervisorTickReactor } from "./SupervisorTickReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
+import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { ProviderService } from "../../provider/Services/ProviderService.ts";
 
 describe("OrchestrationReactor", () => {
   let runtime: ManagedRuntime.ManagedRuntime<OrchestrationReactor, never> | null = null;
@@ -31,6 +34,16 @@ describe("OrchestrationReactor", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
+        Layer.provideMerge(Layer.mock(OrchestrationEngineService)({})),
+        Layer.provideMerge(
+          Layer.mock(ProjectionSnapshotQuery)({
+            getCommandReadModel: () => {
+              started.push("orphaned-session-recovery");
+              return Effect.succeed({ threads: [] } as never);
+            },
+          }),
+        ),
+        Layer.provideMerge(Layer.mock(ProviderService)({ listSessions: () => Effect.succeed([]) })),
         Layer.provideMerge(
           Layer.succeed(SupervisorTickReactor, {
             start: () => {
@@ -111,6 +124,7 @@ describe("OrchestrationReactor", () => {
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
 
     expect(started).toEqual([
+      "orphaned-session-recovery",
       "provider-runtime-ingestion",
       "provider-command-reactor",
       "checkpoint-reactor",

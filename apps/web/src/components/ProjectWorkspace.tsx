@@ -1,5 +1,4 @@
 import { useCallback, useState, type ReactNode } from "react";
-import { GitPullRequestIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
@@ -12,6 +11,7 @@ import { buildProjectOwnerOverview, type ProjectOverviewPr } from "../projectOve
 import { resolveGalleryProjectOverview, type GalleryProject } from "../projectOverview";
 import { useGithubMergedPullRequests } from "../hooks/useGithubMergedPullRequests";
 import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
+import { refreshWorkjetProjectKpis } from "../workjetProjectControl";
 import { ProjectOverviewView } from "./ProjectOverviewView";
 import { ProjectOverviewDecisions } from "./ProjectOverviewDecisions";
 import { ProjectOverviewPullRequest } from "./ProjectOverviewPullRequest";
@@ -23,9 +23,6 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "./WorkspaceBreadcrumb";
 import { SidebarInset } from "./ui/sidebar";
-import { InlinePanel } from "./ui/inline-panel";
-import { Input } from "./ui/input";
-import { Button } from "./ui/button";
 
 type Props = {
   readonly project: GalleryProject;
@@ -34,9 +31,6 @@ type Props = {
   readonly onOpenJourFixe?: () => void;
   readonly ctoxInstanceId?: string | null;
   readonly openMeeting?: boolean;
-  readonly onAddParent: (domain: string, goal: string) => Promise<boolean>;
-  /** Öffnet die Pull-Request-Liste dieses Projekts. */
-  readonly onOpenPullRequests?: () => void;
   /** Compact one-line notice above the overview, e.g. a missing model account. */
   readonly notice?: ReactNode;
 };
@@ -52,9 +46,7 @@ function ProjectWorkspaceContent({
   project,
   threads,
   onOpenChat,
-  onAddParent,
   onOpenJourFixe,
-  onOpenPullRequests,
   ctoxInstanceId,
   openMeeting = false,
   notice,
@@ -75,6 +67,17 @@ function ProjectWorkspaceContent({
   ];
   const nativeInstance = project.native && project.configuration ? (ctoxInstanceId ?? null) : null;
   const sources = useProjectOverviewSources(nativeInstance, project.id);
+  const configurationId = project.configuration?.id ?? null;
+  // „Neu berechnen“ startet die Neuberechnung in CTOX (project.kpis.refresh, #502) und
+  // liest danach neu. Der stille Wiederholversuch nach einem Lesefehler liest nur neu.
+  const { failed: sourcesFailed, reload: reloadSources } = sources;
+  const recomputeKpis = useCallback(() => {
+    if (sourcesFailed || nativeInstance === null || configurationId === null) {
+      reloadSources();
+      return;
+    }
+    void refreshWorkjetProjectKpis(nativeInstance, configurationId).then(() => reloadSources());
+  }, [sourcesFailed, reloadSources, nativeInstance, configurationId]);
   const tokenBudgetSource = useProjectOverviewTokenBudgetSource(project);
   const exit = useProjectExitModel(nativeInstance, project.id, project.configuration?.exitModel);
   const githubPrs = useGithubMergedPullRequests(
@@ -101,29 +104,8 @@ function ProjectWorkspaceContent({
     ],
     projectTokenBudgetSource: tokenBudgetSource,
   });
-  const [editingParent, setEditingParent] = useState(false);
   const [meetingKey, setMeetingKey] = useState<string | null>(null);
   const [dismissedMeetingKey, setDismissedMeetingKey] = useState<string | null>(null);
-  const [domain, setDomain] = useState("");
-  const [goal, setGoal] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const submitParent = async () => {
-    if (saving || !domain.trim() || !goal.trim()) return;
-    setSaving(true);
-    setFailed(false);
-    try {
-      if (await onAddParent(domain.trim(), goal.trim())) {
-        setEditingParent(false);
-        setDomain("");
-        setGoal("");
-      } else setFailed(true);
-    } catch {
-      setFailed(true);
-    } finally {
-      setSaving(false);
-    }
-  };
   const roomKey = `${ctoxInstanceId}:${project.id}`;
   const nativeRoom =
     project.native && ctoxInstanceId != null && project.configuration !== undefined;
@@ -174,7 +156,7 @@ function ProjectWorkspaceContent({
         onOpenChat={onOpenChat}
         {...(openJourFixe ? { onOpenJourFixe: openJourFixe } : {})}
         connectionError={sources.failed}
-        onRecomputeKpis={sources.reload}
+        onRecomputeKpis={recomputeKpis}
         feedPosts={sources.feedPosts}
         settingsLinks={settingsLinks}
         feedPersistence={{
@@ -184,54 +166,6 @@ function ProjectWorkspaceContent({
           stored: project.configuration?.feedSettings,
         }}
         connectionMessage={sources.failureText}
-        actions={
-          <>
-            {onOpenPullRequests ? (
-              <Button size="sm" variant="outline" onClick={onOpenPullRequests}>
-                <GitPullRequestIcon />
-                Pull Requests
-              </Button>
-            ) : null}
-            <InlinePanel
-              // The header row wraps; an open panel takes its own full line.
-              {...(editingParent
-                ? { className: "mt-2 basis-full text-[13.5px] text-foreground" }
-                : {})}
-              triggerLabel={text.addParent}
-              open={editingParent}
-              onOpenChange={(open) => {
-                setEditingParent(open);
-                if (!open) setFailed(false);
-              }}
-              submitLabel={saving ? text.saving : text.addParent}
-              submitDisabled={!domain.trim() || !goal.trim()}
-              busy={saving}
-              status={failed ? text.addFailed : undefined}
-              statusTone="error"
-              onSubmit={() => void submitParent()}
-            >
-              <label className="grid gap-1 text-[13.5px]">
-                {text.name}
-                <Input
-                  required
-                  maxLength={256}
-                  value={domain}
-                  onChange={(event) => setDomain(event.target.value)}
-                />
-              </label>
-              <label className="grid gap-1 text-[13.5px]">
-                {text.goal}
-                <textarea
-                  required
-                  maxLength={4096}
-                  value={goal}
-                  onChange={(event) => setGoal(event.target.value)}
-                  className="min-h-24 rounded-md border border-input bg-transparent p-2"
-                />
-              </label>
-            </InlinePanel>
-          </>
-        }
         {...(data.decisions.length
           ? {
               decisions: (

@@ -1,5 +1,6 @@
 import type {
   CapabilityManifest,
+  CapabilityPromptTeamRole,
   WorkjetProjectTeamMember,
   WorkjetThreadRole,
 } from "@workjet/contracts";
@@ -42,6 +43,26 @@ const roleSection = (role: WorkjetThreadRole): string => {
   }
 };
 
+/**
+ * CTOX team role for role-aware capability text. Project team roles win; a
+ * legacy child worker is a one-shot worker; top-level threads talk to the
+ * Owner directly (operator).
+ */
+export const capabilityPromptTeamRole = (
+  role: WorkjetThreadRole,
+  team?: WorkjetProjectTeamMember,
+): CapabilityPromptTeamRole => {
+  switch (team?.role) {
+    case "supervisor":
+      return "supervisor";
+    case "specialist":
+      return "persistent_worker";
+    case "worker":
+      return "one_shot_worker";
+  }
+  return role === "worker" ? "one_shot_worker" : "operator";
+};
+
 export const compileCapabilityPrompt = ({
   role,
   team,
@@ -71,8 +92,16 @@ export const compileCapabilityPrompt = ({
     if (instructions === undefined || instructions.length === 0) {
       continue;
     }
+    const roleInstructions =
+      manifest.promptContribution?.teamRoleInstructions?.[
+        capabilityPromptTeamRole(role, team)
+      ]?.trim();
 
-    sections.push(`## Capability: ${manifest.id}@${manifest.version}\n\n${instructions}`);
+    sections.push(
+      `## Capability: ${manifest.id}@${manifest.version}\n\n${instructions}${
+        roleInstructions ? `\n${roleInstructions}` : ""
+      }`,
+    );
   }
 
   return sections.join("\n\n");

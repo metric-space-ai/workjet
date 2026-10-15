@@ -13,7 +13,7 @@ import {
 } from "./settingsNavigation";
 
 describe("Workjet settings information architecture (#568)", () => {
-  it("has exactly eight pages, twelve in developer mode", () => {
+  it("has exactly eight pages, thirteen in developer mode", () => {
     expect(SETTINGS_NAV_ITEMS.map((item) => item.label)).toEqual([
       "Allgemein",
       "Instanz",
@@ -25,10 +25,11 @@ describe("Workjet settings information architecture (#568)", () => {
       "Archiv",
     ]);
     expect(settingsNavItems(false)).toHaveLength(8);
-    expect(settingsNavItems(true)).toHaveLength(12);
+    expect(settingsNavItems(true)).toHaveLength(13);
     expect(DEVELOPER_SETTINGS_NAV_ITEMS.slice(8).map((item) => item.label)).toEqual([
       "Diagnose",
       "Harnesses",
+      "Schnittstellen",
       "Versionsverwaltung",
       "Tastenkürzel",
     ]);

@@ -1,3 +1,5 @@
+import { readWorkjetManagedPrompt, workjetTeamEnvironment } from "../../mcp/WorkjetThreadTeam.ts";
+import { delimitWorkjetManagedPrompt } from "../managedPromptHooks.ts";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 import {
   ApprovalRequestId,
@@ -235,12 +237,7 @@ function makeGrokResumeCursor(
   };
 }
 
-function delimitManagedPrompt(compiledManagedPrompt: string | undefined): string | undefined {
-  const managedPrompt = compiledManagedPrompt?.trim();
-  return managedPrompt
-    ? `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`
-    : undefined;
-}
+const delimitManagedPrompt = delimitWorkjetManagedPrompt;
 
 function applyManagedPromptFingerprint(
   ctx: GrokSessionContext,
@@ -672,7 +669,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           });
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-          const managedPrompt = delimitManagedPrompt(mcpSession?.compiledManagedPrompt);
+          const managedPrompt = delimitManagedPrompt(readWorkjetManagedPrompt(input.threadId));
           const managedPromptFingerprint = managedPrompt
             ? yield* crypto.digest("SHA-256", new TextEncoder().encode(managedPrompt)).pipe(
                 Effect.map(Encoding.encodeHex),
@@ -697,7 +694,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               : options?.environment);
           const acp = yield* makeGrokAcpRuntime({
             grokSettings,
-            ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
+            environment: workjetTeamEnvironment(input.threadId, sessionEnvironment),
             childProcessSpawner,
             onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
             cwd,

@@ -1192,6 +1192,25 @@ export interface DesktopBridge {
    * the document itself stays on disk for the user to read first.
    */
   createSupportBundle?: () => Promise<DesktopSupportBundleResult>;
+  /** CTOX Toolhub control plane on the selected instance (authenticated guest). Developer mode only. */
+  toolhubRequest?: (input: {
+    readonly instanceId: string;
+    readonly route: string;
+    readonly body?: unknown;
+  }) => Promise<{ readonly status: number; readonly body: unknown }>;
+  /**
+   * Open an instance-issued authorize URL in an origin-bound in-app window and
+   * capture the redirect to the instance; submit `callbackUrl` via
+   * toolhubRequest("oauth/complete"). Developer mode only.
+   */
+  toolhubAuthorize?: (input: {
+    readonly instanceId: string;
+    readonly toolkit: string;
+    readonly authorizeUrl: string;
+  }) => Promise<{
+    readonly _tag: "captured" | "cancelled" | "failed";
+    readonly callbackUrl?: string;
+  }>;
   /**
    * Drains the OS deep links the main process is holding. Draining is the
    * only way links leave the main process, so a link is delivered exactly

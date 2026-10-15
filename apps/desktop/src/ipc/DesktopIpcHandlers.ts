@@ -34,6 +34,7 @@ import {
   setUpdateChannel,
 } from "./methods/updates.ts";
 import { createSupportBundle } from "./methods/support.ts";
+import { authorizeToolhub, requestToolhub } from "./methods/toolhub.ts";
 import {
   acceptUserDataMigration,
   declineUserDataMigration,
@@ -72,6 +73,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(declineUserDataMigration);
 
   yield* ipc.handle(createSupportBundle);
+  yield* ipc.handle(requestToolhub);
+  yield* ipc.handle(authorizeToolhub);
 
   yield* ipc.handle(takePendingDeepLinks);
 

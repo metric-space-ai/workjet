@@ -66,6 +66,7 @@ import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.
 import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
+import * as WorkjetThreadTeam from "../../mcp/WorkjetThreadTeam.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { compileCtoxCrewPrompt } from "../../workjet/ctox/CtoxCrewPrompt.ts";
 import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
@@ -375,10 +376,24 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       if (credential) {
         yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
       }
+      // Team identity and the managed prompt exist even without an MCP session.
+      yield* Effect.sync(() =>
+        WorkjetThreadTeam.setWorkjetThreadTeam(
+          threadId,
+          WorkjetThreadTeam.ctoxTeamRole(threadCapabilityContext),
+          threadCapabilityContext.compiledManagedPrompt,
+          credential !== undefined,
+        ),
+      );
     });
   const clearMcpSession = (threadId: ThreadId) =>
     McpSessionRegistry.revokeActiveMcpThread(threadId).pipe(
-      Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          McpProviderSession.clearMcpProviderSession(threadId);
+          WorkjetThreadTeam.clearWorkjetThreadTeam(threadId);
+        }),
+      ),
     );
 
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>

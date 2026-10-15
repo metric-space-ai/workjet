@@ -1,3 +1,5 @@
+import { readWorkjetManagedPrompt } from "../../mcp/WorkjetThreadTeam.ts";
+import { ctoxNativeInstruction } from "../managedPromptHooks.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Stable native turn/event ids; no CLI process is started.
 import * as NodeCrypto from "node:crypto";
 import {
@@ -14,7 +16,6 @@ import {
 } from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import { readMcpProviderSession } from "../../mcp/McpProviderSession.ts";
 import * as Fiber from "effect/Fiber";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -420,10 +421,8 @@ export const makeCtoxAdapter = (options: {
               "sendTurn",
               "CTOX uses the model configuration of its own instance.",
             );
-          const managedPrompt = readMcpProviderSession(
-            input.threadId,
-          )?.compiledManagedPrompt.trim();
-          const instruction = [managedPrompt, input.input].filter(Boolean).join("\n\n");
+          const managedPrompt = readWorkjetManagedPrompt(input.threadId)?.trim();
+          const instruction = ctoxNativeInstruction(managedPrompt, input.input ?? "");
           if (Buffer.byteLength(instruction, "utf8") > 16_000)
             return yield* failure(
               "sendTurn",

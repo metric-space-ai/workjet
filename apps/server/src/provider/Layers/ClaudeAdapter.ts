@@ -1,3 +1,5 @@
+import { readWorkjetManagedPrompt, workjetTeamEnvironment } from "../../mcp/WorkjetThreadTeam.ts";
+import { delimitWorkjetManagedPrompt } from "../managedPromptHooks.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- The Claude SDK spawn hook exposes the harness child so stopSession can terminate and verify its process group.
 import * as NodeChildProcess from "node:child_process";
 import { oneShotClaudePolicy } from "../oneShotClaudePolicy.ts";
@@ -147,7 +149,7 @@ function claudeSystemPrompt(
     ? {
         type: "preset",
         preset: "claude_code",
-        append: `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`,
+        append: delimitWorkjetManagedPrompt(managedPrompt)!,
       }
     : { type: "preset", preset: "claude_code" };
 }
@@ -4574,7 +4576,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
-        systemPrompt: claudeSystemPrompt(mcpSession?.compiledManagedPrompt),
+        systemPrompt: claudeSystemPrompt(readWorkjetManagedPrompt(input.threadId)),
         ...(mcpSession?.projectTeamRole
           ? { disallowedTools: ["AskUserQuestion", "ExitPlanMode"] }
           : {}),
@@ -4621,7 +4623,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         includePartialMessages: true,
         canUseTool,
         onElicitation,
-        env: sessionEnvironment,
+        env: workjetTeamEnvironment(input.threadId, sessionEnvironment),
         additionalDirectories: namespaceCapture
           ? [input.cwd!]
           : (oneShotPolicy?.additionalDirectories ?? additionalDirectories),

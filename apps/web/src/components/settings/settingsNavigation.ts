@@ -8,6 +8,7 @@ import {
   GitBranchIcon,
   KeyboardIcon,
   MonitorIcon,
+  PlugIcon,
   ServerIcon,
   Settings2Icon,
   TerminalIcon,
@@ -33,6 +34,7 @@ const PAGE_ICONS: Readonly<Record<SettingsPagePath, ComponentType<{ className?: 
   "/settings/archived": ArchiveIcon,
   "/settings/diagnostics": ActivityIcon,
   "/settings/harnesses": TerminalIcon,
+  "/settings/integrations": PlugIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/keybindings": KeyboardIcon,
 };
@@ -58,7 +60,7 @@ function navItem(to: SettingsPagePath): SettingsNavItem {
 /** Die acht Seiten (#568). */
 export const SETTINGS_NAV_ITEMS: ReadonlyArray<SettingsNavItem> = SETTINGS_PAGE_PATHS.map(navItem);
 
-/** Acht Seiten plus die vier Entwicklerseiten. */
+/** Acht Seiten plus die fünf Entwicklerseiten. */
 export const DEVELOPER_SETTINGS_NAV_ITEMS: ReadonlyArray<SettingsNavItem> = [
   ...SETTINGS_NAV_ITEMS,
   ...DEVELOPER_SETTINGS_PAGE_PATHS.map(navItem),

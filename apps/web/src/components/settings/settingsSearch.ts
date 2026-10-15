@@ -1,5 +1,5 @@
 /**
- * Einstellungen in acht Seiten (#568). Im Entwicklermodus kommen vier Seiten
+ * Einstellungen in acht Seiten (#568). Im Entwicklermodus kommen fünf Seiten
  * dazu. Jede frühere Seite ist einer dieser Seiten zugeordnet; Unterseiten
  * (System-Prompts, Verbrauch) tragen ihre Elternseite in der Navigation.
  */
@@ -14,6 +14,7 @@ export type SettingsPagePath =
   | "/settings/archived"
   | "/settings/diagnostics"
   | "/settings/harnesses"
+  | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/keybindings";
 
@@ -47,6 +48,8 @@ export const SETTINGS_PAGE_PATHS: readonly SettingsPagePath[] = [
 export const DEVELOPER_SETTINGS_PAGE_PATHS: readonly SettingsPagePath[] = [
   "/settings/diagnostics",
   "/settings/harnesses",
+  // Schnittstellen bleibt Entwicklerseite, bis ctox #708 und die OAuth-Übergabe Main-Prozess → Instanz landen.
+  "/settings/integrations",
   "/settings/source-control",
   "/settings/keybindings",
 ];
@@ -72,6 +75,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/archived": "Archiv",
   "/settings/diagnostics": "Diagnose",
   "/settings/harnesses": "Harnesses",
+  "/settings/integrations": "Schnittstellen",
   "/settings/source-control": "Versionsverwaltung",
   "/settings/keybindings": "Tastenkürzel",
   "/settings/prompts": "System-Prompts",
@@ -105,6 +109,7 @@ const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly str
   "/settings/archived": ["Archive", "Archived conversations", "Unterhaltungen"],
   "/settings/diagnostics": ["Diagnostics"],
   "/settings/harnesses": ["Coding-Agenten", "Coding agents", "CLI"],
+  "/settings/integrations": ["Integrations", "Connectors", "Adapter", "Toolhub", "Apps"],
   "/settings/source-control": ["Source Control", "Git"],
   "/settings/keybindings": ["Keybindings", "Shortcuts"],
   "/settings/prompts": ["Prompts"],

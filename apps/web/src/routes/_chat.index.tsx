@@ -99,7 +99,7 @@ import {
 import { NoInstanceHero } from "../components/NoInstanceHero";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
-import { usePrimarySettings } from "../hooks/useSettings";
+import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
@@ -172,6 +172,8 @@ function ChatIndexRouteView() {
 function IndexDraftLanding() {
   const projects = useProjects();
   const computers = usePrimarySettings((settings) => settings.workjet.computers);
+  // The pull request page is a coding tool: developer mode only (#557).
+  const developerMode = useClientSettings((settings) => settings.developerMode);
   const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
   const registry = useWorkjetProjectRegistry(activeCtoxInstanceId);
   const projectStore = useContext(RegistryContext);
@@ -430,17 +432,20 @@ function IndexDraftLanding() {
           openMeeting={meetingProjectKey === project.key}
           threads={threads}
           {...(modelAccountMissing ? { notice: <ModelAccountMissingNotice /> } : {})}
-          onOpenPullRequests={() =>
-            void navigate({
-              to: "/pull-requests",
-              search: {
-                involvement: "all",
-                state: "open",
-                projectId: landingProject.id,
-                environmentId: landingProject.environmentId,
-              },
-            })
-          }
+          {...(developerMode
+            ? {
+                onOpenPullRequests: () =>
+                  void navigate({
+                    to: "/pull-requests",
+                    search: {
+                      involvement: "all",
+                      state: "open",
+                      projectId: landingProject.id,
+                      environmentId: landingProject.environmentId,
+                    },
+                  }),
+              }
+            : {})}
           onAddParent={async (domain, goal) => {
             if (
               !supervisor ||

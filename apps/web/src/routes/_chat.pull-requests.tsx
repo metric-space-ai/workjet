@@ -57,6 +57,7 @@ import {
 } from "../components/pullRequest/pullRequestList.logic";
 import { assignProjectsToEnvironments } from "../components/pullRequest/pullRequestProjectAssignment.logic";
 import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDetailPanel";
+import { DeveloperOnlyRoute } from "../components/DeveloperOnlyRoute";
 import {
   PullRequestFiltersMenu,
   PullRequestSearchInput,
@@ -216,8 +217,16 @@ export const Route = createFileRoute("/_chat/pull-requests")({
       : {}),
     ...(raw.checks === "passing" || raw.checks === "failing" ? { checks: raw.checks } : {}),
   }),
-  component: PullRequestsRouteView,
+  component: PullRequestsRoute,
 });
+
+function PullRequestsRoute() {
+  return (
+    <DeveloperOnlyRoute>
+      <PullRequestsRouteView />
+    </DeveloperOnlyRoute>
+  );
+}
 
 function PullRequestsRouteView() {
   const search = Route.useSearch();
@@ -1549,6 +1558,8 @@ function PullRequestsRouteView() {
             surfaces={rightPanelState.surfaces}
             activeSurfaceId={activePullRequestSurface.id}
             pendingSurfaceIds={EMPTY_PENDING_SURFACES}
+            // The page itself only exists in developer mode.
+            codingToolsVisible
             previewSessions={EMPTY_PREVIEW_SESSIONS}
             desktopByTabId={EMPTY_PREVIEW_DESKTOP_STATE}
             terminalLabelsById={EMPTY_TERMINAL_LABELS}

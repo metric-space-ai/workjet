@@ -326,9 +326,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   // ----- Entwicklermodus -----
   {
     id: "harnesses",
-    title: "Coding-Agenten",
+    title: "Harness",
     to: "/settings/harnesses",
-    searchAliases: ["Harnesses", "Coding agents", "CLI"],
+    searchAliases: ["Harnesses", "Coding-Agenten", "Coding agents", "CLI"],
     developerOnly: true,
   },
   {

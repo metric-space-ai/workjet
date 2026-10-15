@@ -100,7 +100,7 @@ describe("the bar's leftmost decision", () => {
     const text = textContent(items());
     expect(text).toContain("Claude Code");
     expect(text).not.toContain("gpt-5.6-sol");
-    expect(text).toContain("Worker-Presets verwalten");
+    expect(text).toContain("Presets verwalten");
   });
 
   it("disables every choice together when unavailable", () => {

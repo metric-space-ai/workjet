@@ -291,7 +291,7 @@ export type ProviderSettingsSections = "harnesses" | "models";
 
 /** „Harnesses“ was unclear (#554); the section is named for what it holds. */
 function codingAgentsTitle(): string {
-  return workjetUiLanguage() === "en" ? "Coding agents" : "Coding-Agenten";
+  return "Harness";
 }
 
 export function ProviderSettingsPanel({

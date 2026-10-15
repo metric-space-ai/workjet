@@ -78,22 +78,19 @@ export function SpeechSettingsPanel() {
   );
 }
 
-type CheckView = "saved" | "running" | "ok" | "error" | "none";
+type CheckView = "saved" | "running" | "ok" | "bad" | "idle";
+
+const CHECK_ICONS: Readonly<Record<CheckView, ReactNode>> = {
+  running: <LoaderIcon className="size-4 animate-spin text-muted-foreground" />,
+  ok: <CheckIcon className="size-4 text-emerald-500" />,
+  bad: <XIcon className="size-4 text-destructive" />,
+  saved: <CheckIcon className="size-4 text-muted-foreground" />,
+  idle: <CircleDashedIcon className="size-4 text-muted-foreground" />,
+};
 
 /** Ein Symbol statt „Nicht geprüft“: gespeichert, prüft, ok, fehlerhaft. */
 function CheckSymbol({ view, title }: { readonly view: CheckView; readonly title: string }) {
-  const icon =
-    view === "running" ? (
-      <LoaderIcon className="size-4 animate-spin text-muted-foreground" />
-    ) : view === "ok" ? (
-      <CheckIcon className="size-4 text-emerald-500" />
-    ) : view === "error" ? (
-      <XIcon className="size-4 text-destructive" />
-    ) : view === "saved" ? (
-      <CheckIcon className="size-4 text-muted-foreground" />
-    ) : (
-      <CircleDashedIcon className="size-4 text-muted-foreground" />
-    );
+  const icon = CHECK_ICONS[view];
   return (
     <Tooltip>
       <TooltipTrigger
@@ -120,7 +117,7 @@ function checkTitle(
   if (view === "saved") return "Gespeichert";
   if (view === "running") return "Prüft";
   if (view === "ok") return `Geprüft · ${check?.latencyMs ?? "—"} ms`;
-  if (view === "error") return SPEECH_REMEDIES[check?.errorClass ?? ""] ?? "Prüfung fehlgeschlagen";
+  if (view === "bad") return SPEECH_REMEDIES[check?.errorClass ?? ""] ?? "Prüfung fehlgeschlagen";
   return "—";
 }
 
@@ -264,8 +261,8 @@ export function InstanceSpeechSettings({
         : check?.state === "ok"
           ? "ok"
           : check
-            ? "error"
-            : "none";
+            ? "bad"
+            : "idle";
   const showMistral = credential || draft === "mistral";
   const backendOptions = (current: WorkjetSpeechConfig["synthesis"] | undefined) => [
     { value: "runtime", label: "Lokale Laufzeit" },
@@ -355,7 +352,7 @@ export function InstanceSpeechSettings({
               meta={
                 <span className="pl-6">
                   {credential ? "API-Key" : "—"}
-                  {accountView === "error" ? ` · ${checkTitle("error", check)}` : ""}
+                  {accountView === "bad" ? ` · ${checkTitle("bad", check)}` : ""}
                 </span>
               }
               chips={
@@ -520,7 +517,7 @@ export function InstanceSpeechSettings({
               <span className="flex items-center gap-1">
                 {sttCheck || sttPending ? (
                   <CheckSymbol
-                    view={sttPending ? "running" : sttCheck?.state === "ok" ? "ok" : "error"}
+                    view={sttPending ? "running" : sttCheck?.state === "ok" ? "ok" : "bad"}
                     title={
                       sttPending
                         ? "Prüft"

@@ -168,7 +168,7 @@ export const PROJECT_OVERVIEW_TEXT = {
     escalationLine: "{name} · {status}",
     completedStep: "{name} · Arbeitsschritt abgeschlossen",
     mergedEvent: "PR #{number} · {title} gemergt",
-    setupGroup: "Das Projektteam steht: {roles}, eingerichtet am {range}.",
+    setupGroup: "Das Projektteam steht: {roles}, eingerichtet am {range}",
     meetingCompleted: "Regeltermin abgeschlossen",
     todosConfirmed: "To-do-Liste bestätigt",
     controlLast: "Letzte Kontrolle {time}",

@@ -179,21 +179,14 @@
       "export_stderr": "Exporting session: ses_edd450ea0ffeAY1uMR0IGGaHcF\n"
     },
     {
-      "export_keys": [
-        "info",
-        "messages"
-      ],
+      "export_keys": ["info", "messages"],
       "export_message_count": 6,
       "import_exit_code": 0,
       "import_stdout": "Imported session: ses_edd450ea0ffeAY1uMR0IGGaHcF\n",
       "import_stderr": ""
     }
   ],
-  "command": [
-    "opencode",
-    "--pure",
-    "acp"
-  ],
+  "command": ["opencode", "--pure", "acp"],
   "pid": 82468,
   "exit_code": 0,
   "events": [

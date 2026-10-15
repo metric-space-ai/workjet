@@ -5,13 +5,7 @@
       "error": "RuntimeError(\"child ended before response: {'process_eof': 1}\")"
     }
   ],
-  "command": [
-    "opencode",
-    "--pure",
-    "--agent",
-    "compendium",
-    "acp"
-  ],
+  "command": ["opencode", "--pure", "--agent", "compendium", "acp"],
   "pid": 36086,
   "exit_code": 1,
   "events": [

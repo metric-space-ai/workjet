@@ -186,11 +186,7 @@
       }
     }
   ],
-  "command": [
-    "opencode",
-    "--pure",
-    "acp"
-  ],
+  "command": ["opencode", "--pure", "acp"],
   "pid": 15265,
   "exit_code": 0,
   "events": [

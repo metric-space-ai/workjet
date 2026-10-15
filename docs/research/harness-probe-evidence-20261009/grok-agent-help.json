@@ -1,11 +1,7 @@
 {
   "name": "grok-agent-help",
   "time": "2026-10-09T22:14:23.743012+00:00",
-  "command": [
-    "grok",
-    "agent",
-    "--help"
-  ],
+  "command": ["grok", "agent", "--help"],
   "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
   "timeout_seconds": 30,
   "pid": 83211,

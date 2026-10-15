@@ -1,10 +1,7 @@
 {
   "name": "grok-version",
   "time": "2026-10-09T21:43:31.991669+00:00",
-  "command": [
-    "grok",
-    "--version"
-  ],
+  "command": ["grok", "--version"],
   "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
   "timeout_seconds": 30,
   "pid": 2478,

@@ -23,9 +23,7 @@
               "zaiToolStream": true
             },
             "reasoning": true,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,
@@ -88,9 +86,7 @@
               "provider": "minimax",
               "baseUrl": "https://api.minimax.io/anthropic",
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0.3,
                 "output": 1.2,
@@ -107,9 +103,7 @@
               "provider": "minimax",
               "baseUrl": "https://api.minimax.io/anthropic",
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0.6,
                 "output": 2.4,
@@ -126,10 +120,7 @@
               "provider": "minimax",
               "baseUrl": "https://api.minimax.io/anthropic",
               "reasoning": true,
-              "input": [
-                "text",
-                "image"
-              ],
+              "input": ["text", "image"],
               "cost": {
                 "input": 0.6,
                 "output": 2.4,
@@ -152,9 +143,7 @@
                 "thinkingFormat": "zai"
               },
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -178,9 +167,7 @@
                 "zaiToolStream": true
               },
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -204,9 +191,7 @@
                 "zaiToolStream": true
               },
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -230,9 +215,7 @@
                 "zaiToolStream": true
               },
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -263,9 +246,7 @@
                 "high": "high",
                 "xhigh": "max"
               },
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -289,10 +270,7 @@
                 "zaiToolStream": true
               },
               "reasoning": true,
-              "input": [
-                "text",
-                "image"
-              ],
+              "input": ["text", "image"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -326,9 +304,7 @@
             "thinkingFormat": "zai"
           },
           "reasoning": true,
-          "input": [
-            "text"
-          ],
+          "input": ["text"],
           "cost": {
             "input": 0,
             "output": 0,
@@ -422,9 +398,7 @@
               "thinkingFormat": "zai"
             },
             "reasoning": true,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,
@@ -571,9 +545,7 @@
               "zaiToolStream": true
             },
             "reasoning": true,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,
@@ -666,9 +638,7 @@
               "provider": "minimax",
               "baseUrl": "https://api.minimax.io/anthropic",
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0.3,
                 "output": 1.2,
@@ -685,9 +655,7 @@
               "provider": "minimax",
               "baseUrl": "https://api.minimax.io/anthropic",
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0.6,
                 "output": 2.4,
@@ -704,10 +672,7 @@
               "provider": "minimax",
               "baseUrl": "https://api.minimax.io/anthropic",
               "reasoning": true,
-              "input": [
-                "text",
-                "image"
-              ],
+              "input": ["text", "image"],
               "cost": {
                 "input": 0.6,
                 "output": 2.4,
@@ -730,9 +695,7 @@
                 "thinkingFormat": "zai"
               },
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -756,9 +719,7 @@
                 "zaiToolStream": true
               },
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -782,9 +743,7 @@
                 "zaiToolStream": true
               },
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -808,9 +767,7 @@
                 "zaiToolStream": true
               },
               "reasoning": true,
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -841,9 +798,7 @@
                 "high": "high",
                 "xhigh": "max"
               },
-              "input": [
-                "text"
-              ],
+              "input": ["text"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -867,10 +822,7 @@
                 "zaiToolStream": true
               },
               "reasoning": true,
-              "input": [
-                "text",
-                "image"
-              ],
+              "input": ["text", "image"],
               "cost": {
                 "input": 0,
                 "output": 0,
@@ -911,9 +863,7 @@
             "thinkingFormat": "zai"
           },
           "reasoning": true,
-          "input": [
-            "text"
-          ],
+          "input": ["text"],
           "cost": {
             "input": 0,
             "output": 0,
@@ -1122,9 +1072,7 @@
               "thinkingFormat": "zai"
             },
             "reasoning": true,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,

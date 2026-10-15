@@ -23,9 +23,7 @@
               "zaiToolStream": true
             },
             "reasoning": true,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,
@@ -91,9 +89,7 @@
             "zaiToolStream": true
           },
           "reasoning": true,
-          "input": [
-            "text"
-          ],
+          "input": ["text"],
           "cost": {
             "input": 0,
             "output": 0,
@@ -355,9 +351,7 @@
               "zaiToolStream": true
             },
             "reasoning": true,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,
@@ -437,9 +431,7 @@
               "zaiToolStream": true
             },
             "reasoning": true,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,
@@ -522,9 +514,7 @@
             "zaiToolStream": true
           },
           "reasoning": true,
-          "input": [
-            "text"
-          ],
+          "input": ["text"],
           "cost": {
             "input": 0,
             "output": 0,
@@ -1074,9 +1064,7 @@
               "zaiToolStream": true
             },
             "reasoning": true,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,

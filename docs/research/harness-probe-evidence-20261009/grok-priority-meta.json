@@ -158,13 +158,7 @@
       }
     }
   ],
-  "command": [
-    "grok",
-    "--no-auto-update",
-    "agent",
-    "--no-leader",
-    "stdio"
-  ],
+  "command": ["grok", "--no-auto-update", "agent", "--no-leader", "stdio"],
   "pid": 98589,
   "exit_code": 0,
   "events": [

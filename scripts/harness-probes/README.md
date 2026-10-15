@@ -15,27 +15,27 @@ greppy bash-smart -- python3 scripts/harness-probes/codex_probe.py \
   --out docs/research/harness-probe-evidence-20261009/codex-probe.json
 ```
 
-| Script | Purpose / required inputs |
-|---|---|
-| `capture.py` | Bounded version/help command; `--name`, `--out` directory, `--cwd`, then `-- COMMAND`. Owned-PID timeout cleanup. |
-| `codex_probe.py` | Paused native goal, developer/project conflict, dynamic echo, Responses-item import, native compact completion and export. |
-| `codex_goal_probe.py` | One active tiny objective, native complete-state check, clear and archive. Uses the existing account; no token budget added. |
-| `claude_probe.py` | Stream-JSON SDK discovery/control, role/MCP attempt, compact and local goal commands. Login failures remain failures. Optional gateway key helper is invoked privately, not printed. |
-| `acp_probe.py` | ACP discovery/resume plus deliberately rejected guessed extensions; `--prompt` optionally performs one tiny model turn. A -32601 is not evidence that a differently named native feature is absent. |
-| `acp_tools_probe.py` | `--harness opencode` proves agent mode and MCP echo. The legacy Grok root-flag route is retained as a negative probe; use `grok_prompt_probe.py` for correct metadata. |
-| `grok_goal_probe.py` | Native `/goal` status/create/status/clear; assistant text alone is not completion. |
-| `grok_prompt_probe.py` | ACP `_meta.rules` and `_meta.systemPromptOverride` against project conflict. No global prompt edits. |
-| `grok_history_probe.py` | Readable foreign context, native slash compact/no-op event, recall and Markdown export of the owned session. |
-| `opencode_history_probe.py` | Two live-listed models, same-session config switch, native compact/recall, own JSON export/import. Requires `--catalog` and a private `--key-helper`. |
-| `greppy_probe.py` | Authenticated local gateway, native foreign-history ACK/replay, distinct same-session model change, actual MCP rejection. Requires `--catalog`, `--key-helper`; no secret enters ACP. |
-| `pi_probe.py` + `pi-extension.ts` | Native role hook, unprefixed echo, basic RPC discovery and HTML export. Uses existing auth; current-model setter is a no-op but Pi may persist its default. |
-| `pi_history_probe.py` | Fresh disposable `PI_CODING_AGENT_DIR`, converted v3 JSONL, native compact/recall, distinct live-listed Z.ai model, HTML export. Requires existing `ZAI_API_KEY`; never prints it. |
-| `live_catalog.py` | Authenticated `GET /models`, metadata/IDs only. Credential from named environment variable or private helper, never stdout/argv. |
-| `workjet_mailbox_probe.py` | Fresh installed-server profile, two persisted threads, production RPC sends, then native Pi ↔ OpenCode tools. Requires existing Z.ai auth and local gateway helper. |
-| `mailbox_exchange.py`, `mcp_mailbox.py`, `pi-mailbox-extension.ts` | Session-bound native/MCP tool facades used by that probe. |
-| `mailbox_tools.py`, `mailbox_tools_cli.py`, `workjet_bridge.mjs` | Send through real mailbox RPC; probe-only read-only inbox facade. Source and two permitted targets come from a private scratch config. **Not a production read API or authorization implementation.** |
-| `verify_exchange.py` | Match Pi send ↔ OpenCode read and OpenCode send ↔ Pi read by envelope ID/body/source/target. |
-| `publish_evidence.py` | Secret/model-menu redaction, reasoning omission and stream aggregation before Git publication. Uses the measured observed catalog; does not assert the catalog is perpetually fresh. |
+| Script                                                             | Purpose / required inputs                                                                                                                                                                             |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capture.py`                                                       | Bounded version/help command; `--name`, `--out` directory, `--cwd`, then `-- COMMAND`. Owned-PID timeout cleanup.                                                                                     |
+| `codex_probe.py`                                                   | Paused native goal, developer/project conflict, dynamic echo, Responses-item import, native compact completion and export.                                                                            |
+| `codex_goal_probe.py`                                              | One active tiny objective, native complete-state check, clear and archive. Uses the existing account; no token budget added.                                                                          |
+| `claude_probe.py`                                                  | Stream-JSON SDK discovery/control, role/MCP attempt, compact and local goal commands. Login failures remain failures. Optional gateway key helper is invoked privately, not printed.                  |
+| `acp_probe.py`                                                     | ACP discovery/resume plus deliberately rejected guessed extensions; `--prompt` optionally performs one tiny model turn. A -32601 is not evidence that a differently named native feature is absent.   |
+| `acp_tools_probe.py`                                               | `--harness opencode` proves agent mode and MCP echo. The legacy Grok root-flag route is retained as a negative probe; use `grok_prompt_probe.py` for correct metadata.                                |
+| `grok_goal_probe.py`                                               | Native `/goal` status/create/status/clear; assistant text alone is not completion.                                                                                                                    |
+| `grok_prompt_probe.py`                                             | ACP `_meta.rules` and `_meta.systemPromptOverride` against project conflict. No global prompt edits.                                                                                                  |
+| `grok_history_probe.py`                                            | Readable foreign context, native slash compact/no-op event, recall and Markdown export of the owned session.                                                                                          |
+| `opencode_history_probe.py`                                        | Two live-listed models, same-session config switch, native compact/recall, own JSON export/import. Requires `--catalog` and a private `--key-helper`.                                                 |
+| `greppy_probe.py`                                                  | Authenticated local gateway, native foreign-history ACK/replay, distinct same-session model change, actual MCP rejection. Requires `--catalog`, `--key-helper`; no secret enters ACP.                 |
+| `pi_probe.py` + `pi-extension.ts`                                  | Native role hook, unprefixed echo, basic RPC discovery and HTML export. Uses existing auth; current-model setter is a no-op but Pi may persist its default.                                           |
+| `pi_history_probe.py`                                              | Fresh disposable `PI_CODING_AGENT_DIR`, converted v3 JSONL, native compact/recall, distinct live-listed Z.ai model, HTML export. Requires existing `ZAI_API_KEY`; never prints it.                    |
+| `live_catalog.py`                                                  | Authenticated `GET /models`, metadata/IDs only. Credential from named environment variable or private helper, never stdout/argv.                                                                      |
+| `workjet_mailbox_probe.py`                                         | Fresh installed-server profile, two persisted threads, production RPC sends, then native Pi ↔ OpenCode tools. Requires existing Z.ai auth and local gateway helper.                                   |
+| `mailbox_exchange.py`, `mcp_mailbox.py`, `pi-mailbox-extension.ts` | Session-bound native/MCP tool facades used by that probe.                                                                                                                                             |
+| `mailbox_tools.py`, `mailbox_tools_cli.py`, `workjet_bridge.mjs`   | Send through real mailbox RPC; probe-only read-only inbox facade. Source and two permitted targets come from a private scratch config. **Not a production read API or authorization implementation.** |
+| `verify_exchange.py`                                               | Match Pi send ↔ OpenCode read and OpenCode send ↔ Pi read by envelope ID/body/source/target.                                                                                                          |
+| `publish_evidence.py`                                              | Secret/model-menu redaction, reasoning omission and stream aggregation before Git publication. Uses the measured observed catalog; does not assert the catalog is perpetually fresh.                  |
 
 Refresh the observed CTOX catalog with the required `User-Agent: Workjet-Model-Catalog` and `Accept: application/json` headers. Only rows with `status: observed` can supply suggestions. A catalog receipt has an expiry; refresh before running a later probe. Intersect its IDs with authenticated holding-account `/models` results; do not substitute static harness menus. Probe scripts inherit credentials privately and do not log authentication requests. Provider-qualified OpenCode routing values are built only from those observed IDs.
 

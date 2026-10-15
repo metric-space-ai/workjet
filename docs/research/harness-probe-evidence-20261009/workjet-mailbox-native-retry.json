@@ -82,9 +82,7 @@
               "thinkingFormat": "zai"
             },
             "reasoning": true,
-            "input": [
-              "text"
-            ],
+            "input": ["text"],
             "cost": {
               "input": 0,
               "output": 0,
@@ -286,11 +284,7 @@
     },
     {
       "native_receipt": {
-        "command": [
-          "opencode",
-          "--pure",
-          "acp"
-        ],
+        "command": ["opencode", "--pure", "acp"],
         "pid": 79297,
         "exit_code": 0,
         "events": [
@@ -672,9 +666,7 @@
                     "thinkingFormat": "zai"
                   },
                   "reasoning": true,
-                  "input": [
-                    "text"
-                  ],
+                  "input": ["text"],
                   "cost": {
                     "input": 0,
                     "output": 0,

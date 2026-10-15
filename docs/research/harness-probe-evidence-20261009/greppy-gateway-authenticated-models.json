@@ -4,11 +4,7 @@
   "credential_used": true,
   "method": "GET",
   "status": 200,
-  "ids": [
-    "MiniMax-M3",
-    "glm-5.3-flash",
-    "glm-5.3"
-  ],
+  "ids": ["MiniMax-M3", "glm-5.3-flash", "glm-5.3"],
   "model_count": 3,
   "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
 }

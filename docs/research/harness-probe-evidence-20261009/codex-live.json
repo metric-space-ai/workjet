@@ -70,9 +70,7 @@
           "runtimeWorkspaceRoots": [
             "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/codex-workspace"
           ],
-          "instructionSources": [
-            "/Users/michaelwelsch/.codex/AGENTS.md"
-          ],
+          "instructionSources": ["/Users/michaelwelsch/.codex/AGENTS.md"],
           "approvalPolicy": "never",
           "approvalsReviewer": "user",
           "sandbox": {
@@ -470,9 +468,7 @@
           "runtimeWorkspaceRoots": [
             "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/codex-workspace"
           ],
-          "instructionSources": [
-            "/Users/michaelwelsch/.codex/AGENTS.md"
-          ],
+          "instructionSources": ["/Users/michaelwelsch/.codex/AGENTS.md"],
           "approvalPolicy": "never",
           "approvalsReviewer": "user",
           "sandbox": {

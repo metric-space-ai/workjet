@@ -164,12 +164,7 @@
       }
     }
   ],
-  "command": [
-    "grok",
-    "agent",
-    "--no-leader",
-    "stdio"
-  ],
+  "command": ["grok", "agent", "--no-leader", "stdio"],
   "pid": 31610,
   "exit_code": 143,
   "events": [

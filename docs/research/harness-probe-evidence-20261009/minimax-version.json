@@ -1,10 +1,7 @@
 {
   "name": "minimax-version",
   "time": "2026-10-09T21:43:34.242805+00:00",
-  "command": [
-    "mcode",
-    "--version"
-  ],
+  "command": ["mcode", "--version"],
   "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
   "timeout_seconds": 30,
   "exit_code": null,

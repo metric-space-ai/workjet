@@ -1,10 +1,7 @@
 {
   "name": "pi-version",
   "time": "2026-10-09T21:43:33.449163+00:00",
-  "command": [
-    "pi",
-    "--version"
-  ],
+  "command": ["pi", "--version"],
   "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
   "timeout_seconds": 30,
   "pid": 2519,

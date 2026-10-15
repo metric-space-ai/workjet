@@ -44,22 +44,13 @@
       }
     },
     {
-      "export_command": [
-        "grok",
-        "export",
-        "01a122ba-08dc-79d1-8845-f852466c37ac"
-      ],
+      "export_command": ["grok", "export", "01a122ba-08dc-79d1-8845-f852466c37ac"],
       "exit_code": 0,
       "stdout": "## User\n\nForeign history context (source: another harness): the marker is HISTORY_PROBE_42. Reply with that marker only; no tools.\n\n## Assistant\n\nHISTORY_PROBE_42\n\n## User\n\n/compact\n\n## User\n\nReply with the imported marker only; no tools.\n\n## Assistant\n\nHISTORY_PROBE_42\n",
       "stderr": ""
     }
   ],
-  "command": [
-    "grok",
-    "agent",
-    "--no-leader",
-    "stdio"
-  ],
+  "command": ["grok", "agent", "--no-leader", "stdio"],
   "pid": 80873,
   "exit_code": 143,
   "events": [

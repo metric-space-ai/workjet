@@ -94,10 +94,7 @@
         "id": "<unvalidated-model:4b227777>",
         "jsonrpc": "2.0",
         "result": {
-          "acceptedMessageIds": [
-            "history-probe-user",
-            "history-probe-assistant"
-          ]
+          "acceptedMessageIds": ["history-probe-user", "history-probe-assistant"]
         }
       }
     },
@@ -191,13 +188,7 @@
       }
     }
   ],
-  "command": [
-    "greppy",
-    "agent",
-    "stdio",
-    "--max-turns",
-    "<unvalidated-model:4b227777>"
-  ],
+  "command": ["greppy", "agent", "stdio", "--max-turns", "<unvalidated-model:4b227777>"],
   "pid": 26816,
   "exit_code": 0,
   "events": [
@@ -349,10 +340,7 @@
         "id": "<unvalidated-model:4b227777>",
         "jsonrpc": "2.0",
         "result": {
-          "acceptedMessageIds": [
-            "history-probe-user",
-            "history-probe-assistant"
-          ]
+          "acceptedMessageIds": ["history-probe-user", "history-probe-assistant"]
         }
       }
     },

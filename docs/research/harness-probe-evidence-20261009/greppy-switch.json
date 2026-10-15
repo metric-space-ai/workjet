@@ -94,10 +94,7 @@
         "id": "4",
         "jsonrpc": "2.0",
         "result": {
-          "acceptedMessageIds": [
-            "history-probe-user",
-            "history-probe-assistant"
-          ]
+          "acceptedMessageIds": ["history-probe-user", "history-probe-assistant"]
         }
       }
     },
@@ -250,13 +247,7 @@
       }
     }
   ],
-  "command": [
-    "greppy",
-    "agent",
-    "stdio",
-    "--max-turns",
-    "4"
-  ],
+  "command": ["greppy", "agent", "stdio", "--max-turns", "4"],
   "pid": 87250,
   "exit_code": 0,
   "events": [
@@ -408,10 +399,7 @@
         "id": "4",
         "jsonrpc": "2.0",
         "result": {
-          "acceptedMessageIds": [
-            "history-probe-user",
-            "history-probe-assistant"
-          ]
+          "acceptedMessageIds": ["history-probe-user", "history-probe-assistant"]
         }
       }
     },

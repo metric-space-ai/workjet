@@ -2,10 +2,7 @@
   "source_receipt": "workjet-mailbox-native-retry.json",
   "measured_at": "2026-10-09T22:12:30.534393+00:00",
   "server_version": "0.0.70",
-  "harnesses": [
-    "Pi 0.80.2",
-    "OpenCode 1.18.35"
-  ],
+  "harnesses": ["Pi 0.80.2", "OpenCode 1.18.35"],
   "threadA": "febaac4c-27d6-49ca-8897-82be01a2a7cb",
   "threadB": "2c46b7cd-520f-4d1e-9edb-7301ecc91373",
   "envelopeA": "wjm-4da6fd9e-481b-4a79-b406-117fac27c2ee",

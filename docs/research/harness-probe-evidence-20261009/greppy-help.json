@@ -1,10 +1,7 @@
 {
   "name": "greppy-help",
   "time": "2026-10-09T21:43:32.803796+00:00",
-  "command": [
-    "greppy",
-    "--help"
-  ],
+  "command": ["greppy", "--help"],
   "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
   "timeout_seconds": 30,
   "pid": 2511,

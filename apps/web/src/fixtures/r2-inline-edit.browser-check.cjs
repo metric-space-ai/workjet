@@ -5,9 +5,10 @@
    - Rückseite: scrollWidth ≤ clientWidth;
    - ist die Fläche scrollbar, liegt die Knopfzeile im sichtbaren Bereich;
    - Nachbar-Rects vorher/nachher identisch, kein horizontaler Seitenüberlauf.
-   Zusätzlich Kontrast der Exit-Stempel (Wert und „Nicht bewertet“) zwischen
-   Stempeltext und Stempelgrund (berechnete Farben, über hellem wie dunklem
-   Untergrund komponiert) ≥ 4,5:1, in dunklem und hellem Modus.
+   Zusätzlich Kontrast der Exit-Stempel zwischen Stempeltext und Stempelgrund
+   (berechnete Farben, über hellem wie dunklem Untergrund komponiert) ≥ 4,5:1,
+   in dunklem und hellem Modus. Seit WP-K1 gibt es nur Wertstempel: ein
+   „Nicht bewertet“-Stempel ist ein Verstoß.
    Exit-Code ≠ 0 bei Verstoß. */
 const { chromium } = require(process.env.PLAYWRIGHT_CORE_PATH);
 const fs = require("node:fs/promises");
@@ -234,17 +235,16 @@ const stampContrast = () => {
       if (shoot) await shot("geschlossen");
       const before = await page.evaluate(measure);
 
-      const openMenu = async (itemName) => {
-        await card.getByRole("button", { name: "Aktionen für molecularity" }).click();
-        await page.getByRole("menuitem", { name: itemName }).click();
-      };
       const compare = (after, action) => {
         for (const previousCard of before.cards) {
           const next = after.cards.find((candidate) => candidate.key === previousCard.key);
           assert.ok(next, `${action}: Karte ${previousCard.key} fehlt`);
           assert.equal(next.x, previousCard.x, `${action}: x von ${previousCard.key}`);
           assert.equal(next.width, previousCard.width, `${action}: Breite von ${previousCard.key}`);
-          if (previousCard.key !== "instance:molecularity")
+          // Ohne Vorschaubild hat die Karte keine Vorschaufläche (WP-K1); die
+          // Rückseite braucht dann Platz, und nur Karten in tieferen Reihen rücken.
+          const target = before.cards.find((c) => c.key === "instance:molecularity");
+          if (previousCard.key !== "instance:molecularity" && previousCard.y <= (target?.y ?? 0))
             assert.equal(next.y, previousCard.y, `${action}: y von ${previousCard.key}`);
         }
         assert.ok(
@@ -274,7 +274,9 @@ const stampContrast = () => {
       };
 
       // Exit-Bewertung inline
-      await openMenu("Exit-Bewertung");
+      // Das Menü kennt keine Rückseiten-Einträge mehr: der Wertstempel öffnet die
+      // Bewertung, die KPI-Zeile die Konfiguration (#561).
+      await card.locator('[data-workjet-action="project.exit_model.stamp"]').click();
       await page.locator('[data-workjet-project-card-backface="exit"]').waitFor();
       await showCard();
       const afterExit = await page.evaluate(measure);
@@ -286,7 +288,9 @@ const stampContrast = () => {
       compare(await page.evaluate(measure), "escape");
 
       // Projekt konfigurieren inline
-      await openMenu("molecularity konfigurieren");
+      await card
+        .locator('[data-workjet-action="project.configure.gallery:instance:molecularity"]')
+        .click();
       await page.locator('[data-workjet-project-card-backface="configure"]').waitFor();
       await page
         .locator('[data-workjet-project-card-config] input[aria-label="Projektname"]')
@@ -332,7 +336,7 @@ const stampContrast = () => {
       const unbewertet = stamps.filter((stamp) => stamp.text === "Nicht bewertet");
       const bewertet = stamps.filter((stamp) => stamp.text !== "Nicht bewertet");
       assert.ok(bewertet.length > 0, `${scheme}: Wertstempel fehlt`);
-      assert.ok(unbewertet.length > 0, `${scheme}: „Nicht bewertet“-Stempel fehlt`);
+      assert.equal(unbewertet.length, 0, `${scheme}: „Nicht bewertet“-Stempel ist zurück`);
       for (const stamp of stamps) {
         for (const backdrop of ["hell", "dunkel"]) {
           assert.ok(
@@ -347,7 +351,6 @@ const stampContrast = () => {
         await page.screenshot({ path: `${output}/1440-geschlossen-hell.png` });
       report.stempelKontrast[scheme] = {
         wert: bewertet[0],
-        nichtBewertet: unbewertet[0],
         anzahl: stamps.length,
       };
       await context.close();

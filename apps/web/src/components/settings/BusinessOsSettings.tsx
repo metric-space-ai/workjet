@@ -20,6 +20,7 @@ import {
   registerInstanceSetupNavigator,
   requestInstanceAdd,
 } from "../../instanceSetup";
+import { SettingsAddButton, SettingsLoadingRow } from "./settingsAdd";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { InstanceAddInline, SEGMENT_TOGGLE_CLASS } from "../ctox/InstanceAddInline";
@@ -44,7 +45,7 @@ import { formatMobileInviteExpiry } from "./businessOsPairing";
 import { dedupeCtoxInstances } from "./InstancesTable";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { Empty, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { SecretsSettingsSection } from "./SecretsSettingsSection";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
@@ -285,6 +286,7 @@ function DevicesSection({
   blockedReason,
   onAddDevice,
   onRevokeDevice,
+  onRetryDevices,
   addingDevice,
   activeInvite,
   onCloseInvite,
@@ -292,6 +294,7 @@ function DevicesSection({
   onLoadManualConnection,
   renewingInvite,
 }: {
+  readonly onRetryDevices: () => void;
   readonly instanceName: string;
   readonly devices: readonly WorkjetDeviceBindingSummary[];
   readonly devicesLoading: boolean;
@@ -331,29 +334,52 @@ function DevicesSection({
     });
   };
   const visibleDevices = devices.filter((device) => !pendingRevoke.has(device.devicePairingId));
-  // Ein Lesefehler wird still wiederholt; bis dahin steht „—“.
+  // Ein Lesefehler wird still wiederholt; bis dahin ein Skelett, nach 10 s
+  // „Nicht erreichbar · Erneut“ (Audit C 5).
   const devicesUnknown = devicesLoading || devicesError !== null;
+  const inviteOpen =
+    activeInvite !== null && onCloseInvite !== undefined && onRenewInvite !== undefined;
   return (
     <SettingsSection
       {...searchableSetting("instance-devices")}
       aria-label={`${searchableSetting("instance-devices").title} · ${instanceName}`}
       data-workjet-instance-devices=""
+      headerAction={
+        blockedReason !== null || inviteOpen ? null : (
+          <SettingsAddButton
+            action="instance.devices.add"
+            disabled={onAddDevice === undefined || addingDevice}
+            {...(onAddDevice === undefined ? {} : { onClick: onAddDevice })}
+          />
+        )
+      }
     >
+      {inviteOpen ? (
+        <div className="px-3 pb-1 sm:px-4">
+          <DeviceInvitePanel
+            invite={activeInvite}
+            onClose={onCloseInvite}
+            onRenew={onRenewInvite}
+            onLoadManualConnection={onLoadManualConnection}
+            busy={renewingInvite}
+          />
+        </div>
+      ) : addingDevice ? (
+        <SettingsLoadingRow onRetry={() => onAddDevice?.()} />
+      ) : null}
       {blockedReason !== null ? (
         <p className="px-3 py-2 text-xs text-muted-foreground sm:px-4" role="status">
           {blockedReason}
         </p>
       ) : devicesUnknown ? (
-        <p className="px-3 py-2 text-[13.5px] text-muted-foreground sm:px-4">—</p>
+        <SettingsLoadingRow onRetry={onRetryDevices} />
       ) : visibleDevices.length === 0 ? null : (
         <ul aria-label="Geräte" className="divide-y divide-border/60">
           {visibleDevices.map((device) => (
             <li key={device.devicePairingId}>
               <Row
+                // CTOX meldet für Kopplungen keine Lebendigkeit: kein Statuspunkt (Audit C 17).
                 name={workjetDeviceDisplayName(device)}
-                // CTOX meldet für Kopplungen keine Lebendigkeit; ohne sie grau.
-                status="off"
-                statusLabel="Gekoppelt"
                 {...(onRevokeDevice === undefined
                   ? {}
                   : {
@@ -366,27 +392,6 @@ function DevicesSection({
           ))}
         </ul>
       )}
-      <div className="px-3 pt-2 pb-1 sm:px-4">
-        {activeInvite !== null && onCloseInvite !== undefined && onRenewInvite !== undefined ? (
-          <DeviceInvitePanel
-            invite={activeInvite}
-            onClose={onCloseInvite}
-            onRenew={onRenewInvite}
-            onLoadManualConnection={onLoadManualConnection}
-            busy={renewingInvite}
-          />
-        ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={onAddDevice === undefined || blockedReason !== null || addingDevice}
-            onClick={onAddDevice}
-          >
-            {addingDevice ? <Spinner className="size-3.5" /> : null}
-            {addingDevice ? "QR-Code wird erstellt …" : "Gerät hinzufügen"}
-          </Button>
-        )}
-      </div>
     </SettingsSection>
   );
 }
@@ -436,6 +441,9 @@ export function BusinessOsSettingsView({
   deviceManagementBlockedReason = null,
   onAddDevice,
   onRevokeDevice,
+  onRetryDevices,
+  onRetryDiscovery,
+  onAddInstance,
   addingDevice = false,
   activeInvite = null,
   onCloseInvite,
@@ -455,6 +463,10 @@ export function BusinessOsSettingsView({
   readonly deviceManagementBlockedReason?: string | null;
   readonly onAddDevice?: () => void;
   readonly onRevokeDevice?: (devicePairingId: string) => void;
+  readonly onRetryDevices?: () => void;
+  readonly onRetryDiscovery?: () => void;
+  /** Primärbutton im Leerzustand „Keine Instanz gewählt“ (Audit C 18). */
+  readonly onAddInstance?: () => void;
   readonly addingDevice?: boolean;
   readonly activeInvite?: BusinessOsWebRtcDeviceInvite | null;
   readonly onCloseInvite?: () => void;
@@ -473,14 +485,21 @@ export function BusinessOsSettingsView({
     return (
       <SettingsPageContainer className="gap-5">
         {loading || discoveryFailed ? (
-          <p className="px-3 text-[13.5px] text-muted-foreground sm:px-4">—</p>
-        ) : (
+          <SettingsLoadingRow onRetry={() => onRetryDiscovery?.()} />
+        ) : addPanel === null ? (
           <Empty className="py-8">
             <EmptyHeader>
               <EmptyTitle className="text-[13.5px]">Keine Instanz gewählt</EmptyTitle>
             </EmptyHeader>
+            {onAddInstance === undefined ? null : (
+              <EmptyContent>
+                <Button size="sm" onClick={onAddInstance} data-workjet-action="instance.add">
+                  Instanz hinzufügen
+                </Button>
+              </EmptyContent>
+            )}
           </Empty>
-        )}
+        ) : null}
         {addPanel === null ? null : <div className="flex flex-col px-3 sm:px-4">{addPanel}</div>}
       </SettingsPageContainer>
     );
@@ -495,6 +514,7 @@ export function BusinessOsSettingsView({
         blockedReason={deviceManagementBlockedReason}
         onAddDevice={onAddDevice}
         onRevokeDevice={onRevokeDevice}
+        onRetryDevices={() => onRetryDevices?.()}
         addingDevice={addingDevice}
         activeInvite={activeInvite}
         onCloseInvite={onCloseInvite}
@@ -704,6 +724,9 @@ export function BusinessOsSettings() {
       {...(!deviceControlAvailable ? {} : { onAddDevice: () => void createDeviceInvite() })}
       addingDevice={addingDevice}
       onRevokeDevice={(devicePairingId) => void revokeDevice(devicePairingId)}
+      onRetryDevices={() => setDeviceRefreshKey((key) => key + 1)}
+      onRetryDiscovery={() => void refresh()}
+      onAddInstance={() => requestInstanceAdd("ctox-dev", {}, "choose")}
       activeInvite={activeInvite}
       onCloseInvite={closeInvite}
       onRenewInvite={() => void renewInvite()}
@@ -711,7 +734,7 @@ export function BusinessOsSettings() {
         ? {}
         : { onLoadManualConnection: async () => activeInvite.manualConnection })}
       renewingInvite={renewingInvite}
-      addPanel={addRequested || activeInstanceId === null ? <InstanceAddInline /> : null}
+      addPanel={addRequested ? <InstanceAddInline /> : null}
       network={
         <InstanceNetworkOverview
           variant="section"

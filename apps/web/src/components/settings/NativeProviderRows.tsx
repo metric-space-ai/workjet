@@ -1,4 +1,4 @@
-import { CheckIcon, XIcon, CircleDashedIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { RefreshCwIcon } from "lucide-react";
 import { Switch } from "../ui/switch";
 import { Checkbox } from "../ui/checkbox";
 import { useEffect, useState } from "react";
@@ -11,14 +11,15 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { useInstanceProviders } from "./useInstanceProviders";
 import { NativeProviderLimits } from "./NativeProviderLimits";
+import { Row, RowStatusDot, type RowStatus } from "../ui/row";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SettingsLoadingRow } from "./settingsAdd";
 
 import {
   WORKJET_GATEWAY_PROVIDERS,
   WORKJET_GATEWAY_PROVIDER_ICONS,
   WORKJET_GATEWAY_PROVIDER_LABELS,
 } from "./WorkjetGatewayAccounts";
-const columns =
-  "grid grid-cols-[minmax(0,1fr)_2rem_4rem] items-center gap-x-3 sm:grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem]";
 
 function ProviderModels({
   provider,
@@ -50,7 +51,7 @@ function ProviderModels({
   ];
   const listId = "ctox-provider-models-" + provider;
   return (
-    <div className="col-span-full min-w-0 sm:col-span-1" role="cell">
+    <div className="min-w-0">
       <Input
         nativeInput
         aria-label={`Modelle für ${provider}`}
@@ -97,16 +98,13 @@ function ModelCheckStatus({
     : probe
       ? (probe.status === "ok"
           ? "Prüfung bestanden"
-          : (probe.failure?.replaceAll("_", " ") ?? "Prüfung nicht verfügbar")) +
-        " · " +
-        probe.elapsedMs +
-        " ms · " +
-        new Date(probe.checkedAtMs).toLocaleString("de-DE") +
-        (probe.httpStatus === null ? "" : " · HTTP " + probe.httpStatus) +
-        (probe.retryAtMs === null
-          ? ""
-          : " · Neuversuch ab " + new Date(probe.retryAtMs).toLocaleString("de-DE"))
+          : probe.status === "failed"
+            ? "Prüfung fehlgeschlagen"
+            : "Prüfung nicht verfügbar") +
+        ` · ${probe.elapsedMs} ms · ` +
+        new Date(probe.checkedAtMs).toLocaleString("de-DE")
       : "Nicht geprüft";
+  // Statuspunkt statt ✓/✗/◌ (Audit C 1).
   return (
     <button
       type="button"
@@ -116,21 +114,27 @@ function ModelCheckStatus({
       onClick={check}
       className="inline-flex shrink-0 items-center p-0.5 disabled:opacity-50"
     >
-      {probe?.status === "ok" ? (
-        <CheckIcon aria-label="Prüfung bestanden" className="size-3 text-emerald-500" />
-      ) : probe?.status === "failed" ? (
-        <XIcon
-          aria-label={`Prüfung fehlgeschlagen: ${probe.failure}`}
-          className="size-3 text-destructive"
-        />
-      ) : (
-        <CircleDashedIcon
-          aria-label={probe ? `Prüfung nicht verfügbar: ${probe.failure}` : "Nicht geprüft"}
-          className="size-3 text-muted-foreground"
-        />
-      )}
+      <RowStatusDot
+        status={probe?.status === "ok" ? "ok" : probe?.status === "failed" ? "error" : "off"}
+        label={title}
+      />
     </button>
   );
+}
+
+function probeLine(probe: WorkjetNativeModelProbe): string {
+  switch (probe.failure) {
+    case "auth":
+      return `${probe.modelId}: Anmeldung abgelehnt.`;
+    case "model_not_found":
+      return `${probe.modelId}: Modell nicht gefunden.`;
+    case "gateway_cooldown":
+      return probe.retryAtMs === null
+        ? `${probe.modelId}: pausiert.`
+        : `${probe.modelId}: pausiert bis ${new Date(probe.retryAtMs).toLocaleTimeString("de-DE")}.`;
+    default:
+      return `${probe.modelId}: Prüfung fehlgeschlagen.`;
+  }
 }
 
 function NativeAccountRow({
@@ -153,25 +157,94 @@ function NativeAccountRow({
   /** 1-based position in the provider group; shown instead of the raw account id. */
   readonly ordinal: number;
 }) {
-  const [confirmRemove, setConfirmRemove] = useState(false);
   const accountName = `Konto ${ordinal}`;
-  useEffect(() => setConfirmRemove(false), [account.revision]);
   const selected =
     registry.providers.find((entry) => entry.provider === account.provider)?.selection ?? [];
   const attempt = account.modelCatalog.lastAttempt;
   const canEnable = account.controls?.canEnable === true;
   const canRemove = account.controls?.canRemove === true;
+  const knownProvider = WORKJET_GATEWAY_PROVIDERS.find((entry) => entry === account.provider);
+  const ProviderIcon = knownProvider ? WORKJET_GATEWAY_PROVIDER_ICONS[knownProvider] : undefined;
+  const failedProbes =
+    account.modelChecks?.filter(
+      (probe) => probe.status !== "ok" && selected.includes(probe.modelId),
+    ) ?? [];
+  const status: RowStatus = !account.enabled
+    ? "off"
+    : attempt?.success === false || failedProbes.some((probe) => probe.status === "failed")
+      ? "error"
+      : account.credentialReady
+        ? "ok"
+        : "off";
+  const hasDetails = [
+    selected.length,
+    failedProbes.length,
+    error ? 1 : 0,
+    attempt?.success === false ? 1 : 0,
+  ].some(Boolean);
+  const observe = () => {
+    void run({
+      action: "instance.providers.observe",
+      accountId: account.id,
+      expectedAccountRevision: account.revision,
+    });
+  };
   return (
-    <>
-      <div role="row" className={columns + " min-h-12 py-1.5"}>
-        <div role="cell" className="order-1 min-w-0 text-xs">
-          <span>{accountName}</span>
-          <p className="text-[11px] text-muted-foreground">CTOX · {label}</p>
-        </div>
-        <div
-          role="cell"
-          className="order-5 col-span-full flex min-w-0 flex-wrap gap-1 sm:order-2 sm:col-span-1"
-        >
+    <div data-account-id={account.id} className={account.enabled ? undefined : "text-muted-foreground"}>
+      <Row
+        className="py-1.5"
+        status={status}
+        statusLabel={
+          status === "ok" ? "Bereit" : status === "error" ? "Fehler" : "Aus"
+        }
+        name={
+          <span className="flex min-w-0 items-center gap-2">
+            {ProviderIcon ? <ProviderIcon className="size-4 shrink-0" /> : null}
+            <span className="truncate">{accountName}</span>
+          </span>
+        }
+        meta={<span className={ProviderIcon ? "pl-6" : undefined}>Instanz {label}</span>}
+        chips={
+          account.reportedQuota?.state === "reported" ? (
+            <NativeProviderLimits provider={account.provider} quota={account.reportedQuota} />
+          ) : undefined
+        }
+        {...(canEnable
+          ? {
+              active: account.enabled,
+              activeLabel: `${accountName} aktiv`,
+              activeDisabled: busy,
+              onActiveChange: (enabled: boolean) => {
+                void run({
+                  action: "instance.providers.account.enable",
+                  accountId: account.id,
+                  expectedAccountRevision: account.revision,
+                  expectedRevision: registry.revision,
+                  enabled,
+                });
+              },
+            }
+          : {})}
+        {...(canRemove
+          ? {
+              onDelete: () => {
+                if (busy) return;
+                void run({
+                  action: "instance.providers.account.remove",
+                  accountId: account.id,
+                  expectedAccountRevision: account.revision,
+                  expectedRevision: registry.revision,
+                });
+              },
+            }
+          : {})}
+        deleteLabel="Entfernen"
+        deleteConfirmTitle={`${accountName} entfernen?`}
+        menuActions={account.enabled ? [{ label: "Modelle neu laden", onSelect: observe }] : []}
+        menuLabel={`Aktionen für ${accountName}`}
+      />
+      {hasDetails ? (
+        <div className="flex min-w-0 flex-wrap gap-1 px-3 pb-1.5 pl-9">
           {selected.map((model) => (
             <div
               key={model}
@@ -214,143 +287,38 @@ function NativeAccountRow({
               />
             </div>
           ))}
-          {selected.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
-          {account.modelChecks
-            ?.filter((probe) => probe.status !== "ok" && selected.includes(probe.modelId))
-            .map((probe) => (
-              <span
-                key={probe.modelId}
-                className={
-                  "w-full text-[11px] " +
-                  (probe.status === "failed" ? "text-destructive" : "text-muted-foreground")
-                }
-              >
-                {probe.modelId}: {probe.failure?.replaceAll("_", " ")}
-                {probe.failure === "auth"
-                  ? " · Konto neu verbinden"
-                  : probe.failure === "model_not_found"
-                    ? " · Modellliste neu laden"
-                    : probe.failure === "gateway_cooldown" && probe.retryAtMs !== null
-                      ? " · Neuversuch ab " + new Date(probe.retryAtMs).toLocaleString("de-DE")
-                      : probe.source === "gateway"
-                        ? " · Verbindung prüfen"
-                        : ""}
-              </span>
-            ))}
+          {failedProbes.map((probe) => (
+            <span
+              key={probe.modelId}
+              className={
+                "flex w-full flex-wrap items-center gap-2 text-xs " +
+                (probe.status === "failed" ? "text-destructive" : "text-muted-foreground")
+              }
+            >
+              {probeLine(probe)}
+              {probe.failure === "model_not_found" && account.enabled ? (
+                <Button size="xs" variant="outline" disabled={busy} onClick={observe}>
+                  Modellliste neu laden
+                </Button>
+              ) : null}
+            </span>
+          ))}
           {error && (
             <span role="alert" className="w-full text-xs text-destructive">
               {error}
             </span>
           )}
           {attempt?.success === false && (
-            <span className="w-full text-[11px] text-destructive">
-              Modellliste: {attempt.failure ?? "nicht verfügbar"}
-              {attempt.httpStatus ? ` · HTTP ${attempt.httpStatus}` : ""}
+            <span className="flex w-full flex-wrap items-center gap-2 text-xs text-destructive">
+              Modellliste nicht geladen.
+              <Button size="xs" variant="outline" disabled={busy} onClick={observe}>
+                Erneut versuchen
+              </Button>
             </span>
           )}
         </div>
-        <NativeProviderLimits
-          provider={account.provider}
-          quota={account.reportedQuota}
-          className="order-4 col-span-full py-1 sm:order-3 sm:col-span-1 sm:py-0"
-        />
-        <div role="cell" className="order-2 flex justify-center sm:order-4">
-          {canEnable ? (
-            <Switch
-              aria-label={`${accountName} aktiv`}
-              data-workjet-action={`models.instance.account.${account.id}.enabled`}
-              checked={account.enabled}
-              disabled={busy || confirmRemove}
-              onCheckedChange={(checked) => {
-                void run({
-                  action: "instance.providers.account.enable",
-                  accountId: account.id,
-                  expectedAccountRevision: account.revision,
-                  expectedRevision: registry.revision,
-                  enabled: checked,
-                });
-              }}
-            />
-          ) : (
-            <span
-              className="text-[11px]"
-              title={account.controls ? "Nicht änderbar" : "CTOX aktualisieren"}
-            >
-              {account.enabled ? "An" : "Aus"}
-            </span>
-          )}
-        </div>
-        <div role="cell" className="order-3 flex items-center gap-1 sm:order-5">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            disabled={busy || !account.enabled}
-            aria-label={`Modelle von ${accountName} neu laden`}
-            onClick={() => {
-              void run({
-                action: "instance.providers.observe",
-                accountId: account.id,
-                expectedAccountRevision: account.revision,
-              });
-            }}
-          >
-            <RefreshCwIcon className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            disabled={busy || !canRemove}
-            aria-label={`${accountName} entfernen`}
-            title={
-              canRemove
-                ? "Konto entfernen"
-                : account.controls
-                  ? "Entfernen nicht möglich"
-                  : "CTOX aktualisieren"
-            }
-            data-workjet-action={`models.instance.account.${account.id}.remove-start`}
-            onClick={() => setConfirmRemove(true)}
-          >
-            <Trash2Icon className="size-3.5 text-muted-foreground" />
-          </Button>
-        </div>
-      </div>
-      {confirmRemove && canRemove && (
-        <div role="row" className="flex flex-wrap items-center gap-2 py-1.5 text-xs">
-          <span role="cell" className="min-w-0 flex-1">
-            {accountName} endgültig entfernen?
-          </span>
-          <div role="cell" className="flex gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => setConfirmRemove(false)}
-            >
-              Abbrechen
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={busy}
-              aria-label={`Entfernen von ${accountName} bestätigen`}
-              data-workjet-action={`models.instance.account.${account.id}.remove-confirm`}
-              onClick={async () => {
-                const result = await run({
-                  action: "instance.providers.account.remove",
-                  accountId: account.id,
-                  expectedAccountRevision: account.revision,
-                  expectedRevision: registry.revision,
-                });
-                if (result) setConfirmRemove(false);
-              }}
-            >
-              Entfernen
-            </Button>
-          </div>
-        </div>
-      )}
-    </>
+      ) : null}
+    </div>
   );
 }
 
@@ -429,108 +397,93 @@ function NativeProviderGroup({
     }
   };
   if (state.connectionFailure && !state.registry) return null;
+  if (!registry) return <SettingsLoadingRow onRetry={() => void state.refresh()} />;
   return (
-    <div
-      role="rowgroup"
-      aria-label={`${providerLabel}-Konten auf ${label}`}
-      className="border-b border-border/50"
-    >
-      <div role="row" className={columns + " min-h-9 py-1.5"}>
-        <div
-          role="cell"
-          className="col-span-2 flex items-center gap-1.5 text-xs font-medium sm:col-span-1"
-        >
+    <div role="rowgroup" aria-label={`${providerLabel}-Konten auf ${label}`}>
+      {accounts.length > 0 ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-1.5 text-xs">
           {ProviderIcon && <ProviderIcon className="size-4 shrink-0" />}
-          {providerLabel} · {label}
-        </div>
-        <div
-          role="cell"
-          className="order-last col-span-full flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground sm:order-none sm:col-span-1"
-        >
-          <span />
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={
-              !checksSupported ||
-              state.busy ||
-              checkingAll ||
-              !accounts.some(
-                (account) =>
-                  account.enabled &&
-                  account.credentialReady &&
-                  account.modelCatalog.fresh &&
-                  account.effectiveModels.length > 0,
-              )
-            }
-            onClick={() => {
-              void checkAll();
-            }}
-          >
-            Alle prüfen
-          </Button>
-        </div>
-        <div role="cell" className="hidden sm:block" />
-        <div role="cell" className="hidden sm:block" />
-        <div role="cell" className="col-start-3 row-start-1 sm:col-start-auto sm:row-start-auto">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            disabled={state.busy}
-            aria-label={`Konten auf ${label} neu laden`}
-            onClick={() => {
-              void refresh();
-            }}
-          >
-            <RefreshCwIcon className="size-3.5" />
-          </Button>
-        </div>
-      </div>
-
-      {registry && accounts.length > 0 && (
-        <div role="row" className={columns + " py-1"}>
-          <div role="cell" className="col-span-full text-xs text-muted-foreground sm:col-span-1">
-            Gemeinsame Modelle
-          </div>
-          <ProviderModels
-            provider={provider}
-            registry={registry}
-            busy={state.busy}
-            select={(models) => {
-              void (async () => {
-                const current = await state.run({
-                  action: "instance.providers.models.select",
-                  provider,
-                  models,
-                  expectedRevision: registry.revision,
-                });
-                const previous =
-                  registry.providers.find((entry) => entry.provider === provider)?.selection ?? [];
-                if (!checksSupported) return;
-                for (const account of current?.accounts ?? []) {
-                  if (
-                    account.provider !== provider ||
-                    !account.enabled ||
-                    !account.credentialReady ||
-                    !account.modelCatalog.fresh
-                  )
-                    continue;
-                  for (const model of models.filter(
-                    (model) => !previous.includes(model) && account.effectiveModels.includes(model),
-                  )) {
-                    if (!(await state.check(account.id, account.revision, model))) return;
+          <span className="font-medium">{providerLabel}</span>
+          <span className="text-muted-foreground">Gemeinsame Modelle</span>
+          <div className="min-w-40 flex-1">
+            <ProviderModels
+              provider={provider}
+              registry={registry}
+              busy={state.busy}
+              select={(models) => {
+                void (async () => {
+                  const current = await state.run({
+                    action: "instance.providers.models.select",
+                    provider,
+                    models,
+                    expectedRevision: registry.revision,
+                  });
+                  const previous =
+                    registry.providers.find((entry) => entry.provider === provider)?.selection ??
+                    [];
+                  if (!checksSupported) return;
+                  for (const account of current?.accounts ?? []) {
+                    if (
+                      account.provider !== provider ||
+                      !account.enabled ||
+                      !account.credentialReady ||
+                      !account.modelCatalog.fresh
+                    )
+                      continue;
+                    for (const model of models.filter(
+                      (model) =>
+                        !previous.includes(model) && account.effectiveModels.includes(model),
+                    )) {
+                      if (!(await state.check(account.id, account.revision, model))) return;
+                    }
                   }
-                }
-              })();
-            }}
-          />
-          <div role="cell" className="hidden sm:block" />
-          <div role="cell" className="hidden sm:block" />
-          <div role="cell" className="hidden sm:block" />
+                })();
+              }}
+            />
+          </div>
+          {checksSupported ? (
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={
+                state.busy ||
+                checkingAll ||
+                !accounts.some(
+                  (account) =>
+                    account.enabled &&
+                    account.credentialReady &&
+                    account.modelCatalog.fresh &&
+                    account.effectiveModels.length > 0,
+                )
+              }
+              onClick={() => {
+                void checkAll();
+              }}
+            >
+              Alle prüfen
+            </Button>
+          ) : null}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  disabled={state.busy}
+                  aria-label={`Konten auf ${label} neu laden`}
+                  onClick={() => {
+                    void refresh();
+                  }}
+                />
+              }
+            >
+              <RefreshCwIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup>Neu laden</TooltipPopup>
+          </Tooltip>
         </div>
-      )}
-      {registry &&
-        accounts.map((account, index) => (
+      ) : null}
+      {accounts.map((account, index) => (
           <NativeAccountRow
             key={account.id}
             ordinal={index + 1}

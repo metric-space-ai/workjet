@@ -16,7 +16,7 @@ import {
 } from "react";
 
 import { Button } from "../ui/button";
-import { EmptyLoading } from "../ui/empty";
+import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
 import { InlinePanel } from "../ui/inline-panel";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Row, type RowMenuAction, type RowStatus } from "../ui/row";
@@ -866,10 +866,41 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
     draft?.provider !== state.login.provider
       ? state.login.provider
       : null;
+  const addMenu = (
+    <Menu>
+      <MenuTrigger
+        render={
+          <Button
+            size="sm"
+            disabled={state.mutationBusy}
+            data-workjet-action="models.add-provider"
+          />
+        }
+      >
+        <PlusIcon className="size-3.5" />
+        Hinzufügen
+      </MenuTrigger>
+      <MenuPopup align="end">
+        {WORKJET_GATEWAY_PROVIDERS.map((provider) => {
+          const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
+          return (
+            <MenuItem
+              key={provider}
+              data-workjet-action={`models.provider.${provider}.select`}
+              onClick={() => startAdd(provider)}
+            >
+              <Icon className="size-4" />
+              {WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+            </MenuItem>
+          );
+        })}
+      </MenuPopup>
+    </Menu>
+  );
   return (
     <section className="space-y-3" aria-label="Anbieter" data-testid="models-providers">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">{t("Anbieter", "Providers")}</h2>
+        <h2 className="text-[13.5px] font-semibold">{t("Anbieter", "Providers")}</h2>
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -912,35 +943,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             </TooltipTrigger>
             <TooltipPopup>Aktualisieren</TooltipPopup>
           </Tooltip>
-          <Menu>
-            <MenuTrigger
-              render={
-                <Button
-                  size="sm"
-                  disabled={state.mutationBusy}
-                  data-workjet-action="models.add-provider"
-                />
-              }
-            >
-              <PlusIcon className="size-3.5" />
-              Hinzufügen
-            </MenuTrigger>
-            <MenuPopup align="end">
-              {WORKJET_GATEWAY_PROVIDERS.map((provider) => {
-                const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
-                return (
-                  <MenuItem
-                    key={provider}
-                    data-workjet-action={`models.provider.${provider}.select`}
-                    onClick={() => startAdd(provider)}
-                  >
-                    <Icon className="size-4" />
-                    {WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
-                  </MenuItem>
-                );
-              })}
-            </MenuPopup>
-          </Menu>
+          {addMenu}
         </div>
       </div>
       {fault ? (
@@ -963,38 +966,29 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
       {state.isInitialLoading && accounts.length === 0 && !nativeRows && draft === null ? (
         <EmptyLoading className="py-4" title="Anbieter laden …" onRetry={state.onRefresh} />
       ) : null}
-      {nativeRows ? (
-        <div className="overflow-x-auto">
-          <div role="table" aria-label="Instanz-Konten" className="min-w-0 sm:min-w-[34rem]">
-            <div role="row" className="sr-only">
-              <span role="columnheader">Konto</span>
-              <span role="columnheader" className="hidden sm:block">
-                Modelle
-              </span>
-              <span role="columnheader">Limits</span>
-              <span role="columnheader" className="text-center">
-                Aktiv
-              </span>
-              <span role="columnheader" className="sr-only">
-                Aktionen
-              </span>
-            </div>
-            {nativeRows}
-          </div>
-        </div>
-      ) : null}
-      {nativeRows && (providers.length > 0 || draft !== null) ? (
-        <h3 className="pt-2 text-xs font-semibold text-muted-foreground">Dieser Rechner</h3>
-      ) : null}
       {accounts.length === 0 &&
+      !nativeRows &&
       !state.instanceGrok?.installed &&
       draft === null &&
       !state.isInitialLoading ? (
-        <p className="py-4 text-sm text-muted-foreground">Keine Anbieter</p>
+        <Empty className="py-6">
+          <EmptyHeader>
+            <EmptyTitle className="text-[13.5px]">Keine Anbieter</EmptyTitle>
+          </EmptyHeader>
+          <EmptyContent>{addMenu}</EmptyContent>
+        </Empty>
       ) : null}
-      {/* One list, one row pattern for every account; the provider is the row icon (#610). */}
-      {accounts.length > 0 || draft !== null ? (
+      {/* One list, one row pattern for every account, instance and this computer;
+          the provider is the row icon (#610, Audit C 3). */}
+      {nativeRows || accounts.length > 0 || draft !== null ? (
         <div className="divide-y divide-border/50 rounded-lg border" data-testid="models-accounts">
+          {nativeRows}
+          {draft !== null ? <DraftAccountRow draft={draft} state={state} /> : null}
+          {nativeRows && providers.length > 0 ? (
+            <div className="bg-muted/30 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+              Dieser Rechner
+            </div>
+          ) : null}
           {providers.flatMap((provider) =>
             accounts
               .filter((account) => account.provider === provider)
@@ -1004,7 +998,6 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                 </div>
               )),
           )}
-          {draft !== null ? <DraftAccountRow draft={draft} state={state} /> : null}
         </div>
       ) : null}
       {orphanLogin !== null ? (
@@ -1033,7 +1026,6 @@ function DraftAccountRow({
   const t = useUiText();
   const [instanceFailure, setInstanceFailure] = useState<string | null>(null);
   const [instanceBusy, setInstanceBusy] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
   const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
   const label = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
   const keyProvider = isWorkjetGatewayApiKeyProvider(provider) ? provider : null;
@@ -1051,7 +1043,6 @@ function DraftAccountRow({
     if (!grok) return;
     setInstanceBusy(true);
     setInstanceFailure(null);
-    setShowDetails(false);
     const failure = await grok.start();
     setInstanceBusy(false);
     setInstanceFailure(failure);
@@ -1150,18 +1141,10 @@ function DraftAccountRow({
           className="flex flex-wrap items-center gap-2 px-3 pb-2 pl-9 text-xs text-destructive"
           data-workjet-draft-failure=""
         >
-          <span>Anmeldung auf {state.instanceGrok.label} nicht gestartet.</span>
+          <span>{state.instanceGrok.label} antwortet nicht.</span>
           <Button size="xs" variant="outline" onClick={() => void startInstance()}>
-            Erneut
+            Erneut versuchen
           </Button>
-          <Button size="xs" variant="outline" onClick={() => setShowDetails((open) => !open)}>
-            Details
-          </Button>
-          {showDetails ? (
-            <code className="w-full font-mono text-[11px] text-muted-foreground">
-              {instanceFailure}
-            </code>
-          ) : null}
         </div>
       ) : null}
       {draft.mode === "key" && keyProvider !== null ? (

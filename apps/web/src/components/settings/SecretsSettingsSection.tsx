@@ -1,10 +1,10 @@
-import { PlusIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkjetCredentialRecord } from "@workjet/contracts";
 import { useUiText } from "../../hooks/useUiText";
 import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
 import { scheduleUndoableDelete } from "../../lib/undoableDelete";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { InlineExpand } from "../ui/inline-expand";
 import { Row } from "../ui/row";
 import { SecretInput } from "../ui/secret-input";
@@ -12,10 +12,12 @@ import { toastManager } from "../ui/toast";
 import { deleteCredential, listCredentials, putCredential } from "../../workjetSecretRequests";
 import { SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { SettingsAddButton, SettingsLoadingRow } from "./settingsAdd";
 
 const NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const RETRY_MS = 10_000;
 const NO_HIDDEN: ReadonlySet<string> = new Set();
+type AddTarget = string | boolean;
 
 /**
  * One write-only editor. It owns the typed value, so the value never sits in
@@ -47,9 +49,10 @@ function CredentialEditor(props: {
       }}
     >
       {props.fixedName === undefined ? (
-        <input
+        <Input
+          nativeInput
           aria-label={t("Schlüssel", "Key")}
-          className="min-w-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs sm:w-56"
+          className="min-w-0 sm:w-56"
           value={name}
           spellCheck={false}
           autoComplete="off"
@@ -77,6 +80,19 @@ function CredentialEditor(props: {
   );
 }
 
+/** Lesbarer Name statt Variablenname in Großschrift (Audit C 32). */
+export function secretDisplayName(row: Pick<WorkjetCredentialRecord, "name">) {
+  const words = row.name.toLowerCase().split("_").filter(Boolean);
+  const text = words
+    .map((word) =>
+      ["api", "url", "id", "ssh", "oauth", "smtp", "imap"].includes(word)
+        ? word.toUpperCase()
+        : word,
+    )
+    .join(" ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 /**
  * Write-only credentials of the selected CTOX instance: names and whether a
  * value is set, never a value. Saving is instant; removing uses the shared
@@ -89,7 +105,8 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
   const [readFailed, setReadFailed] = useState(false);
   const [hidden, setHidden] = useState(NO_HIDDEN);
   const [editing, setEditing] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  // `true` = eigener Schlüssel, sonst der gewählte bekannte Eintrag (Audit C 32).
+  const [adding, setAdding] = useState<AddTarget>(false);
   const alive = useRef(true);
   useEffect(
     () => () => {
@@ -164,19 +181,61 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
     return !hidden.has(row.name);
   });
   const section = searchableSetting("instance-secrets");
+  // Bekannt sind die Namen, die die Instanz anfragt, aber noch ohne Wert.
+  const requested = visible.filter((row) => !row.isSet);
+  const set = visible.filter((row) => row.isSet);
+  const startAdd = (name: string | true) => {
+    setEditing(null);
+    setAdding(name);
+  };
   return (
-    <SettingsSection {...section} data-workjet-secrets-settings="">
+    <SettingsSection
+      {...section}
+      data-workjet-secrets-settings=""
+      headerAction={
+        rows === null || adding !== false ? null : (
+          <SettingsAddButton
+            action="instance.secrets.add"
+            options={[
+              ...requested.map((row) => ({
+                key: row.name,
+                label: secretDisplayName(row),
+                onSelect: () => startAdd(row.name),
+              })),
+              { key: "", label: t("Eigener Schlüssel", "Custom key"), onSelect: () => startAdd(true) },
+            ]}
+          />
+        )
+      }
+    >
+      {adding !== false ? (
+        <div className="px-3 pt-1 pb-1 sm:px-4">
+          <InlineExpand
+            label={t("Zugangsdaten hinzufügen", "Add credential")}
+            open
+            onOpenChange={(open) => {
+              if (!open) setAdding(false);
+            }}
+          >
+            <CredentialEditor
+              key={String(adding)}
+              {...(typeof adding === "string" ? { fixedName: adding } : {})}
+              language={language}
+              onStore={store}
+            />
+          </InlineExpand>
+        </div>
+      ) : null}
       {rows === null ? (
-        <p className="px-3 py-2 text-[13.5px] text-muted-foreground sm:px-4">—</p>
-      ) : visible.length === 0 ? null : (
+        <SettingsLoadingRow onRetry={() => void refresh()} />
+      ) : set.length === 0 ? null : (
         <ul aria-label={section.title} className="divide-y divide-border/60">
-          {visible.map((row) => (
+          {set.map((row) => (
             <li key={row.name} data-workjet-secret-row={row.name}>
               <Row
-                name={<span className="font-mono text-xs">{row.name}</span>}
-                {...(row.description ? { meta: row.description } : {})}
-                status={row.isSet ? "ok" : "off"}
-                statusLabel={row.isSet ? t("Gesetzt", "Set") : t("Nicht gesetzt", "Not set")}
+                name={<span title={row.description ?? row.name}>{secretDisplayName(row)}</span>}
+                status="ok"
+                statusLabel={t("Gesetzt", "Set")}
                 expanded={editing === row.name}
                 onToggleExpanded={() => {
                   setAdding(false);
@@ -203,30 +262,6 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
           ))}
         </ul>
       )}
-      <div className="px-3 pt-1 pb-1 sm:px-4">
-        <InlineExpand
-          label={t("Zugangsdaten hinzufügen", "Add credential")}
-          open={adding}
-          onOpenChange={setAdding}
-          className="pt-8"
-        >
-          <CredentialEditor language={language} onStore={store} />
-        </InlineExpand>
-        {adding ? null : (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setEditing(null);
-              setAdding(true);
-            }}
-          >
-            <PlusIcon aria-hidden />
-            {t("Hinzufügen", "Add")}
-          </Button>
-        )}
-      </div>
     </SettingsSection>
   );
 }

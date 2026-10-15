@@ -18,6 +18,7 @@ import {
   ProviderDriverKind,
   type ProviderInstanceConfig,
   type ProviderInstanceId,
+  type WorkjetNativeProviderAccount,
 } from "@workjet/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@workjet/contracts/settings";
 import {
@@ -33,7 +34,6 @@ import {
   LaptopIcon,
   LoaderIcon,
   MonitorIcon,
-  PlusIcon,
   RefreshCwIcon,
   TerminalIcon,
 } from "lucide-react";
@@ -103,6 +103,11 @@ import {
 } from "./settingsLayout";
 import { WorkjetModelsProviders } from "./WorkjetModelsProviders";
 import { useInstanceGrokAccount } from "./useInstanceGrokAccount";
+import { SettingsAddButton } from "./settingsAdd";
+import {
+  WORKJET_GATEWAY_PROVIDER_ICONS,
+  WORKJET_GATEWAY_PROVIDER_LABELS,
+} from "./WorkjetGatewayAccounts";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { SessionImportSection } from "./SessionImportSection";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
@@ -463,6 +468,15 @@ function ScopedWorkjetGatewayAccountsSection({
   );
 }
 
+/** Echte Grok-Quota der Instanz, sofern ihr Anbieterregister sie meldet (Audit C 2). */
+export function instanceXaiQuota(
+  registry: { readonly accounts: ReadonlyArray<WorkjetNativeProviderAccount> } | undefined | null,
+): WorkjetNativeProviderAccount["reportedQuota"] {
+  return registry?.accounts.find(
+    (account) => account.provider === "xai" && account.reportedQuota?.state === "reported",
+  )?.reportedQuota;
+}
+
 function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
   const { discovery } = useCtoxMode();
   const instance =
@@ -470,39 +484,34 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
       ? discovery.instances.find((item) => item.id === instanceId)
       : undefined;
   const label = instance?.displayName ?? "Instanz";
-  const grok = useInstanceGrokAccount(instanceId, label);
   const providers = useInstanceProviders(instanceId);
+  const grok = useInstanceGrokAccount(instanceId, label, instanceXaiQuota(providers.registry));
+  const XaiIcon = WORKJET_GATEWAY_PROVIDER_ICONS.xai;
   return (
-    <section aria-label="Modellkonten" className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[13.5px] font-semibold">Modellkonten</h2>
-        <Button
-          size="sm"
-          disabled={grok.checking || grok.installed}
-          onClick={() => void grok.start()}
-        >
-          <PlusIcon className="size-3.5" />
-          Grok-Konto hinzufügen
-        </Button>
+    <SettingsSection
+      title="Modellkonten"
+      aria-label="Modellkonten"
+      headerAction={
+        <SettingsAddButton
+          action="models.instance.add"
+          disabled={grok.checking}
+          options={[
+            {
+              key: "xai",
+              label: WORKJET_GATEWAY_PROVIDER_LABELS.xai,
+              icon: XaiIcon,
+              disabled: grok.installed,
+              action: "models.instance.xai.add-account",
+              onSelect: () => void grok.start(),
+            },
+          ]}
+        />
+      }
+    >
+      <div className="divide-y divide-border/50 rounded-lg border">
+        <InstanceProviderSection label={label} grok={grok} providers={providers} />
       </div>
-      <div className="overflow-x-auto">
-        <div role="table" aria-label="Modellkonten" className="min-w-[34rem]">
-          <div
-            role="row"
-            className="grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3 border-b border-border py-2 text-[11px] text-muted-foreground"
-          >
-            <span role="columnheader">Anbieter / Konto</span>
-            <span role="columnheader">Modelle</span>
-            <span role="columnheader">Limits</span>
-            <span role="columnheader">Aktiv</span>
-            <span role="columnheader" className="sr-only">
-              Aktionen
-            </span>
-          </div>
-          <InstanceProviderSection label={label} grok={grok} providers={providers} />
-        </div>
-      </div>
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -519,8 +528,12 @@ function InstanceGatewayModels({
       ? discovery.instances.find((item) => item.id === instanceId)
       : undefined;
   const label = instance?.displayName ?? "Instanz";
-  const instanceGrok = useInstanceGrokAccount(instanceId, label);
   const providers = useInstanceProviders(instanceId);
+  const instanceGrok = useInstanceGrokAccount(
+    instanceId,
+    label,
+    instanceXaiQuota(providers.registry),
+  );
   return (
     <WorkjetModelsProviders
       {...gateway}

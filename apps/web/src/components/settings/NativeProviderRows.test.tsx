@@ -105,7 +105,8 @@ describe("Native provider account rows", () => {
       providers: [apiSelection],
       accounts: [apiAccount],
     });
-    expect(rendered).toContain("Z.ai (GLM) · Welsch");
+    expect(rendered).toContain("Z.ai (GLM)");
+    expect(rendered).toContain("Instanz Welsch");
     expect(rendered).toContain("glm-5.3-flash");
     expect(rendered).toContain('aria-label="Modelle für zai"');
     expect(rendered).not.toContain("OAuth");
@@ -113,8 +114,8 @@ describe("Native provider account rows", () => {
     expect(control(rendered, "glm-5.3-flash prüfen")).toContain("disabled");
     expect(rendered).toContain("Prüfung nicht verfügbar");
     expect(rendered).not.toContain("Prüfung bestanden");
-    expect(control(rendered, "Konto 1 entfernen")).toContain("disabled");
-    expect(rendered).toContain("Entfernen nicht möglich");
+    // Ohne Holder-Freigabe gibt es keinen toten Papierkorb (Audit C).
+    expect(rendered).not.toContain('aria-label="Entfernen"');
     // The raw account id stays in non-visible automation hooks only.
     expect(rendered).not.toMatch(/>[^<]*native-api-fixture/);
     expect(rendered).not.toContain("CTOX aktualisieren");
@@ -144,7 +145,8 @@ describe("Native provider account rows", () => {
       accounts: [account],
       providers: [{ ...apiSelection, provider: "ctox_proxy" }],
     });
-    expect(rendered).toContain("ctox_proxy · Welsch");
+    expect(rendered).toContain("ctox_proxy");
+    expect(rendered).toContain("Instanz Welsch");
     expect(rendered).toContain('aria-label="Modelle für ctox_proxy"');
     expect(rendered).toContain("glm-5.3-flash");
   });
@@ -182,8 +184,9 @@ describe("Native provider account rows", () => {
       ...registry.accounts[0]!,
       modelChecks: [{ ...base, status: "failed", source: "upstream", failure: "model_not_found" }],
     });
-    expect(red).toContain("Prüfung fehlgeschlagen: model_not_found");
+    expect(red).toContain("claude-opus-5-5: Modell nicht gefunden.");
     expect(red).toContain("Modellliste neu laden");
+    expect(red).not.toContain("model_not_found<");
     const local = html({
       ...registry.accounts[0]!,
       modelChecks: [
@@ -197,8 +200,8 @@ describe("Native provider account rows", () => {
         },
       ],
     });
-    expect(local).toContain("Prüfung nicht verfügbar: gateway_cooldown");
-    expect(local).toContain("Neuversuch ab");
+    expect(local).toContain("Prüfung nicht verfügbar");
+    expect(local).toContain("claude-opus-5-5: pausiert bis");
     expect(local).not.toContain("Prüfung fehlgeschlagen");
     expect(local).not.toContain("Credentials rejected");
   });
@@ -250,7 +253,7 @@ describe("Native provider account rows", () => {
     const rendered = html();
     expect(rendered).toContain('role="switch"');
     expect(rendered).toContain(`aria-label="Konto 1 aktiv"`);
-    expect(rendered).toContain(`aria-label="Konto 1 entfernen"`);
+    expect(rendered).toContain(`aria-label="Entfernen"`);
     expect(rendered).toContain("claude-opus-5-5");
     expect(rendered).toContain("Nicht geprüft");
     expect(rendered).not.toContain("Inference verified");
@@ -260,8 +263,7 @@ describe("Native provider account rows", () => {
     const { controls: _controls, ...older } = registry.accounts[0]!;
     const rendered = html(older);
     expect(rendered).not.toContain('role="switch"');
-    expect(rendered).toContain("CTOX aktualisieren");
-    expect(control(rendered, "Konto 1 entfernen")).toContain("disabled");
+    expect(rendered).not.toContain('aria-label="Entfernen"');
   });
   it("keeps a failed account visible and disables duplicate mutations while awaiting the holder", () => {
     const rendered = html(
@@ -274,7 +276,6 @@ describe("Native provider account rows", () => {
     expect(rendered).toContain("Konto 1");
     expect(rendered).not.toMatch(new RegExp(`>[^<]*${accountId.slice(0, 8)}`));
     expect(control(rendered, "Konto 1 aktiv")).toContain("disabled");
-    expect(control(rendered, "Konto 1 entfernen")).toContain("disabled");
   });
   it("renders the actual disabled state without claiming a credential or inference failure", () => {
     const rendered = html({ ...registry.accounts[0]!, enabled: false });

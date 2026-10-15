@@ -10,7 +10,6 @@
     "b|components/chat/ProjectTeamPanel.tsx|className=\"block max-w-full break-words text-left underline-offset-2 hover:underline focus-visible:outline focus-visible",
     "b|components/chat/WorkjetCrossModeLinkCard.tsx|className=\"min-w-0 truncate font-mono text-[11px] text-info-foreground underline-offset-2 hover:underline\"",
     "b|components/chat/WorkjetMailboxActivityCard.tsx|className=\"min-w-0 truncate font-mono text-[11px] text-info-foreground underline-offset-2 hover:underline\"",
-    "d|components/settings/NativeProviderRows.tsx|) : probe?.status === \"failed\" ? (",
     "d|components/settings/ProjectSettingsPanel.tsx|script.command === fileScript.command // script.name.toLowerCase() === fileScript.name.toLowerCase(), ), ), [scripts, wo",
     "d|components/settings/ProviderInstanceCard.tsx|void) / undefined; /** * Optional outer reset button rendered next to the driver icon. Built-in * default slots supply a",
     "d|components/settings/ProviderModelsSection.tsx|0 // model.name !== model.slug; return (",

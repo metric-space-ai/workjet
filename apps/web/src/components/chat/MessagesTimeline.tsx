@@ -2339,9 +2339,12 @@ const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
           reassignThreads: workjetReassignThreads,
         }
       : {};
+  const peerTitle =
+    workjetReassignThreads.find((thread) => thread.threadId === model.peerThreadId)?.title ?? null;
   return (
     <WorkjetMailboxActivityCard
       model={model}
+      peerTitle={peerTitle}
       {...(model.peerIsLocal ? { onOpenPeerThread: onOpenThread } : {})}
       {...actionProps}
     />

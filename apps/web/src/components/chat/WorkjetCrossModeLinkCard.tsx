@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 
 import { cn } from "../../lib/utils";
+import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /**
  * The timeline face of the cross-mode workflow bridge (docs/workjet-plan.md →
@@ -277,23 +279,20 @@ function WorkjetCrossModeActionRow(props: {
         {actions.map((kind) => {
           const Icon = ACTION_ICON[kind];
           return (
-            <button
+            <Button
               key={kind}
               type="button"
+              size="xs"
+              variant="outline"
               data-workjet-crossmode-action={kind}
               aria-pressed={state.open === kind}
               disabled={busy}
               onClick={() => toggle(kind)}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]",
-                state.open === kind
-                  ? "bg-accent/60 text-foreground"
-                  : "text-muted-foreground hover:bg-accent/30",
-              )}
+              className={cn(state.open === kind && "bg-accent text-accent-foreground")}
             >
-              <Icon aria-hidden className="size-3" />
+              <Icon aria-hidden className="size-3.5" />
               {CROSS_MODE_OPERATION_LABEL[kind]}
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -326,23 +325,18 @@ function WorkjetCrossModeActionRow(props: {
             onChange={(event) => onStateChange({ ...state, summary: event.target.value })}
           />
           <div className="flex items-center justify-end gap-1">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={close}
-              className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/30"
-            >
+            <Button type="button" size="xs" variant="outline" disabled={busy} onClick={close}>
               Abbrechen
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              size="xs"
               data-workjet-crossmode-submit={state.open}
               disabled={submitDisabled}
               onClick={submit}
-              className="rounded-md bg-accent/60 px-1.5 py-0.5 text-[11px] font-medium text-foreground hover:bg-accent/80 disabled:opacity-50"
             >
               {CROSS_MODE_OPERATION_LABEL[state.open]}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -362,7 +356,6 @@ export function WorkjetCrossModeLinkCard(props: WorkjetCrossModeLinkCardProps) {
   const lead = isLink
     ? "Verknüpft mit"
     : `${model.operation === null ? "Zurück an" : CROSS_MODE_OPERATION_LABEL[model.operation]} →`;
-  const objectLabel = crossModeObjectLabel(model);
   const approval = crossModeApprovalLabel(model.approval);
   const linkable = onOpenBusinessOsObject !== undefined;
   const actionsEnabled = onCrossModeAction !== undefined && onActionStateChange !== undefined;
@@ -376,30 +369,37 @@ export function WorkjetCrossModeLinkCard(props: WorkjetCrossModeLinkCardProps) {
         <DirectionIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-medium text-foreground">{lead}</span>
         {linkable ? (
-          <button
-            type="button"
-            data-workjet-crossmode-open
-            title="Zu Business OS"
-            className="min-w-0 truncate font-mono text-[11px] text-info-foreground underline-offset-2 hover:underline"
-            onClick={() =>
-              onOpenBusinessOsObject({
-                instanceId: model.instanceId,
-                moduleId: model.moduleId,
-                objectKind: model.objectKind,
-                objectId: model.objectId,
-              })
-            }
-          >
-            {model.title}
-            <ExternalLinkIcon aria-hidden className="ml-1 inline size-3" />
-          </button>
-        ) : (
-          <span className="min-w-0 truncate font-mono text-[11px] text-secondary-label">
-            {model.title}
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="min-w-0 truncate text-secondary-label">{model.title}</span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    data-workjet-crossmode-open
+                    aria-label="In der Instanz öffnen"
+                    onClick={() =>
+                      onOpenBusinessOsObject({
+                        instanceId: model.instanceId,
+                        moduleId: model.moduleId,
+                        objectKind: model.objectKind,
+                        objectId: model.objectId,
+                      })
+                    }
+                  />
+                }
+              >
+                <ExternalLinkIcon aria-hidden className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">In der Instanz öffnen</TooltipPopup>
+            </Tooltip>
           </span>
+        ) : (
+          <span className="min-w-0 truncate text-secondary-label">{model.title}</span>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-[.7rem]">
-          <span className="text-muted-foreground">{objectLabel}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px]">
           {model.kind === "return" ? (
             <span className={cn(APPROVAL_TONE[approval] ?? "text-muted-foreground")}>
               {approval}
@@ -455,6 +455,6 @@ export function workjetCrossModeFailureMessage(error: unknown): string {
     CROSS_MODE_FAILURE_REASONS.has(error.reason)
       ? (error.reason as WorkjetCrossModeError["reason"])
       : null;
-  if (reason === null) return "Rückgabe an Business OS fehlgeschlagen";
+  if (reason === null) return "Rückgabe an die Instanz fehlgeschlagen";
   return new WorkjetCrossModeError({ reason }).message;
 }

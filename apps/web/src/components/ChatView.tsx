@@ -7702,7 +7702,7 @@ function ChatViewContent(props: ChatViewProps) {
                                       ? "Erst laufende Runde beenden"
                                       : activeThread?.workjetConfig.schemaVersion === 2 &&
                                           activeThread.workjetConfig.ctoxCrewChat !== undefined
-                                        ? "Rechner im Business OS wählen"
+                                        ? "Rechner in der Instanz wählen"
                                         : null
                                 }
                                 onWorkjetRoleChange={handleWorkjetRoleChange}

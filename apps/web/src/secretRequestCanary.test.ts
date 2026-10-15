@@ -10,6 +10,7 @@ import { CtoxWorkjetProjectControlResponse } from "@workjet/contracts";
 import cardSource from "./components/chat/SecretRequestCard.tsx?raw";
 import helperSource from "./workjetSecretRequests.ts?raw";
 import inputSource from "./components/ui/secret-input.tsx?raw";
+import settingsSource from "./components/settings/SecretsSettingsSection.tsx?raw";
 
 const CANARY = "CANARY-secret-7f3a9c1e5b-Ünïcode";
 const sent: unknown[] = [];
@@ -113,7 +114,7 @@ describe("secret request canary", () => {
   });
 
   it("keeps the card and helpers free of storage and draft writers", () => {
-    for (const source of [cardSource, helperSource, inputSource]) {
+    for (const source of [cardSource, helperSource, inputSource, settingsSource]) {
       expect(source).not.toMatch(
         /localStorage|sessionStorage|indexedDB|composerDraft|DraftStore|console\./,
       );

@@ -155,7 +155,7 @@ describe("ServerSettings Workjet catalog", () => {
       managedSystemPrompt: "",
       managerThreadReference: "",
       telemetry: {
-        claudeCodeEvents: true,
+        claudeCodeEvents: false,
         sidecarEvents: true,
         retentionDays: 14,
       },

@@ -479,6 +479,8 @@ describe("WorkjetConfiguration", () => {
       schemaVersion: 4,
       selectedComputerId: null,
       workerGraph: { positions: [], dependencies: [] },
+      // Workjet überträgt keine Claude-Code-Ereignisse: true wird false.
+      telemetry: { ...encodedInput.telemetry, claudeCodeEvents: false },
     });
   });
 

@@ -683,7 +683,10 @@ export function ProjectOverviewCard({
                             aria-label={`${crew.disrupted} ${t("gestört", "disrupted")}`}
                             title={`${crew.disrupted} ${t("gestört", "disrupted")}`}
                           >
-                            <span aria-hidden="true" className="size-2 rounded-full bg-destructive" />
+                            <span
+                              aria-hidden="true"
+                              className="size-2 rounded-full bg-destructive"
+                            />
                             {crew.disrupted}
                           </span>
                         ) : null}
@@ -756,10 +759,7 @@ export function ProjectOverviewCard({
       ) : kpiSlots.length > 0 ? (
         // Not positioned: an open KPI editor overlays the whole card (Audit A-30).
         <div className="mt-auto border-t border-border px-3 py-3">
-          <dl
-            className="grid min-w-0 grid-cols-3 gap-2"
-            data-workjet-project-card-slots=""
-          >
+          <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
             {kpiSlots}
           </dl>
         </div>
@@ -774,7 +774,9 @@ export function ProjectOverviewCard({
             size="xs"
             variant="outline"
             data-workjet-action={`project.card.retry:${project.key}`}
-            onClick={() => void (lastFailed.current === "refresh" ? refreshKpis() : changeArchive())}
+            onClick={() =>
+              void (lastFailed.current === "refresh" ? refreshKpis() : changeArchive())
+            }
           >
             {t("Erneut versuchen", "Try again")}
           </Button>

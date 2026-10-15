@@ -53,8 +53,7 @@ export function ProjectTokenBudget({ project }: { readonly project: GalleryProje
     usage.environments.some((e) => (e.summary?.buckets.length ?? 0) > 0) ||
     (unknown.length === 0 &&
       usage.environments.some((e) => e.summary?.projectThreads !== undefined));
-  if (usage.merged.duplicateSources.length)
-    unknown.push("duplicate-sources");
+  if (usage.merged.duplicateSources.length) unknown.push("duplicate-sources");
   const threads = (usage.merged.projectThreads ?? []).map((thread) => {
     const metadata = usage.environments
       .flatMap((environment) => environment.summary?.projectThreads ?? [])

@@ -50,9 +50,7 @@ export function SupervisorTickStatus(props: {
             : de
               ? `in ${Math.ceil((next - now) / 60000)} min`
               : `in ${Math.ceil((next - now) / 60000)} min`;
-  const lastLabel = props.state?.lastControlAt
-    ? minutesAgo(props.state.lastControlAt)
-    : "";
+  const lastLabel = props.state?.lastControlAt ? minutesAgo(props.state.lastControlAt) : "";
   return (
     <div
       className="mt-2 flex flex-wrap items-center gap-1.5"

@@ -57,7 +57,9 @@ function StatusChip(props: { readonly status: ProjectOverviewStatus; readonly la
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] text-muted-foreground">
       <span
         aria-hidden="true"
-        className={"size-2 shrink-0 rounded-full " + toneDotClasses[projectOverviewStatusTone(props.status)]}
+        className={
+          "size-2 shrink-0 rounded-full " + toneDotClasses[projectOverviewStatusTone(props.status)]
+        }
       />
       {props.label}
     </span>
@@ -491,7 +493,9 @@ export function ProjectOverviewView(props: {
                 {prefs.title ?? data.title}
               </h1>
               {data.summary !== null && (
-                <p className="mt-0.5 text-[13.5px] leading-5 text-muted-foreground">{data.summary}</p>
+                <p className="mt-0.5 text-[13.5px] leading-5 text-muted-foreground">
+                  {data.summary}
+                </p>
               )}
               {developerMode && (
                 <SupervisorTickStatus {...data.supervisorTick} language={language} text={text} />
@@ -1301,7 +1305,9 @@ function FeedCard(props: {
             aria-label={props.marked ? text.feedMarked : text.feedMark}
             title={props.marked ? text.feedMarked : text.feedMark}
             onClick={props.onToggleMark}
-            className={"ml-auto" + (props.marked ? " text-info-foreground" : " text-muted-foreground")}
+            className={
+              "ml-auto" + (props.marked ? " text-info-foreground" : " text-muted-foreground")
+            }
           >
             <BookmarkIcon
               aria-hidden

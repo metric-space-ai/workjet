@@ -38,7 +38,9 @@ export function ProjectKpiResult({
           <time className="text-muted-foreground" dateTime={calculatedAt.toISOString()}>
             {formatKpiTime(calculatedAt)}
           </time>
-          {result.status === "stale" && <span className="text-warning-foreground"> · {result.detail}</span>}
+          {result.status === "stale" && (
+            <span className="text-warning-foreground"> · {result.detail}</span>
+          )}
         </>
       ) : result.detail.trim() === "" || result.detail === "—" ? null : (
         <span

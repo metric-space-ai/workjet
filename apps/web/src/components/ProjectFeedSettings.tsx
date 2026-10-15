@@ -393,11 +393,15 @@ export function FeedSettingsSheet(props: {
                   hint: "",
                 },
               ]}
-              onChange={(value, label) => set("replies", value, `${de ? "Verlauf" : "History"}: ${label}`)}
+              onChange={(value, label) =>
+                set("replies", value, `${de ? "Verlauf" : "History"}: ${label}`)
+              }
             />
             <div className="flex flex-wrap items-center gap-2 text-[13.5px]">
               <span className="font-bold">{de ? "Regeltermin" : "Standing meeting"}</span>
-              {props.meeting ? <span className="text-muted-foreground">{props.meeting}</span> : null}
+              {props.meeting ? (
+                <span className="text-muted-foreground">{props.meeting}</span>
+              ) : null}
               {props.onOpenMeetingSettings ? (
                 <Button
                   type="button"
@@ -405,13 +409,7 @@ export function FeedSettingsSheet(props: {
                   variant="outline"
                   onClick={props.onOpenMeetingSettings}
                 >
-                  {props.meeting
-                    ? de
-                      ? "Ändern"
-                      : "Change"
-                    : de
-                      ? "Festlegen"
-                      : "Set"}
+                  {props.meeting ? (de ? "Ändern" : "Change") : de ? "Festlegen" : "Set"}
                 </Button>
               ) : null}
             </div>

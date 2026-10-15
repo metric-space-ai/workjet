@@ -1657,26 +1657,26 @@ function InlineProjectCreate({
           </label>
           {/* Without an instance only the requirement line speaks (Audit A-65). */}
           {options.length === 0 ? null : (
-          <div className="grid min-w-0 gap-1 text-[13.5px]">
-            <span>Instanz</span>
-            <Select
-              value={instanceId ?? ""}
-              onValueChange={(value) =>
-                setChosenInstanceId(typeof value === "string" && value !== "" ? value : null)
-              }
-            >
-              <SelectTrigger aria-label="Instanz" disabled={options.length === 0}>
-                <SelectValue>{instanceLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="start" alignItemWithTrigger={false}>
-                {options.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </div>
+            <div className="grid min-w-0 gap-1 text-[13.5px]">
+              <span>Instanz</span>
+              <Select
+                value={instanceId ?? ""}
+                onValueChange={(value) =>
+                  setChosenInstanceId(typeof value === "string" && value !== "" ? value : null)
+                }
+              >
+                <SelectTrigger aria-label="Instanz" disabled={options.length === 0}>
+                  <SelectValue>{instanceLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="start" alignItemWithTrigger={false}>
+                  {options.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </div>
           )}
         </div>
       </InlinePanel>

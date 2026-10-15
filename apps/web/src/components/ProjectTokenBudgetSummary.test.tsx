@@ -23,7 +23,13 @@ describe("project budget overview", () => {
     expect(
       renderToStaticMarkup(
         <ProjectTokenBudgetSummary
-          view={{ totals: null, cycle, unknown: ["worker · gpu3"], threads: [], limitBillions: 2.3 }}
+          view={{
+            totals: null,
+            cycle,
+            unknown: ["worker · gpu3"],
+            threads: [],
+            limitBillions: 2.3,
+          }}
         />,
       ),
     ).toBe("");

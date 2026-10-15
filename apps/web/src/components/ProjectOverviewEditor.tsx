@@ -955,9 +955,7 @@ export function ProjectOverviewEditor({
       <div className="grid gap-2 border-t border-border pt-3" data-workjet-prompted-kpis="">
         {kpisLoadFailed ? (
           <p role="alert" className="text-xs text-destructive" data-workjet-kpis-load-failed="">
-            {workjetUiLanguage() === "en"
-              ? "Metrics not loaded"
-              : "Kennzahlen nicht geladen"}
+            {workjetUiLanguage() === "en" ? "Metrics not loaded" : "Kennzahlen nicht geladen"}
           </p>
         ) : null}
         {([0, 1, 2] as const).map((index) => (

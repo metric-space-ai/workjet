@@ -19,12 +19,19 @@ import {
 import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
 import { retainRemoteWorkerOutcome, refreshRemoteWorkerOutcome } from "./RemoteWorkerOutcome.ts";
 import { persisted, startup, worker } from "./nativeWorkerOutcomeFixture.ts";
+import { layer as ledgerLayer, WorkerRunLedger } from "./WorkerRunLedger.ts";
 const database = <A, E>(
-  effect: Effect.Effect<A, E, SqlClient.SqlClient | RemoteWorkerStore | WorkerPullRequestStore>,
+  effect: Effect.Effect<
+    A,
+    E,
+    SqlClient.SqlClient | RemoteWorkerStore | WorkerPullRequestStore | WorkerRunLedger
+  >,
 ) =>
   effect.pipe(
     Effect.provide(
-      Layer.mergeAll(remoteLayer, prLayer).pipe(Layer.provideMerge(NodeSqliteClient.layerMemory())),
+      Layer.mergeAll(remoteLayer, prLayer, ledgerLayer).pipe(
+        Layer.provideMerge(NodeSqliteClient.layerMemory()),
+      ),
     ),
   );
 const pr: ChangeRequest = {
@@ -56,6 +63,25 @@ it.effect(
         yield* runMigrations();
         const remote = yield* RemoteWorkerStore;
         const store = yield* WorkerPullRequestStore;
+        const ledger = yield* WorkerRunLedger;
+        yield* ledger.queue(
+          {
+            runId: worker.requestId,
+            parent: {
+              threadId: worker.parent.threadId,
+              sessionId: null,
+              model: null,
+              harness: null,
+            },
+            worker: { model: null, harness: null, providerRoute: null, reasoning: null },
+            briefSha256: "a".repeat(64),
+            taskType: "backend",
+            difficulty: "standard",
+            selection: "manual",
+          },
+          worker.createdAt,
+        );
+        yield* ledger.observe({ runId: worker.requestId, startedAt: worker.createdAt });
         let candidates: ReadonlyArray<ChangeRequest> = [pr];
         // The source snapshot has no target worker thread. Its archived target can be offline.
         const query = {
@@ -116,6 +142,11 @@ it.effect(
         candidates = [pr];
         yield* invoke(notice);
         const submission = Option.getOrThrow(yield* store.get(worker.requestId));
+        const run = Option.getOrThrow(yield* ledger.get(worker.requestId));
+        assert.equal(run.startedAt, worker.createdAt);
+        assert.isNotNull(run.terminalAt);
+        assert.equal(run.resultCommit, notice.headOid);
+        assert.equal(run.pullRequest?.number, notice.pullRequest.number);
         assert.deepEqual(submission, { ...persisted, state: "open" });
         candidates = [{ ...pr, headCommitOid: "b".repeat(40) }];
         assert.equal(

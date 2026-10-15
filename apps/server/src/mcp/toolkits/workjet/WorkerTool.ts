@@ -19,6 +19,7 @@ import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as WorkerDispatch from "../../../workjet/WorkerDispatch.ts";
+import { WorkerTaskType, WorkerDifficulty } from "../../../workjet/WorkerRunLedger.ts";
 
 export const WORKJET_DISPATCH_WORKER_TOOL_NAME = "workjet_dispatch_worker";
 
@@ -41,6 +42,10 @@ export const CanonicalWorkerModelSelection = Schema.Struct({
 
 export const WorkerDispatchInputSchema = Schema.Struct({
   task: NonBlankTask,
+  pool: Schema.optional(Schema.Literal("worker")),
+  workerName: Schema.optional(TrimmedNonEmptyString),
+  taskType: Schema.optional(WorkerTaskType),
+  difficulty: Schema.optional(WorkerDifficulty),
   remoteRequestId: Schema.optional(ThreadId),
   workerProfileId: Schema.optional(WorkjetWorkerProfileId),
   computerId: Schema.optional(WorkjetComputerId),
@@ -152,6 +157,47 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
   const server = yield* McpServer.McpServer;
   const workerDispatch = yield* WorkerDispatch.WorkerDispatch;
   const tool = WorkerDispatchMcpTool;
+  for (const name of ["workjet_workers_list", "workjet_worker_health"]) {
+    const poolTool = Tool.make(name, {
+      parameters: Schema.Struct({}),
+      success: Schema.Unknown,
+    }).annotate(McpSchema.EnabledWhen, enabledWhen);
+    yield* server.addTool({
+      tool: new McpSchema.Tool({
+        name,
+        description:
+          "Read the official reachable coding-model pool. Health also runs the existing model checks.",
+        inputSchema: Tool.getJsonSchema(poolTool),
+        annotations: { readOnlyHint: name === "workjet_workers_list" },
+      }),
+      annotations: poolTool.annotations,
+      handle: () =>
+        Effect.withFiber((fiber) => {
+          const scope = Context.getUnsafe(fiber.context, McpInvocationContext.McpInvocationContext);
+          return Effect.gen(function* () {
+            const invocation = yield* McpInvocationContext.requireWorkjetOrchestrator();
+            if (workerDispatch.listPool === undefined)
+              return failureResult("worker-profile-unavailable");
+            const pool = yield* workerDispatch.listPool(
+              invocation,
+              name === "workjet_worker_health",
+            );
+            return new McpSchema.CallToolResult({
+              isError: false,
+              structuredContent: pool,
+              content: [{ type: "text", text: "Official worker pool snapshot" }],
+            });
+          }).pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+            Effect.catchTags({
+              WorkerDispatchError: (error) => Effect.succeed(failureResult(error.reason)),
+              WorkjetOrchestratorUnavailableError: () =>
+                Effect.succeed(failureResult("role-not-authorized")),
+            }),
+          );
+        }),
+    });
+  }
   yield* server.addTool({
     tool: new McpSchema.Tool({
       name: tool.name,
@@ -190,6 +236,13 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
             : undefined;
           const dispatchInput: WorkerDispatch.WorkerDispatchInput = {
             task: input.task,
+            ...(input.pool === undefined ? {} : { pool: input.pool }),
+            ...(input.workerName === undefined ? {} : { workerName: input.workerName }),
+            ...(input.workerProfileId === undefined
+              ? {}
+              : { workerProfileId: input.workerProfileId }),
+            ...(input.taskType === undefined ? {} : { taskType: input.taskType }),
+            ...(input.difficulty === undefined ? {} : { difficulty: input.difficulty }),
             ...(input.remoteRequestId ? { remoteRequestId: input.remoteRequestId } : {}),
             ...(input.computerId !== undefined ? { computerId: input.computerId } : {}),
             ...(input.title !== undefined ? { title: input.title } : {}),

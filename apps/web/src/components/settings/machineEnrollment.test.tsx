@@ -52,7 +52,7 @@ describe("Fortschritt aus steps (sync v4 §16.41)", () => {
     expect(machineEnrollmentProgress([])).toMatchObject({
       index: 0,
       fraction: 0,
-      status: "running",
+      phase: "running",
     });
     const half = machineEnrollmentProgress([
       done("token_issued"),
@@ -60,14 +60,14 @@ describe("Fortschritt aus steps (sync v4 §16.41)", () => {
       done("package_copied"),
       { key: "installed", state: "running", at_ms: 2 },
     ]);
-    expect(half).toMatchObject({ key: "installed", status: "running" });
+    expect(half).toMatchObject({ key: "installed", phase: "running" });
     expect(half.fraction).toBeCloseTo(3.5 / 8);
     expect(machineEnrollmentStepLabel(half.key)).toBe("Installieren");
   });
 
   it("is green only when the green step is done", () => {
     const steps = MACHINE_ENROLLMENT_STEP_KEYS.map((key) => done(key));
-    expect(machineEnrollmentProgress(steps)).toMatchObject({ status: "green", fraction: 1 });
+    expect(machineEnrollmentProgress(steps)).toMatchObject({ phase: "green", fraction: 1 });
   });
 
   it("reports the failed step; the latest report of a key wins", () => {
@@ -82,8 +82,8 @@ describe("Fortschritt aus steps (sync v4 §16.41)", () => {
         detail: "Permission denied (publickey).",
       },
     ]);
-    expect(progress).toMatchObject({ status: "failed", key: "transport_connected" });
-    expect(progress.failed?.error_code).toBe("auth_rejected");
+    expect(progress).toMatchObject({ phase: "failed", key: "transport_connected" });
+    expect(progress.fault?.error_code).toBe("auth_rejected");
   });
 });
 
@@ -147,7 +147,7 @@ describe("Ein Klick gegen die Attrappe", () => {
     await Promise.resolve();
     clock.flush();
     const last = seen.at(-1)!;
-    expect(machineEnrollmentProgress(last.steps).status).toBe("green");
+    expect(machineEnrollmentProgress(last.steps).phase).toBe("green");
     expect(last.capabilities?.gpu).toBe("RTX A6000 · 48 GB");
     expect(new Set(last.steps.map((step) => step.key))).toEqual(
       new Set(MACHINE_ENROLLMENT_STEP_KEYS),
@@ -168,7 +168,7 @@ describe("Ein Klick gegen die Attrappe", () => {
     source.watch(id, (snapshot) => (latest = snapshot));
     clock.flush();
     expect(machineEnrollmentProgress(latest.steps)).toMatchObject({
-      status: "failed",
+      phase: "failed",
       key: "transport_connected",
     });
   });

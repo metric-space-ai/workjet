@@ -27,12 +27,18 @@ import {
   startMachineEnrollment,
   type MachineCandidate,
   type MachineCapabilities,
+  type MachineEnrollmentProgress,
   type MachineEnrollmentSnapshot,
   type MachineEnrollmentSource,
   type MachineInstallTransport,
 } from "./machineEnrollment";
 
 const labels = machineEnrollmentLabels("de");
+const ROW_DOT: Record<MachineEnrollmentProgress["phase"], RowStatus> = {
+  running: "busy",
+  failed: "error",
+  green: "ok",
+};
 const CANDIDATE_TIMEOUT_MS = 10_000;
 const CANDIDATE_RETRY_MS = 15_000;
 
@@ -63,7 +69,7 @@ export function AddMachineEnrollment({
 }: AddMachineEnrollmentProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [entries, setEntries] = useState<ReadonlyArray<EnrollmentEntry>>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [pickedId, setPickedId] = useState<string | null>(null);
   const [userInput, setUserInput] = useState("");
   const [starting, setStarting] = useState(false);
   const candidates = useCandidates(transport, open);
@@ -72,7 +78,7 @@ export function AddMachineEnrollment({
   const visible = (candidates.list ?? []).filter(
     (candidate) => !enrolledIds.has(candidate.id) && !isKnown?.(candidate),
   );
-  const picked = visible.find((candidate) => candidate.id === selected) ?? null;
+  const picked = visible.find((candidate) => candidate.id === pickedId) ?? null;
   const needsUser = picked !== null && picked.transport !== "local" && picked.user === null;
   const canStart = picked !== null && (!needsUser || userInput.trim() !== "") && !starting;
 
@@ -91,7 +97,7 @@ export function AddMachineEnrollment({
     try {
       const entry = await start(candidate, candidate.name);
       setEntries((current) => [...current, entry]);
-      setSelected(null);
+      setPickedId(null);
       setUserInput("");
       setOpen(false);
     } finally {
@@ -173,10 +179,10 @@ export function AddMachineEnrollment({
               <CandidateRow
                 key={candidate.id}
                 candidate={candidate}
-                selected={candidate.id === selected}
+                selected={candidate.id === pickedId}
                 disabled={starting}
                 onSelect={() => {
-                  setSelected(candidate.id === selected ? null : candidate.id);
+                  setPickedId(candidate.id === pickedId ? null : candidate.id);
                   setUserInput("");
                 }}
               />
@@ -220,7 +226,7 @@ export function AddMachineEnrollment({
               variant="outline"
               onClick={() => {
                 setOpen(false);
-                setSelected(null);
+                setPickedId(null);
               }}
             >
               {labels.cancel}
@@ -346,21 +352,19 @@ function EnrollmentRow({
   const progress = machineEnrollmentProgress(snapshot.steps);
   const [details, setDetails] = useState(false);
   const [userEdit, setUserEdit] = useState<string | null>(null);
-  const failure = progress.failed ? machineEnrollmentError(progress.failed.error_code) : null;
-  const status: RowStatus =
-    progress.status === "green" ? "ok" : progress.status === "failed" ? "error" : "busy";
+  const failure = progress.fault ? machineEnrollmentError(progress.fault.error_code) : null;
+  const dot = ROW_DOT[progress.phase];
   const stepLabel = machineEnrollmentStepLabel(progress.key);
 
-  const meta =
-    progress.status === "failed" && failure ? (
-      <span className="whitespace-normal text-destructive" data-slot="machine-enrollment-error">
-        {failure.text}
-      </span>
-    ) : progress.status === "green" ? (
-      (machineCandidateAddress(entry.candidate) ?? labels.thisComputer)
-    ) : (
-      <span data-slot="machine-enrollment-step">{stepLabel}</span>
-    );
+  const meta = failure ? (
+    <span className="whitespace-normal text-destructive" data-slot="machine-enrollment-error">
+      {failure.text}
+    </span>
+  ) : progress.phase === "green" ? (
+    (machineCandidateAddress(entry.candidate) ?? labels.thisComputer)
+  ) : (
+    <span data-slot="machine-enrollment-step">{stepLabel}</span>
+  );
 
   const [chosen, setChosen] = useState<CapabilityChoice>({ build: true, storage: true, gpu: true });
   const capabilitySwitches = (className: string) => (
@@ -381,15 +385,15 @@ function EnrollmentRow({
     />
   );
   const chips =
-    progress.status === "green" ? (
-      // Breit in der Zeile, schmal (420 px) als eigene Zeile darunter.
+    progress.phase === "green" ? (
+      // Breit als Chips, schmal (420 px) als eigene Zeile darunter.
       capabilitySwitches("hidden sm:flex")
     ) : (
       <>
-        {progress.status === "running" ? (
+        {progress.phase === "running" ? (
           <ProgressBar fraction={progress.fraction} label={stepLabel} />
         ) : null}
-        {failure && progress.failed ? (
+        {failure && progress.fault ? (
           <>
             <Button
               type="button"
@@ -403,7 +407,7 @@ function EnrollmentRow({
             >
               {failure.actionLabel}
             </Button>
-            {progress.failed.detail ? (
+            {progress.fault.detail ? (
               <Button
                 type="button"
                 size="xs"
@@ -430,15 +434,15 @@ function EnrollmentRow({
     );
 
   return (
-    <div data-slot="machine-enrollment-row" data-state={progress.status} data-step={progress.key}>
+    <div data-slot="machine-enrollment-row" data-state={progress.phase} data-step={progress.key}>
       <Row
-        status={status}
-        statusLabel={progress.status === "failed" ? (failure?.text ?? stepLabel) : stepLabel}
+        status={dot}
+        statusLabel={progress.phase === "failed" ? (failure?.text ?? stepLabel) : stepLabel}
         name={<InlineName value={entry.name} onCommit={onRename} />}
         meta={meta}
         chips={chips}
       />
-      {progress.status === "green" ? capabilitySwitches("flex px-3 pb-2 sm:hidden") : null}
+      {progress.phase === "green" ? capabilitySwitches("flex px-3 pb-2 sm:hidden") : null}
       {userEdit !== null ? (
         <form
           className="flex flex-wrap items-center gap-2 px-3 pb-2 text-muted-foreground text-xs"
@@ -467,12 +471,12 @@ function EnrollmentRow({
           </Button>
         </form>
       ) : null}
-      {details && progress.failed?.detail ? (
+      {details && progress.fault?.detail ? (
         <pre
           className="mx-3 mb-2 overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted px-2 py-1 font-mono text-muted-foreground text-xs"
           data-slot="machine-enrollment-details"
         >
-          {progress.failed.detail}
+          {progress.fault.detail}
         </pre>
       ) : null}
     </div>

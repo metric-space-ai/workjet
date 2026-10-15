@@ -75,13 +75,15 @@ export interface MachineEnrollmentSnapshot {
   readonly capabilities?: MachineCapabilities | null;
 }
 
+type Settled = Promise<void>;
+
 /** Instanzseite (Vertrag §16.41). */
 export interface MachineEnrollmentSource {
   begin(input: {
     readonly label: string;
     readonly transport: MachineEnrollmentTransport;
   }): Promise<MachineEnrollmentBeginResult>;
-  cancel(enrollmentId: string): Promise<void>;
+  cancel(enrollmentId: string): Settled;
   watch(
     enrollmentId: string,
     onSnapshot: (snapshot: MachineEnrollmentSnapshot) => void,
@@ -277,8 +279,8 @@ export interface MachineEnrollmentProgress {
   readonly key: MachineEnrollmentStepKey;
   /** Anteil erledigter Schritte, 0–1. */
   readonly fraction: number;
-  readonly status: "running" | "failed" | "green";
-  readonly failed: MachineEnrollmentStep | null;
+  readonly phase: "running" | "failed" | "green";
+  readonly fault: MachineEnrollmentStep | null;
 }
 
 /**
@@ -301,12 +303,12 @@ export function machineEnrollmentProgress(
       index,
       key: failedKey,
       fraction: index / total,
-      status: "failed",
-      failed: latest.get(failedKey) ?? null,
+      phase: "failed",
+      fault: latest.get(failedKey) ?? null,
     };
   }
   if (latest.get("green")?.state === "done") {
-    return { index: total - 1, key: "green", fraction: 1, status: "green", failed: null };
+    return { index: total - 1, key: "green", fraction: 1, phase: "green", fault: null };
   }
   let done = 0;
   for (const key of MACHINE_ENROLLMENT_STEP_KEYS) {
@@ -320,8 +322,8 @@ export function machineEnrollmentProgress(
     key: MACHINE_ENROLLMENT_STEP_KEYS[index]!,
     // Ein laufender Schritt zählt halb, damit der Balken sichtbar wandert.
     fraction: (done + (running ? 0.5 : 0)) / total,
-    status: "running",
-    failed: null,
+    phase: "running",
+    fault: null,
   };
 }
 

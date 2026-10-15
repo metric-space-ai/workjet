@@ -106,7 +106,7 @@ export function createFixtureMachineEnrollment(options: FixtureOptions = {}): {
   const now = options.now ?? (() => Date.now());
   const schedule =
     options.schedule ?? ((fn: () => void, ms: number) => void globalThis.setTimeout(fn, ms));
-  const enrollments = new Map<string, FixtureEnrollment>();
+  const enrollments: Map<string, FixtureEnrollment> = new Map();
   let counter = 0;
 
   const emit = (entry: FixtureEnrollment) => {

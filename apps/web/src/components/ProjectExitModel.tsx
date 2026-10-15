@@ -19,7 +19,6 @@ import {
 } from "../projectExitModel";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
 import { Button } from "./ui/button";
-import { useUiText } from "../hooks/useUiText";
 
 export function ProjectExitModelSummary({
   projectId,
@@ -33,26 +32,18 @@ export function ProjectExitModelSummary({
   readonly onEdit?: (() => void) | undefined;
   readonly editLabel?: string | undefined;
 }) {
-  const t = useUiText();
   const view = exitModelPresentation(assessment, projectId);
-  const valued = view.value !== "—";
-  // Der Stempel ist immer sichtbar. Mit onEdit öffnet ein Tipp darauf die
-  // Bewertung inline; der Rest der Vorschau öffnet weiter das Projekt.
-  // „Nicht bewertet“ trägt dieselbe Stempelform mit festem Grund wie der
-  // Wertstempel; nur Text und Rahmen sind gedämpft, damit der Stempel auf
-  // hellen wie dunklen Vorschauen lesbar bleibt (Kontrast ≥ 4,5:1).
-  const label = valued
-    ? view.value +
-      " · " +
-      view.label +
-      (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
-    : t("Nicht bewertet", "Not rated");
+  // Der Stempel erscheint nur mit einem Wert. Ohne Wert steht nichts da; die
+  // Kachel bietet dann höchstens die Aktion „Bewerten“ an (kein Zustandsstempel).
+  if (view.value === "—") return null;
+  const label =
+    view.value +
+    " · " +
+    view.label +
+    (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "");
   const className =
-    "absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap tabular-nums shadow-sm " +
-    (valued
-      ? "border-foreground/70 bg-background/90 text-foreground"
-      : "border-neutral-500/70 bg-background/90 text-neutral-600 dark:border-neutral-400/70 dark:text-neutral-400");
-  const text = valued ? view.value : t("Nicht bewertet", "Not rated");
+    "absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap tabular-nums shadow-sm border-foreground/70 bg-background/90 text-foreground";
+  const text = view.value;
   if (onEdit)
     return (
       <button

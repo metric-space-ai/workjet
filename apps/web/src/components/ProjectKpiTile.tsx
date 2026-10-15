@@ -14,8 +14,6 @@ export const KPI_PROMPT_MAX = 1_024;
 
 const TEXT = {
   de: {
-    notCalculated: "nicht berechnet",
-    notSet: "nicht festgelegt",
     edit: (n: number) => `KPI ${n} bearbeiten`,
     close: "Schließen",
     prompt: (n: number) => `Satz für KPI ${n}`,
@@ -31,8 +29,6 @@ const TEXT = {
     unsaved: "Nicht gespeichert",
   },
   en: {
-    notCalculated: "not calculated",
-    notSet: "not set",
     edit: (n: number) => `Edit KPI ${n}`,
     close: "Close",
     prompt: (n: number) => `Sentence for KPI ${n}`,
@@ -49,16 +45,18 @@ const TEXT = {
   },
 } as const;
 
-/** Card label for a native KPI slot: the resolved label, never an invented placeholder. */
+/**
+ * Card label for a native KPI slot: the resolved label, else the KPI's own sentence
+ * while it is not calculated yet, else nothing. Never a sentence about a state.
+ */
 export function projectKpiTileLabel(
   kpis: PromptedProjectKpis,
   projectId: string,
   index: number,
 ): string {
-  const text = TEXT[workjetUiLanguage()];
   const record = kpis.items[index];
-  if (!record) return text.notSet;
-  return projectKpiPresentation(record, projectId, index + 1).label ?? text.notCalculated;
+  if (!record) return "";
+  return projectKpiPresentation(record, projectId, index + 1).label ?? record.prompt.prompt.trim();
 }
 
 /**
@@ -130,12 +128,15 @@ export function ProjectKpiTile({
     if (!ok) setError(text.refreshFailed);
   };
   const status: ReactNode = !record
-    ? text.notSet
+    ? "—"
     : dirty
       ? text.unsaved
       : metric?.status === "ready"
         ? text.ready
-        : metric?.detail || text.notCalculated;
+        : metric?.detail || "—";
+  const resolvedLabel = record
+    ? projectKpiPresentation(record, projectId, position).label !== null
+    : false;
   const value = (
     <dd
       className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]"
@@ -160,7 +161,16 @@ export function ProjectKpiTile({
       }}
     >
       <div className="relative flex min-w-0 flex-col gap-0.5 pe-4">
-        <dt className="min-w-0 break-words text-[11px] leading-4 text-muted-foreground">{label}</dt>
+        {/* min-h keeps the row height while a slot has no label; the sentence of an
+            uncalculated KPI stays short (two lines) instead of pushing the row. */}
+        <dt
+          className={`min-h-4 min-w-0 break-words text-[11px] leading-4 text-muted-foreground ${
+            resolvedLabel ? "" : "line-clamp-2"
+          }`}
+          title={resolvedLabel ? undefined : label || undefined}
+        >
+          {label}
+        </dt>
         {value}
         {editable && (
           <button
@@ -168,7 +178,7 @@ export function ProjectKpiTile({
             type="button"
             aria-expanded={expanded}
             aria-controls={editorId}
-            aria-label={`${text.edit(position)}: ${label}`}
+            aria-label={label ? `${text.edit(position)}: ${label}` : text.edit(position)}
             onClick={() => (expanded ? collapse() : expand())}
             className="group absolute inset-0 flex cursor-pointer items-start justify-end rounded hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
             data-workjet-action={`project.kpis.tile:${projectId}:${position}`}

@@ -125,28 +125,22 @@ describe("project exit assessment display", () => {
     expect(markup).toContain(formatExitEur(800_000));
   });
 
-  it("keeps the stamp visible without a value, dimmed as not rated", () => {
-    for (const assessment of [null]) {
+  it("renders no stamp without a value (no 'Nicht bewertet' stamp)", () => {
+    for (const assessment of [null, undefined, { ...exitModelFixture, result: null }]) {
       const markup = renderToStaticMarkup(
-        <ProjectExitModelSummary projectId={projectId} assessment={assessment} />,
+        <ProjectExitModelSummary projectId={projectId} assessment={assessment} onEdit={() => {}} />,
       );
-      expect(markup).toContain('data-workjet-exit-model-stamp=""');
-      expect(markup).toContain("Nicht bewertet");
-      expect(markup).toContain("pointer-events-none");
-      // Derselbe feste Grund wie der Wertstempel, nur Text und Rahmen gedämpft.
-      expect(markup).toContain("bg-background/90");
-      expect(markup).not.toContain("<button");
+      expect(markup).toBe("");
     }
   });
 
-  it("hides a different project's value on a reused card but keeps the stamp", () => {
+  it("hides a different project's value on a reused card and shows no stamp", () => {
     const markup = renderToStaticMarkup(
       <ProjectExitModelSummary projectId="foreign" assessment={exitModelFixture} />,
     );
     expect(markup).not.toContain(formatExitEur(800_000));
-    // Ohne gültigen Wert zeigt derselbe Stempel gedämpft „Nicht bewertet“.
-    expect(markup).toContain("Nicht bewertet");
-    expect(markup).toContain("pointer-events-none");
+    expect(markup).not.toContain("Nicht bewertet");
+    expect(markup).toBe("");
   });
 });
 

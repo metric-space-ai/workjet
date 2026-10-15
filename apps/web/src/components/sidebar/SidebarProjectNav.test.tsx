@@ -78,7 +78,10 @@ describe("Plus unter „Persistente Worker“", () => {
         <SidebarAddPersistentWorker text={text} onCreate={async () => true} />
       </SidebarProvider>,
     );
-    expect(visibleText(html)).toEqual([]);
+    // Nur der verborgene Zuklappen-Pfeil des geschlossenen Panels, kein Text, keine Felder.
+    expect(visibleText(html)).toEqual(["Zuklappen"]);
+    expect(html).toContain('data-state="closed"');
+    expect(html).not.toContain(text.goal);
     expect(html).toContain(`aria-label="${text.addPersistentWorker}"`);
     expect(html).toContain('data-workjet-action="project.worker.persistent.add"');
   });

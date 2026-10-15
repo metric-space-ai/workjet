@@ -6,6 +6,7 @@ import projectOverviewCardSource from "./ProjectOverviewCard.tsx?raw";
 import projectScriptEditorSource from "./projectScriptEditor.tsx?raw";
 import projectScriptsControlSource from "./ProjectScriptsControl.tsx?raw";
 import projectWorkspaceSource from "./ProjectWorkspace.tsx?raw";
+import sidebarAddWorkerSource from "./sidebar/SidebarAddPersistentWorker.tsx?raw";
 import sidebarSource from "./Sidebar.tsx?raw";
 import projectFaviconPickerSource from "./settings/ProjectFaviconPicker.tsx?raw";
 import projectSettingsPanelSource from "./settings/ProjectSettingsPanel.tsx?raw";
@@ -72,6 +73,8 @@ describe("project places are inline", () => {
     // „Projekt konfigurieren“ speichert über project.configure statt zu navigieren.
     expect(chatIndexSource).toContain("configureWorkjetProject(activeCtoxInstanceId");
     expect(chatIndexSource).not.toContain('to: "/settings/projects/$projectKey"');
-    expect(projectWorkspaceSource).toContain("<InlinePanel");
+    // „Worker hinzufügen“ lebt nur noch als Plus in der Seitenleiste (15.10.).
+    expect(projectWorkspaceSource).not.toContain("<InlinePanel");
+    expect(sidebarAddWorkerSource).toContain("<InlinePanel");
   });
 });

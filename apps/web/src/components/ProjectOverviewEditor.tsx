@@ -114,6 +114,25 @@ function cardValidationError(values: ProjectCardConfigurationValues): string | n
   return null;
 }
 
+/** Nach einem abgelehnten Speichern: gespeicherter Stand zurück ins Feld, Wert zum Wiederholen (#736). */
+export function failedCardSave(
+  saved: ProjectCardConfigurationValues,
+  next: ProjectCardConfigurationValues,
+): {
+  readonly draft: ProjectCardConfigurationValues;
+  readonly retry: ProjectCardConfigurationValues;
+  readonly message: string;
+} {
+  return {
+    draft: saved,
+    retry: next,
+    message: editorText(
+      "Nicht gespeichert – Instanz antwortet nicht. Alter Wert steht wieder.",
+      "Not saved – the instance did not respond. The old value is back.",
+    ),
+  };
+}
+
 /**
  * Rückseite der Galeriekarte: jedes Feld speichert sofort (Text beim Verlassen,
  * Auswahl beim Wählen), danach „Gespeichert · Rückgängig“ (#728). Kein
@@ -155,6 +174,17 @@ export function ProjectCardConfigEditor({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /** Last change the instance did not take; the fields show the saved state again. */
+  const [failed, setFailed] = useState<ProjectCardConfigurationValues | null>(null);
+
+  // Ein abgelehnter Wert darf nicht im Feld stehen bleiben, als wäre er
+  // gespeichert (#736): Felder zurück auf den gespeicherten Stand, Wiederholen anbieten.
+  const failSave = (next: ProjectCardConfigurationValues) => {
+    const outcome = failedCardSave(saved, next);
+    setDraft(outcome.draft);
+    setFailed(outcome.retry);
+    setMessage(outcome.message);
+  };
 
   const commit = async (next: ProjectCardConfigurationValues, undo = false) => {
     if (pending || sameCardValues(next, saved)) return;
@@ -174,9 +204,10 @@ export function ProjectCardConfigEditor({
         setMessage(
           undo ? editorText("Rückgängig gemacht", "Undone") : editorText("Gespeichert", "Saved"),
         );
-      } else setMessage(editorText("Nicht gespeichert", "Not saved"));
+        setFailed(null);
+      } else failSave(next);
     } catch {
-      setMessage(editorText("Nicht gespeichert", "Not saved"));
+      failSave(next);
     } finally {
       setPending(false);
     }
@@ -309,7 +340,21 @@ export function ProjectCardConfigEditor({
         role="status"
       >
         {pending ? editorText("Speichert …", "Saving …") : message}
-        {!pending && previous !== null ? (
+        {!pending && failed !== null ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            data-workjet-action="project.card.config.retry"
+            onClick={() => {
+              setDraft(failed);
+              void commit(failed);
+            }}
+          >
+            {editorText("Erneut versuchen", "Retry")}
+          </Button>
+        ) : null}
+        {!pending && failed === null && previous !== null ? (
           <Button
             type="button"
             size="xs"

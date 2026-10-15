@@ -163,6 +163,23 @@ describe("compact project configuration", () => {
   });
 });
 
+describe("failed card save", () => {
+  it("puts the saved value back and keeps the rejected one for retry", async () => {
+    const { failedCardSave } = await import("./ProjectOverviewEditor");
+    const saved = {
+      title: "kunstmen.com",
+      websiteUrl: null,
+      repositoryUrl: null,
+      jourFixe: { weekday: 2, time: "14:00", timezone: "Europe/Berlin" },
+    };
+    const next = { ...saved, jourFixe: { ...saved.jourFixe, time: "15:30" } };
+    const outcome = failedCardSave(saved, next);
+    expect(outcome.draft.jourFixe?.time).toBe("14:00");
+    expect(outcome.retry.jourFixe?.time).toBe("15:30");
+    expect(outcome.message).toContain("Nicht gespeichert");
+  });
+});
+
 describe("card time options", () => {
   it("labels times as 24 h in German and follows the English locale", async () => {
     const { cardTimeOptions } = await import("./ProjectOverviewEditor");

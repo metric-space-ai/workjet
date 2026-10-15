@@ -49,12 +49,19 @@ describe("ProjectOverviewView join button", () => {
       <ProjectOverviewView data={data} onOpenChat={() => {}} onOpenJourFixe={() => {}} />,
     );
   };
-  it("shows only the time before the meeting", () => {
+  it("shows one compact line and no button before the meeting", () => {
     // Fixture-Regeltermin: Mittwoch 13:00; Stand: Montag 12:30 Berlin.
     const html = render(mondayBefore);
-    expect(html).toContain('data-workjet-action="project.jour-fixe.open"');
+    expect(html).not.toContain('data-workjet-action="project.jour-fixe.open"');
     expect(html).not.toContain("Regeltermin beitreten");
-    expect(html).toContain(">13:00</");
+    expect(html.replace(/<[^>]+>/g, "")).toContain("Nächster Regeltermin · Mi 13:00");
+    expect(html).not.toContain(">13:00</button");
+  });
+  it("names the meeting timezone only when it differs from the local one", () => {
+    const html = render(mondayBefore);
+    const local = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (local === "Europe/Berlin") expect(html).not.toContain("Europe/Berlin");
+    else expect(html).toContain(" · Europe/Berlin");
   });
   it("offers the join action inside the window", () => {
     // Mittwoch, 14.10.2026, 10:56 UTC = 12:56 Berlin: vier Minuten vor Beginn.

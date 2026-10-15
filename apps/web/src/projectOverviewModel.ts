@@ -156,6 +156,10 @@ export type ProjectOverviewPr = {
   readonly author?: string | null;
   /** PR description, when the PR source delivers it. */
   readonly body?: string | null;
+  /** Diff size, when the PR source delivers it. */
+  readonly additions?: number | null;
+  readonly deletions?: number | null;
+  readonly changedFiles?: number | null;
 };
 export type ProjectOverviewGoal = {
   readonly id: string;
@@ -391,7 +395,10 @@ export function buildProjectOwnerOverview(input: {
       at: dates.at(-1)!,
       sentence: projectOverviewFormat(text.setupGroup, {
         roles: roles.join(" + "),
-        range: day(dates[0]!) + "–" + day(dates.at(-1)!),
+        range:
+          day(dates[0]!) === day(dates.at(-1)!)
+            ? day(dates[0]!)
+            : day(dates[0]!) + "–" + day(dates.at(-1)!),
       }),
       thread: undefined,
       kind: "setup",

@@ -32,6 +32,14 @@ import {
   type ProjectFeedSource,
 } from "../projectFeedContent";
 import { useClientSettings } from "../hooks/useSettings";
+import { plainPreview } from "../projectFeedContent";
+import {
+  FeedSettingsButton,
+  FeedSettingsSheet,
+  useFeedPreferences,
+  type FeedSourceKey,
+  type FeedSourceRow,
+} from "./ProjectFeedSettings";
 import { Button } from "./ui/button";
 
 const toneClasses: Record<string, string> = {
@@ -164,25 +172,145 @@ export function ProjectOverviewView(props: {
     onOpenChat(scopeThreadRef(thread.environmentId, thread.id));
   const developerMode = useClientSettings((settings) => settings.developerMode);
   const missingKpis = data.kpis.every((kpi) => kpi.value === "—");
-  const feed = buildFeed(data, now, props.feedPosts);
+  const allFeed = buildFeed(data, now, props.feedPosts);
+  const { prefs, change, undo, revert } = useFeedPreferences(data.projectId);
+  const feed = allFeed.filter((item) => prefs.sources[feedSourceOf(item.kind)]);
+  const [tab, setTab] = useState<FeedTab>(prefs.defaultTab);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [marks, toggleMark] = useFeedBookmarks();
+  const countOf = (key: FeedSourceKey) =>
+    allFeed.filter((item) => feedSourceOf(item.kind) === key).length;
   const live = [...data.supervisors, ...data.parents, ...data.workers].flatMap((thread) => {
     const state = projectOverviewWorkerState(thread);
     return state === "waiting" ? [] : [{ thread, state }];
   });
   const de = language === "de";
   const card = "rounded-2xl bg-muted/50 px-4 py-3";
+  const workerNames = [...data.parents, ...data.workers].map((thread) =>
+    localizedWorkerName(projectOverviewWorkerName(thread.title, data.title).name, language),
+  );
+  const repo = data.links.find((link) => /github\.com/.test(link.url));
+  const sourceRows: FeedSourceRow[] = [
+    {
+      key: "disruptions",
+      group: "CTOX",
+      name: de ? "Störungen & Rückfragen" : "Disruptions & questions",
+      badge: "!",
+      badgeColor: "bg-red-600",
+      count: countOf("disruptions"),
+      chips: [],
+    },
+    {
+      key: "results",
+      group: "CTOX",
+      name: de ? "Worker-Ergebnisse & Ziele" : "Worker results & goals",
+      badge: "W",
+      badgeColor: "bg-blue-600",
+      count: countOf("results"),
+      chips: workerNames.slice(0, 6),
+    },
+    {
+      key: "sessions",
+      group: "CTOX",
+      name: de ? "Sitzungen" : "Sessions",
+      badge: "S",
+      badgeColor: "bg-teal-600",
+      count: countOf("sessions"),
+      chips: [],
+    },
+    {
+      key: "meeting",
+      group: "CTOX",
+      name: de ? "Regeltermin & Entscheidungen" : "Standing meeting & decisions",
+      badge: "RT",
+      badgeColor: "bg-violet-600",
+      count: countOf("meeting"),
+      chips: data.recurring && weekday ? [`${weekday} · ${data.recurring.time}`] : [],
+    },
+    {
+      key: "setup",
+      group: "CTOX",
+      name: de ? "Projekt-Setup" : "Project setup",
+      badge: "P",
+      badgeColor: "bg-emerald-600",
+      count: countOf("setup"),
+      chips: [],
+    },
+    {
+      key: "prs",
+      group: "GitHub",
+      name: de ? "Gemergte Pull Requests" : "Merged pull requests",
+      badge: "GH",
+      badgeColor: "bg-zinc-700",
+      count: countOf("prs"),
+      chips: repo ? [repo.url.replace(/^https:\/\/github\.com\//, "")] : [],
+      note: repo
+        ? null
+        : de
+          ? "Kein Repository verknüpft – PRs erscheinen, sobald eins verknüpft ist."
+          : "No repository linked – PRs appear once one is linked.",
+      action: props.settingsLinks?.[0]
+        ? { label: de ? "Verknüpfen" : "Link", onClick: props.settingsLinks[0].onClick }
+        : null,
+    },
+  ];
+  const tabLabels: Record<FeedTab, string> = {
+    top: text.tabTop,
+    latest: text.tabLatest,
+    prs: text.tabPrs,
+    sessions: text.tabSessions,
+    disruptions: text.tabDisruptions,
+    saved: de ? "Gemerkt" : "Saved",
+  };
+  const tabCount = (value: FeedTab) => filterTab(feed, value, marks).length;
+  const activity = feed.slice(0, 4);
   return (
     <main
-      className="flex h-full min-h-0 w-full min-w-0 flex-col items-center gap-4 text-[15px] lg:flex-row lg:items-stretch lg:justify-center lg:gap-6 lg:overflow-hidden"
+      className="relative flex h-full min-h-0 w-full min-w-0 flex-col items-center gap-4 text-[15px] lg:flex-row lg:items-stretch lg:justify-center lg:gap-3 lg:overflow-hidden lg:px-3"
       data-workjet-project-overview={data.projectId}
       lang={language}
     >
+      <nav
+        aria-label={de ? "Ansichten" : "Views"}
+        className="hidden w-[260px] shrink-0 flex-col gap-1 self-start rounded-xl border border-border bg-card p-3 xl:my-3 xl:flex"
+        data-workjet-overview-column="views"
+      >
+        <h2 className="px-2 pt-1 pb-2 text-[17px] font-bold">{de ? "Ansichten" : "Views"}</h2>
+        {FEED_TABS.map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-current={tab === value ? "page" : undefined}
+            onClick={() => setTab(value)}
+            className={
+              "flex items-center justify-between rounded-lg px-2.5 py-2 text-left text-[14px] " +
+              (tab === value
+                ? "bg-blue-500/15 font-semibold text-foreground"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground")
+            }
+          >
+            {tabLabels[value]}
+            <span className="tabular-nums text-[13px] text-muted-foreground">
+              {tabCount(value)}
+            </span>
+          </button>
+        ))}
+        <div className="mt-2 border-t border-border pt-2">
+          <FeedSettingsButton language={language} onClick={() => setSettingsOpen(true)} />
+        </div>
+      </nav>
       <div
         className="flex min-h-[70vh] w-full max-w-[600px] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card lg:my-3 lg:min-h-0 lg:overflow-y-auto"
         data-workjet-overview-column="feed"
       >
         <FeedSection
           feed={feed}
+          tab={tab}
+          onTab={setTab}
+          marks={marks}
+          onToggleMark={toggleMark}
+          onOpenSettings={() => setSettingsOpen(true)}
+          language={language}
           text={text}
           locale={locale}
           now={now}
@@ -223,11 +351,50 @@ export function ProjectOverviewView(props: {
           }
         />
       </div>
+      {settingsOpen ? (
+        <FeedSettingsSheet
+          title={`Feed · ${data.title}`}
+          language={language}
+          rows={sourceRows}
+          prefs={prefs}
+          onChange={change}
+          undo={undo}
+          onUndo={revert}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
       <aside
+        style={settingsOpen ? { display: "none" } : undefined}
         className="flex w-full max-w-[600px] shrink-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 lg:my-3 lg:mr-3 lg:w-[320px] lg:self-start lg:overflow-y-auto"
         data-workjet-overview-column="side"
       >
         <h2 className="px-1 text-[20px] font-bold tracking-tight">{text.sideTitle}</h2>
+        {activity.length > 0 ? (
+          <section className={card} data-workjet-overview-section="activity">
+            <h3 className="mb-1 text-[15px] font-bold text-foreground">
+              {de ? "Was läuft" : "What's happening"}
+            </h3>
+            <ul className="divide-y divide-border/60">
+              {activity.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    disabled={!item.thread}
+                    onClick={() => item.thread && open(item.thread)}
+                    className="block w-full py-2 text-left disabled:cursor-default"
+                  >
+                    <span className="block text-[12px] text-muted-foreground">
+                      {item.author} · {relativeTime(item.at, now, locale)}
+                    </span>
+                    <span className="line-clamp-2 text-[14px] font-semibold text-foreground">
+                      {item.headline ?? item.body}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         <section className={card} data-workjet-overview-section="live">
           <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.liveTitle}</h3>
           {live.length === 0 ? (
@@ -417,7 +584,65 @@ type FeedItem = {
   readonly code?: string | null;
   /** Posts with the same key form one thread with a connecting line. */
   readonly groupKey?: string;
+  /** Session excerpt shown as quote inside the preview card. */
+  readonly excerpt?: string | null;
+  /** Real preview image (GitHub's PR card image). */
+  readonly image?: string | null;
+  /** Diff size line, e.g. "+120 −30 · 4 Dateien". */
+  readonly stats?: string | null;
 };
+
+export function feedSourceOf(kind: FeedItem["kind"]): FeedSourceKey {
+  switch (kind) {
+    case "disruption":
+    case "escalation":
+      return "disruptions";
+    case "pr":
+      return "prs";
+    case "session":
+      return "sessions";
+    case "meeting":
+      return "meeting";
+    case "setup":
+      return "setup";
+    default:
+      return "results";
+  }
+}
+
+/** GitHub's rendered card image for a PR URL (owner/repo/pull/n), or null. */
+export function githubPrImage(url: string | undefined): string | null {
+  const match = url ? /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/.exec(url) : null;
+  return match
+    ? `https://opengraph.githubassets.com/1/${match[1]}/${match[2]}/pull/${match[3]}`
+    : null;
+}
+
+function diffStats(pr: ProjectOwnerOverview["merged"][number], de: boolean): string | null {
+  if (pr.additions == null || pr.deletions == null) return null;
+  const files =
+    pr.changedFiles == null
+      ? ""
+      : ` · ${pr.changedFiles} ${de ? (pr.changedFiles === 1 ? "Datei" : "Dateien") : pr.changedFiles === 1 ? "file" : "files"}`;
+  return `+${pr.additions} −${pr.deletions}${files}`;
+}
+
+function withPreviews(data: ProjectOwnerOverview, items: FeedItem[]): FeedItem[] {
+  const de = data.language === "de";
+  return items.map((item) => {
+    if (item.kind === "pr") {
+      const urls = [item.url, ...(item.sources ?? []).map((source) => source.url)];
+      const pr = data.merged.find((entry) => urls.includes(entry.url));
+      const url = pr?.url ?? urls.find((entry) => entry && githubPrImage(entry));
+      return { ...item, image: githubPrImage(url), stats: pr ? diffStats(pr, de) : null };
+    }
+    if ((item.kind === "step" || item.kind === "session") && item.thread && !item.code) {
+      const excerpt = plainPreview(item.thread.latestAssistantMessagePreview, 240);
+      return excerpt && excerpt !== item.body ? { ...item, excerpt } : item;
+    }
+    return item;
+  });
+}
 
 function buildFeed(
   data: ProjectOwnerOverview,
@@ -638,7 +863,7 @@ function buildFeed(
       url: undefined,
     });
   }
-  return items.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  return withPreviews(data, items).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
 
 function localizedWorkerName(name: string, language: ProjectOverviewLanguage) {
@@ -646,8 +871,10 @@ function localizedWorkerName(name: string, language: ProjectOverviewLanguage) {
 }
 
 function relativeTime(at: string, now: number, locale: string) {
-  const diff = (Date.parse(at) - now) / 1000;
+  // Server clocks run a few seconds ahead; a post is never "in 3 seconds".
+  const diff = Math.min(0, (Date.parse(at) - now) / 1000);
   if (!Number.isFinite(diff)) return "";
+  if (diff > -45) return locale.startsWith("de") ? "gerade eben" : "just now";
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" });
   const abs = Math.abs(diff);
   if (abs < 60) return rtf.format(Math.round(diff), "second");
@@ -656,8 +883,25 @@ function relativeTime(at: string, now: number, locale: string) {
   return rtf.format(Math.round(diff / 86400), "day");
 }
 
-type FeedTab = "top" | "latest" | "prs" | "sessions" | "disruptions";
-const FEED_TABS: readonly FeedTab[] = ["top", "latest", "prs", "sessions", "disruptions"];
+type FeedTab = "top" | "latest" | "prs" | "sessions" | "disruptions" | "saved";
+const FEED_TABS: readonly FeedTab[] = ["top", "latest", "prs", "sessions", "disruptions", "saved"];
+
+function filterTab(feed: readonly FeedItem[], tab: FeedTab, marks: ReadonlySet<string>) {
+  switch (tab) {
+    case "top":
+      return [...feed].sort((a, b) => weight(b) - weight(a));
+    case "latest":
+      return [...feed];
+    case "prs":
+      return feed.filter((item) => item.kind === "pr");
+    case "sessions":
+      return feed.filter((item) => item.kind === "session" || item.kind === "step");
+    case "disruptions":
+      return feed.filter((item) => item.kind === "disruption" || item.kind === "escalation");
+    case "saved":
+      return feed.filter((item) => marks.has(item.id));
+  }
+}
 
 const AVATAR_COLORS = [
   "bg-emerald-600",
@@ -714,28 +958,26 @@ function FeedSection(props: {
   readonly open: (thread: ProjectOwnerOverview["members"][number]) => void;
   readonly header?: ReactNode;
   readonly decisions?: ReactNode;
+  readonly tab: FeedTab;
+  readonly onTab: (tab: FeedTab) => void;
+  readonly marks: ReadonlySet<string>;
+  readonly onToggleMark: (id: string) => void;
+  readonly onOpenSettings: () => void;
+  readonly language: ProjectOverviewLanguage;
 }) {
-  const { text } = props;
-  const [tab, setTab] = useState<FeedTab>("top");
+  const { text, tab, marks } = props;
+  const setTab = props.onTab;
+  const toggleMark = props.onToggleMark;
   const [expandedThreads, setExpandedThreads] = useState<ReadonlySet<string>>(() => new Set());
-  const [marks, toggleMark] = useFeedBookmarks();
   const label: Record<FeedTab, string> = {
     top: text.tabTop,
     latest: text.tabLatest,
     prs: text.tabPrs,
     sessions: text.tabSessions,
     disruptions: text.tabDisruptions,
+    saved: props.language === "de" ? "Gemerkt" : "Saved",
   };
-  const items =
-    tab === "top"
-      ? [...props.feed].sort((a, b) => weight(b) - weight(a))
-      : tab === "latest"
-        ? props.feed
-        : tab === "prs"
-          ? props.feed.filter((item) => item.kind === "pr")
-          : tab === "sessions"
-            ? props.feed.filter((item) => item.kind === "session" || item.kind === "step")
-            : props.feed.filter((item) => item.kind === "disruption" || item.kind === "escalation");
+  const items = filterTab(props.feed, tab, marks);
   // Posts about the same chat (or the supervisor's setup) form one thread, ordered by the
   // first post's rank; follow-ups hang below it with a connecting line.
   const groupOf = new Map<string, FeedItem[]>();
@@ -757,9 +999,14 @@ function FeedSection(props: {
       className="flex min-h-0 flex-1 flex-col"
     >
       <div className="sticky top-0 z-10 border-b border-border bg-card/90 backdrop-blur">
-        {props.header}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">{props.header}</div>
+          <div className="pt-3 pr-3 xl:hidden">
+            <FeedSettingsButton language={props.language} onClick={props.onOpenSettings} />
+          </div>
+        </div>
         <div role="tablist" aria-label={text.feedTitle} className="flex">
-          {FEED_TABS.map((value) => (
+          {FEED_TABS.filter((value) => value !== "saved").map((value) => (
             <button
               key={value}
               type="button"
@@ -790,9 +1037,13 @@ function FeedSection(props: {
           <p className="px-4 py-8 text-[15px] text-muted-foreground">
             {props.feed.length === 0
               ? text.feedEmpty
-              : tab === "sessions"
-                ? text.sessionsEmpty
-                : text.tabEmpty}
+              : tab === "saved"
+                ? props.language === "de"
+                  ? "Noch nichts gemerkt. „Merken“ an einem Beitrag legt ihn hier ab."
+                  : "Nothing saved yet. “Save” on a post keeps it here."
+                : tab === "sessions"
+                  ? text.sessionsEmpty
+                  : text.tabEmpty}
           </p>
         ) : (
           <ol>
@@ -924,7 +1175,18 @@ function FeedCard(props: {
     : `${kindLabel}${item.thread ? " · " + (de ? "Chat" : "chat") : ""}`;
   const cardInner = (
     <>
-      {item.code ? (
+      {item.image ? (
+        <img
+          src={item.image}
+          alt=""
+          loading="lazy"
+          className="block aspect-[2/1] w-full border-b border-border bg-muted object-cover"
+        />
+      ) : item.excerpt ? (
+        <span className="block border-b border-border bg-muted/30 px-3 py-3 text-[14px] leading-5 text-foreground/85 italic">
+          „{item.excerpt}“
+        </span>
+      ) : item.code ? (
         <span
           aria-hidden
           className="block border-b border-border bg-[#0d1117] px-3 py-3 font-mono text-[12.5px] leading-5 break-all text-red-300/90"
@@ -938,7 +1200,18 @@ function FeedCard(props: {
         ></span>
       )}
       <span className="block px-3 py-2.5">
-        <span className="block text-[13px] text-muted-foreground">{cardMeta}</span>
+        <span className="block text-[13px] text-muted-foreground">
+          {cardMeta}
+          {item.stats ? (
+            <span className="ml-2 font-mono text-[12px]">
+              <span className="text-emerald-400">{item.stats.split(" ")[0]}</span>{" "}
+              <span className="text-red-400">{item.stats.split(" ")[1]}</span>
+              {item.stats.split(" ").slice(2).join(" ")
+                ? " " + item.stats.split(" ").slice(2).join(" ")
+                : ""}
+            </span>
+          ) : null}
+        </span>
         <span className="block text-[15px] break-words text-foreground">{cardTitle}</span>
       </span>
     </>

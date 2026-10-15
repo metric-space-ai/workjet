@@ -118,7 +118,11 @@ const galleryProjects: GalleryProject[] = [
       overview: { websiteUrl: null, websiteUrlCleared: true, slots: [null, null, null] },
       repositoryIdentity: {
         canonicalKey: "github.com/metric-space-ai/workjet",
-        locator: { source: "git-remote", remoteName: "origin", remoteUrl: "git@github.com:metric-space-ai/workjet.git" },
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "git@github.com:metric-space-ai/workjet.git",
+        },
         provider: "github",
         owner: "metric-space-ai",
         name: "workjet",

@@ -77,7 +77,9 @@ const origin = process.env.R2_FIXTURE_ORIGIN || "http://127.0.0.1:5793";
 
   // GitHub-Vorschau und Inhalt statt Leere.
   assert.equal(
-    await card("local:workjet").locator('[data-workjet-project-preview="github"] img').getAttribute("src"),
+    await card("local:workjet")
+      .locator('[data-workjet-project-preview="github"] img')
+      .getAttribute("src"),
     "https://opengraph.githubassets.com/1/metric-space-ai/workjet",
   );
   // Website ohne gespeicherte Vorschau, GitHub-Quelle: Social-Preview, oder – wenn

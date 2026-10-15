@@ -167,7 +167,9 @@ export function ProjectOverviewCard({
   const repository = overview.repositoryUrl;
   // Website snapshot first, else the repository's GitHub social preview (WP-K2).
   const localRepository = (
-    project.local as { readonly repositoryIdentity?: ProjectPreviewRepositoryIdentity | null } | null
+    project.local as {
+      readonly repositoryIdentity?: ProjectPreviewRepositoryIdentity | null;
+    } | null
   )?.repositoryIdentity;
   const preview = resolveProjectPreview({
     websiteUrl: website,
@@ -543,10 +545,7 @@ export function ProjectOverviewCard({
             data-workjet-project-card-content=""
           >
             <dl className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
-              <div
-                className="flex min-w-0 flex-col gap-0.5"
-                data-workjet-project-card-jour-fixe=""
-              >
+              <div className="flex min-w-0 flex-col gap-0.5" data-workjet-project-card-jour-fixe="">
                 <dt className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
                   <CalendarClockIcon className="size-3.5 shrink-0" aria-hidden="true" />
                   {t("Regeltermin", "Regular meeting")}

@@ -13,13 +13,7 @@
  * Secret values only live in component state until they are handed to the
  * instance; nothing is persisted locally.
  */
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  Loader2Icon,
-  ShieldCheckIcon,
-  ShieldQuestionIcon,
-} from "lucide-react";
+import { CheckIcon, Loader2Icon, ShieldCheckIcon, ShieldQuestionIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 export type T = (de: string, en: string) => string;
@@ -108,42 +102,6 @@ export function StatePill({ ok, children }: { ok: boolean; children: ReactNode }
   );
 }
 
-/** Plain-language error with the raw reason tucked into a collapsible "Details". */
-export function CardError({
-  message,
-  detail,
-  t,
-}: {
-  message: string;
-  detail?: string | null;
-  t: T;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mt-2 text-[12.5px] text-muted-foreground" role="alert">
-      <span>{message}</span>
-      {detail ? (
-        <>
-          {" "}
-          <button
-            type="button"
-            className="underline-offset-2 hover:underline"
-            onClick={() => setOpen((v) => !v)}
-          >
-            {t("Details", "Details")}
-            <ChevronDownIcon className={`ms-0.5 inline size-3 ${open ? "rotate-180" : ""}`} />
-          </button>
-          {open ? (
-            <pre className="mt-1 whitespace-pre-wrap font-mono text-[11.5px] opacity-80">
-              {detail}
-            </pre>
-          ) : null}
-        </>
-      ) : null}
-    </div>
-  );
-}
-
 const inputClass =
   "h-9 min-w-0 flex-1 rounded-lg border border-border bg-background/40 px-3 text-[13.5px] outline-none placeholder:text-muted-foreground/70 focus:border-ring";
 
@@ -157,7 +115,6 @@ export function CredentialCard(props: {
   readonly busy?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   readonly status?: "open" | "done" | "declined" | "expired" | undefined;
-  readonly error?: { message: string; detail?: string | null | undefined } | null | undefined;
   readonly onSubmit: (values: Record<string, string>) => void;
   readonly onDecline?: () => void;
   readonly id?: string;
@@ -269,9 +226,6 @@ export function CredentialCard(props: {
           </p>
         </form>
       ) : null}
-      {props.error ? (
-        <CardError t={t} message={props.error.message} detail={props.error.detail ?? null} />
-      ) : null}
     </CardShell>
   );
 }
@@ -284,7 +238,6 @@ export function ConnectCard(props: {
   readonly busy?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   readonly status?: "open" | "done" | "declined" | "expired" | undefined;
-  readonly error?: { message: string; detail?: string | null | undefined } | null | undefined;
   readonly onAuthorize: () => void;
   readonly onDecline?: () => void;
   readonly id?: string;
@@ -338,9 +291,6 @@ export function ConnectCard(props: {
           </span>
         )}
       </div>
-      {props.error ? (
-        <CardError t={t} message={props.error.message} detail={props.error.detail ?? null} />
-      ) : null}
     </CardShell>
   );
 }
@@ -351,7 +301,6 @@ export function ConfirmCard(props: {
   readonly help: string;
   readonly busy?: boolean | undefined;
   readonly status?: "open" | "done" | "declined" | "expired" | undefined;
-  readonly error?: { message: string; detail?: string | null | undefined } | null | undefined;
   readonly onDecide: (action: "approve" | "decline") => void;
   readonly id?: string;
 }) {
@@ -390,9 +339,6 @@ export function ConfirmCard(props: {
           </span>
         )}
       </div>
-      {props.error ? (
-        <CardError t={t} message={props.error.message} detail={props.error.detail ?? null} />
-      ) : null}
     </CardShell>
   );
 }

@@ -113,7 +113,7 @@ export const CONNECTABLE_INTEGRATIONS: ReadonlyArray<IntegrationEntry> = INTEGRA
 );
 
 export function IntegrationsSettingsPanel() {
-  const developerMode = useClientSettings((settings) => settings.developerMode);
+  const developerMode = useClientSettings((s) => s.developerMode);
   return developerMode ? <IntegrationsStore /> : null;
 }
 
@@ -136,7 +136,7 @@ function IntegrationsStore() {
   const [busy, setBusy] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<IntegrationCategory | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [detailSlug, setDetailSlug] = useState<string | null>(null);
   const [connectionFields, setConnectionFields] = useState<
     Record<string, ReadonlyArray<ToolhubParam>>
   >({});
@@ -296,7 +296,7 @@ function IntegrationsStore() {
   };
 
   const open = (entry: IntegrationEntry) => {
-    setSelected(entry.slug);
+    setDetailSlug(entry.slug);
     setConfirmRemove(false);
     if (entry.connect === "mcp" && isConnected(entry)) void loadMcpTools(entry.slug);
   };
@@ -307,7 +307,9 @@ function IntegrationsStore() {
     e.name.toLowerCase().includes(q) ||
     t(e.description.de, e.description.en).toLowerCase().includes(q);
 
-  const entry = selected ? CONNECTABLE_INTEGRATIONS.find((e) => e.slug === selected) : undefined;
+  const entry = detailSlug
+    ? CONNECTABLE_INTEGRATIONS.find((e) => e.slug === detailSlug)
+    : undefined;
 
   const rowAction = (e: IntegrationEntry) => {
     if (isConnected(e)) return <Added t={t} />;
@@ -346,7 +348,7 @@ function IntegrationsStore() {
           value={query}
           onChange={(ev) => {
             setQuery(ev.target.value);
-            setSelected(null);
+            setDetailSlug(null);
           }}
           placeholder={t("Apps durchsuchen", "Search apps")}
           aria-label={t("Apps durchsuchen", "Search apps")}
@@ -375,7 +377,7 @@ function IntegrationsStore() {
           connectionFields={connectionFields[entry.slug] ?? []}
           confirmRemove={confirmRemove}
           setConfirmRemove={setConfirmRemove}
-          onBack={() => setSelected(null)}
+          onBack={() => setDetailSlug(null)}
           onConnect={() => void connectMcp(entry)}
           onSaveToken={(values) => void saveToken(entry, values)}
           onRemove={() => void remove(entry)}
@@ -475,6 +477,7 @@ function Detail(props: {
   onRemove: () => void;
 }) {
   const { entry, t } = props;
+  const isMcp = entry.connect === "mcp";
   // Nur Bedienhilfe vor dem Verbinden, kein Zustandstext danach.
   const hint =
     props.connected || props.expired
@@ -518,7 +521,7 @@ function Detail(props: {
           ) : (
             <Pill onClick={() => props.setConfirmRemove(true)}>{t("Trennen", "Disconnect")}</Pill>
           )
-        ) : entry.connect === "mcp" ? (
+        ) : isMcp ? (
           <Pill
             action={`integrations.add.${entry.slug}`}
             disabled={props.busy || !props.available}

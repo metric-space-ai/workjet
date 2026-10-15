@@ -497,8 +497,10 @@ export function useWorkjetGatewaySection(
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         toastManager.add({
           type: "error",
-          title: "Gateway startet nicht",
-          description: workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
+          // Eine Zeile (D49): der Grund steht im Titel.
+          title: `Gateway startet nicht · ${workjetGatewayFailureDescription(
+            squashAtomCommandFailure(result),
+          )}`,
         });
       }
     })().finally(() => {

@@ -12,11 +12,7 @@ import {
   type ScopedThreadRef,
 } from "@workjet/contracts";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
-import {
-  isAtomCommandInterrupted,
-  settlePromise,
-  squashAtomCommandFailure,
-} from "@workjet/client-runtime/state/runtime";
+import { isAtomCommandInterrupted, settlePromise } from "@workjet/client-runtime/state/runtime";
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
@@ -164,12 +160,11 @@ function AboutVersionSection() {
       setIsChangingUpdateChannel(true);
       void bridge
         .setUpdateChannel(channel)
-        .catch((error: unknown) => {
+        .catch(() => {
           toastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Update-Kanal nicht geändert",
-              description: error instanceof Error ? error.message : undefined,
             }),
           );
         })
@@ -187,12 +182,11 @@ function AboutVersionSection() {
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
 
     if (action === "download") {
-      void bridge.downloadUpdate().catch((error: unknown) => {
+      void bridge.downloadUpdate().catch(() => {
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Update nicht geladen",
-            description: error instanceof Error ? error.message : undefined,
           }),
         );
       });
@@ -210,12 +204,11 @@ function AboutVersionSection() {
       setIsUpdateActionPending(true);
       void bridge
         .installUpdate()
-        .catch((error: unknown) => {
+        .catch(() => {
           toastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Update nicht installiert",
-              description: error instanceof Error ? error.message : undefined,
             }),
           );
         })
@@ -232,17 +225,15 @@ function AboutVersionSection() {
             stackedThreadToast({
               type: "error",
               title: "Update-Prüfung fehlgeschlagen",
-              description: result.state.message ?? undefined,
             }),
           );
         }
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Update-Prüfung fehlgeschlagen",
-            description: error instanceof Error ? error.message : undefined,
           }),
         );
       });
@@ -1350,12 +1341,10 @@ export function ArchivedThreadsPanel() {
         if (result._tag === "Success") {
           refreshArchivedThreads();
         } else if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
           toastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Nicht wiederhergestellt",
-              description: error instanceof Error ? error.message : undefined,
             }),
           );
         }
@@ -1367,12 +1356,10 @@ export function ArchivedThreadsPanel() {
         if (result._tag === "Success") {
           refreshArchivedThreads();
         } else if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
           toastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Nicht gelöscht",
-              description: error instanceof Error ? error.message : undefined,
             }),
           );
         }
@@ -1389,12 +1376,10 @@ export function ArchivedThreadsPanel() {
         return;
       }
       if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Nicht wiederhergestellt",
-            description: error instanceof Error ? error.message : undefined,
           }),
         );
       }
@@ -1410,12 +1395,10 @@ export function ArchivedThreadsPanel() {
         return;
       }
       if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Nicht gelöscht",
-            description: error instanceof Error ? error.message : undefined,
           }),
         );
       }
@@ -1493,12 +1476,10 @@ export function ArchivedThreadsPanel() {
                           }),
                         );
                         if (result._tag === "Failure") {
-                          const error = squashAtomCommandFailure(result);
                           toastManager.add(
                             stackedThreadToast({
                               type: "error",
                               title: "Aktion fehlgeschlagen",
-                              description: error instanceof Error ? error.message : undefined,
                             }),
                           );
                         }

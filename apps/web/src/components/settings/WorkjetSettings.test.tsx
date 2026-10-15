@@ -403,9 +403,10 @@ describe("Workjet Greppy runtime settings", () => {
     const failureToast = addToast.mock.calls.at(-1)?.[0];
     expect(failureToast).toMatchObject({
       type: "error",
-      title: "Greppy-Reparatur fehlgeschlagen",
-      description: "Greppy-Vorgang fehlgeschlagen.",
+      // One line (D49): the reason folds into the title.
+      title: "Greppy-Reparatur fehlgeschlagen · Greppy-Vorgang fehlgeschlagen.",
     });
+    expect(failureToast).not.toHaveProperty("description");
     expect(JSON.stringify(failureToast)).not.toContain(internalText);
     expect(greppyOperationFailureDescription(new Error(internalText))).not.toContain(internalText);
   });

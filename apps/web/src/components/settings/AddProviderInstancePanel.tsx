@@ -153,11 +153,10 @@ export function AddProviderInstancePanel({
         title: `${label.trim() || driverOption.label} ${t("hinzugefügt", "added")}`,
       });
       handleOpenChange(false);
-    } catch (error) {
+    } catch {
       toastManager.add({
         type: "error",
         title: t("Harness nicht hinzugefügt", "Harness not added"),
-        ...(error instanceof Error ? { description: error.message } : {}),
       });
     }
   };

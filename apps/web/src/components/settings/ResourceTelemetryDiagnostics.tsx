@@ -1006,17 +1006,12 @@ export function ResourceTelemetryDiagnostics({
           toastManager.add({
             type: "error",
             title: `${signal} nicht gesendet`,
-            ...Option.match(result.value.message, {
-              onNone: () => ({}),
-              onSome: (message) => ({ description: message }),
-            }),
           });
         })
-        .catch((error: unknown) => {
+        .catch(() => {
           toastManager.add({
             type: "error",
             title: `${signal} nicht gesendet`,
-            ...(error instanceof Error ? { description: error.message } : {}),
           });
         })
         .finally(() => {
@@ -1029,11 +1024,10 @@ export function ResourceTelemetryDiagnostics({
   const retryCollector = useCallback(() => {
     setIsRetrying(true);
     void retryTelemetry()
-      .catch((error: unknown) => {
+      .catch(() => {
         toastManager.add({
           type: "error",
           title: "Monitor nicht neu gestartet",
-          ...(error instanceof Error ? { description: error.message } : {}),
         });
       })
       .finally(() => {

@@ -23,14 +23,14 @@ import {
 import { SettingsAddButton, SettingsLoadingRow } from "./settingsAdd";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
-import { InstanceAddInline, SEGMENT_TOGGLE_CLASS } from "../ctox/InstanceAddInline";
+import { InstanceAddInline } from "../ctox/InstanceAddInline";
 import { InstanceNetworkOverview } from "../ctox/InstanceNetworkOverview";
 import { Button } from "../ui/button";
 import { InlinePanel } from "../ui/inline-panel";
 import { QRCodeSvg } from "../ui/qr-code";
 import { Row } from "../ui/row";
 import { Spinner } from "../ui/spinner";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Segment } from "../ui/segment";
 import {
   businessOsDeviceControlErrorMessage,
   createBusinessOsDeviceInvite,
@@ -241,30 +241,22 @@ function DeviceInvitePanel({
         if (!open) onClose();
       }}
       segment={
-        <ToggleGroup
+        <Segment
           aria-label="Art der Kopplung"
-          size="sm"
-          variant="outline"
-          value={[view]}
-          onValueChange={(value) => {
-            const next = value[0];
-            if (next === "qr" || next === "manual") {
-              setView(next);
-              if (next === "manual") loadManual();
-            }
+          value={view}
+          onValueChange={(next) => {
+            setView(next);
+            if (next === "manual") loadManual();
           }}
-        >
-          <Toggle className={SEGMENT_TOGGLE_CLASS} value="qr">
-            QR-Code
-          </Toggle>
-          <Toggle
-            className={SEGMENT_TOGGLE_CLASS}
-            value="manual"
-            disabled={onLoadManualConnection === undefined}
-          >
-            Verbindungsdaten
-          </Toggle>
-        </ToggleGroup>
+          options={[
+            { value: "qr", label: "QR-Code" },
+            {
+              value: "manual",
+              label: "Verbindungsdaten",
+              disabled: onLoadManualConnection === undefined,
+            },
+          ]}
+        />
       }
       submitLabel={view === "manual" ? "Neue Verbindungsdaten" : "Neuer QR-Code"}
       onSubmit={onRenew}

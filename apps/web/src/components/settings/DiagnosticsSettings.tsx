@@ -968,11 +968,9 @@ export function DiagnosticsSettingsPanel() {
         });
         if (result._tag === "Failure") {
           if (!isAtomCommandInterrupted(result)) {
-            const error = squashAtomCommandFailure(result);
             toastManager.add({
               type: "error",
               title: `${signal} nicht gesendet`,
-              ...(error instanceof Error ? { description: error.message } : {}),
             });
           }
           return;
@@ -991,7 +989,6 @@ export function DiagnosticsSettingsPanel() {
           toastManager.add({
             type: "error",
             title: `${signal} nicht gesendet`,
-            ...(message ? { description: message } : {}),
           });
           return;
         }

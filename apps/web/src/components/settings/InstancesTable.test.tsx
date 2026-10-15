@@ -68,9 +68,9 @@ describe("Instances table", () => {
         onStateChange={async () => null}
       />,
     );
-    // Deactivated: one quiet word; no extra status dot (one signal).
-    expect(html).not.toContain('aria-label="Deaktiviert"');
-    expect(html).toContain(">Deaktiviert<");
+    // Deactivated: the grey dot only, no status word (D33).
+    expect(html).toContain('aria-label="Deaktiviert"');
+    expect(html).not.toContain(">Deaktiviert<");
     expect(html).not.toContain("Fehler");
     expect(html).not.toContain("removed");
   });
@@ -87,7 +87,9 @@ describe("Instances table", () => {
       />,
     );
     expect(html).toContain("welsch.ctox.dev");
-    expect(html).toContain("Getrennt");
+    // The state lives in the dot's label, never as a word or chip (D33).
+    expect(html).toContain('aria-label="Getrennt"');
+    expect(html).not.toContain(">Getrennt<");
     for (const english of ["Enabled", "Remove", "Select", "Pair again", "Connected"])
       expect(html).not.toContain(english);
     expect(html).not.toContain("Wechsle zuerst");
@@ -134,8 +136,11 @@ describe("instance identity", () => {
         healthSummary: { ...instance("a").healthSummary, dataPlaneReady: true },
       }).status,
     ).toBe("ok");
-    expect(instanceRowState({ ...instance("a"), status: "needs_auth" }).chip).toBe(
+    expect(instanceRowState({ ...instance("a"), status: "needs_auth" }).label).toBe(
       "Anmeldung nötig",
+    );
+    expect(instanceRowState({ ...instance("a"), status: "pairing_expired" }).label).toBe(
+      "Kopplung abgelaufen",
     );
     expect(instanceRowState({ ...instance("a"), workjetState: "disabled" }).status).toBe("off");
     expect(instanceRowMeta(instance("local:abc", "local_daemon"))).toBe("Dieser Rechner");

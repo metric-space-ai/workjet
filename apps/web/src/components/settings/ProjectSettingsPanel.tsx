@@ -434,15 +434,14 @@ function ProjectDetail({
     reportFailure: false,
   });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
-    onCopy: ({ path }) => {
-      toastManager.add({ type: "success", title: "Pfad kopiert", description: path });
+    onCopy: () => {
+      toastManager.add({ type: "success", title: "Pfad kopiert" });
     },
-    onError: (error) => {
+    onError: () => {
       toastManager.add(
         stackedThreadToast({
           type: "error",
           title: "Pfad nicht kopiert",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler.",
         }),
       );
     },
@@ -456,12 +455,10 @@ function ProjectDetail({
 
   const reportFailure = useCallback((title: string, result: AtomCommandResult<void, unknown>) => {
     if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-    const error = squashAtomCommandFailure(result);
     toastManager.add(
       stackedThreadToast({
         type: "error",
         title,
-        description: error instanceof Error ? error.message : "Unbekannter Fehler.",
       }),
     );
   }, []);
@@ -535,13 +532,11 @@ function ProjectDetail({
         if (!group.memberProjects.every((member) => member.title === title)) {
           await updateAllMembers({ title }, "Projekt nicht umbenannt");
         }
-      } catch (error) {
+      } catch {
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Projektname nicht abgeglichen",
-            description:
-              error instanceof Error ? error.message : "Neu verbinden und erneut versuchen.",
           }),
         );
       } finally {

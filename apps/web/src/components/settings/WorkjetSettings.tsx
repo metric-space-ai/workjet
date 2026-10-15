@@ -161,11 +161,12 @@ export async function performGreppyRuntimeInstall(input: {
     if (!isAtomCommandInterrupted(result)) {
       input.addToast({
         type: "error",
-        title:
+        // Eine Zeile (D49): der Grund steht im Titel.
+        title: `${
           input.action === "repair"
             ? "Greppy-Reparatur fehlgeschlagen"
-            : "Greppy-Installation fehlgeschlagen",
-        description: greppyOperationFailureDescription(squashAtomCommandFailure(result)),
+            : "Greppy-Installation fehlgeschlagen"
+        } · ${greppyOperationFailureDescription(squashAtomCommandFailure(result))}`,
       });
     }
     return;

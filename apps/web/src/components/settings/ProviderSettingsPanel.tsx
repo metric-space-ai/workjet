@@ -773,12 +773,10 @@ export function EnvironmentProviderSettings({
         },
       });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: `${PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver}: Update fehlgeschlagen`,
-            ...(error instanceof Error ? { description: error.message } : {}),
           }),
         );
       }

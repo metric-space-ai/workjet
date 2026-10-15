@@ -21,8 +21,7 @@ import { InlinePanel } from "../ui/inline-panel";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Input } from "../ui/input";
 import { Row, type RowMenuAction, type RowStatus } from "../ui/row";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { SEGMENT_TOGGLE_CLASS } from "../ctox/InstanceAddInline";
+import { Segment } from "../ui/segment";
 import {
   setProviderDraft,
   updateProviderDraft,
@@ -1102,24 +1101,17 @@ function DraftAccountRow({
         }
         chips={
           both ? (
-            <ToggleGroup
+            <Segment
               aria-label="Art des Kontos"
-              size="xs"
-              variant="outline"
-              value={[draft.mode]}
-              onValueChange={(value) => {
-                const next = value[0];
-                if (next === "subscription" || next === "key")
-                  updateProviderDraft({ mode: next, keyFormOpen: next === "key" });
-              }}
-            >
-              <Toggle className={SEGMENT_TOGGLE_CLASS} value="subscription">
-                Abo
-              </Toggle>
-              <Toggle className={SEGMENT_TOGGLE_CLASS} value="key">
-                API-Key
-              </Toggle>
-            </ToggleGroup>
+              value={draft.mode}
+              onValueChange={(next) =>
+                updateProviderDraft({ mode: next, keyFormOpen: next === "key" })
+              }
+              options={[
+                { value: "subscription", label: "Abo" },
+                { value: "key", label: "API-Key" },
+              ]}
+            />
           ) : undefined
         }
         active={false}

@@ -334,9 +334,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
-      {props.isPreparingWorktree ? (
-        <span className="text-secondary-label text-xs">Worktree wird vorbereitet …</span>
-      ) : null}
       <ComposerPrimaryActions
         compact={props.compact}
         pendingAction={props.pendingAction}
@@ -2852,7 +2849,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!durable) {
         toastManager.add({
           type: "warning",
-          title: "Eintrag bleibt evtl. gespeichert",
+          title: "Ablage nicht aktualisiert",
           data: { hideCopyButton: true },
         });
       }
@@ -2959,7 +2956,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!durable) {
         toastManager.add({
           type: "warning",
-          title: "Eintrag kommt evtl. zurück",
+          title: "Ablage nicht aktualisiert",
           data: { hideCopyButton: true },
         });
       }
@@ -4000,7 +3997,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             />
                           </button>
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] text-secondary-label">
+                          <div className="flex h-full w-full items-center justify-center px-1 text-center text-[11px] text-secondary-label">
                             {image.name}
                           </div>
                         )}

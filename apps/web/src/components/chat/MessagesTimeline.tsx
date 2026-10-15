@@ -224,8 +224,8 @@ const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
 const TIMELINE_LIST_FADE_HEADER = <div className="h-10 sm:h-12" />;
 
-// Header row shown when older turns exist beyond the loaded window. Plain
-// button, no spinner animation; the label change is the loading indicator.
+// Header row shown when older turns exist beyond the loaded window: one
+// outline button (UI-Vertrag §2), disabled while the page loads.
 function TimelineLoadEarlierHeader({
   loading,
   onLoadEarlier,
@@ -238,14 +238,17 @@ function TimelineLoadEarlierHeader({
   return (
     <div className={fade ? "pt-10 sm:pt-12" : "pt-3 sm:pt-4"}>
       <div className="mx-auto w-full max-w-3xl pb-2">
-        <button
-          type="button"
-          onClick={onLoadEarlier}
-          disabled={loading}
-          className="w-full py-1.5 text-xs text-muted-foreground/60 hover:text-foreground disabled:cursor-default"
-        >
-          {loading ? "Wird geladen …" : "Frühere laden"}
-        </button>
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            onClick={onLoadEarlier}
+            disabled={loading}
+          >
+            Frühere laden
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -1142,22 +1145,24 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           markdownCwd={ctx.markdownCwd}
         />
       </div>
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-[12px] tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-0.5">
+            {displayedUserMessage.copyText && (
+              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
+            )}
+            {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
+          </div>
           <Tooltip>
-            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+            <TooltipTrigger
+              render={<p className="text-muted-foreground text-[12px] tabular-nums" />}
+            >
               {formatShortTimestamp(row.message.createdAt, ctx.timestampFormat)}
             </TooltipTrigger>
             <TooltipPopup>
               {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
             </TooltipPopup>
           </Tooltip>
-          <div className="flex items-center gap-0.5">
-            {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
-            {displayedUserMessage.copyText && (
-              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
-            )}
-          </div>
         </div>
       </div>
     </div>
@@ -1182,7 +1187,7 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
           />
         }
       >
-        <Undo2Icon className="size-3" />
+        <Undo2Icon className="size-3.5" />
       </TooltipTrigger>
       <TooltipPopup side="top">Hierhin zurücksetzen</TooltipPopup>
     </Tooltip>
@@ -1211,7 +1216,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const messageText = row.message.text || (row.message.streaming ? "" : "(leere Antwort)");
 
   return (
     <>
@@ -1230,12 +1235,12 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
         {row.showAssistantMeta ? (
-          <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
+          <div className="mt-1.5 flex items-center gap-2 text-[12px] tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100 pointer-coarse:opacity-100">
             <AssistantCopyButton row={row} />
             {!row.message.streaming && (
               <Tooltip>
                 <TooltipTrigger
-                  render={<p className="text-muted-foreground text-xs tabular-nums" />}
+                  render={<p className="text-muted-foreground text-[12px] tabular-nums" />}
                 >
                   {formatShortTimestamp(row.message.updatedAt, ctx.timestampFormat)}
                 </TooltipTrigger>
@@ -1342,11 +1347,6 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
         >
           {label}
         </span>
-        {steps.length > 1 ? (
-          <span className="shrink-0 text-muted-foreground/50 tabular-nums">
-            {completedCount}/{steps.length}
-          </span>
-        ) : null}
       </button>
       {expanded ? (
         <div className="mt-0.5 space-y-px pl-6">
@@ -1354,7 +1354,7 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
             <div key={step.step} className="flex items-baseline gap-2 text-[12px] leading-5">
               <span
                 className={cn(
-                  "w-3 shrink-0 text-center font-mono text-[10px]",
+                  "w-3 shrink-0 text-center font-mono text-[11px]",
                   step.status === "completed"
                     ? "text-success"
                     : step.status === "inProgress"
@@ -1457,11 +1457,7 @@ const WorkGroupSection = memo(function WorkGroupSection({
     [groupedEntries],
   );
   const onlyToolEntries = nonEmptyEntries.every((entry) => workLogEntryIsToolLike(entry));
-  const groupLabel = onlyToolEntries
-    ? nonEmptyEntries.length === 1
-      ? "1 Werkzeugaufruf"
-      : `${nonEmptyEntries.length} Werkzeugaufrufe`
-    : "Arbeitsprotokoll";
+  const groupLabel = onlyToolEntries ? "Werkzeugaufrufe" : "Arbeitsprotokoll";
 
   if (nonEmptyEntries.length === 0) return null;
 
@@ -1489,13 +1485,8 @@ function WorkGroupToggleTimelineRow({
   row: Extract<TimelineRow, { kind: "work-toggle" }>;
 }) {
   const ctx = use(TimelineRowCtx);
-  const labelNoun = row.onlyToolEntries
-    ? row.hiddenCount === 1
-      ? "Werkzeugaufruf"
-      : "Werkzeugaufrufe"
-    : row.hiddenCount === 1
-      ? "Eintrag"
-      : "Einträge";
+  // Keine Zähler (Owner-Regel): die Zeile nennt nur, was sich aufklappt.
+  const labelNoun = row.onlyToolEntries ? "Werkzeugaufrufe" : "Einträge";
 
   return (
     <button
@@ -1518,7 +1509,7 @@ function WorkGroupToggleTimelineRow({
         </span>
       ) : (
         <span className="font-medium text-foreground">
-          +{row.hiddenCount} frühere {labelNoun}
+          Frühere {labelNoun}
         </span>
       )}
     </button>
@@ -1668,7 +1659,7 @@ function UserMessagePreviewAnnotationCard(props: {
         ) : null}
         <div
           className={cn(
-            "flex items-center gap-2 text-secondary-label text-[10px]",
+            "flex items-center gap-2 text-secondary-label text-[11px]",
             props.annotation.comment && "mt-1",
           )}
         >

@@ -338,6 +338,7 @@ import {
 import { useComposerSilentRetry } from "./chat/useComposerSilentRetry";
 import { environmentUnavailableBannerItem } from "./chat/environmentUnavailableBanner";
 import { ThreadSyncStatusLine } from "./chat/ThreadSyncStatusLine";
+import { selectProjectOverviewRef } from "../projectOverviewSelection";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_DURATION_MS,
@@ -1253,8 +1254,9 @@ type LocalThreadErrorEntry = {
   readonly at: number;
 };
 
-function chatActionErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Fehler aufgetreten.";
+function chatActionErrorMessage(error: unknown): string | undefined {
+  // Eine deutsche Zeile oder keine Beschreibung; nie der Rohtext (UI-Vertrag §1 Toast).
+  return composerToastDescription(error);
 }
 
 function ChatViewContent(props: ChatViewProps) {
@@ -2251,6 +2253,11 @@ function ChatViewContent(props: ChatViewProps) {
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
+  const handleOpenActiveProject = useCallback(() => {
+    if (!activeProjectRef) return;
+    selectProjectOverviewRef(presentationInstanceId, activeProjectRef);
+    void navigate({ to: "/" });
+  }, [activeProjectRef, presentationInstanceId, navigate]);
   const activeEnvironmentShell = useEnvironmentQuery(
     activeThread ? environmentShell.stateAtom(activeThread.environmentId) : null,
   );
@@ -4445,7 +4452,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Kopieren fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       },
@@ -5097,7 +5104,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Wiederaufnahme fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       }
@@ -5125,7 +5132,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Aufwecken fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       }
@@ -5900,7 +5907,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) {
       toastManager.add({
         type: "error",
-        title: "Decision-Hub-Verbindung fehlt",
+        title: "Entscheidungszentrale nicht verbunden",
         data: { hideCopyButton: true },
       });
       return;
@@ -6218,7 +6225,7 @@ function ChatViewContent(props: ChatViewProps) {
                   toastManager.add(
                     stackedThreadToast({
                       type: "warning",
-                      title: "CTOX-Session nicht registriert",
+                      title: "Sitzung nicht registriert",
                     }),
                   );
                 }
@@ -6802,7 +6809,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Unterhaltung nicht gestartet",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       }
@@ -7192,6 +7199,7 @@ function ChatViewContent(props: ChatViewProps) {
               ) : undefined
             }
             onNewThreadInProject={handleNewThreadInActiveProject}
+            onOpenProject={handleOpenActiveProject}
           />
         </WorkjetHeaderContent>
         <ProjectNativeSyncStatus project={activeProject ?? null} />

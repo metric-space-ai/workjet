@@ -201,6 +201,14 @@ describe("DesktopLinuxUrlHandler", () => {
     });
   });
 
+  it("routes deep links through the Linux launcher instead of the renamed Electron binary", () => {
+    assert.equal(
+      DesktopLinuxUrlHandler.linuxLauncherCandidate("/opt/Workjet/workjet-bin"),
+      "/opt/Workjet/workjet",
+    );
+    assert.isNull(DesktopLinuxUrlHandler.linuxLauncherCandidate("/opt/Workjet/workjet"));
+  });
+
   it.effect("does nothing on other platforms or unpackaged builds", () => {
     const nonLinux = emptyRecording();
     const unpackaged = emptyRecording();

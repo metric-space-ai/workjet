@@ -170,13 +170,8 @@ const origin = process.env.OVERVIEW_FIXTURE_ORIGIN || "http://127.0.0.1:5749";
           await page.locator("[data-fixture-action]").getAttribute("data-fixture-action"),
           "chat:pinball",
         );
-        await page
-          .getByRole("button", { name: "+ Persistent Worker hinzufügen", exact: true })
-          .click();
-        assert.equal(
-          await page.locator("[data-fixture-action]").getAttribute("data-fixture-action"),
-          "add-parent",
-        );
+        // „Projekt & Einstellungen“ ist ersatzlos weg; Worker entstehen per Plus in der Seitenleiste.
+        assert.equal(await page.locator('[data-workjet-overview-section="settings"]').count(), 0);
         if (variant === "full") {
           await page.getByRole("button", { name: "Ausliefern", exact: true }).click();
           await page.getByRole("button", { name: "Antworten", exact: true }).click();

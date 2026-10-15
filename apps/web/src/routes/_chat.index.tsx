@@ -99,7 +99,7 @@ import {
 import { NoInstanceHero } from "../components/NoInstanceHero";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
-import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
+import { usePrimarySettings } from "../hooks/useSettings";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
@@ -118,7 +118,6 @@ import {
   resolveDefaultProviderModelSelection,
   resolveProjectTeamModelSelection,
 } from "../providerInstances";
-import { createPersistentWorkerConfig } from "./-projectWorkerConfig";
 import {
   ProjectCloneFields,
   ProjectComputerSelect,
@@ -172,8 +171,6 @@ function ChatIndexRouteView() {
 function IndexDraftLanding() {
   const projects = useProjects();
   const computers = usePrimarySettings((settings) => settings.workjet.computers);
-  // The pull request page is a coding tool: developer mode only (#557).
-  const developerMode = useClientSettings((settings) => settings.developerMode);
   const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
   const registry = useWorkjetProjectRegistry(activeCtoxInstanceId);
   const projectStore = useContext(RegistryContext);
@@ -432,62 +429,6 @@ function IndexDraftLanding() {
           openMeeting={meetingProjectKey === project.key}
           threads={threads}
           {...(modelAccountMissing ? { notice: <ModelAccountMissingNotice /> } : {})}
-          {...(developerMode
-            ? {
-                onOpenPullRequests: () =>
-                  void navigate({
-                    to: "/pull-requests",
-                    search: {
-                      involvement: "all",
-                      state: "open",
-                      projectId: landingProject.id,
-                      environmentId: landingProject.environmentId,
-                    },
-                  }),
-              }
-            : {})}
-          onAddParent={async (domain, goal) => {
-            if (
-              !supervisor ||
-              supervisor.workjetConfig.schemaVersion !== 2 ||
-              supervisor.workjetConfig.team?.role !== "supervisor" ||
-              readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
-            )
-              return false;
-            const modelSelection = resolveProjectTeamModelSelection(
-              environments.find(
-                (environment) => environment.environmentId === supervisor.environmentId,
-              )?.serverConfig?.providers ?? [],
-              supervisor.modelSelection,
-            );
-            if (!modelSelection) return false;
-            const threadId = newThreadId();
-            const createdAt = new Date().toISOString();
-            const result = await createThread({
-              environmentId: supervisor.environmentId,
-              input: {
-                threadId,
-                projectId: supervisor.projectId,
-                title: domain,
-                modelSelection,
-                runtimeMode: supervisor.runtimeMode,
-                interactionMode: "default",
-                workjetConfig: createPersistentWorkerConfig({
-                  supervisorConfig: supervisor.workjetConfig,
-                  projectId: supervisor.projectId,
-                  supervisorThreadId: supervisor.id,
-                  threadId,
-                  domain,
-                  goal,
-                  createdAt,
-                }),
-                branch: null,
-                worktreePath: null,
-                createdAt,
-              },
-            });
-            return result._tag === "Success";
-          }}
           onOpenChat={(thread) =>
             void navigate({
               to: "/$environmentId/$threadId",

@@ -272,7 +272,6 @@ function Fixture() {
           project={project}
           threads={[]}
           onOpenChat={() => {}}
-          onAddParent={async () => false}
           onOpenJourFixe={() => setView("meeting")}
         />
       )}

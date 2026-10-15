@@ -440,10 +440,14 @@ describe("owner project overview", () => {
         threads={[supervisor]}
         onOpenChat={() => {}}
         onOpenJourFixe={() => {}}
-        onAddParent={async () => true}
       />,
     );
     expect(html).toContain('data-workjet-project-overview="real-project"');
+    // „Projekt & Einstellungen“ ist ersatzlos weg (Michael, 15.10.).
+    expect(html).not.toContain('data-workjet-overview-section="settings"');
+    expect(html).not.toContain("Projekte &amp; Worker");
+    expect(html).not.toContain("Instanz &amp; Kanäle");
+    expect(html).not.toContain("Worker hinzufügen");
     // Default interfaceLanguage is German (#533); overview must show DE copy.
     expect(html).toContain("Regeltermin beitreten");
   });

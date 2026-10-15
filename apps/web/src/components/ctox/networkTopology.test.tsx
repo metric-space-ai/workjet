@@ -126,8 +126,8 @@ describe("layoutNetwork", () => {
 describe("networkCapabilityTags", () => {
   it("shows chips only for reported capabilities", () => {
     expect(computers[0]!.tags).toEqual([]);
-    expect(computers[1]!.tags.map((tag) => tag.label)).toEqual(["GPU · A6000"]);
-    expect(computers[2]!.tags.map((tag) => tag.label)).toEqual(["Build", "Store", "GPU · A4500"]);
+    expect(computers[1]!.tags.map((tag) => tag.label)).toEqual(["GPU A6000"]);
+    expect(computers[2]!.tags.map((tag) => tag.label)).toEqual(["Build", "Speicher", "GPU A4500 · 20 GB"]);
   });
 
   it("prefers local detection over the instance entry", () => {
@@ -136,7 +136,7 @@ describe("networkCapabilityTags", () => {
       facts: facts([{ model: "Apple M3 Max" }], "darwin"),
     } as unknown as ComputerMetadata;
     const tags = networkCapabilityTags(metadata, native("x", { capabilities: ["build"] }));
-    expect(tags.map((tag) => tag.label)).toEqual(["Store", "GPU · M3 Max"]);
+    expect(tags.map((tag) => tag.label)).toEqual(["Speicher", "GPU M3 Max"]);
   });
 
   it("maps operating systems to platforms", () => {
@@ -165,7 +165,10 @@ describe("NetworkDiagram", () => {
     expect(html.match(/data-network-node="instance"/g)).toHaveLength(1);
     expect(html.match(/data-network-node="add"/g)).toHaveLength(1);
     expect(html.match(/data-network-capability=/g)).toHaveLength(4);
-    expect(html).toContain("DIESES GERÄT");
+    // D26/D25: keine Versal-Eyebrows, Linux-Symbol statt Terminal.
+    expect(html).toContain('title="Dieses Gerät"');
+    expect(html).not.toContain("DIESES GERÄT");
+    expect(html).not.toContain("lucide-terminal");
     for (const fake of ["Zugriff", "Abgleich", "gekoppelt", "Lokal · SSH · Tailscale"])
       expect(html).not.toContain(fake);
   });

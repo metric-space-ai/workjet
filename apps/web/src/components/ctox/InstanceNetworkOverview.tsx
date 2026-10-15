@@ -35,27 +35,29 @@ import { mergeComputerRows } from "../settings/WorkjetComputersSettings";
 import { canActivateCtoxInstance, useCtoxMode } from "./CtoxModeShell";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 
-export function instanceHostLabel(instance: CtoxManagedInstance): string {
+/** Ort der Instanz; ohne gemeldeten Wert fällt er samt Beschriftung weg (D27). */
+export function instanceHostLabel(instance: CtoxManagedInstance): string | null {
   if (instance.source === "local_daemon") return "Dieser Rechner";
   if (instance.domain) return instance.domain;
-  if (instance.source === "ctox_dev") return "Verwaltet bei ctox.dev";
-  if (instance.source === "ssh_managed") return "SSH-Rechner · Hostname noch nicht gemeldet";
-  return "Hostname noch nicht gemeldet";
+  if (instance.source === "ctox_dev") return "ctox.dev";
+  return null;
 }
 
-export function instanceAppsLabel(result: CtoxInstanceAppsResult | null): string {
-  if (result === null || result._tag !== "completed") return "Apps: noch nicht geprüft";
-  if (result.source === "cache" && result.apps.length === 0) return "Apps: noch nicht geprüft";
-  return `${result.apps.length} Apps${result.source === "cache" ? " · zuletzt bekannt" : ""}`;
+/** Anzahl der Apps; ungeprüft fällt die Zeile weg (D27). */
+export function instanceAppsLabel(result: CtoxInstanceAppsResult | null): string | null {
+  if (result === null || result._tag !== "completed") return null;
+  if (result.source === "cache" && result.apps.length === 0) return null;
+  return `${result.apps.length} Apps`;
 }
 
 function ComputerHarnesses({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const query = useEnvironmentQuery(
     serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
-  if (query.error || !query.data) return <p className="mt-2 text-xs text-muted-foreground">—</p>;
+  if (query.error || !query.data || query.data.harnesses.length === 0) return null;
   return (
     <div className="mt-2 space-y-1 text-xs">
+      <h4>Harness</h4>
       {query.data.harnesses.map((harness) => (
         <p key={harness.harness} className="text-muted-foreground">
           {workjetHarnessDisplayLabel(harness.harness)} ·{" "}
@@ -73,7 +75,7 @@ function InstanceNode({
   readonly instance: CtoxManagedInstance;
   readonly onSelect: (instance: CtoxManagedInstance) => void;
 }) {
-  const { bridge, appRailVersion } = useCtoxMode();
+  const { bridge, appRailVersion, refresh, refreshing } = useCtoxMode();
   const navigate = useNavigate();
   const [membershipStore] = useState(createComputerMembershipStore);
   const membership = useSyncExternalStore(
@@ -118,6 +120,10 @@ function InstanceNode({
     };
   }, [bridge, instance.id, appRailVersion, membershipStore, revision]);
   const available = canActivateCtoxInstance(instance);
+  const needsRePair =
+    (instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
+    instance.status === "error";
+  const appsLabel = instanceAppsLabel(apps);
   const assigned =
     membership.instanceId === instance.id && membership.phase === "ready"
       ? membership.computers.filter((computer) => computer.status === "assigned")
@@ -142,15 +148,23 @@ function InstanceNode({
     connected: isConnected(computer),
     tags: networkCapabilityTags(computer?.metadata, native),
   }));
+  // D31: Ist dieses Gerät schon als Rechner der Instanz da, steht es nur einmal im Netz.
+  const thisDeviceIsComputer = rows.some(
+    ({ computer }) => computer !== null && computer.environmentId === primaryEnvironmentId,
+  );
   const clientNodes: NetworkClientNode[] = [
-    {
-      id: "this-device",
-      name:
-        computers.find((computer) => computer.environmentId === primaryEnvironmentId)?.label ??
-        "Workjet",
-      kind: "this-device",
-      connected: instance.healthSummary.dataPlaneReady,
-    },
+    ...(thisDeviceIsComputer
+      ? []
+      : [
+          {
+            id: "this-device",
+            name:
+              computers.find((computer) => computer.environmentId === primaryEnvironmentId)
+                ?.label ?? "Workjet",
+            kind: "this-device" as const,
+            connected: instance.healthSummary.dataPlaneReady,
+          },
+        ]),
     // CTOX meldet für Kopplungen keine Lebendigkeit: getrennt, bis sie es tut.
     ...(devices ?? []).map((device) => ({
       id: `device:${device.devicePairingId}`,
@@ -167,34 +181,32 @@ function InstanceNode({
       <header className="network-instance-header">
         <div className="network-instance-title">
           <h2>{ctoxInstanceDisplayTitle(instance)}</h2>
-          <span>
-            {instance.source === "local_daemon" ? "Lokal" : (instance.domain ?? "Remote")}
-          </span>
+          {instance.source === "local_daemon" || instance.domain ? (
+            <span>{instance.source === "local_daemon" ? "Lokal" : instance.domain}</span>
+          ) : null}
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={
-            !available &&
-            !(
-              (instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
-              instance.status === "error"
-            )
-          }
-          onClick={() =>
-            (instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
-            instance.status === "error"
-              ? openInstanceRePair(instance)
-              : onSelect(instance)
-          }
-        >
-          {(instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
-          instance.status === "error"
-            ? "Neu koppeln"
-            : available
-              ? "Instanz auswählen"
-              : "Nicht erreichbar"}
-        </Button>
+        {/* D29: Knöpfe sind Aktionen; „nicht erreichbar“ wird „Erneut verbinden“. */}
+        {needsRePair ? (
+          <Button size="sm" variant="outline" onClick={() => openInstanceRePair(instance)}>
+            Neu koppeln
+          </Button>
+        ) : available ? (
+          <Button size="sm" variant="outline" onClick={() => onSelect(instance)}>
+            Instanz auswählen
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={refreshing}
+            onClick={() => {
+              refresh();
+              setRevision((value) => value + 1);
+            }}
+          >
+            Erneut verbinden
+          </Button>
+        )}
       </header>
       <div className="network-instance-body">
         <NetworkDiagram
@@ -211,7 +223,7 @@ function InstanceNode({
         {inspected !== null && (
           <aside className="network-inspector" aria-label="Knotendetails">
             <header className="network-inspector-header">
-              <h3>{inspected === "master" ? "Instanz" : inspectedClient ? "Client" : "Rechner"}</h3>
+              <h3>{inspected === "master" ? "Instanz" : inspectedClient ? "Gerät" : "Rechner"}</h3>
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -223,9 +235,11 @@ function InstanceNode({
             </header>
             {inspected === "master" ? (
               <>
-                <div className="network-inspector-name">{instanceHostLabel(instance)}</div>
+                <div className="network-inspector-name">
+                  {instanceHostLabel(instance) ?? ctoxInstanceDisplayTitle(instance)}
+                </div>
                 <p>{instance.healthSummary.dataPlaneReady ? "Verbunden" : "Getrennt"}</p>
-                <p>{instanceAppsLabel(apps)}</p>
+                {appsLabel !== null ? <p>{appsLabel}</p> : null}
               </>
             ) : inspectedClient ? (
               <>
@@ -234,14 +248,13 @@ function InstanceNode({
               </>
             ) : (
               <>
-                <div className="network-inspector-name">{inspectedNode?.name ?? "—"}</div>
+                {inspectedNode ? (
+                  <div className="network-inspector-name">{inspectedNode.name}</div>
+                ) : null}
                 <p>{inspectedNode?.connected ? "Verbunden" : "Getrennt"}</p>
-                <h4>Harnesses</h4>
                 {inspectedNode?.connected && inspectedRow?.computer ? (
                   <ComputerHarnesses environmentId={inspectedRow.computer.environmentId} />
-                ) : (
-                  <p>—</p>
-                )}
+                ) : null}
               </>
             )}
             <Button
@@ -278,8 +291,8 @@ export function InstanceNetworkOverview({
     <section aria-label="Netzwerk" data-workjet-network-variant={variant}>
       {instances.length === 0 && variant === "section" ? null : instances.length === 0 ? (
         <NetworkDiagram
-          name="Erstes Netzwerk"
-          host=""
+          name="Instanz hinzufügen"
+          host={null}
           ready={false}
           clients={[]}
           computers={[]}
@@ -294,10 +307,15 @@ export function InstanceNetworkOverview({
         ))
       )}
       {instances.length > 0 && variant === "home" && (
-        <button type="button" className="network-new-instance" onClick={() => openInstanceSetup()}>
-          <PlusIcon size={18} />
+        <Button
+          variant="outline"
+          size="sm"
+          className="network-new-instance"
+          onClick={() => openInstanceSetup()}
+        >
+          <PlusIcon />
           Instanz hinzufügen
-        </button>
+        </Button>
       )}
     </section>
   );

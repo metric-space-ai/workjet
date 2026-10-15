@@ -216,6 +216,7 @@ export type ProjectFileFailure = typeof ProjectFileFailure.Type;
 
 export const ProjectFileOperation = Schema.Literals([
   "realpath-workspace-root",
+  "realpath-parent",
   "realpath-target",
   "open",
   "stat",

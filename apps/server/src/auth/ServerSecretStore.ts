@@ -149,165 +149,170 @@ export class ServerSecretStore extends Context.Service<
   }
 >()("workjet/auth/ServerSecretStore") {}
 
-export const make = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const serverConfig = yield* ServerConfig.ServerConfig;
+/** Reuse the same storage boundary for host-owned credentials outside safeStorage. */
+export const makeWithDirectory = (secretsDir: string) =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
 
-  yield* fileSystem.makeDirectory(serverConfig.secretsDir, { recursive: true });
-  yield* fileSystem.chmod(serverConfig.secretsDir, 0o700).pipe(
-    Effect.mapError(
-      (cause) =>
-        new SecretStoreSecureError({
-          resource: `secrets directory ${serverConfig.secretsDir}`,
-          cause,
-        }),
-    ),
-  );
-
-  const resolveSecretPath = (name: string) => path.join(serverConfig.secretsDir, `${name}.bin`);
-
-  const get: ServerSecretStore["Service"]["get"] = (name) =>
-    fileSystem.readFile(resolveSecretPath(name)).pipe(
-      Effect.map((bytes) => Option.some(Uint8Array.from(bytes))),
-      Effect.catch((cause) =>
-        cause.reason._tag === "NotFound"
-          ? Effect.succeed(Option.none())
-          : Effect.fail(
-              new SecretStoreReadError({
-                resource: `secret ${name}`,
-                cause,
-              }),
-            ),
-      ),
-      Effect.withSpan("ServerSecretStore.get"),
-    );
-
-  const set: ServerSecretStore["Service"]["set"] = (name, value) => {
-    const secretPath = resolveSecretPath(name);
-    return crypto.randomUUIDv4.pipe(
+    yield* fileSystem.makeDirectory(secretsDir, { recursive: true });
+    yield* fileSystem.chmod(secretsDir, 0o700).pipe(
       Effect.mapError(
         (cause) =>
-          new SecretStoreTemporaryPathError({
-            resource: `secret ${name}`,
-            cause,
-          }),
-      ),
-      Effect.flatMap((uuid) => {
-        const tempPath = `${secretPath}.${uuid}.tmp`;
-        return Effect.gen(function* () {
-          yield* fileSystem.writeFile(tempPath, value);
-          yield* fileSystem.chmod(tempPath, 0o600);
-          yield* fileSystem.rename(tempPath, secretPath);
-          yield* fileSystem.chmod(secretPath, 0o600);
-        }).pipe(
-          Effect.catch((cause) =>
-            fileSystem.remove(tempPath).pipe(
-              Effect.ignore,
-              Effect.flatMap(() =>
-                Effect.fail(
-                  new SecretStorePersistError({
-                    resource: `secret ${name}`,
-                    cause,
-                  }),
-                ),
-              ),
-            ),
-          ),
-        );
-      }),
-      Effect.withSpan("ServerSecretStore.set"),
-    );
-  };
-
-  const create: ServerSecretStore["Service"]["create"] = (name, value) => {
-    const secretPath = resolveSecretPath(name);
-    return Effect.scoped(
-      Effect.gen(function* () {
-        const file = yield* fileSystem.open(secretPath, {
-          flag: "wx",
-          mode: 0o600,
-        });
-        yield* file.writeAll(value);
-        yield* file.sync;
-        yield* fileSystem.chmod(secretPath, 0o600);
-      }),
-    ).pipe(
-      Effect.mapError(
-        (cause) =>
-          new SecretStorePersistError({
-            resource: `secret ${name}`,
+          new SecretStoreSecureError({
+            resource: `secrets directory ${secretsDir}`,
             cause,
           }),
       ),
     );
-  };
 
-  const getOrCreateRandom: ServerSecretStore["Service"]["getOrCreateRandom"] = (name, bytes) =>
-    get(name).pipe(
-      Effect.flatMap(
-        Option.match({
-          onSome: Effect.succeed,
-          onNone: () =>
-            crypto.randomBytes(bytes).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new SecretStoreRandomGenerationError({
-                    resource: `secret ${name}`,
-                    cause,
-                  }),
+    const resolveSecretPath = (name: string) => path.join(secretsDir, `${name}.bin`);
+
+    const get: ServerSecretStore["Service"]["get"] = (name) =>
+      fileSystem.readFile(resolveSecretPath(name)).pipe(
+        Effect.map((bytes) => Option.some(Uint8Array.from(bytes))),
+        Effect.catch((cause) =>
+          cause.reason._tag === "NotFound"
+            ? Effect.succeed(Option.none())
+            : Effect.fail(
+                new SecretStoreReadError({
+                  resource: `secret ${name}`,
+                  cause,
+                }),
               ),
-              Effect.flatMap((generated) =>
-                create(name, generated).pipe(
-                  Effect.as(Uint8Array.from(generated)),
-                  Effect.catchIf(isSecretStoreError, (error) =>
-                    isSecretAlreadyExistsError(error)
-                      ? get(name).pipe(
-                          Effect.flatMap(
-                            Option.match({
-                              onSome: Effect.succeed,
-                              onNone: () =>
-                                Effect.fail(
-                                  new SecretStoreConcurrentReadError({
-                                    resource: `secret ${name}`,
-                                  }),
-                                ),
-                            }),
-                          ),
-                        )
-                      : Effect.fail(error),
+        ),
+        Effect.withSpan("ServerSecretStore.get"),
+      );
+
+    const set: ServerSecretStore["Service"]["set"] = (name, value) => {
+      const secretPath = resolveSecretPath(name);
+      return crypto.randomUUIDv4.pipe(
+        Effect.mapError(
+          (cause) =>
+            new SecretStoreTemporaryPathError({
+              resource: `secret ${name}`,
+              cause,
+            }),
+        ),
+        Effect.flatMap((uuid) => {
+          const tempPath = `${secretPath}.${uuid}.tmp`;
+          return Effect.gen(function* () {
+            yield* fileSystem.writeFile(tempPath, value);
+            yield* fileSystem.chmod(tempPath, 0o600);
+            yield* fileSystem.rename(tempPath, secretPath);
+            yield* fileSystem.chmod(secretPath, 0o600);
+          }).pipe(
+            Effect.catch((cause) =>
+              fileSystem.remove(tempPath).pipe(
+                Effect.ignore,
+                Effect.flatMap(() =>
+                  Effect.fail(
+                    new SecretStorePersistError({
+                      resource: `secret ${name}`,
+                      cause,
+                    }),
                   ),
                 ),
               ),
             ),
+          );
         }),
-      ),
-      Effect.withSpan("ServerSecretStore.getOrCreateRandom"),
-    );
+        Effect.withSpan("ServerSecretStore.set"),
+      );
+    };
 
-  const remove: ServerSecretStore["Service"]["remove"] = (name) =>
-    fileSystem.remove(resolveSecretPath(name)).pipe(
-      Effect.catch((cause) =>
-        cause.reason._tag === "NotFound"
-          ? Effect.void
-          : Effect.fail(
-              new SecretStoreRemoveError({
-                resource: `secret ${name}`,
-                cause,
-              }),
-            ),
-      ),
-      Effect.withSpan("ServerSecretStore.remove"),
-    );
+    const create: ServerSecretStore["Service"]["create"] = (name, value) => {
+      const secretPath = resolveSecretPath(name);
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const file = yield* fileSystem.open(secretPath, {
+            flag: "wx",
+            mode: 0o600,
+          });
+          yield* file.writeAll(value);
+          yield* file.sync;
+          yield* fileSystem.chmod(secretPath, 0o600);
+        }),
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SecretStorePersistError({
+              resource: `secret ${name}`,
+              cause,
+            }),
+        ),
+      );
+    };
 
-  return ServerSecretStore.of({
-    get,
-    set,
-    create,
-    getOrCreateRandom,
-    remove,
+    const getOrCreateRandom: ServerSecretStore["Service"]["getOrCreateRandom"] = (name, bytes) =>
+      get(name).pipe(
+        Effect.flatMap(
+          Option.match({
+            onSome: Effect.succeed,
+            onNone: () =>
+              crypto.randomBytes(bytes).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new SecretStoreRandomGenerationError({
+                      resource: `secret ${name}`,
+                      cause,
+                    }),
+                ),
+                Effect.flatMap((generated) =>
+                  create(name, generated).pipe(
+                    Effect.as(Uint8Array.from(generated)),
+                    Effect.catchIf(isSecretStoreError, (error) =>
+                      isSecretAlreadyExistsError(error)
+                        ? get(name).pipe(
+                            Effect.flatMap(
+                              Option.match({
+                                onSome: Effect.succeed,
+                                onNone: () =>
+                                  Effect.fail(
+                                    new SecretStoreConcurrentReadError({
+                                      resource: `secret ${name}`,
+                                    }),
+                                  ),
+                              }),
+                            ),
+                          )
+                        : Effect.fail(error),
+                    ),
+                  ),
+                ),
+              ),
+          }),
+        ),
+        Effect.withSpan("ServerSecretStore.getOrCreateRandom"),
+      );
+
+    const remove: ServerSecretStore["Service"]["remove"] = (name) =>
+      fileSystem.remove(resolveSecretPath(name)).pipe(
+        Effect.catch((cause) =>
+          cause.reason._tag === "NotFound"
+            ? Effect.void
+            : Effect.fail(
+                new SecretStoreRemoveError({
+                  resource: `secret ${name}`,
+                  cause,
+                }),
+              ),
+        ),
+        Effect.withSpan("ServerSecretStore.remove"),
+      );
+
+    return ServerSecretStore.of({
+      get,
+      set,
+      create,
+      getOrCreateRandom,
+      remove,
+    });
   });
-});
 
+export const make = Effect.gen(function* () {
+  const config = yield* ServerConfig.ServerConfig;
+  return yield* makeWithDirectory(config.secretsDir);
+});
 export const layer = Layer.effect(ServerSecretStore, make);

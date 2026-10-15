@@ -8,6 +8,7 @@ import type {
   WorkjetGatewayCatalog,
   WorkjetGatewayApiKeyProvider,
   WorkjetGatewayOauthProvider,
+  WorkjetGatewayProvider,
   WorkjetGatewayUpdateRoutingInput,
 } from "@workjet/contracts";
 import { WorkjetGatewayAccountId } from "@workjet/contracts";
@@ -87,6 +88,7 @@ export function useWorkjetGatewaySection(
   const checksPollingDeadline = useRef(0);
   const checksPolls = useRef(0);
   const checksPass = useRef<ModelCheckPass | null>(null);
+  const [recoveryAccounts, setRecoveryAccounts] = useState<ReadonlyArray<string>>([]);
   const runChecks = useCallback(
     async (accountId?: string, force = false, continuation = false) => {
       if (environmentId === null || checksFlight.current !== null || checksQuery.data === null)
@@ -116,7 +118,9 @@ export function useWorkjetGatewaySection(
         });
         if (checksFlight.current !== flight) return;
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result))
-          setChecksError("Model checks could not finish. Check the provider connection and retry.");
+          setChecksError("Modellprüfung nicht abgeschlossen.");
+        // Check all may adopt a legacy key origin and its verified live IDs.
+        if (!continuation) catalogQuery.refresh();
         checksQuery.refresh();
       } finally {
         if (checksFlight.current === flight) {
@@ -125,13 +129,51 @@ export function useWorkjetGatewaySection(
         }
       }
     },
-    [environmentId, checkModels, checksQuery.refresh, checksQuery.data, catalogQuery.data],
+    [
+      environmentId,
+      checkModels,
+      checksQuery.refresh,
+      checksQuery.data,
+      catalogQuery.data,
+      catalogQuery.refresh,
+    ],
   );
-  const checksBusy = checksSubmitting || (checksQuery.data?.pending.length ?? 0) > 0;
+  const checksBusy =
+    checksSubmitting || (checksError === null && (checksQuery.data?.pending.length ?? 0) > 0);
+  useEffect(() => {
+    if (
+      environmentId === null ||
+      statusQuery.data?.phase !== "ready" ||
+      checksSubmitting ||
+      checksFlight.current !== null ||
+      checksQuery.data === null
+    )
+      return;
+    const next = recoveryAccounts.find(
+      (id) =>
+        (catalogQuery.data?.accounts ?? []).some(
+          (account) => account.id === id && account.enabled,
+        ) && !checksQuery.data?.pending.some((pending) => pending.accountId === id),
+    );
+    if (!next) return;
+    setRecoveryAccounts((previous) => previous.filter((id) => id !== next));
+    // Re-authentication keeps the stable account ID and model list. Bypass
+    // results from the old credential after its pending checks have ended.
+    void runChecks(next, true);
+  }, [
+    environmentId,
+    statusQuery.data?.phase,
+    checksSubmitting,
+    checksQuery.data,
+    catalogQuery.data,
+    recoveryAccounts,
+    runChecks,
+  ]);
   useEffect(() => {
     checksPollingDeadline.current = 0;
     checksPolls.current = 0;
     checksPass.current = null;
+    setRecoveryAccounts([]);
     setChecksSubmitting(false);
     setChecksError(null);
     return () => {
@@ -139,16 +181,14 @@ export function useWorkjetGatewaySection(
     };
   }, [environmentId]);
   useEffect(() => {
-    if (
-      environmentId === null ||
-      checksSubmitting ||
-      checksQuery.error !== null ||
-      checksError !== null ||
-      !checksQuery.data
-    )
+    if (environmentId === null || checksSubmitting || checksError !== null || !checksQuery.data)
       return;
     const { pending, deferredCount } = checksQuery.data;
     if (pending.length === 0 && deferredCount === 0) return;
+    if (checksQuery.error !== null) {
+      setChecksError("Prüfstatus nicht geladen.");
+      return;
+    }
     const pass = checksPass.current;
     if (
       pending.length === 0 &&
@@ -159,7 +199,10 @@ export function useWorkjetGatewaySection(
       return;
     if (checksPollingDeadline.current === 0)
       checksPollingDeadline.current = Date.now() + 20 * 60_000;
-    if (Date.now() >= checksPollingDeadline.current || checksPolls.current >= 600) return;
+    if (Date.now() >= checksPollingDeadline.current || checksPolls.current >= 600) {
+      setChecksError("Modellprüfung abgelaufen.");
+      return;
+    }
     // Only this mounted page owns the timer. Completed observations persist
     // server-side; each continuation admits a bounded batch from this finite pass.
     const timer = setTimeout(() => {
@@ -358,6 +401,7 @@ export function useWorkjetGatewaySection(
         readonly label?: string;
         readonly enabled?: boolean;
         readonly models?: ReadonlyArray<string>;
+        readonly excludedModels?: ReadonlyArray<string>;
       },
     ): Promise<boolean> => {
       const strategy = (editedCatalog ?? catalogQuery.data)?.routingStrategy;
@@ -383,18 +427,54 @@ export function useWorkjetGatewaySection(
               weight: account.weight,
               ...(patch.label !== undefined ? { label: patch.label } : {}),
               ...(patch.models !== undefined ? { models: patch.models } : {}),
+              ...(patch.excludedModels !== undefined
+                ? { excludedModels: patch.excludedModels }
+                : {}),
             })),
           },
         });
         if (result._tag === "Failure") {
           const message = isAtomCommandInterrupted(result)
-            ? "Change interrupted. Save again."
+            ? "Änderung unterbrochen. Erneut speichern."
             : workjetGatewayFailureDescription(squashAtomCommandFailure(result));
           setAccountErrors((previous) => ({
             ...previous,
             ...Object.fromEntries(accounts.map((account) => [account.id, message])),
           }));
           setRouting({ status: "failed", message });
+          return false;
+        }
+        setEditedCatalog(result.value.catalog);
+        setRouting({ status: "completed" });
+        refresh();
+        return true;
+      } finally {
+        routingRef.current = false;
+      }
+    },
+    [environmentId, refresh, updateRouting, editedCatalog, catalogQuery.data],
+  );
+
+  const editProviderModels = useCallback(
+    async (provider: WorkjetGatewayProvider, models: ReadonlyArray<string>): Promise<boolean> => {
+      const catalog = editedCatalog ?? catalogQuery.data;
+      if (environmentId === null || routingRef.current || catalog == null) return false;
+      routingRef.current = true;
+      setRouting({ status: "saving" });
+      try {
+        const result = await updateRouting({
+          environmentId,
+          input: {
+            strategy: catalog.routingStrategy,
+            accounts: [],
+            providers: [{ provider, modelIds: models }],
+          },
+        });
+        if (result._tag === "Failure") {
+          setRouting({
+            status: "failed",
+            message: "Modelle nicht gespeichert.",
+          });
           return false;
         }
         setEditedCatalog(result.value.catalog);
@@ -417,7 +497,7 @@ export function useWorkjetGatewaySection(
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         toastManager.add({
           type: "error",
-          title: "Could not start the provider gateway",
+          title: "Gateway startet nicht",
           description: workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
         });
       }
@@ -472,8 +552,7 @@ export function useWorkjetGatewaySection(
         } catch {
           toastManager.add({
             type: "error",
-            title: "Could not open the provider login",
-            description: "Open the provider login in your browser to finish adding the account.",
+            title: "Anmeldung nicht geöffnet",
           });
         }
 
@@ -503,6 +582,11 @@ export function useWorkjetGatewaySection(
               provider,
               accountIds: polled.value.completedAccountIds,
             });
+            setChecksError(null);
+            // The server force-checks successful logins, including unchanged tokens.
+            checksPass.current = null;
+            checksPollingDeadline.current = 0;
+            checksPolls.current = 0;
             // The server persisted the account and reloaded the gateway, so the
             // new account only appears after a fresh catalog read.
             refresh();
@@ -550,12 +634,17 @@ export function useWorkjetGatewaySection(
             setApiKey({
               status: "failed",
               provider,
+              ...(accountId === undefined ? {} : { accountId }),
               message: workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
             });
           }
           return false;
         }
         setApiKey({ status: "completed", provider });
+        if (accountId) {
+          setChecksError(null);
+          setRecoveryAccounts((previous) => [...new Set([...previous, accountId])]);
+        }
         // The server persisted the account and reloaded the gateway, so the new
         // account only appears after a fresh catalog read.
         refresh();
@@ -593,7 +682,7 @@ export function useWorkjetGatewaySection(
           setAccountErrors((previous) => ({
             ...previous,
             [accountId]: isAtomCommandInterrupted(result)
-              ? "Removal interrupted. Try again."
+              ? "Entfernen unterbrochen."
               : workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
           }));
           return false;
@@ -634,10 +723,23 @@ export function useWorkjetGatewaySection(
     onRelogin: addAccount,
     onEditAccount: (account, patch) => editAccounts([account], patch),
     onEditModels: (accounts, models) => editAccounts(accounts, { models }),
+    onEditProviderModels: editProviderModels,
+    modelSuggestions: Object.fromEntries(
+      (modelsQuery.data?.providers ?? []).map((entry) => [
+        entry.provider,
+        entry.models.filter((model) => model.source === "gateway-catalog").map((model) => model.id),
+      ]),
+    ),
+    onExcludeModel: (account, model, excluded) =>
+      editAccounts([account], {
+        excludedModels: excluded
+          ? [...new Set([...(account.excludedModelIds ?? []), model])]
+          : (account.excludedModelIds ?? []).filter((id) => id !== model),
+      }),
     loginAccountId,
     accountErrors,
     modelChecks: checksQuery.data?.checks ?? [],
-    pendingModelChecks: checksQuery.data?.pending ?? [],
+    pendingModelChecks: checksError === null ? (checksQuery.data?.pending ?? []) : [],
     deferredChecksCount:
       checksPass.current === null
         ? (checksQuery.data?.deferredCount ?? 0)

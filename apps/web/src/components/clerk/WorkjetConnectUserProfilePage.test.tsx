@@ -39,25 +39,25 @@ describe("Workjet Connect environment row", () => {
     const markup = renderRow();
 
     expect(markup).toContain("Studio Mac");
-    expect(markup).toContain("Deregister");
-    expect(markup).not.toContain("Deregister server");
-    expect(markup).not.toContain("Confirm deregistration of Studio Mac");
+    expect(markup).toContain("Abmelden");
+    expect(markup).not.toContain("Server abmelden");
+    expect(markup).not.toContain("Studio Mac abmelden");
   });
 
   it("expands Clerk-style confirmation content beneath the environment row", () => {
     const markup = renderRow({ confirmationOpen: true });
 
-    expect(markup).toContain("Deregister server");
-    expect(markup).toContain("“Studio Mac” will be removed from this account.");
-    expect(markup).toContain("Confirm deregistration of Studio Mac");
-    expect(markup).toContain("Local connections on your devices are not changed.");
-    expect(markup).toContain("Cancel");
+    expect(markup).toContain("Server abmelden");
+    expect(markup).toContain("„Studio Mac“ wird entfernt");
+    expect(markup).toContain("Studio Mac abmelden");
+    expect(markup).not.toContain("Local connections on your devices are not changed.");
+    expect(markup).toContain("Abbrechen");
   });
 
   it("locks the confirmation actions while deregistration is pending", () => {
     const markup = renderRow({ confirmationOpen: true, mutationPending: true });
 
-    expect(markup).toContain("Deregistering…");
+    expect(markup).toContain("Wird abgemeldet …");
     expect(markup.match(/ disabled=""/g)).toHaveLength(3);
   });
 });

@@ -90,7 +90,7 @@ describe("CrossModeNotification", () => {
 
     const result = toCrossModeNotification(decodeEvent(samples["result-submitted"]));
     expect(result.level).toBe("info");
-    expect(result.title).toContain("accepted the result");
+    expect(result.title).toContain("hat das Ergebnis angenommen");
 
     const created = toCrossModeNotification(decodeEvent(samples["link-created"]));
     expect(created.title).toContain("Code");
@@ -180,11 +180,11 @@ describe("pending-approval indicator", () => {
 
     expect(
       resolveCrossModePendingApprovalView({ settled: false, approvals: none, target: null }),
-    ).toEqual({ kind: "loading", label: "Checking for pending approvals…" });
+    ).toEqual({ kind: "loading", label: "Freigaben werden geladen …" });
 
     expect(
       resolveCrossModePendingApprovalView({ settled: true, approvals: none, target: null }),
-    ).toEqual({ kind: "none", label: "No approvals are waiting." });
+    ).toEqual({ kind: "none", label: "Keine offenen Freigaben" });
   });
 
   it("names the count and the owning mode when approvals are waiting", () => {
@@ -194,14 +194,14 @@ describe("pending-approval indicator", () => {
       target: businessOsTarget,
     });
     expect(view.kind).toBe("pending");
-    expect(view.label).toBe("2 approvals are waiting in Business OS");
+    expect(view.label).toBe("2 offene Freigaben in Business OS");
 
     const single = resolveCrossModePendingApprovalView({
       settled: true,
       approvals: { total: 1, byMode: { code: 1, "business-os": 0 } },
       target: codeTarget,
     });
-    expect(single.label).toBe("1 approval is waiting in Code");
+    expect(single.label).toBe("1 offene Freigabe in Code");
   });
 });
 

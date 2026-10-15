@@ -10,12 +10,16 @@ export interface JourFixeSpeechScope {
 /** Implementations own capture/IPC, authorization and final native receipt binding. */
 export interface JourFixeSpeechProvider {
   readonly kind: "local-helper" | "ctox-gateway";
+  /** Narration can be installed before the authorized microphone transport. */
+  readonly microphoneAvailable?: boolean;
   startListening(options: {
     readonly scope: JourFixeSpeechScope;
     readonly signal: AbortSignal;
     readonly onPartial: (partial: JourFixePartialTranscript) => void;
     /** Called only after the final transcript has a verified native meeting receipt. */
     readonly onCommitted: () => void;
+    /** A bounded utterance may end automatically after trailing silence. */
+    readonly onStopped?: () => void;
     readonly onError: (error: Error) => void;
   }): Promise<{ readonly stop: () => Promise<void> }>;
   /** Resolve authorized narration for this exact slide/deck; never return a file URL. */
@@ -23,7 +27,7 @@ export interface JourFixeSpeechProvider {
     readonly scope: JourFixeSpeechScope;
     readonly slideId: string;
     readonly signal: AbortSignal;
-  }): Promise<Blob>;
+  }): Promise<Blob | { readonly blob: Blob; readonly rate: number }>;
 }
 
 export interface JourFixeSpeechAudio {
@@ -32,6 +36,7 @@ export interface JourFixeSpeechAudio {
   readonly deckRevision: number;
   readonly slideId: string;
   readonly blobUrl: string;
+  readonly rate: number;
 }
 
 /** One room owns one selected provider. Closing never falls back to another provider. */
@@ -42,6 +47,8 @@ export class JourFixeSpeechSession {
   private stopListening: (() => Promise<void>) | undefined;
   private narration: AbortController | undefined;
   private audioUrl: string | undefined;
+  private narrationSlide: string | undefined;
+  private narrationLoad: Promise<void> | undefined;
 
   constructor(
     private readonly provider: JourFixeSpeechProvider,
@@ -96,6 +103,16 @@ export class JourFixeSpeechSession {
             this.events.onCommitted();
           }
         },
+        onStopped: () => {
+          if (!current()) return;
+          if (this.listening === controller) {
+            this.listening = undefined;
+            this.stopListening = undefined;
+          }
+          controller.abort();
+          this.events.onMicrophone(false);
+          this.events.onPartial(undefined);
+        },
         onError: (error) => {
           if (!current()) return;
           controller.abort();
@@ -124,24 +141,38 @@ export class JourFixeSpeechSession {
     }
   }
 
-  async prepareNarration(slideId: string): Promise<void> {
+  prepareNarration(slideId: string): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    if (this.narrationSlide === slideId && this.narrationLoad) return this.narrationLoad;
+    this.narrationSlide = slideId;
+    const pending = this.loadNarration(slideId).finally(() => {
+      if (this.narrationLoad === pending) this.narrationLoad = undefined;
+    });
+    this.narrationLoad = pending;
+    return pending;
+  }
+
+  private async loadNarration(slideId: string): Promise<void> {
     if (this.closed) return;
     this.narration?.abort();
-    this.releaseAudio();
-    this.events.onAudio(undefined);
     const controller = new AbortController();
     this.narration = controller;
     try {
-      const blob = await this.provider.prepareNarration({
+      const prepared = await this.provider.prepareNarration({
         scope: this.scope,
         slideId,
         signal: controller.signal,
       });
       if (this.closed || controller.signal.aborted) return;
+      const blob = prepared instanceof Blob ? prepared : prepared.blob;
+      const rate = prepared instanceof Blob ? 1.15 : prepared.rate;
+      if (!Number.isFinite(rate) || rate < 0.8 || rate > 1.5)
+        throw new Error("Narration has an invalid speaking speed.");
       if (!blob.type.startsWith("audio/") || blob.size === 0 || blob.size > 32 * 1024 * 1024)
         throw new Error("Narration is not a supported audio recording.");
+      this.releaseAudio();
       this.audioUrl = URL.createObjectURL(blob);
-      this.events.onAudio({ ...this.scope, slideId, blobUrl: this.audioUrl });
+      this.events.onAudio({ ...this.scope, slideId, blobUrl: this.audioUrl, rate });
     } catch (error) {
       if (!this.closed && !controller.signal.aborted) this.report(error);
     }
@@ -158,6 +189,7 @@ export class JourFixeSpeechSession {
     this.listening = undefined;
     void stop?.().catch(() => {});
     this.releaseAudio();
+    this.events.onAudio(undefined);
   }
 
   private releaseAudio() {

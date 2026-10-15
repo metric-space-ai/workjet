@@ -1,0 +1,233 @@
+{
+  "harness": "Claude Code",
+  "instanceId": "claudeAgent",
+  "model": "claude-opus-5-5",
+  "workjetThreadId": "6de973a2-d74a-4615-9f92-a8887879abcc",
+  "nativeSessionId": "b89c8298-142d-4344-aa04-cae5a118946d",
+  "nativeHistory": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/profile/harness-homes/claudeAgent/projects/-Users-michaelwelsch--local-state-workjet-launchpads-harness-proxy-fix/b89c8298-142d-4344-aa04-cae5a118946d.jsonl",
+  "nativeHistorySha256": "f5c4618bf0bb914f91204295f6170b39dd1cf31acebf7c743f546a92d2681fc9",
+  "startedAt": "2026-10-10T01:08:59.385Z",
+  "endedAt": "2026-10-10T01:09:56.977Z",
+  "runtimeBuild": {
+    "recordedAt": "2026-10-10T01:08:02.262Z",
+    "native": {
+      "binary": "/Volumes/OneTB/dev-artifacts/workjet/harness-proxy-rc-20261009/cargo-target/debug/workjet-provider-gateway-host",
+      "sha256": "f61b03f793f4bd512b50c8e11cadd01ec3f6d0deb255b066a5eb37c7c75e68be",
+      "sourceHead": "1be5e3a13"
+    },
+    "server": {
+      "entry": "/Users/michaelwelsch/.workjet/runtime/versions/0.0.69/node_modules/workjet/dist/bin.mjs",
+      "sha256": "3adfcee8a64e3a0f84d3e1b87290c03765ead9b5ac5dba74a6933df2c9a3e083",
+      "sourceHead": "installed-0.0.69-source-unverified"
+    }
+  },
+  "continuation": true,
+  "acceptance": {
+    "successfulSequentialToolCalls": 20,
+    "passed": true,
+    "basis": "20 interleaved native tool uses and matching results"
+  },
+  "workjetObservedCompletions": 19,
+  "pairs": [
+    {
+      "number": 1,
+      "id": "toolu_01GhW57R5TSPHpEcrsdipanx",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_01\\n'",
+      "output": "PROXY_MATRIX_01",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:05.788Z",
+      "completedAt": "2026-10-10T01:09:05.876Z"
+    },
+    {
+      "number": 2,
+      "id": "toolu_01MEu3HZnVeSx1uLpKTQaQW6",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_02\\n'",
+      "output": "PROXY_MATRIX_02",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:07.915Z",
+      "completedAt": "2026-10-10T01:09:07.927Z"
+    },
+    {
+      "number": 3,
+      "id": "toolu_01CzjVSxoDNDgxqjKEkiSrqJ",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_03\\n'",
+      "output": "PROXY_MATRIX_03",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:10.045Z",
+      "completedAt": "2026-10-10T01:09:10.065Z"
+    },
+    {
+      "number": 4,
+      "id": "toolu_014rYAr5PfgejFj8rLeqkPhh",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_04\\n'",
+      "output": "PROXY_MATRIX_04",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:12.207Z",
+      "completedAt": "2026-10-10T01:09:12.226Z"
+    },
+    {
+      "number": 5,
+      "id": "toolu_0145QqVoCZj4FAEyJJmHTyz7",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_05\\n'",
+      "output": "PROXY_MATRIX_05",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:14.483Z",
+      "completedAt": "2026-10-10T01:09:14.501Z"
+    },
+    {
+      "number": 6,
+      "id": "toolu_01BemcQSsPWFXMSYQ93kf8x2",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_06\\n'",
+      "output": "PROXY_MATRIX_06",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:17.367Z",
+      "completedAt": "2026-10-10T01:09:17.387Z"
+    },
+    {
+      "number": 7,
+      "id": "toolu_01LdB5Jj5DQPsHdXtnUPWa4J",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_07\\n'",
+      "output": "PROXY_MATRIX_07",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:19.671Z",
+      "completedAt": "2026-10-10T01:09:19.692Z"
+    },
+    {
+      "number": 8,
+      "id": "toolu_01BkU1toQgxfxkjLiVnMjHtR",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_08\\n'",
+      "output": "PROXY_MATRIX_08",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:22.593Z",
+      "completedAt": "2026-10-10T01:09:22.615Z"
+    },
+    {
+      "number": 9,
+      "id": "toolu_019WEJcRYfyUMSARDbLRpGtL",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_09\\n'",
+      "output": "PROXY_MATRIX_09",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:26.268Z",
+      "completedAt": "2026-10-10T01:09:26.282Z"
+    },
+    {
+      "number": 10,
+      "id": "toolu_01QhH3nPTLoB9k4idKAtYHas",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_10\\n'",
+      "output": "PROXY_MATRIX_10",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:28.573Z",
+      "completedAt": "2026-10-10T01:09:28.593Z"
+    },
+    {
+      "number": 11,
+      "id": "toolu_0198HoAMbzVfa3aMh2cUaGpG",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_11\\n'",
+      "output": "PROXY_MATRIX_11",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:30.821Z",
+      "completedAt": "2026-10-10T01:09:30.844Z"
+    },
+    {
+      "number": 12,
+      "id": "toolu_01M3pGjGGAsoPKewdCefnGzr",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_12\\n'",
+      "output": "PROXY_MATRIX_12",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:33.673Z",
+      "completedAt": "2026-10-10T01:09:33.691Z"
+    },
+    {
+      "number": 13,
+      "id": "toolu_01XwQ1HUUv83V3pfMe2wiCFP",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_13\\n'",
+      "output": "PROXY_MATRIX_13",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:35.785Z",
+      "completedAt": "2026-10-10T01:09:35.802Z"
+    },
+    {
+      "number": 14,
+      "id": "toolu_015xjgYCuwKYJX2sFyGCsAND",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_14\\n'",
+      "output": "PROXY_MATRIX_14",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:38.266Z",
+      "completedAt": "2026-10-10T01:09:38.286Z"
+    },
+    {
+      "number": 15,
+      "id": "toolu_01JsRzAXhKUwwotjq3YHL6GN",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_15\\n'",
+      "output": "PROXY_MATRIX_15",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:40.366Z",
+      "completedAt": "2026-10-10T01:09:40.390Z"
+    },
+    {
+      "number": 16,
+      "id": "toolu_01A6JEe4TkGY5vEP888cdeDg",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_16\\n'",
+      "output": "PROXY_MATRIX_16",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:42.609Z",
+      "completedAt": "2026-10-10T01:09:42.628Z"
+    },
+    {
+      "number": 17,
+      "id": "toolu_01QSkdWHron3KV63A8kTmgCx",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_17\\n'",
+      "output": "PROXY_MATRIX_17",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:44.851Z",
+      "completedAt": "2026-10-10T01:09:44.871Z"
+    },
+    {
+      "number": 18,
+      "id": "toolu_01PTTubr4T3byc5EaF9UKZg5",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_18\\n'",
+      "output": "PROXY_MATRIX_18",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:47.315Z",
+      "completedAt": "2026-10-10T01:09:47.334Z"
+    },
+    {
+      "number": 19,
+      "id": "toolu_01R7phua5fiMb3gYwAGLTLQT",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_19\\n'",
+      "output": "PROXY_MATRIX_19",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:49.600Z",
+      "completedAt": "2026-10-10T01:09:49.624Z"
+    },
+    {
+      "number": 20,
+      "id": "toolu_01QhHA1JUBJauMrQsNTvNxvw",
+      "name": "Bash",
+      "command": "printf 'PROXY_MATRIX_20\\n'",
+      "output": "PROXY_MATRIX_20",
+      "isError": false,
+      "startedAt": "2026-10-10T01:09:52.064Z",
+      "completedAt": "2026-10-10T01:09:52.083Z"
+    }
+  ]
+}

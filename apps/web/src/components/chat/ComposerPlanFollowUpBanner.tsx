@@ -14,15 +14,12 @@ export const ComposerPlanFollowUpBanner = memo(function ComposerPlanFollowUpBann
           size="sm"
           className="rounded-md px-1.5 py-0 font-semibold tracking-wide uppercase"
         >
-          Plan Ready
+          Plan fertig
         </Badge>
         {planTitle ? (
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{planTitle}</span>
         ) : null}
       </div>
-      {/* <div className="mt-2 text-xs text-muted-foreground">
-        Review the plan
-      </div> */}
     </div>
   );
 });

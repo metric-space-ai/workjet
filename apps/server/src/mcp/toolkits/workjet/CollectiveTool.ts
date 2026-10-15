@@ -1,5 +1,4 @@
 // @effect-diagnostics preferSchemaOverJson:off -- MCP text mirrors bounded validated structured content.
-import { WORKJET_COLLECTIVE_SKILL } from "@metric-space-ai/workjet-capabilities";
 import { EnvironmentId, ThreadId } from "@workjet/contracts";
 import { parseWorkjetThreadDeepLink } from "@workjet/shared/agentAwareness";
 import * as Context from "effect/Context";
@@ -12,15 +11,7 @@ import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
-export const WORKJET_COLLECTIVE_GUIDE_TOOL_NAME = "workjet_collective_guide";
 export const WORKJET_RESOLVE_THREAD_TOOL_NAME = "workjet_resolve_thread";
-export const WORKJET_COLLECTIVE_SKILL_VERSION = "1.0.0";
-
-export const WorkjetCollectiveGuideResult = Schema.Struct({
-  name: Schema.Literal("workjet-collective"),
-  version: Schema.String,
-  instructions: Schema.String,
-});
 
 const WorkjetThreadReferenceInput = Schema.Struct({
   reference: Schema.String.check(Schema.isMaxLength(2_048)),
@@ -35,7 +26,7 @@ export const WorkjetResolvedThreadResult = Schema.Struct({
   messageTool: Schema.Literal("workjet_send_message"),
 });
 
-export const isCollectiveGuideVisible = (
+export const isThreadReferenceVisible = (
   invocation: McpInvocationContext.McpInvocationScope,
 ): boolean => McpInvocationContext.isWorkjetMember(invocation);
 
@@ -43,22 +34,8 @@ const mcpEnabledWhen = () => {
   const fiber = Fiber.getCurrent();
   if (!fiber) return false;
   const invocation = Context.getOption(fiber.context, McpInvocationContext.McpInvocationContext);
-  return Option.isSome(invocation) && isCollectiveGuideVisible(invocation.value);
+  return Option.isSome(invocation) && isThreadReferenceVisible(invocation.value);
 };
-
-export const WorkjetCollectiveGuideTool = Tool.make(WORKJET_COLLECTIVE_GUIDE_TOOL_NAME, {
-  description:
-    "Read the versioned Workjet Collective skill for worker discovery, thread references, manager contact, bug reporting, access and secret requests, bulletin posts, and work blocks.",
-  parameters: Schema.Struct({}),
-  success: WorkjetCollectiveGuideResult,
-  dependencies: [McpInvocationContext.McpInvocationContext],
-})
-  .annotate(Tool.Title, "Read Workjet Collective skill")
-  .annotate(Tool.Readonly, true)
-  .annotate(Tool.Destructive, false)
-  .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, false)
-  .annotate(McpSchema.EnabledWhen, mcpEnabledWhen);
 
 export const WorkjetResolveThreadTool = Tool.make(WORKJET_RESOLVE_THREAD_TOOL_NAME, {
   description:
@@ -86,56 +63,8 @@ const invalidReferenceResult = () =>
     ],
   });
 
-const register = Effect.fn("McpHttpServer.registerWorkjetCollectiveGuide")(function* () {
+const register = Effect.fn("McpHttpServer.registerWorkjetThreadReference")(function* () {
   const server = yield* McpServer.McpServer;
-  const tool = WorkjetCollectiveGuideTool;
-  yield* server.addTool({
-    tool: new McpSchema.Tool({
-      name: tool.name,
-      description: Tool.getDescription(tool),
-      inputSchema: Tool.getJsonSchema(tool),
-      outputSchema: Tool.getJsonSchemaFromSchema(WorkjetCollectiveGuideResult),
-      annotations: {
-        title: "Read Workjet Collective skill",
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    }),
-    annotations: tool.annotations,
-    handle: () =>
-      Effect.withFiber((fiber) => {
-        const invocation = Context.getUnsafe(
-          fiber.context,
-          McpInvocationContext.McpInvocationContext,
-        );
-        return Effect.gen(function* () {
-          yield* McpInvocationContext.requireWorkjetMember();
-          const result = {
-            name: "workjet-collective" as const,
-            version: WORKJET_COLLECTIVE_SKILL_VERSION,
-            instructions: WORKJET_COLLECTIVE_SKILL,
-          };
-          return new McpSchema.CallToolResult({
-            isError: false,
-            structuredContent: result,
-            content: [{ type: "text", text: WORKJET_COLLECTIVE_SKILL }],
-          });
-        }).pipe(
-          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-          Effect.catchTag("WorkjetMemberUnavailableError", () =>
-            Effect.succeed(
-              new McpSchema.CallToolResult({
-                isError: true,
-                structuredContent: { error: "not-a-workjet-member" },
-                content: [{ type: "text", text: "Workjet Collective skill unavailable." }],
-              }),
-            ),
-          ),
-        );
-      }),
-  });
   const resolveTool = WorkjetResolveThreadTool;
   yield* server.addTool({
     tool: new McpSchema.Tool({

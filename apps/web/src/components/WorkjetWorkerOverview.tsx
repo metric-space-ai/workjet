@@ -18,8 +18,7 @@ export interface WorkerOverviewRow {
   /** Model id from the thread's model selection (always present). */
   readonly model: string;
   /**
-   * Provider/harness binding from the live session, when the worker has one.
-   * `null` when no session is bound yet — omitted honestly rather than guessed.
+   * Saved provider/harness for the next turn. A matching session may supply its display name.
    */
   readonly providerName: string | null;
   /**
@@ -40,19 +39,19 @@ interface WorkerTurnPresentation {
 }
 
 const WORKER_TURN_PRESENTATION: Record<WorkerTurnState, WorkerTurnPresentation> = {
-  idle: { label: "Idle", dotClass: "bg-muted-foreground/40", pulse: false },
-  running: { label: "Running", dotClass: "bg-amber-500 dark:bg-amber-300/90", pulse: true },
+  idle: { label: "Inaktiv", dotClass: "bg-muted-foreground/40", pulse: false },
+  running: { label: "Läuft", dotClass: "bg-amber-500 dark:bg-amber-300/90", pulse: true },
   completed: {
-    label: "Completed",
+    label: "Fertig",
     dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
     pulse: false,
   },
   interrupted: {
-    label: "Interrupted",
+    label: "Unterbrochen",
     dotClass: "bg-orange-500 dark:bg-orange-300/90",
     pulse: false,
   },
-  error: { label: "Error", dotClass: "bg-red-500 dark:bg-red-300/90", pulse: false },
+  error: { label: "Fehler", dotClass: "bg-red-500 dark:bg-red-300/90", pulse: false },
 };
 
 export function resolveWorkerTurnState(
@@ -86,7 +85,10 @@ export function buildWorkerOverviewRows(
       threadId: worker.id,
       title: worker.title,
       model: worker.modelSelection.model,
-      providerName: worker.session?.providerName ?? null,
+      providerName:
+        worker.session?.providerInstanceId === worker.modelSelection.instanceId
+          ? (worker.session.providerName ?? worker.modelSelection.instanceId)
+          : worker.modelSelection.instanceId,
       environmentLabel: worker.environmentId,
       turnState: resolveWorkerTurnState(worker),
     }),

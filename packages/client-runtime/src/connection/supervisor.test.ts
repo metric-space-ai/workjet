@@ -20,6 +20,7 @@ import {
   ConnectionTransientError,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
+  SshConnectionTarget,
   type ConnectionAttemptError,
   type ConnectionTarget,
   type NetworkStatus,
@@ -49,6 +50,15 @@ const TARGET_ENTRY: ConnectionCatalogEntry = {
 
 const RELAY_ENTRY: ConnectionCatalogEntry = {
   target: RELAY_TARGET,
+  profile: Option.none(),
+};
+
+const SSH_ENTRY: ConnectionCatalogEntry = {
+  target: new SshConnectionTarget({
+    environmentId: TARGET.environmentId,
+    label: "SSH test computer",
+    connectionId: "ssh-test-route",
+  }),
   profile: Option.none(),
 };
 
@@ -216,6 +226,134 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
 });
 
 describe("EnvironmentSupervisor", () => {
+  it.effect("bounds unreachable SSH setup and ignores passive wakeups until explicit retry", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        prepare: () =>
+          Effect.fail(
+            new ConnectionTransientError({
+              reason: "remote-unavailable",
+              detail: "SSH connection refused",
+            }),
+          ),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(SSH_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      for (const [index, seconds] of [3, 15, 60].entries()) {
+        yield* awaitState(
+          supervisor.state,
+          (state) => state.phase === "backoff" && state.attempt === index + 1,
+        );
+        expect(yield* Ref.get(harness.prepareCount)).toBe(index + 1);
+        yield* harness.wake("application-active");
+        yield* harness.wake("credentials-changed");
+        yield* TestClock.adjust(`${seconds - 1} seconds`);
+        expect(yield* Ref.get(harness.prepareCount)).toBe(index + 1);
+        yield* TestClock.adjust("1 second");
+      }
+      const stopped = yield* awaitState(supervisor.state, (state) => state.phase === "blocked");
+      expect(stopped.attempt).toBe(4);
+      expect(stopped.retryAt).toBeNull();
+      expect(stopped.lastFailure?.message).toContain(
+        "Automatic SSH setup stopped after 4 attempts",
+      );
+      expect(stopped.lastFailure?.message).toContain("host or jump route");
+      yield* harness.wake("application-active");
+      yield* harness.wake("credentials-changed");
+      yield* TestClock.adjust("30 minutes");
+      expect(yield* Ref.get(harness.prepareCount)).toBe(4);
+      yield* supervisor.retryNow;
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 1,
+      );
+      expect(yield* Ref.get(harness.prepareCount)).toBe(5);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("does not restart in-flight SSH setup when the app becomes active", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        prepare: () =>
+          Effect.sleep("1 second").pipe(
+            Effect.andThen(
+              Effect.fail(
+                new ConnectionTransientError({
+                  reason: "remote-unavailable",
+                  detail: "SSH connection refused",
+                }),
+              ),
+            ),
+          ),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(SSH_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connecting" && state.stage === "preparing",
+      );
+      yield* harness.wake("application-active-reconnect");
+      yield* TestClock.adjust("1 second");
+      yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+      expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("retries stopped SSH setup when the network actually comes back online", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        prepare: (attempt, target) =>
+          attempt <= 4
+            ? Effect.fail(
+                new ConnectionTransientError({ reason: "timeout", detail: "SSH timed out" }),
+              )
+            : Effect.succeed({ ...PREPARED_CONNECTION, target }),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(SSH_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      for (const [index, seconds] of [3, 15, 60].entries()) {
+        yield* awaitState(
+          supervisor.state,
+          (state) => state.phase === "backoff" && state.attempt === index + 1,
+        );
+        yield* TestClock.adjust(`${seconds} seconds`);
+      }
+      yield* awaitState(supervisor.state, (state) => state.phase === "blocked");
+      yield* harness.setNetworkStatus("offline");
+      yield* TestClock.adjust("5 minutes");
+      expect(yield* Ref.get(harness.prepareCount)).toBe(4);
+      yield* harness.setNetworkStatus("online");
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      expect(yield* Ref.get(harness.prepareCount)).toBe(5);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("preserves automatic recovery for SSH transports that were already established", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        prepare: (_attempt, target) => Effect.succeed({ ...PREPARED_CONNECTION, target }),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(SSH_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      for (const [index, seconds] of [3, 4, 8, 16, 16].entries()) {
+        yield* harness.closeLatestSession();
+        yield* awaitState(
+          supervisor.state,
+          (state) => state.phase === "backoff" && state.attempt === index + 1,
+        );
+        yield* TestClock.adjust(`${seconds} seconds`);
+        yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      }
+      expect(yield* Ref.get(harness.prepareCount)).toBe(6);
+      expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("connected");
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("exports each relay setup as a standalone linked trace that ends at readiness", () =>
     Effect.gen(function* () {
       const spans: Array<Tracer.NativeSpan> = [];

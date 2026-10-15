@@ -20,6 +20,7 @@
     "audit:business-os-shell": "node scripts/workjet-business-os-shell-audit.ts",
     "guard:content": "node scripts/audit-workjet-content.mjs",
     "test:content": "node --test scripts/audit-workjet-content.test.mjs",
+    "test:offline-runtime": "node --test scripts/offline-runtime-defaults.test.mjs",
     "guard:github-actions-pinned": "node scripts/assert-github-actions-pinned.mjs",
     "guard:supply-chain": "node scripts/assert-supply-chain.mjs",
     "icons:export": "node scripts/export-brand-icons.ts",

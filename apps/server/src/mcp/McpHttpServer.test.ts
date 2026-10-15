@@ -349,6 +349,13 @@ it.effect("filters tools/list by the authoritative bearer scope and preserves Pr
       const browserOnly = yield* listTools("browser-only-token");
       const all = yield* listTools("all-token");
 
+      for (const memberTools of [standardRole, workerRole, orchestratorRole]) {
+        expect(memberTools).not.toContain("workjet_collective_guide");
+        expect(memberTools).toContain("workjet_resolve_thread");
+        expect(memberTools).toContain("workjet_worker_kanban");
+        expect(memberTools).toContain("workjet_update_goal");
+      }
+
       expect(standardRole).not.toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
       expect(workerRole).not.toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);
       expect(hidden).not.toContain(WORKJET_DISPATCH_WORKER_TOOL_NAME);

@@ -1,0 +1,211 @@
+{
+  "harness": "MiniMax Code",
+  "model": "claude-opus-5-5",
+  "workjetThreadId": "75b5e3dd-c3c7-457e-a6a4-25132e91ddfe",
+  "nativeSessionId": "mvs_6d5aa3ca6e844693852d00e37b182e02",
+  "startedAt": "2026-10-10T04:03:28.649Z",
+  "endedAt": "2026-10-10T04:05:06.205Z",
+  "runtimeBuild": {
+    "recordedAt": "2026-10-10T03:43:50.091Z",
+    "native": {
+      "binary": "/Volumes/OneTB/dev-artifacts/workjet/harness-proxy-rc-20261009/cargo-target/debug/workjet-provider-gateway-host",
+      "sha256": "2af374bad09d56f7b3ef730c4b01cc6a7e1daf124b9f707b51e4bbf058c91406",
+      "sourceHead": "6a0940c98"
+    },
+    "server": {
+      "entry": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/runtime/apps/server/dist/bin.mjs",
+      "sha256": "9656e4250cf25db227680f986fc611c69ee4995355a189184740e1d42269c0a2",
+      "sourceHead": "92a24c6a8a60d3ccca29473b293edf643a3e93e8"
+    }
+  },
+  "nativeAcpLog": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/profile/userdata/logs/provider/events.75b5e3dd-c3c7-457e-a6a4-25132e91ddfe.log",
+  "nativeAcpLogSha256": "cde848d68efbfadf96ff85bc3f7100d3eeeb3306b7fc3113629bc135cd4c9e0a",
+  "acceptance": {
+    "passed": true,
+    "successfulSequentialToolCalls": 20,
+    "basis": "twenty native ACP tool updates with exact successful process outputs and strictly ordered start/completion times"
+  },
+  "workjetObservedCompletions": 20,
+  "pairs": [
+    {
+      "number": 1,
+      "callId": "toolu_01Ugm1QajDDVERKEzniqWWkw",
+      "command": "printf 'PROXY_MATRIX_01\\n'",
+      "output": "PROXY_MATRIX_01\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605044802,
+      "completedAtMs": 1791605048026.0
+    },
+    {
+      "number": 2,
+      "callId": "toolu_0153JzcqAT3Umc4Fv5JsY7sV",
+      "command": "printf 'PROXY_MATRIX_02\\n'",
+      "output": "PROXY_MATRIX_02\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605053098,
+      "completedAtMs": 1791605053154.0
+    },
+    {
+      "number": 3,
+      "callId": "toolu_01PavagF4TcfTADK88r9qfvN",
+      "command": "printf 'PROXY_MATRIX_03\\n'",
+      "output": "PROXY_MATRIX_03\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605056045,
+      "completedAtMs": 1791605056101.0
+    },
+    {
+      "number": 4,
+      "callId": "toolu_011jJvLXWvwkJc6AKq9sQ4tj",
+      "command": "printf 'PROXY_MATRIX_04\\n'",
+      "output": "PROXY_MATRIX_04\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605058515,
+      "completedAtMs": 1791605058579.0
+    },
+    {
+      "number": 5,
+      "callId": "toolu_01BrBHM5YgHvG1h84YN821jP",
+      "command": "printf 'PROXY_MATRIX_05\\n'",
+      "output": "PROXY_MATRIX_05\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605060748,
+      "completedAtMs": 1791605060805.0
+    },
+    {
+      "number": 6,
+      "callId": "toolu_013QjHduaKodQ7v15CYQYcTK",
+      "command": "printf 'PROXY_MATRIX_06\\n'",
+      "output": "PROXY_MATRIX_06\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605063016,
+      "completedAtMs": 1791605063081.0
+    },
+    {
+      "number": 7,
+      "callId": "toolu_01S46pftpwbyWhLPFum8ey9J",
+      "command": "printf 'PROXY_MATRIX_07\\n'",
+      "output": "PROXY_MATRIX_07\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605065872,
+      "completedAtMs": 1791605065957.0
+    },
+    {
+      "number": 8,
+      "callId": "toolu_01Mv5PJqjnnduvdPdiJSFhKc",
+      "command": "printf 'PROXY_MATRIX_08\\n'",
+      "output": "PROXY_MATRIX_08\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605068434,
+      "completedAtMs": 1791605068550.0
+    },
+    {
+      "number": 9,
+      "callId": "toolu_01HVqWJ5FPqD6T4DYygAcLSE",
+      "command": "printf 'PROXY_MATRIX_09\\n'",
+      "output": "PROXY_MATRIX_09\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605070815,
+      "completedAtMs": 1791605070829.0
+    },
+    {
+      "number": 10,
+      "callId": "toolu_01RDmhWQCJHUs9svXZ9qyKD9",
+      "command": "printf 'PROXY_MATRIX_10\\n'",
+      "output": "PROXY_MATRIX_10\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605073124,
+      "completedAtMs": 1791605073182.0
+    },
+    {
+      "number": 11,
+      "callId": "toolu_01XT9Ur6yRGmoqLBScpmtYi9",
+      "command": "printf 'PROXY_MATRIX_11\\n'",
+      "output": "PROXY_MATRIX_11\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605075434,
+      "completedAtMs": 1791605075499.0
+    },
+    {
+      "number": 12,
+      "callId": "toolu_01KiJS8qcDeoKQDTXsg5pw9Y",
+      "command": "printf 'PROXY_MATRIX_12\\n'",
+      "output": "PROXY_MATRIX_12\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605077848,
+      "completedAtMs": 1791605077898.0
+    },
+    {
+      "number": 13,
+      "callId": "toolu_016mB4LRiWeWKQcH2m1cu975",
+      "command": "printf 'PROXY_MATRIX_13\\n'",
+      "output": "PROXY_MATRIX_13\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605080027,
+      "completedAtMs": 1791605080093.0
+    },
+    {
+      "number": 14,
+      "callId": "toolu_01Sx6MYZvKnmAkdcizmWY5Sf",
+      "command": "printf 'PROXY_MATRIX_14\\n'",
+      "output": "PROXY_MATRIX_14\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605082435,
+      "completedAtMs": 1791605082445.0
+    },
+    {
+      "number": 15,
+      "callId": "toolu_01XMn876wbd7FnahP6jctRZw",
+      "command": "printf 'PROXY_MATRIX_15\\n'",
+      "output": "PROXY_MATRIX_15\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605085258,
+      "completedAtMs": 1791605085313.0
+    },
+    {
+      "number": 16,
+      "callId": "toolu_01PYHwnx9TWK8xxQ78rjVr1Q",
+      "command": "printf 'PROXY_MATRIX_16\\n'",
+      "output": "PROXY_MATRIX_16\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605089602,
+      "completedAtMs": 1791605089790.0
+    },
+    {
+      "number": 17,
+      "callId": "toolu_0177crUNtF5NKmXU4GyvrURg",
+      "command": "printf 'PROXY_MATRIX_17\\n'",
+      "output": "PROXY_MATRIX_17\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605092589,
+      "completedAtMs": 1791605092655.0
+    },
+    {
+      "number": 18,
+      "callId": "toolu_01MsfUD3gp3fag5tFfULiR4Q",
+      "command": "printf 'PROXY_MATRIX_18\\n'",
+      "output": "PROXY_MATRIX_18\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605096279,
+      "completedAtMs": 1791605096345.0
+    },
+    {
+      "number": 19,
+      "callId": "toolu_01DLW3CARWYKKCf1oRwKqbPZ",
+      "command": "printf 'PROXY_MATRIX_19\\n'",
+      "output": "PROXY_MATRIX_19\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605098689,
+      "completedAtMs": 1791605098749.0
+    },
+    {
+      "number": 20,
+      "callId": "toolu_01QoxZ99j7Q8T36hn1Laj4wb",
+      "command": "printf 'PROXY_MATRIX_20\\n'",
+      "output": "PROXY_MATRIX_20\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605101289,
+      "completedAtMs": 1791605101351.0
+    }
+  ]
+}

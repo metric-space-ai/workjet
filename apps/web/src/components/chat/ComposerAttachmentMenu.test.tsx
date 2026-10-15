@@ -11,7 +11,7 @@ describe("ComposerAttachmentMenu", () => {
     );
 
     expect(markup).toContain('data-composer-attachment-menu="true"');
-    expect(markup).toContain('aria-label="Add images or project files"');
+    expect(markup).toContain('aria-label="Anhang hinzufügen"');
     expect(markup).toContain('accept="image/*"');
     expect(markup).toContain('type="file"');
     expect(markup).toContain("multiple");
@@ -26,10 +26,8 @@ describe("ComposerAttachmentMenu", () => {
   });
 
   it("uses new-thread copy before any disconnected follow-up copy", () => {
-    const newThreadCopy = chatComposerSource.indexOf(
-      "Describe what you want to build, or add images and project files",
-    );
-    const followUpCopy = chatComposerSource.indexOf("Ask for follow-up changes or attach images");
+    const newThreadCopy = chatComposerSource.indexOf("Was soll gebaut werden?");
+    const followUpCopy = chatComposerSource.indexOf("Nächste Änderung …");
 
     expect(newThreadCopy).toBeGreaterThan(0);
     expect(followUpCopy).toBeGreaterThan(newThreadCopy);

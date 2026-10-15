@@ -128,7 +128,7 @@ const PersistedElementContextDraft = Schema.Struct({
 });
 type PersistedElementContextDraft = typeof PersistedElementContextDraft.Type;
 
-import { WorkjetPrivateChatIntent, samePrivateChatIntentScope } from "./workjetPrivateChat";
+import { WorkjetPrivateChatIntent, samePrivateChatIntentScope } from "./workjetPrivateChatIntent";
 
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
@@ -423,6 +423,12 @@ interface ComposerDraftStoreState {
       interactionMode?: ProviderInteractionMode;
     },
   ) => void;
+  /** Retries a confirmed bootstrap rollback without losing the user's draft. */
+  retryRolledBackDraftThread: (
+    draftId: DraftId,
+    rolledBackThreadId: ThreadId,
+    nextThreadId: ThreadId,
+  ) => boolean;
   /** Updates mutable draft-session metadata without touching composer content. */
   setDraftThreadContext: (
     threadRef: ComposerThreadTarget,
@@ -1056,6 +1062,8 @@ export function deriveEffectiveComposerModelState(input: {
    */
   selectedInstanceId?: ProviderInstanceId | null | undefined;
   threadModelSelection: ModelSelection | null | undefined;
+  /** Existing threads use server metadata; local model drafts only supply matching options. */
+  preferThreadModelSelection?: boolean | undefined;
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
@@ -1091,22 +1099,28 @@ export function deriveEffectiveComposerModelState(input: {
   const activeSelectionInstanceId = instanceSelection
     ? (input.selectedInstanceId ?? ProviderInstanceId.make(input.selectedProvider))
     : ProviderInstanceId.make(input.selectedProvider);
-  const selectedModel = activeSelection?.model
-    ? (resolveAppModelSelectionForInstance(
-        activeSelectionInstanceId,
-        input.settings,
-        input.providers,
-        activeSelection.model,
-      ) ??
-      resolveAppModelSelection(
-        input.selectedProvider,
-        input.settings,
-        input.providers,
-        activeSelection.model,
-      ))
-    : baseModel;
+  const selectedModel =
+    input.preferThreadModelSelection && input.threadModelSelection
+      ? input.threadModelSelection.model
+      : activeSelection?.model
+        ? (resolveAppModelSelectionForInstance(
+            activeSelectionInstanceId,
+            input.settings,
+            input.providers,
+            activeSelection.model,
+          ) ??
+          resolveAppModelSelection(
+            input.selectedProvider,
+            input.settings,
+            input.providers,
+            activeSelection.model,
+          ))
+        : baseModel;
   const modelOptions =
-    modelSelectionByProviderToOptions(input.draft?.modelSelectionByProvider) ??
+    (input.preferThreadModelSelection &&
+    activeSelection?.model !== input.threadModelSelection?.model
+      ? null
+      : modelSelectionByProviderToOptions(input.draft?.modelSelectionByProvider)) ??
     providerSelectionsFromModelSelection(input.threadModelSelection) ??
     providerSelectionsFromModelSelection(input.projectModelSelection) ??
     null;
@@ -2508,6 +2522,23 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             options,
           );
         },
+        retryRolledBackDraftThread: (draftId, rolledBackThreadId, nextThreadId) => {
+          const existing = get().draftThreadsByThreadKey[draftId];
+          if (
+            !existing ||
+            existing.threadId !== rolledBackThreadId ||
+            nextThreadId === rolledBackThreadId
+          )
+            return false;
+          // Deleted server identities remain reserved in the event history.
+          set((state) => ({
+            draftThreadsByThreadKey: {
+              ...state.draftThreadsByThreadKey,
+              [draftId]: { ...existing, threadId: nextThreadId, promotedTo: null },
+            },
+          }));
+          return true;
+        },
         setDraftThreadContext: (threadRef, options) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) {
@@ -3856,6 +3887,8 @@ export function useEffectiveComposerModelState(input: {
    */
   selectedInstanceId?: ProviderInstanceId | null | undefined;
   threadModelSelection: ModelSelection | null | undefined;
+  /** Existing threads use server metadata; local model drafts only supply matching options. */
+  preferThreadModelSelection?: boolean | undefined;
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
@@ -3869,6 +3902,7 @@ export function useEffectiveComposerModelState(input: {
         selectedProvider: input.selectedProvider,
         selectedInstanceId: input.selectedInstanceId,
         threadModelSelection: input.threadModelSelection,
+        preferThreadModelSelection: input.preferThreadModelSelection,
         projectModelSelection: input.projectModelSelection,
         settings: input.settings,
       }),
@@ -3880,6 +3914,7 @@ export function useEffectiveComposerModelState(input: {
       input.selectedInstanceId,
       input.selectedProvider,
       input.threadModelSelection,
+      input.preferThreadModelSelection,
     ],
   );
 }

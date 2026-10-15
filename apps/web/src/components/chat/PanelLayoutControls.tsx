@@ -1,6 +1,7 @@
-import { Maximize2Icon, Minimize2Icon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
+import { Maximize2Icon, Minimize2Icon, PanelRightIcon, SquareTerminalIcon } from "lucide-react";
 import { memo } from "react";
 
+import { useUiText } from "../../hooks/useUiText";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -30,6 +31,11 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   onToggleTerminal,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
+  const t = useUiText();
+  const workers = (count: number) =>
+    count === 1
+      ? t("1 Worker aktiv", "1 worker active")
+      : t(`${count} Worker aktiv`, `${count} workers active`);
   return (
     <div
       className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
@@ -40,22 +46,24 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
           <TooltipTrigger
             render={
               <Toggle
-                className="shrink-0 [-webkit-app-region:no-drag]"
+                className="shrink-0 gap-1.5 [-webkit-app-region:no-drag]"
                 pressed={terminalOpen}
                 onPressedChange={onToggleTerminal}
-                aria-label="Toggle terminal drawer"
+                aria-label={t("Terminal", "Terminal")}
                 variant="ghost"
                 size="sm"
                 disabled={!terminalAvailable}
               >
-                <PanelBottomIcon className="size-3.5" />
+                {/* Own terminal glyph plus a word: never two near-identical panel rectangles (#593). */}
+                <SquareTerminalIcon className="size-3.5" />
+                <span className="text-xs max-md:sr-only">{t("Terminal", "Terminal")}</span>
               </Toggle>
             }
           />
           <TooltipPopup side="bottom">
             {terminalAvailable
-              ? `Toggle terminal drawer${terminalShortcutLabel ? ` (${terminalShortcutLabel})` : ""}`
-              : "Terminal drawer is unavailable"}
+              ? (terminalShortcutLabel ?? t("Terminal", "Terminal"))
+              : t("Terminal nicht verfügbar", "Terminal unavailable")}
           </TooltipPopup>
         </Tooltip>
       ) : null}
@@ -63,19 +71,20 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
         <TooltipTrigger
           render={
             <Toggle
-              className="shrink-0 [-webkit-app-region:no-drag]"
+              className="relative shrink-0 gap-1.5 [-webkit-app-region:no-drag]"
               pressed={rightPanelOpen}
               onPressedChange={onToggleRightPanel}
               aria-label={
                 liveAgentCount > 0
-                  ? `Toggle right panel, ${liveAgentCount} ${liveAgentCount === 1 ? "Luma" : "Lumas"} working`
-                  : "Toggle right panel"
+                  ? `${t("Arbeitsbereich", "Workspace")}, ${workers(liveAgentCount)}`
+                  : t("Arbeitsbereich", "Workspace")
               }
               variant="ghost"
               size="sm"
               disabled={!rightPanelAvailable}
             >
               <PanelRightIcon className="size-3.5" />
+              <span className="text-xs max-md:sr-only">{t("Arbeitsbereich", "Workspace")}</span>
               {liveAgentCount > 0 ? (
                 <span
                   aria-hidden
@@ -89,12 +98,10 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
         />
         <TooltipPopup side="bottom">
           {rightPanelAvailable
-            ? `Toggle right panel${rightPanelShortcutLabel ? ` (${rightPanelShortcutLabel})` : ""}${
-                liveAgentCount > 0
-                  ? ` · ${liveAgentCount} ${liveAgentCount === 1 ? "Luma" : "Lumas"} working`
-                  : ""
-              }`
-            : "Right panel is unavailable"}
+            ? [rightPanelShortcutLabel, liveAgentCount > 0 ? workers(liveAgentCount) : null]
+                .filter(Boolean)
+                .join(" · ") || t("Arbeitsbereich", "Workspace")
+            : t("Arbeitsbereich nicht verfügbar", "Workspace unavailable")}
         </TooltipPopup>
       </Tooltip>
     </div>
@@ -108,7 +115,10 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
   maximized: boolean;
   onToggle: () => void;
 }) {
-  const label = maximized ? "Restore panel size" : "Maximize panel";
+  const t = useUiText();
+  const label = maximized
+    ? t("Panelgröße zurücksetzen", "Restore panel size")
+    : t("Panel maximieren", "Maximize panel");
   return (
     <Tooltip>
       <TooltipTrigger

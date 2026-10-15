@@ -11,12 +11,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("Einstellungszeile (UI-Vertrag §1.4)", () => {
+  it("hat nur Bezeichnung, Status und Steuerelement, keine Beschreibung", () => {
+    const markup = renderToStaticMarkup(
+      <SettingsRow
+        title="Zeilenumbruch"
+        status="Aktiv"
+        control={<button type="button">Umschalten</button>}
+      />,
+    );
+    expect(markup).toContain("Zeilenumbruch");
+    expect(markup).toContain("Aktiv");
+    expect(markup).toContain("Umschalten");
+    expect(markup).not.toContain("Erklärsatz");
+  });
+});
+
 describe("settings search targets", () => {
   it("does not persist destination styling in the rendered row", () => {
     const markup = renderToStaticMarkup(
       <SettingsSearchTargetProvider targetId="word-wrap">
-        <SettingsRow id="word-wrap" title="Word wrap" description="Wrap long lines." />
-        <SettingsRow id="time-format" title="Time format" description="Choose a clock." />
+        <SettingsRow id="word-wrap" title="Zeilenumbruch" />
+        <SettingsRow id="time-format" title="Zeitformat" />
       </SettingsSearchTargetProvider>,
     );
 

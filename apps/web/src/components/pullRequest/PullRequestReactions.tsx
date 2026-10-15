@@ -11,7 +11,6 @@ import { cn } from "~/lib/utils";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -89,7 +88,7 @@ export function PullRequestReactionBar({
         next.delete(content);
         return { signature: current.signature, values: next };
       });
-      toastManager.add({ type: "error", title: "The reaction could not be saved" });
+      toastManager.add({ type: "error", title: "Reaktion nicht gespeichert" });
       return;
     }
     onRefresh();
@@ -127,51 +126,54 @@ export function PullRequestReactionBar({
       ))}
 
       {canReact ? (
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-          <PopoverTrigger
-            render={
+        <button
+          type="button"
+          aria-label="Reaktion hinzufügen"
+          aria-expanded={pickerOpen}
+          onClick={() => setPickerOpen((value) => !value)}
+          className={cn(
+            PILL_CLASS,
+            "border-border/70 px-1.5 text-muted-foreground hover:border-primary/60 hover:text-foreground",
+            pickerOpen && "border-primary/60 text-foreground",
+            shown.length === 0 &&
+              !pickerOpen &&
+              "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100",
+          )}
+        >
+          <SmilePlusIcon aria-hidden className="size-3.5" />
+        </button>
+      ) : null}
+      {/* Inline statt Popover: die Auswahl klappt direkt neben den Pillen auf. */}
+      {canReact && pickerOpen ? (
+        <span
+          className="inline-flex items-center gap-0.5"
+          data-slot="pull-request-reaction-picker"
+          role="group"
+          aria-label="Reaktionen"
+        >
+          {PULL_REQUEST_REACTION_ORDER.map((content) => {
+            const reacted =
+              shown.find((reaction) => reaction.content === content)?.viewerHasReacted ?? false;
+            return (
               <button
+                key={content}
                 type="button"
-                aria-label="Add a reaction"
+                aria-pressed={reacted}
+                aria-label={pullRequestReactionName(content)}
                 className={cn(
-                  PILL_CLASS,
-                  "border-border/70 px-1.5 text-muted-foreground hover:border-primary/60 hover:text-foreground",
-                  shown.length === 0 &&
-                    !pickerOpen &&
-                    "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100",
+                  "flex size-6 items-center justify-center rounded-md text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+                  reacted && "bg-primary/10",
                 )}
-              />
-            }
-          >
-            <SmilePlusIcon aria-hidden className="size-3.5" />
-          </PopoverTrigger>
-          <PopoverPopup align="start" className="w-auto" side="top" viewportClassName="py-2">
-            <div className="flex items-center gap-0.5">
-              {PULL_REQUEST_REACTION_ORDER.map((content) => {
-                const reacted =
-                  shown.find((reaction) => reaction.content === content)?.viewerHasReacted ?? false;
-                return (
-                  <button
-                    key={content}
-                    type="button"
-                    aria-pressed={reacted}
-                    aria-label={pullRequestReactionName(content)}
-                    className={cn(
-                      "flex size-7 items-center justify-center rounded-md text-base outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
-                      reacted && "bg-primary/10",
-                    )}
-                    onClick={() => {
-                      setPickerOpen(false);
-                      void toggle(content, !reacted);
-                    }}
-                  >
-                    <span aria-hidden>{pullRequestReactionEmoji(content)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </PopoverPopup>
-        </Popover>
+                onClick={() => {
+                  setPickerOpen(false);
+                  void toggle(content, !reacted);
+                }}
+              >
+                <span aria-hidden>{pullRequestReactionEmoji(content)}</span>
+              </button>
+            );
+          })}
+        </span>
       ) : null}
     </div>
   );

@@ -129,7 +129,7 @@ describe("operational computer enrollment", () => {
       .mockResolvedValueOnce(assigned)
       .mockResolvedValueOnce({ _tag: "failed", code: "command_failed" });
     await expect(enrollOperationalComputer(nas, control, command, () => true)).rejects.toThrow(
-      "access endpoint still needs confirmation",
+      "Zugang noch unbestätigt",
     );
   });
   it("stops the second operation if the selected instance changed during assignment", async () => {
@@ -139,7 +139,7 @@ describe("operational computer enrollment", () => {
       return assigned;
     });
     await expect(enrollOperationalComputer(nas, control, command, () => current)).rejects.toThrow(
-      "selected Business OS changed",
+      "Instanz gewechselt",
     );
     expect(control).toHaveBeenCalledTimes(1);
   });
@@ -155,5 +155,101 @@ describe("operational computer enrollment", () => {
         enrollOperationalComputer(enrollment, control, command, () => true),
       ).rejects.toThrow();
     expect(control).not.toHaveBeenCalled();
+  });
+});
+
+const generatedKey = {
+  contract: "ctox.workjet.computer-ssh-key.v1" as const,
+  computerId: "nas-1",
+  privateKey: { scope: "computer-access", name: `workjet-ssh-${"a".repeat(64)}` },
+  publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHRlc3Q=",
+  publicKeySha256: `SHA256:${"A".repeat(43)}`,
+};
+const nativeKeyResult = {
+  _tag: "completed",
+  response: {
+    action: "computer.ssh_key.ensure",
+    ...generatedKey,
+  },
+} satisfies CtoxWorkjetComputerControlResult;
+const nativeKeyEnrollment: OperationalComputerEnrollment = {
+  ...nas,
+  endpoint: {
+    ref: "endpoint-nas",
+    createNativeKey: true,
+    connection: {
+      protocol: "ssh",
+      host: "nas.example.test",
+      port: 22,
+      username: "admin",
+      root: "/volume1/artifacts",
+      host_key_sha256: "SHA256:example-pin",
+    },
+  },
+};
+
+describe("native computer SSH key enrollment", () => {
+  it("uses the actual native key reference after computer and key confirmation", async () => {
+    const control = vi
+      .fn()
+      .mockResolvedValueOnce(assigned)
+      .mockResolvedValueOnce(nativeKeyResult)
+      .mockResolvedValueOnce(endpoint);
+    const ready = vi.fn();
+    await enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready);
+    expect(control.mock.calls.map(([request]) => request.action)).toEqual([
+      "computer.assign",
+      "computer.ssh_key.ensure",
+      "computer.endpoint.upsert",
+    ]);
+    expect(control.mock.calls[1]?.[0]).toMatchObject({ computerId: "nas-1" });
+    expect(control.mock.calls[2]?.[0].connection).toEqual({
+      ...nativeKeyEnrollment.endpoint?.connection,
+      private_key: generatedKey.privateKey,
+      passphrase: null,
+    });
+    expect(ready).toHaveBeenCalledExactlyOnceWith(generatedKey);
+  });
+  it("does not bind a failed or foreign key to the endpoint", async () => {
+    for (const key of [
+      { _tag: "failed", code: "command_failed" },
+      { ...nativeKeyResult, response: { ...nativeKeyResult.response, computerId: "foreign" } },
+    ]) {
+      const control = vi.fn().mockResolvedValueOnce(assigned).mockResolvedValueOnce(key);
+      const ready = vi.fn();
+      await expect(
+        enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready),
+      ).rejects.toThrow("SSH-Schlüssel noch unbestätigt");
+      expect(control).toHaveBeenCalledTimes(2);
+      expect(ready).not.toHaveBeenCalled();
+    }
+  });
+  it("stops if the selected instance changed during key creation", async () => {
+    let current = true;
+    const control = vi
+      .fn()
+      .mockResolvedValueOnce(assigned)
+      .mockImplementationOnce(async () => {
+        current = false;
+        return nativeKeyResult;
+      });
+    const ready = vi.fn();
+    await expect(
+      enrollOperationalComputer(nativeKeyEnrollment, control, command, () => current, ready),
+    ).rejects.toThrow("Instanz gewechselt");
+    expect(control).toHaveBeenCalledTimes(2);
+    expect(ready).not.toHaveBeenCalled();
+  });
+  it("does not present completed setup if the endpoint confirmation failed", async () => {
+    const control = vi
+      .fn()
+      .mockResolvedValueOnce(assigned)
+      .mockResolvedValueOnce(nativeKeyResult)
+      .mockResolvedValueOnce({ _tag: "failed", code: "command_failed" });
+    const ready = vi.fn();
+    await expect(
+      enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready),
+    ).rejects.toThrow("Zugang noch unbestätigt");
+    expect(ready).not.toHaveBeenCalled();
   });
 });

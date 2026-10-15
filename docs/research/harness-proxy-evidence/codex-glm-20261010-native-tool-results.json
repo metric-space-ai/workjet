@@ -1,0 +1,231 @@
+{
+  "harness": "Codex CLI",
+  "model": "glm-5.3-flash",
+  "workjetThreadId": "1c9bf4a7-998b-478a-8e69-95382474d7b6",
+  "nativeSessionId": "01a12407-aa57-74d0-bc4d-eb4beea2ad28",
+  "startedAt": "2026-10-10T04:17:24.110Z",
+  "endedAt": "2026-10-10T04:19:37.387Z",
+  "runtimeBuild": {
+    "recordedAt": "2026-10-10T04:14:20.611Z",
+    "native": {
+      "binary": "/Volumes/OneTB/dev-artifacts/workjet/harness-proxy-rc-20261009/cargo-target/debug/workjet-provider-gateway-host",
+      "sha256": "2af374bad09d56f7b3ef730c4b01cc6a7e1daf124b9f707b51e4bbf058c91406",
+      "sourceHead": "6a0940c98"
+    },
+    "server": {
+      "entry": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/runtime/apps/server/dist/bin.mjs",
+      "sha256": "ed0468d4963644b108fd5be0e233f11289214c9c7039957443f471e8aa0f255b",
+      "sourceHead": "8b084964a605672e1fbb132e67a2333b6e356f51"
+    }
+  },
+  "nativeHistory": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/profile/harness-homes/codex/sessions/2026/10/10/rollout-2026-10-10T06-17-24-01a12407-aa57-74d0-bc4d-eb4beea2ad28.jsonl",
+  "nativeHistorySha256": "a4588e7b1dc6f8176b2730691e5d26e5c07e5ad71ae0225520f354228593df2f",
+  "acceptance": {
+    "passed": true,
+    "successfulSequentialToolCalls": 20,
+    "basis": "twenty interleaved native calls and matching successful results"
+  },
+  "workjetObservedCompletions": 20,
+  "pairs": [
+    {
+      "number": 1,
+      "callId": "call_2bcfe935852e471d824ccd2b",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_01\\n'",
+      "output": "Chunk ID: 2c3205\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_01\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:17:38.417Z",
+      "completedAt": "2026-10-10T04:17:38.518Z"
+    },
+    {
+      "number": 2,
+      "callId": "call_39855f745c544f738d485347",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_02\\n'",
+      "output": "Chunk ID: 63b8b7\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_02\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:17:44.019Z",
+      "completedAt": "2026-10-10T04:17:44.100Z"
+    },
+    {
+      "number": 3,
+      "callId": "call_6a4ebda1f0af4bfcb7c9467e",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_03\\n'",
+      "output": "Chunk ID: 283485\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_03\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:17:50.586Z",
+      "completedAt": "2026-10-10T04:17:50.760Z"
+    },
+    {
+      "number": 4,
+      "callId": "call_0ca9bd5988a142aaa9a96e52",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_04\\n'",
+      "output": "Chunk ID: a9eb4b\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_04\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:17:56.154Z",
+      "completedAt": "2026-10-10T04:17:56.227Z"
+    },
+    {
+      "number": 5,
+      "callId": "call_023884f354224cc48c382e09",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_05\\n'",
+      "output": "Chunk ID: f14280\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_05\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:01.183Z",
+      "completedAt": "2026-10-10T04:18:01.246Z"
+    },
+    {
+      "number": 6,
+      "callId": "call_7934749b2cff48d995353841",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_06\\n'",
+      "output": "Chunk ID: db2c75\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_06\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:06.194Z",
+      "completedAt": "2026-10-10T04:18:06.666Z"
+    },
+    {
+      "number": 7,
+      "callId": "call_f9430a0be42541d88b9e9983",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_07\\n'",
+      "output": "Chunk ID: 63830c\nWall time: 0.0003 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_07\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:09.978Z",
+      "completedAt": "2026-10-10T04:18:10.032Z"
+    },
+    {
+      "number": 8,
+      "callId": "call_d6f2d5174d544147a3c6fcb3",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_08\\n'",
+      "output": "Chunk ID: 6f9eb6\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_08\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:15.257Z",
+      "completedAt": "2026-10-10T04:18:15.377Z"
+    },
+    {
+      "number": 9,
+      "callId": "call_9fc660a24f814e939db0ce1c",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_09\\n'",
+      "output": "Chunk ID: e558d4\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_09\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:20.949Z",
+      "completedAt": "2026-10-10T04:18:21.002Z"
+    },
+    {
+      "number": 10,
+      "callId": "call_8828b8f2ed57472d918b33bd",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_10\\n'",
+      "output": "Chunk ID: 5a22af\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_10\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:26.170Z",
+      "completedAt": "2026-10-10T04:18:26.701Z"
+    },
+    {
+      "number": 11,
+      "callId": "call_dcba7b2ff3c6465d92ab9212",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_11\\n'",
+      "output": "Chunk ID: aabcdb\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_11\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:32.983Z",
+      "completedAt": "2026-10-10T04:18:33.132Z"
+    },
+    {
+      "number": 12,
+      "callId": "call_642ebcf1e37d40f698f9f120",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_12\\n'",
+      "output": "Chunk ID: e9391e\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_12\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:38.345Z",
+      "completedAt": "2026-10-10T04:18:38.640Z"
+    },
+    {
+      "number": 13,
+      "callId": "call_0c29f9fe635f47099cfd327d",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_13\\n'",
+      "output": "Chunk ID: 8d91a7\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_13\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:41.379Z",
+      "completedAt": "2026-10-10T04:18:41.719Z"
+    },
+    {
+      "number": 14,
+      "callId": "call_6638283c66be4acd85077640",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_14\\n'",
+      "output": "Chunk ID: 340f25\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_14\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:45.340Z",
+      "completedAt": "2026-10-10T04:18:45.381Z"
+    },
+    {
+      "number": 15,
+      "callId": "call_42187a77c7664b3a9896721f",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_15\\n'",
+      "output": "Chunk ID: 54358a\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_15\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:50.080Z",
+      "completedAt": "2026-10-10T04:18:50.121Z"
+    },
+    {
+      "number": 16,
+      "callId": "call_d5e5bbcd1e834ef2b8881e80",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_16\\n'",
+      "output": "Chunk ID: 3ec237\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_16\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:18:56.030Z",
+      "completedAt": "2026-10-10T04:18:56.069Z"
+    },
+    {
+      "number": 17,
+      "callId": "call_a30af144a2ff4ebdb1c9a8f2",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_17\\n'",
+      "output": "Chunk ID: 12c8bc\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_17\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:19:02.131Z",
+      "completedAt": "2026-10-10T04:19:02.172Z"
+    },
+    {
+      "number": 18,
+      "callId": "call_512818de20b44917bc067ef4",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_18\\n'",
+      "output": "Chunk ID: 99702a\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_18\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:19:08.911Z",
+      "completedAt": "2026-10-10T04:19:08.953Z"
+    },
+    {
+      "number": 19,
+      "callId": "call_6a58125cd78f4bae8eaa4b24",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_19\\n'",
+      "output": "Chunk ID: ccaad7\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_19\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:19:19.875Z",
+      "completedAt": "2026-10-10T04:19:20.197Z"
+    },
+    {
+      "number": 20,
+      "callId": "call_4d25f1f0b772443a89e32a85",
+      "tool": "exec_command",
+      "command": "printf 'PROXY_MATRIX_20\\n'",
+      "output": "Chunk ID: df7ffe\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\nPROXY_MATRIX_20\n",
+      "exitCode": 0,
+      "startedAt": "2026-10-10T04:19:31.194Z",
+      "completedAt": "2026-10-10T04:19:31.227Z"
+    }
+  ]
+}

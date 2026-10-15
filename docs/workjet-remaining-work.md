@@ -776,7 +776,7 @@ finishes. Scope estimates are rough and name the files.
     still needs `ctox` CLI verbs.
 26. ~~**Six user-visible `Workjet` strings.**~~ **DONE 2026-08-20, commit
     fc2a807b7.** §9. Measuring the six found FIVE already renamed by earlier
-    work and never recorded; only `SshPasswordPromptDialog` remained, and it
+    work and never recorded; only `SshPasswordPromptNotice` remained, and it
     named the product two different ways inside one paragraph. The migration
     dialog's "previous Workjet profile" copy and the ~70 non-user-visible
     occurrences are untouched, as the item requires.
@@ -837,7 +837,7 @@ Claims that were found to be _wrong_ rather than merely stale. Each is marked
 2. **"Deep-link parsing has no user confirmation and no OS-level intake."** Both
    halves false. `DesktopDeepLinkRouter.ts` registers `open-url` and
    `second-instance` and reads Windows/Linux cold-start links out of
-   `process.argv`; `DeepLinkConfirmationDialog.tsx` is mounted at
+   `process.argv`; `DeepLinkConfirmationNotice.tsx` is mounted at
    `routes/__root.tsx:142` and is the only path from a link to a navigation. The
    macOS pre-`ready` ordering hazard is handled and statically asserted. Ticked.
 3. **"SSH launch is unreachable from the UI."** Superseded by commit `8752fc9ae`

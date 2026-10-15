@@ -40,6 +40,7 @@ import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 import { codexWorkjetTurnOptions } from "./CodexWorkjetTurnOptions.ts";
+import type { ProviderNativeGoal } from "../Services/ProviderAdapter.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -110,6 +111,7 @@ export interface CodexSessionRuntimeOptions {
   readonly resumePolicy?: "require-existing";
   readonly appServerArgs?: ReadonlyArray<string>;
   readonly compiledManagedPrompt?: string;
+  readonly oneShotWorkspaceRoot?: string;
   readonly onProcessSpawn?: (handle: ChildProcessSpawner.ChildProcessHandle) => void;
 }
 
@@ -136,6 +138,14 @@ export interface CodexThreadSnapshot {
 }
 
 export interface CodexSessionRuntimeShape {
+  readonly getNativeGoal?: Effect.Effect<
+    ProviderNativeGoal | null | undefined,
+    CodexSessionRuntimeError
+  >;
+  readonly setNativeGoal?: (
+    objective: string,
+    status: "active" | "paused" | "blocked" | "complete",
+  ) => Effect.Effect<void, CodexSessionRuntimeError>;
   readonly start: () => Effect.Effect<ProviderSession, CodexSessionRuntimeError>;
   readonly getSession: Effect.Effect<ProviderSession>;
   readonly sendTurn: (
@@ -266,13 +276,18 @@ function readResumeCursorThreadId(
   return isCodexResumeCursorSchema(resumeCursor) ? resumeCursor.threadId : undefined;
 }
 
-function runtimeModeToThreadConfig(input: RuntimeMode): {
+function runtimeModeToThreadConfig(
+  input: RuntimeMode,
+  oneShotWorkspaceRoot?: string,
+): {
   readonly approvalPolicy: EffectCodexSchema.V2ThreadStartParams__AskForApproval;
   readonly sandbox: EffectCodexSchema.V2ThreadStartParams__SandboxMode;
   // Always explicit: omitting the field on resume keeps the thread's previous
   // reviewer, which would leave auto_review sticky after switching modes.
   readonly approvalsReviewer: EffectCodexSchema.V2ThreadStartParams__ApprovalsReviewer;
 } {
+  if (oneShotWorkspaceRoot)
+    return { approvalPolicy: "never", sandbox: "workspace-write", approvalsReviewer: "user" };
   switch (input) {
     case "approval-required":
       return {
@@ -305,10 +320,11 @@ function runtimeModeToThreadConfig(input: RuntimeMode): {
 function buildThreadStartParams(input: {
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
+  readonly oneShotWorkspaceRoot?: string;
   readonly model: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
 }): EffectCodexSchema.V2ThreadStartParams {
-  const config = runtimeModeToThreadConfig(input.runtimeMode);
+  const config = runtimeModeToThreadConfig(input.runtimeMode, input.oneShotWorkspaceRoot);
   return {
     cwd: input.cwd,
     approvalPolicy: config.approvalPolicy,
@@ -321,7 +337,16 @@ function buildThreadStartParams(input: {
 
 function runtimeModeToTurnSandboxPolicy(
   input: RuntimeMode,
+  oneShotWorkspaceRoot?: string,
 ): EffectCodexSchema.V2TurnStartParams__SandboxPolicy {
+  if (oneShotWorkspaceRoot)
+    return {
+      type: "workspaceWrite",
+      writableRoots: [oneShotWorkspaceRoot],
+      networkAccess: true,
+      excludeTmpdirEnvVar: true,
+      excludeSlashTmp: true,
+    };
   switch (input) {
     case "approval-required":
       return {
@@ -345,6 +370,7 @@ function buildCodexCollaborationMode(input: {
   readonly model?: string;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly compiledManagedPrompt?: string;
+  readonly oneShotWorkspaceRoot?: string;
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
   if (input.interactionMode === undefined) {
     return undefined;
@@ -381,6 +407,7 @@ export function buildTurnStartParams(input: {
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly interactionMode?: ProviderInteractionMode;
   readonly compiledManagedPrompt?: string;
+  readonly oneShotWorkspaceRoot?: string;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
   CodexErrors.CodexAppServerProtocolParseError
@@ -396,9 +423,13 @@ export function buildTurnStartParams(input: {
     turnInput.push(attachment);
   }
 
-  const config = runtimeModeToThreadConfig(input.runtimeMode);
+  const config = runtimeModeToThreadConfig(input.runtimeMode, input.oneShotWorkspaceRoot);
   const collaborationMode = buildCodexCollaborationMode({
-    ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
+    ...(input.oneShotWorkspaceRoot
+      ? { interactionMode: "default" as const }
+      : input.interactionMode
+        ? { interactionMode: input.interactionMode }
+        : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
     ...codexWorkjetTurnOptions(input),
@@ -409,7 +440,7 @@ export function buildTurnStartParams(input: {
     input: turnInput,
     approvalPolicy: config.approvalPolicy,
     approvalsReviewer: config.approvalsReviewer,
-    sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode),
+    sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode, input.oneShotWorkspaceRoot),
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
@@ -475,6 +506,7 @@ export const openCodexThread = (input: {
   readonly serviceTier: CodexServiceTier | undefined;
   readonly resumeThreadId: string | undefined;
   readonly resumePolicy?: "require-existing";
+  readonly oneShotWorkspaceRoot?: string;
 }): Effect.Effect<CodexThreadOpenResponse, CodexErrors.CodexAppServerError> => {
   const resumeThreadId = input.resumeThreadId;
   const startParams = buildThreadStartParams({
@@ -482,6 +514,7 @@ export const openCodexThread = (input: {
     runtimeMode: input.runtimeMode,
     model: input.requestedModel,
     serviceTier: input.serviceTier,
+    ...(input.oneShotWorkspaceRoot ? { oneShotWorkspaceRoot: input.oneShotWorkspaceRoot } : {}),
   });
 
   if (resumeThreadId === undefined) {
@@ -1739,6 +1772,9 @@ export const makeCodexSessionRuntime = (
         threadId: options.threadId,
         runtimeMode: options.runtimeMode,
         cwd: options.cwd,
+        ...(options.oneShotWorkspaceRoot
+          ? { oneShotWorkspaceRoot: options.oneShotWorkspaceRoot }
+          : {}),
         requestedModel,
         serviceTier: options.serviceTier,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
@@ -1793,6 +1829,16 @@ export const makeCodexSessionRuntime = (
     return {
       start,
       getSession: Ref.get(sessionRef),
+      getNativeGoal: Effect.gen(function* () {
+        const threadId = yield* readProviderThreadId;
+        const response = yield* client.request("thread/goal/get", { threadId });
+        return response.goal ?? null;
+      }),
+      setNativeGoal: (objective, status) =>
+        Effect.gen(function* () {
+          const threadId = yield* readProviderThreadId;
+          yield* client.request("thread/goal/set", { threadId, objective, status });
+        }),
       sendTurn: (input) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;

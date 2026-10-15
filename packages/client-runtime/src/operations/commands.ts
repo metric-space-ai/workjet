@@ -32,6 +32,7 @@ export type CreateProjectInput = CommandInput<"project.create">;
 export type UpdateProjectInput = CommandInput<"project.meta.update">;
 export type DeleteProjectInput = CommandInput<"project.delete">;
 export type CreateThreadInput = CommandInput<"thread.create">;
+export type ImportThreadContinuationInput = CommandInput<"thread.continuation.import">;
 export type DeleteThreadInput = CommandInput<"thread.delete">;
 export type ArchiveThreadInput = CommandInput<"thread.archive">;
 export type UnarchiveThreadInput = CommandInput<"thread.unarchive">;
@@ -45,6 +46,7 @@ export type ReorderPinnedThreadInput = CommandInput<"thread.pin.reorder">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
+export type SetThreadGoalInput = CommandInput<"thread.goal.set">;
 export type SetThreadWorkjetConfigInput = CommandInput<"thread.workjet-config.set">;
 export type StartThreadTurnInput = CommandInput<"thread.turn.start">;
 export type InterruptThreadTurnInput = CommandInput<"thread.turn.interrupt">;
@@ -130,6 +132,15 @@ export const createThread: (input: CreateThreadInput) => CommandEffect = Effect.
     createdAt: metadata.createdAt,
   });
 });
+
+export const importThreadContinuation: (input: ImportThreadContinuationInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.importThreadContinuation")(function* (input) {
+    return yield* dispatch({
+      ...input,
+      type: "thread.continuation.import",
+      ...(yield* timestampedCommandMetadata(input)),
+    });
+  });
 
 export const deleteThread: (input: DeleteThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.deleteThread",
@@ -263,6 +274,18 @@ export const setThreadInteractionMode: (input: SetThreadInteractionModeInput) =>
       createdAt: metadata.createdAt,
     });
   });
+
+export const setThreadGoal: (input: SetThreadGoalInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.setThreadGoal",
+)(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
+  return yield* dispatch({
+    ...input,
+    type: "thread.goal.set",
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
+  });
+});
 
 export const setThreadWorkjetConfig: (input: SetThreadWorkjetConfigInput) => CommandEffect =
   Effect.fn("EnvironmentCommands.setThreadWorkjetConfig")(function* (input) {

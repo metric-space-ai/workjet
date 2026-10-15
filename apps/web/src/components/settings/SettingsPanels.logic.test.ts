@@ -28,7 +28,7 @@ describe("typography settings restore", () => {
         fontSizeInterface: 18,
         fontFamilyCode: "Fira Code",
       }),
-    ).toEqual(["Interface font", "Code font"]);
+    ).toEqual(["Oberflächenschrift", "Code-Schrift"]);
   });
 });
 

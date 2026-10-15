@@ -112,7 +112,14 @@ const input: WorkjetGatewayInferenceInput = {
     stream: false,
   }),
 };
-const fixture = () => {
+const fixture = (
+  argument:
+    | string
+    | Parameters<typeof makeSourceGatewayInference>[0]["forwardProtocol"] = input.requestJson,
+) => {
+  const expectedRequest = typeof argument === "string" ? argument : input.requestJson;
+  const forwardProtocol = typeof argument === "function" ? argument : undefined;
+  const protocols: string[] = [];
   const events: string[] = [];
   const deadlines: number[] = [];
   let scoped = catalog;
@@ -146,21 +153,24 @@ const fixture = () => {
         events.push("native");
         return nativeError === undefined ? Effect.succeed(receipt) : Effect.fail(nativeError);
       }),
-    forward: (selected, request, deadline) =>
+    forward: (selected, request, deadline, protocol) =>
       Effect.sync(() => {
         events.push("forward");
         expect(selected).toEqual({ target, ...references });
-        expect(request).toBe(input.requestJson);
+        expect(request).toBe(expectedRequest);
+        protocols.push(protocol);
         deadlines.push(deadline);
         afterForward();
         return encodeJson({ output: [{ text: "result" }] });
       }),
+    ...(forwardProtocol === undefined ? {} : { forwardProtocol }),
     now: Effect.sync(() => now),
   });
   return {
     consumer,
     events,
     deadlines,
+    protocols,
     scope: (value: WorkjetGatewayScopedCatalog) => {
       scoped = value;
     },
@@ -186,7 +196,145 @@ const reason = (request: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =
     },
   });
 
+const parentInput = (): WorkjetGatewayInferenceInput => {
+  const reference = {
+    contract: "ctox.workjet.persistent-worker-binding.v1" as const,
+    owner_user_id: input.permit.ownerUserId,
+    project_id: input.workerRequest.project.id,
+    supervisor_thread_id: "b2cd2661-181e-41fd-a54e-ea5642ccf0dc",
+    thread_id: "21a77758-8723-431b-bbeb-3aa9f0507c4d",
+    role: "persistent_worker" as const,
+    revision: 1,
+    state: "active" as const,
+  };
+  return {
+    ...input,
+    workerRequest: {
+      ...input.workerRequest,
+      parent: { ...input.workerRequest.parent, threadId: ThreadId.make(reference.thread_id) },
+      parentTeamRole: "specialist",
+      parentTeamBinding: reference,
+    },
+    permit: {
+      ...input.permit,
+      binding: {
+        ...input.permit.binding,
+        sourceSupervisorThreadId: ThreadId.make(reference.thread_id),
+        parentTeamBinding: reference,
+      },
+    },
+  };
+};
+
+it.effect(
+  "carries the complete Parent reference through native renewal and post-inference revalidation",
+  () =>
+    Effect.gen(function* () {
+      const p = parentInput();
+      const f = fixture();
+      f.native({ ...p.permit, renewalSequence: 1, expiresAtMs: 400000 });
+      yield* f.consumer.infer(p);
+      expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
+      expect(f.deadlines).toEqual([400000]);
+    }),
+);
+
+it.effect(
+  "denies changed, omitted or substituted Parent identity before any catalog or inference",
+  () =>
+    Effect.gen(function* () {
+      const p = parentInput();
+      const original = p.permit.binding.parentTeamBinding!;
+      const { parentTeamBinding: _reference, ...withoutReference } = p.workerRequest;
+      for (const changed of [
+        { ...p, workerRequest: withoutReference },
+        {
+          ...p,
+          workerRequest: { ...p.workerRequest, parentTeamBinding: { ...original, revision: 2 } },
+        },
+        { ...p, workerRequest: { ...p.workerRequest, parentTeamRole: "supervisor" as const } },
+        { ...p, permit: { ...p.permit, ownerUserId: "foreign-owner" } },
+        {
+          ...p,
+          permit: {
+            ...p.permit,
+            binding: {
+              ...p.permit.binding,
+              sourceSupervisorThreadId: ThreadId.make(original.supervisor_thread_id),
+            },
+          },
+        },
+      ]) {
+        const f = fixture();
+        f.native(p.permit);
+        expect(yield* reason(f.consumer.infer(changed))).toBe("binding-mismatch");
+        expect(f.events).toEqual([]);
+      }
+    }),
+);
+
+it.effect("rejects lost or changed complete Parent references in renewal and after inference", () =>
+  Effect.gen(function* () {
+    const p = parentInput();
+    const { parentTeamBinding: _reference, ...withoutReference } = p.permit.binding;
+    const replaced = [
+      { ...p.permit, binding: withoutReference },
+      {
+        ...p.permit,
+        binding: {
+          ...p.permit.binding,
+          parentTeamBinding: { ...p.permit.binding.parentTeamBinding!, revision: 2 },
+        },
+      },
+    ];
+    for (const receipt of replaced) {
+      const before = fixture();
+      before.native(receipt);
+      expect(yield* reason(before.consumer.infer(p))).toBe("native-admission-rejected");
+      expect(before.events).toEqual(["catalog", "native"]);
+      const after = fixture();
+      after.native(p.permit);
+      after.afterForward(() => after.native(receipt));
+      expect(yield* reason(after.consumer.infer(p))).toBe("native-admission-rejected");
+      expect(after.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
+    }
+  }),
+);
+
 describe("source gateway inference", () => {
+  it.effect("pins Messages routing to the worker harness and rejects protocol substitution", () =>
+    Effect.gen(function* () {
+      const requestJson = encodeJson({
+        model: input.workerRequest.modelSelection.model,
+        messages: [{ role: "user", content: "Task" }],
+        max_tokens: 100,
+        stream: false,
+      });
+      const claude = {
+        ...input,
+        workerRequest: { ...input.workerRequest, harness: "claude-code" as const },
+        requestJson,
+      };
+      const f = fixture(requestJson);
+      yield* f.consumer.infer(claude);
+      expect(f.protocols).toEqual(["messages"]);
+      const codex = fixture();
+      yield* codex.consumer.infer(input);
+      expect(codex.protocols).toEqual(["responses"]);
+      const denied = fixture();
+      expect(yield* reason(denied.consumer.infer({ ...input, requestJson }))).toBe(
+        "invalid-request",
+      );
+      expect(
+        yield* reason(denied.consumer.infer({ ...claude, requestJson: input.requestJson })),
+      ).toBe("invalid-request");
+      expect(denied.events).toEqual([]);
+      expect(yield* remoteWorkerRequestDigest(claude.workerRequest)).not.toBe(
+        yield* remoteWorkerRequestDigest(input.workerRequest),
+      );
+    }),
+  );
+
   it.effect("distinguishes unavailable native authority from a malformed receipt", () =>
     Effect.gen(function* () {
       const unavailable = fixture();
@@ -210,15 +358,30 @@ describe("source gateway inference", () => {
     }),
   );
 
-  it.effect(
-    "uses the Instances admission client to verify the immutable worker request and source scope",
-    () =>
+  it.effect.each([
+    undefined,
+    { mode: "autonomous-worktree", projectId: input.workerRequest.project.id, revision: 1 },
+  ] as const)(
+    "preserves optional policy %s through the Instances admission client and source scope",
+    (executionPolicy) =>
       Effect.gen(function* () {
         const calls: unknown[] = [];
-        const digest = yield* remoteWorkerRequestDigest(input.workerRequest);
+        const workerRequest = {
+          ...input.workerRequest,
+          ...(executionPolicy === undefined ? {} : { executionPolicy }),
+        };
+        const digest = yield* remoteWorkerRequestDigest(workerRequest);
         const prepared = {
           ...input,
-          permit: { ...input.permit, binding: { ...input.permit.binding, requestDigest: digest } },
+          workerRequest,
+          permit: {
+            ...input.permit,
+            binding: {
+              ...input.permit.binding,
+              requestDigest: digest,
+              ...(executionPolicy === undefined ? {} : { executionPolicy }),
+            },
+          },
         };
         const admission = makeCtoxRemoteWorkerAdmissionClient({
           connections: {
@@ -271,6 +434,14 @@ describe("source gateway inference", () => {
           requestJson: '{"output":[]}',
         });
         expect(calls).toHaveLength(2);
+        for (const call of calls) {
+          expect(call).toMatchObject({ binding: prepared.permit.binding });
+          if (executionPolicy === undefined) {
+            expect(call).not.toHaveProperty("binding.executionPolicy");
+          } else {
+            expect(call).toHaveProperty("binding.executionPolicy", executionPolicy);
+          }
+        }
         const tampered = {
           ...prepared,
           workerRequest: { ...prepared.workerRequest, task: "Changed task" },
@@ -278,6 +449,97 @@ describe("source gateway inference", () => {
         expect(yield* reason(consumer.infer(tampered))).toBe("native-admission-rejected");
         expect(calls).toHaveLength(2);
       }),
+  );
+
+  it.effect.each(["admit", "infer"] as const)(
+    "rejects changed or foreign-project policy before source %s side effects",
+    (operation) =>
+      Effect.gen(function* () {
+        const executionPolicy = {
+          mode: "autonomous-worktree",
+          projectId: input.workerRequest.project.id,
+          revision: 1,
+        } as const;
+        const prepared = {
+          ...input,
+          workerRequest: { ...input.workerRequest, executionPolicy },
+          permit: { ...input.permit, binding: { ...input.permit.binding, executionPolicy } },
+        };
+        const foreignPolicy = { ...executionPolicy, projectId: ProjectId.make("foreign-project") };
+        for (const invalid of [
+          { ...prepared, permit: input.permit },
+          { ...prepared, workerRequest: input.workerRequest },
+          {
+            ...prepared,
+            permit: {
+              ...prepared.permit,
+              binding: {
+                ...prepared.permit.binding,
+                executionPolicy: { ...executionPolicy, revision: 2 },
+              },
+            },
+          },
+          {
+            ...prepared,
+            workerRequest: { ...prepared.workerRequest, executionPolicy: foreignPolicy },
+            permit: {
+              ...prepared.permit,
+              binding: { ...prepared.permit.binding, executionPolicy: foreignPolicy },
+            },
+          },
+          {
+            ...prepared,
+            workerRequest: {
+              ...prepared.workerRequest,
+              project: { ...prepared.workerRequest.project, id: foreignPolicy.projectId },
+            },
+          },
+        ]) {
+          const f = fixture();
+          expect(yield* reason(f.consumer[operation](invalid))).toBe("binding-mismatch");
+          expect(f.events).toEqual([]);
+        }
+      }),
+  );
+
+  it.effect("withholds a response when native changes or removes the pinned policy", () =>
+    Effect.gen(function* () {
+      const executionPolicy = {
+        mode: "autonomous-worktree",
+        projectId: input.workerRequest.project.id,
+        revision: 1,
+      } as const;
+      const prepared = {
+        ...input,
+        workerRequest: { ...input.workerRequest, executionPolicy },
+        permit: { ...input.permit, binding: { ...input.permit.binding, executionPolicy } },
+      };
+      for (const policy of [
+        undefined,
+        { ...executionPolicy, revision: 2 },
+        { ...executionPolicy, projectId: ProjectId.make("foreign-project") },
+      ]) {
+        const f = fixture();
+        f.native(prepared.permit);
+        f.afterForward(() =>
+          f.native({
+            ...prepared.permit,
+            renewalSequence: 1,
+            expiresAtMs: 600000,
+            binding: {
+              ...input.permit.binding,
+              ...(policy === undefined ? {} : { executionPolicy: policy }),
+            },
+          }),
+        );
+        expect(yield* reason(f.consumer.infer(prepared))).toBe("native-admission-rejected");
+        expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
+      }
+      const added = fixture();
+      added.afterForward(() => added.native(prepared.permit));
+      expect(yield* reason(added.consumer.infer(input))).toBe("native-admission-rejected");
+      expect(added.events).toContain("forward");
+    }),
   );
 
   it.effect("resolves a real llmRoutes account into exact source references", () =>
@@ -461,6 +723,81 @@ describe("source gateway inference", () => {
         "invalid-request",
       );
       expect(f.events).toEqual([]);
+    }),
+  );
+});
+
+describe("source native protocols", () => {
+  it.effect.each(["messages", "chat-completions", "responses"] as const)(
+    "revalidates the same pinned authority around twenty %s tool turns",
+    (protocol) =>
+      Effect.gen(function* () {
+        const calls: string[] = [];
+        const f = fixture((selected, request, deadline, actualProtocol) =>
+          Effect.sync(() => {
+            expect(selected).toEqual({ target, ...references });
+            expect(deadline).toBe(input.permit.expiresAtMs);
+            expect(actualProtocol).toBe(protocol);
+            calls.push(request);
+            return { requestJson: "native events", contentType: "text/event-stream" as const };
+          }),
+        );
+        for (let turn = 0; turn < 20; turn++) {
+          const requestJson = encodeJson({
+            model: input.permit.binding.modelRef.modelId,
+            stream: true,
+            ...(protocol === "responses"
+              ? { input: [{ role: "user", content: String(turn) }] }
+              : { messages: [{ role: "user", content: String(turn) }] }),
+          });
+          expect(yield* f.consumer.infer({ ...input, protocol, requestJson })).toEqual({
+            requestJson: "native events",
+            contentType: "text/event-stream",
+          });
+          expect(calls.at(-1)).toBe(requestJson);
+        }
+        expect(calls).toHaveLength(20);
+        expect(f.events).toEqual(
+          Array.from({ length: 20 }, () => ["catalog", "native", "catalog", "native"]).flat(),
+        );
+      }),
+  );
+  it.effect("rejects wrong native shapes and withholds results after revocation", () =>
+    Effect.gen(function* () {
+      let forwards = 0;
+      const f = fixture(() =>
+        Effect.sync(() => {
+          forwards++;
+          f.scope({ ...catalog, accounts: [] });
+          return { requestJson: "private result", contentType: "application/json" as const };
+        }),
+      );
+      for (const body of [
+        { model: input.permit.binding.modelRef.modelId, input: [] },
+        { model: input.permit.binding.modelRef.modelId, messages: [], stream: "true" },
+        { model: input.permit.binding.modelRef.modelId, messages: [], conversation: "foreign" },
+      ]) {
+        expect(
+          yield* reason(
+            f.consumer.infer({ ...input, protocol: "messages", requestJson: encodeJson(body) }),
+          ),
+        ).toBe("invalid-request");
+      }
+      expect(forwards).toBe(0);
+      expect(
+        yield* reason(
+          f.consumer.infer({
+            ...input,
+            protocol: "messages",
+            requestJson: encodeJson({
+              model: input.permit.binding.modelRef.modelId,
+              messages: [],
+              stream: false,
+            }),
+          }),
+        ),
+      ).toBe("grant-unavailable");
+      expect(forwards).toBe(1);
     }),
   );
 });

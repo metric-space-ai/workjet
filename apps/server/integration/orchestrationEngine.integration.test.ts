@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
+import { persistentThreadConfigForTest } from "../src/orchestration/persistentThreadTestFixture.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -148,10 +148,23 @@ const seedProjectAndThread = (harness: OrchestrationIntegrationHarness) =>
         model: defaultModel,
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+      workjetConfig: persistentThreadConfigForTest(
+        yield* harness.snapshotQuery.getSnapshot(),
+        PROJECT_ID,
+        THREAD_ID,
+      ),
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: harness.workspaceDir,
+      createdAt,
+    });
+    // Recorded provider turns are driven by this test, without autonomous goal continuation.
+    yield* harness.engine.dispatch({
+      type: "thread.goal.set",
+      commandId: CommandId.make("cmd-replay-goal-pause"),
+      threadId: THREAD_ID,
+      status: "paused",
+      reason: "Replay the explicit provider lifecycle commands.",
       createdAt,
     });
   });
@@ -299,7 +312,11 @@ it.live.skipIf(!process.env.CODEX_BINARY_PATH)(
             model: "gpt-5.3-codex",
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          workjetConfig: persistentThreadConfigForTest(
+            yield* harness.snapshotQuery.getSnapshot(),
+            PROJECT_ID,
+            THREAD_ID,
+          ),
           runtimeMode: "full-access",
           branch: null,
           worktreePath: harness.workspaceDir,
@@ -833,6 +850,14 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
           entry.activities.some((activity) => activity.turnId === "turn-2"),
         8000,
       );
+      yield* harness.waitForReceipt(
+        (receipt): receipt is TurnProcessingQuiescedReceipt =>
+          receipt.type === "turn.processing.quiesced" &&
+          receipt.threadId === THREAD_ID &&
+          receipt.checkpointTurnCount === 2,
+      );
+      yield* harness.drainProviderRuntime;
+      yield* harness.drainCheckpointReactor;
 
       yield* harness.engine.dispatch({
         type: "thread.checkpoint.revert",

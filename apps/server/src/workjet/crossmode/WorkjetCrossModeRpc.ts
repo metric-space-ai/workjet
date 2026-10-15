@@ -1,4 +1,5 @@
 import {
+  canCoordinateWorkjet,
   WORKJET_CROSS_MODE_LINK_LIST_MAX,
   WorkjetCrossModeError,
   WorkjetCrossModeLinkId,
@@ -222,7 +223,7 @@ export const makeWorkjetCrossModeRpcHandlers = (
   const requireOrchestratorHost = (threadId: ThreadId) =>
     requireLiveThread(threadId).pipe(
       Effect.flatMap((thread) =>
-        thread.workjetConfig.role !== "orchestrator"
+        !canCoordinateWorkjet(thread.workjetConfig)
           ? Effect.fail(failure("unauthorized"))
           : Effect.succeed(thread),
       ),

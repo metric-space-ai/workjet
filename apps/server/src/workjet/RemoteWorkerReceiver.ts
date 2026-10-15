@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeCrypto from "node:crypto";
+import * as NodeOS from "node:os";
+import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import {
   CommandId,
   MessageId,
@@ -29,13 +31,42 @@ import { RepositoryIdentityResolver } from "../project/RepositoryIdentityResolve
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
 import { RemoteWorkerStore } from "./RemoteWorkerStore.ts";
+import { IsolatedWorkerWorktree } from "./IsolatedWorkerWorktree.ts";
+import { remoteWorkerRequestDigest } from "./ctox/CtoxRemoteWorkerAdmission.ts";
+import type { CapturedWorkerWorktree } from "./NativeWorkerWorktreeRemover.ts";
 import { WorkerDispatchRollback } from "./WorkerDispatchRollback.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
 import { readWorkerSourceHarness } from "./WorkerSourceHarness.ts";
+import { workerSourceDriver } from "./WorkerSourceNativeProfile.ts";
 
 import { RemoteWorkerAdmission } from "./RemoteWorkerAdmission.ts";
 export { RemoteWorkerAdmission } from "./RemoteWorkerAdmission.ts";
 
+/** A source account is not a target executable. Select only the commissioned driver. */
+export const remoteWorkerRuntimeSelection = (
+  request: Pick<RemoteWorkerRequest, "harness" | "modelSelection">,
+  source: Pick<import("./WorkerSourceHarness.ts").WorkerSourceHarness, "harness" | "model">,
+  instances: ReadonlyArray<Pick<ProviderInstance, "instanceId" | "enabled" | "driverKind">>,
+): RemoteWorkerRequest["modelSelection"] | undefined => {
+  if (
+    source.harness !== (request.harness ?? "codex-cli") ||
+    source.model !== request.modelSelection.model
+  )
+    return undefined;
+  const driverKind = workerSourceDriver(source.harness);
+  if (driverKind === undefined) return undefined;
+  const candidates = instances.filter(
+    (instance) => instance.enabled && instance.driverKind === driverKind,
+  );
+  const selected =
+    candidates.find((instance) => instance.instanceId === request.modelSelection.instanceId) ??
+    (candidates.length === 1
+      ? candidates[0]
+      : candidates.find((instance) => instance.instanceId === driverKind));
+  return selected === undefined
+    ? undefined
+    : { ...request.modelSelection, instanceId: selected.instanceId, model: source.model };
+};
 export class RemoteWorkerReceiver extends Context.Service<
   RemoteWorkerReceiver,
   {
@@ -99,6 +130,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const rollback = yield* WorkerDispatchRollback;
   const admission = yield* Effect.serviceOption(RemoteWorkerAdmission);
+  const isolatedWorktrees = yield* Effect.serviceOption(IsolatedWorkerWorktree);
   const providerInstances = yield* Effect.serviceOption(ProviderInstanceRegistry);
   const mutex = yield* Semaphore.make(1);
   const targetEnvironmentId = yield* environment.getEnvironmentId;
@@ -117,6 +149,9 @@ export const make = Effect.gen(function* () {
       request.targetEnvironmentId !== targetEnvironmentId ||
       request.parent.environmentId === targetEnvironmentId ||
       request.parent.threadId === request.requestId ||
+      (request.executionPolicy !== undefined &&
+        (request.executionPolicy.projectId !== request.project.id ||
+          request.parentTeamRole === undefined)) ||
       !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(request.requestId) ||
       url === null ||
       new Set(request.enabledCapabilityIds).size !== request.enabledCapabilityIds.length ||
@@ -200,19 +235,29 @@ export const make = Effect.gen(function* () {
     // native provider instance ID whose empty target binding cannot execute.
     let runtimeModelSelection = request.modelSelection;
     const sourceHarness = readWorkerSourceHarness(request.requestId);
+    if (
+      request.harness !== undefined &&
+      request.harness !== "codex-cli" &&
+      sourceHarness === undefined
+    )
+      return yield* failure("source-unavailable");
     if (sourceHarness !== undefined) {
+      if (sourceHarness.harness !== (request.harness ?? "codex-cli"))
+        return yield* failure("source-unavailable");
+      if (
+        sourceHarness.harness !== "codex-cli" &&
+        sourceHarness.harness !== "claude-code" &&
+        sourceHarness.nativeProfile?.harness !== sourceHarness.harness
+      )
+        return yield* failure("source-unavailable");
       if (Option.isNone(providerInstances)) return yield* failure("computer-unavailable");
-      const candidates = (yield* providerInstances.value.listInstances).filter(
-        (instance) => instance.enabled && instance.driverKind === "codex",
+      const selected = remoteWorkerRuntimeSelection(
+        request,
+        sourceHarness,
+        yield* providerInstances.value.listInstances,
       );
-      const selected =
-        candidates.find((instance) => instance.instanceId === request.modelSelection.instanceId) ??
-        (candidates.length === 1
-          ? candidates[0]
-          : candidates.find((instance) => instance.instanceId === "codex"));
-      if (selected === undefined || sourceHarness.model !== request.modelSelection.model)
-        return yield* failure("computer-unavailable");
-      runtimeModelSelection = { instanceId: selected.instanceId, model: sourceHarness.model };
+      if (selected === undefined) return yield* failure("computer-unavailable");
+      runtimeModelSelection = selected;
     }
 
     const runGit = Effect.fn("RemoteWorkerReceiver.git")(function* (
@@ -317,52 +362,88 @@ export const make = Effect.gen(function* () {
       })
     )
       return yield* failure("worktree-failed");
-    const list = yield* runGit(cwd, ["worktree", "list", "--porcelain"]);
-    if (list.stdoutTruncated) return yield* failure("worktree-failed");
-    const registered = list.stdout
-      .split("\n\n")
-      .filter((entry) => entry.split("\n").includes("branch refs/heads/" + branch));
-    if (registered.length > 1) return yield* failure("worktree-failed");
-    const registeredPath = registered[0]
-      ?.split("\n")
-      .find((line) => line.startsWith("worktree "))
-      ?.slice(9);
-    if (saved.worktreePath === null) {
-      // An existing UUID-shaped branch is not a receipt of ownership. Reserve
-      // the server-derived path only while neither branch nor checkout exists.
-      const ref = yield* git
-        .execute({
-          operation: "RemoteWorkerReceiver.reserve",
-          cwd,
-          args: ["show-ref", "--verify", "--quiet", "refs/heads/" + branch],
-          allowNonZeroExit: true,
+    let worktreePath: string;
+    let custody: CapturedWorkerWorktree | undefined;
+    if (request.executionPolicy?.mode === "autonomous-worktree") {
+      if (Option.isNone(isolatedWorktrees)) return yield* failure("worktree-failed");
+      if (saved.worktreePath !== null && saved.worktreePath !== expectedPath)
+        return yield* failure("worktree-failed");
+      yield* fs
+        .makeDirectory(path.dirname(expectedPath), { recursive: true })
+        .pipe(Effect.mapError(() => failure("worktree-failed")));
+      custody = yield* isolatedWorktrees.value
+        .allocate({
+          workerId: request.requestId,
+          projectId: request.project.id,
+          repositoryKey: request.project.repository.canonicalKey,
+          repositoryUrl: url,
+          sourceCwd: cwd,
+          revision: request.revision,
+          branch,
+          destination: expectedPath,
+          authorityDigest: yield* remoteWorkerRequestDigest(request),
         })
         .pipe(Effect.mapError(() => failure("worktree-failed")));
-      if (
-        registeredPath !== undefined ||
-        ref.exitCode !== 1 ||
-        (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed"))))
-      )
+      worktreePath = custody.worktreePath;
+      if (worktreePath !== expectedPath || custody.kind !== "isolated")
         return yield* failure("worktree-failed");
       yield* store
-        .recordWorktree(request.requestId, expectedPath)
+        .recordWorktree(request.requestId, worktreePath)
         .pipe(Effect.mapError(() => failure("worktree-failed")));
-    } else if (
-      saved.worktreePath !== expectedPath ||
-      (registeredPath !== undefined && registeredPath !== saved.worktreePath)
-    ) {
-      return yield* failure("worktree-failed");
-    }
-    let worktreePath = registeredPath;
-    if (!worktreePath) {
-      if (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed"))))
+    } else {
+      const list = yield* runGit(cwd, ["worktree", "list", "--porcelain"]);
+      if (list.stdoutTruncated) return yield* failure("worktree-failed");
+      const registered = list.stdout
+        .split("\n\n")
+        .filter((entry) => entry.split("\n").includes("branch refs/heads/" + branch));
+      if (registered.length > 1) return yield* failure("worktree-failed");
+      const registeredPath = registered[0]
+        ?.split("\n")
+        .find((line) => line.startsWith("worktree "))
+        ?.slice(9);
+      if (saved.worktreePath === null) {
+        // An existing UUID-shaped branch is not a receipt of ownership. Reserve
+        // the server-derived path only while neither branch nor checkout exists.
+        const ref = yield* git
+          .execute({
+            operation: "RemoteWorkerReceiver.reserve",
+            cwd,
+            args: ["show-ref", "--verify", "--quiet", "refs/heads/" + branch],
+            allowNonZeroExit: true,
+          })
+          .pipe(Effect.mapError(() => failure("worktree-failed")));
+        if (
+          registeredPath !== undefined ||
+          ref.exitCode !== 1 ||
+          (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed"))))
+        )
+          return yield* failure("worktree-failed");
+        yield* store
+          .recordWorktree(request.requestId, expectedPath)
+          .pipe(Effect.mapError(() => failure("worktree-failed")));
+      } else if (
+        saved.worktreePath !== expectedPath ||
+        (registeredPath !== undefined && registeredPath !== saved.worktreePath)
+      ) {
         return yield* failure("worktree-failed");
-      const created = yield* workflow
-        .createWorktree({ cwd, path: expectedPath, refName: request.revision, newRefName: branch })
-        .pipe(Effect.mapError(() => failure("worktree-failed")));
-      worktreePath = created.worktree.path;
-      if (created.worktree.refName !== branch || worktreePath !== expectedPath)
-        return yield* failure("worktree-failed");
+      }
+      let linkedPath = registeredPath;
+      if (!linkedPath) {
+        if (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed"))))
+          return yield* failure("worktree-failed");
+        const created = yield* workflow
+          .createWorktree({
+            cwd,
+            path: expectedPath,
+            refName: request.revision,
+            newRefName: branch,
+          })
+          .pipe(Effect.mapError(() => failure("worktree-failed")));
+        linkedPath = created.worktree.path;
+        if (created.worktree.refName !== branch || linkedPath !== expectedPath)
+          return yield* failure("worktree-failed");
+      }
+      worktreePath = linkedPath;
     }
     const workerRealPath = yield* fs
       .realPath(worktreePath)
@@ -394,8 +475,9 @@ export const make = Effect.gen(function* () {
     // restart. Check both sides of the native rollback's inode/HEAD capture.
     yield* verifyUnstartedCheckout();
     const prepared = yield* rollback
-      .prepare({ cwd, worktreePath, branchRef: branch })
+      .prepare({ cwd, worktreePath, branchRef: branch, ...(custody ? { custody } : {}) })
       .pipe(Effect.option);
+    if (custody && Option.isNone(prepared)) return yield* failure("worktree-failed");
     yield* verifyUnstartedCheckout();
     const result: RemoteWorkerResult = {
       schemaVersion: 1,
@@ -405,6 +487,8 @@ export const make = Effect.gen(function* () {
       computerId: request.computerId,
       branch,
       worktreePath,
+      harness: request.harness ?? "codex-cli",
+      hostname: NodeOS.hostname(),
       parent: request.parent,
       modelSelection: request.modelSelection,
       enabledCapabilityIds: request.enabledCapabilityIds,
@@ -492,6 +576,9 @@ export const make = Effect.gen(function* () {
           managedInstructions: request.managedInstructions,
           enabledCapabilityIds: request.enabledCapabilityIds,
           capabilityBindings: [],
+          ...(request.executionPolicy === undefined
+            ? {}
+            : { executionPolicy: request.executionPolicy }),
           ...(request.parentTeamRole
             ? {
                 team: {

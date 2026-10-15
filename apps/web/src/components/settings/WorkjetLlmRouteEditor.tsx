@@ -3,6 +3,7 @@ import {
   WorkjetLlmRouteId,
   type WorkjetGatewayAccountSummary,
   type WorkjetLlmRoute,
+  type WorkjetNativeAccountReference,
 } from "@workjet/contracts";
 import { useMemo, useState } from "react";
 
@@ -16,6 +17,7 @@ export interface WorkjetLlmRouteDraft {
   readonly id: string;
   readonly label: string;
   readonly gatewayAccountId: string;
+  readonly nativeAccountReference?: WorkjetNativeAccountReference;
 }
 
 export function createWorkjetLlmRouteDraft(input: {
@@ -26,19 +28,30 @@ export function createWorkjetLlmRouteDraft(input: {
   return {
     id: input.route?.id ?? input.id ?? randomUUID(),
     label: input.route?.label ?? "",
-    gatewayAccountId: input.route?.gatewayAccountId ?? input.accounts[0]?.id ?? "",
+    gatewayAccountId: input.route
+      ? (input.route.gatewayAccountId ?? "")
+      : (input.accounts[0]?.id ?? ""),
+    ...(input.route?.nativeAccountReference === undefined
+      ? {}
+      : { nativeAccountReference: input.route.nativeAccountReference }),
   };
 }
 
 export function saveWorkjetLlmRouteDraft(draft: WorkjetLlmRouteDraft): WorkjetLlmRoute {
   const label = draft.label.trim();
-  if (!label) throw new Error("Enter an LLM route label.");
-  if (!draft.gatewayAccountId) throw new Error("Choose a provider-gateway account.");
-  return {
-    id: WorkjetLlmRouteId.make(draft.id),
-    label,
-    gatewayAccountId: WorkjetGatewayAccountId.make(draft.gatewayAccountId),
-  };
+  if (!label) throw new Error("Routenname eingeben.");
+  const base = { id: WorkjetLlmRouteId.make(draft.id), label };
+  if (draft.gatewayAccountId)
+    return {
+      ...base,
+      gatewayAccountId: WorkjetGatewayAccountId.make(draft.gatewayAccountId),
+      ...(draft.nativeAccountReference === undefined
+        ? {}
+        : { nativeAccountReference: draft.nativeAccountReference }),
+    };
+  if (draft.nativeAccountReference !== undefined)
+    return { ...base, nativeAccountReference: draft.nativeAccountReference };
+  throw new Error("Gateway-Konto wählen.");
 }
 
 export function WorkjetLlmRouteEditor({
@@ -64,19 +77,19 @@ export function WorkjetLlmRouteEditor({
     <form
       data-settings-inline-editor=""
       className="space-y-4 rounded-xl border border-border/60 bg-muted/15 p-3 sm:p-4"
-      aria-label={route ? `Edit LLM route ${route.label}` : "Add LLM route"}
+      aria-label={route ? `Route ${route.label} bearbeiten` : "Route hinzufügen"}
       onSubmit={(event) => {
         event.preventDefault();
         try {
           onSave(saveWorkjetLlmRouteDraft(draft));
         } catch (cause) {
-          setError(cause instanceof Error ? cause.message : "The LLM route could not be saved.");
+          setError(cause instanceof Error ? cause.message : "Route nicht gespeichert.");
         }
       }}
     >
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="workjet-route-label">Route label</Label>
+          <Label htmlFor="workjet-route-label">Name</Label>
           <Input
             id="workjet-route-label"
             nativeInput
@@ -85,29 +98,28 @@ export function WorkjetLlmRouteEditor({
               setDraft((current) => ({ ...current, label: event.target.value }));
               setError(null);
             }}
-            placeholder="Codex work account"
+            placeholder="Codex Arbeit"
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="workjet-route-provider">Provider-gateway account</Label>
+          <Label htmlFor="workjet-route-provider">Gateway-Konto</Label>
           <Select
             value={draft.gatewayAccountId || null}
             onValueChange={(value) => {
-              setDraft((current) => ({ ...current, gatewayAccountId: value ?? "" }));
+              setDraft((current) =>
+                current.gatewayAccountId === (value ?? "")
+                  ? current
+                  : { id: current.id, label: current.label, gatewayAccountId: value ?? "" },
+              );
               setError(null);
             }}
           >
-            <SelectTrigger
-              id="workjet-route-provider"
-              aria-label="LLM route provider-gateway account"
-            >
+            <SelectTrigger id="workjet-route-provider" aria-label="Gateway-Konto der Route">
               <SelectValue>
                 {/* Never the raw account id: when the referenced account left
                     the catalog, say so instead of printing an opaque hash. */}
                 {selected?.label ??
-                  (draft.gatewayAccountId
-                    ? "Account missing from catalog"
-                    : "Choose provider-gateway account")}
+                  (draft.gatewayAccountId ? "Konto fehlt im Katalog" : "Gateway-Konto wählen")}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
@@ -120,14 +132,9 @@ export function WorkjetLlmRouteEditor({
           </Select>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Routes store only a reference to an existing provider-gateway account. Models stay on
-        workers, and provider credentials stay protected by the provider-gateway account authority.
-      </p>
       {entries.length === 0 ? (
         <p role="status" className="text-xs text-muted-foreground">
-          No Workjet provider-gateway accounts are available on this server. The Code provider list
-          contains harness runtimes and is intentionally not used here.
+          Keine Gateway-Konten
         </p>
       ) : null}
       {error ? (
@@ -137,10 +144,14 @@ export function WorkjetLlmRouteEditor({
       ) : null}
       <div className="flex justify-end gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-          Cancel
+          Abbrechen
         </Button>
-        <Button type="submit" size="sm" disabled={entries.length === 0}>
-          Save route
+        <Button
+          type="submit"
+          size="sm"
+          disabled={entries.length === 0 && draft.nativeAccountReference === undefined}
+        >
+          Speichern
         </Button>
       </div>
     </form>

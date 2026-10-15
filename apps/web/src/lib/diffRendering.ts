@@ -132,13 +132,13 @@ export function getRenderablePatch(
     return {
       kind: "raw",
       text: normalizedPatch,
-      reason: "Unsupported diff format. Showing raw patch.",
+      reason: "Unbekanntes Diff-Format, Rohansicht.",
     };
   } catch {
     return {
       kind: "raw",
       text: normalizedPatch,
-      reason: "Failed to parse patch. Showing raw patch.",
+      reason: "Patch nicht lesbar, Rohansicht.",
     };
   }
 }

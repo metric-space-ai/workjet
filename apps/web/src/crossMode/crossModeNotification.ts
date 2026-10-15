@@ -141,9 +141,9 @@ export function decodeCrossModeNotificationEvent(
 }
 
 const OUTCOME_LABELS: Record<CrossModeResultOutcome, string> = {
-  submitted: "submitted a result",
-  accepted: "accepted the result",
-  rejected: "rejected the result",
+  submitted: "hat ein Ergebnis eingereicht",
+  accepted: "hat das Ergebnis angenommen",
+  rejected: "hat das Ergebnis abgelehnt",
 };
 
 /**
@@ -167,8 +167,8 @@ export function toCrossModeNotification(event: CrossModeNotificationEvent): Cros
         notificationId: `link-created.${event.sequence}`,
         kind: "link-created",
         level: "info",
-        title: `Cross-mode link created in ${where}`,
-        detail: `Link ${event.linkId} points at ${describeCrossModeTarget(target)}.`,
+        title: `Verknüpfung in ${where} erstellt`,
+        detail: `Link ${event.linkId} · ${describeCrossModeTarget(target)}`,
         linkId: event.linkId,
       };
     case "approval-pending":
@@ -177,8 +177,8 @@ export function toCrossModeNotification(event: CrossModeNotificationEvent): Cros
         notificationId: `approval-pending.${event.sequence}`,
         kind: "approval-pending",
         level: "warning",
-        title: `${where} is waiting for approval`,
-        detail: `Approval ${event.approvalId} is pending at ${describeCrossModeTarget(target)}.`,
+        title: `${where} wartet auf Freigabe`,
+        detail: `Freigabe ${event.approvalId} · ${describeCrossModeTarget(target)}`,
         approvalId: event.approvalId,
         ...(event.linkId === undefined ? {} : { linkId: event.linkId }),
       };
@@ -189,7 +189,7 @@ export function toCrossModeNotification(event: CrossModeNotificationEvent): Cros
         kind: "result-submitted",
         level: "info",
         title: `${where} ${OUTCOME_LABELS[event.outcome]}`,
-        detail: `Link ${event.linkId} ${OUTCOME_LABELS[event.outcome]} at ${describeCrossModeTarget(target)}.`,
+        detail: `Link ${event.linkId} · ${describeCrossModeTarget(target)}`,
         linkId: event.linkId,
       };
   }
@@ -243,9 +243,9 @@ export function resolveCrossModePendingApprovalView(input: {
   /** Where a click should go. Required to render the pending state. */
   readonly target: CrossModeTarget | null;
 }): CrossModePendingApprovalView {
-  if (!input.settled) return { kind: "loading", label: "Checking for pending approvals…" };
+  if (!input.settled) return { kind: "loading", label: "Freigaben werden geladen …" };
   if (input.approvals.total === 0 || input.target === null) {
-    return { kind: "none", label: "No approvals are waiting." };
+    return { kind: "none", label: "Keine offenen Freigaben" };
   }
   const count = input.approvals.total;
   return {
@@ -254,7 +254,7 @@ export function resolveCrossModePendingApprovalView(input: {
     target: input.target,
     label:
       count === 1
-        ? `1 approval is waiting in ${crossModeModeLabel(input.target.mode)}`
-        : `${count} approvals are waiting in ${crossModeModeLabel(input.target.mode)}`,
+        ? `1 offene Freigabe in ${crossModeModeLabel(input.target.mode)}`
+        : `${count} offene Freigaben in ${crossModeModeLabel(input.target.mode)}`,
   };
 }

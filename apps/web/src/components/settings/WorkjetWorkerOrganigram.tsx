@@ -17,14 +17,34 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 
 const NODE_WIDTH = 192;
 const NODE_HEIGHT = 76;
 const CANVAS_HEIGHT = 520;
+const EDITOR_WIDTH = 440;
+const EDITOR_GAP = 14;
+
+/**
+ * Where the in-place editor opens: directly below the clicked node (edit or
+ * "Unter-Luma"), or at the top left of the canvas for a new top-level Luma.
+ */
+export function organigramEditorPosition(
+  anchor: { readonly x: number; readonly y: number } | null,
+  canvasWidth: number,
+): { readonly left: number; readonly top: number } {
+  if (anchor === null) return { left: 8, top: 8 };
+  const maxLeft = Math.max(8, canvasWidth - EDITOR_WIDTH - 8);
+  return {
+    left: Math.min(Math.max(8, anchor.x), maxLeft),
+    top: anchor.y + NODE_HEIGHT + EDITOR_GAP,
+  };
+}
 
 type Position = {
   readonly workerId: WorkjetWorkerProfileId;
@@ -110,6 +130,7 @@ export function WorkjetWorkerOrganigram({
   onAddWorker,
   onEditWorker,
   onDeleteWorker,
+  editor,
 }: {
   readonly workers: ReadonlyArray<WorkjetWorkerProfile>;
   readonly graph: WorkjetWorkerGraph;
@@ -117,12 +138,22 @@ export function WorkjetWorkerOrganigram({
   readonly onAddWorker: (parentId: WorkjetWorkerProfileId | null) => void;
   readonly onEditWorker: (workerId: WorkjetWorkerProfileId) => void;
   readonly onDeleteWorker: (workerId: WorkjetWorkerProfileId) => void;
+  /** In-place editor, rendered at the anchor node inside the canvas. */
+  readonly editor?: {
+    readonly open: boolean;
+    readonly anchorWorkerId: WorkjetWorkerProfileId | null;
+    readonly label: string;
+    readonly content: ReactNode;
+    readonly onClose: () => void;
+  };
 }) {
   const cleanGraph = useMemo(() => sanitizeWorkjetWorkerGraph(graph, workers), [graph, workers]);
   const [positions, setPositions] = useState(cleanGraph.positions);
   const [selectedWorkerId, setSelectedWorkerId] = useState<WorkjetWorkerProfileId | null>(null);
   const [selectedEdgeIndex, setSelectedEdgeIndex] = useState<number | null>(null);
   const [connectionSource, setConnectionSource] = useState<WorkjetWorkerProfileId | null>(null);
+  // Inline-Bestätigung statt sofortigem Löschen (keine Popups).
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const positionsRef = useRef(cleanGraph.positions);
   const drag = useRef<{
     readonly workerId: WorkjetWorkerProfileId;
@@ -130,6 +161,27 @@ export function WorkjetWorkerOrganigram({
     readonly dy: number;
   } | null>(null);
   const canvas = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const editorOpen = editor?.open ?? false;
+  const editorAnchorId = editor?.anchorWorkerId ?? null;
+
+  // Keep the opened editor visible inside the canvas without moving the page.
+  useEffect(() => {
+    if (!editorOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      const panel = editorRef.current;
+      const box = canvas.current;
+      if (!panel || !box) return;
+      const top = panel.offsetTop - 8;
+      if (top < box.scrollTop || top > box.scrollTop + box.clientHeight - 120)
+        box.scrollTo({ top, behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [editorOpen, editorAnchorId]);
+
+  useEffect(() => {
+    setConfirmingDelete(false);
+  }, [selectedWorkerId]);
 
   useEffect(() => {
     setPositions(cleanGraph.positions);
@@ -219,7 +271,7 @@ export function WorkjetWorkerOrganigram({
         <Button
           type="button"
           size="sm"
-          variant="ghost"
+          variant="outline"
           onClick={() => {
             const next = autoLayoutWorkjetWorkerGraph(cleanGraph, workers);
             setPositions(next.positions);
@@ -227,48 +279,70 @@ export function WorkjetWorkerOrganigram({
           }}
         >
           <LayoutGridIcon className="size-3.5" />
-          Arrange
+          Anordnen
         </Button>
         {selectedWorkerId === null ? null : (
           <>
             <Button
               type="button"
               size="sm"
-              variant="ghost"
+              variant="outline"
               onClick={() => onEditWorker(selectedWorkerId)}
             >
               <PencilIcon className="size-3.5" />
-              Edit
+              Bearbeiten
             </Button>
             <Button
               type="button"
               size="sm"
-              variant="ghost"
+              variant="outline"
               onClick={() => onAddWorker(selectedWorkerId)}
             >
               <GitBranchPlusIcon className="size-3.5" />
-              Child
+              Unter-Luma
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => {
-                onDeleteWorker(selectedWorkerId);
-                setSelectedWorkerId(null);
-              }}
-            >
-              <Trash2Icon className="size-3.5" />
-              Delete
-            </Button>
+            {confirmingDelete ? (
+              <div className="flex items-center gap-1.5" role="group">
+                <span className="text-xs text-muted-foreground">Luma löschen?</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => {
+                    onDeleteWorker(selectedWorkerId);
+                    setSelectedWorkerId(null);
+                    setConfirmingDelete(false);
+                  }}
+                >
+                  Löschen
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmingDelete(false)}
+                >
+                  Abbrechen
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <Trash2Icon className="size-3.5" />
+                Löschen
+              </Button>
+            )}
           </>
         )}
         {selectedEdgeIndex === null ? null : (
           <Button
             type="button"
             size="sm"
-            variant="ghost"
+            variant="outline"
             onClick={() => {
               onChange({
                 ...cleanGraph,
@@ -281,12 +355,12 @@ export function WorkjetWorkerOrganigram({
             }}
           >
             <UnlinkIcon className="size-3.5" />
-            Remove connection
+            Verbindung lösen
           </Button>
         )}
         {connectionSource === null ? null : (
           <span className="ml-auto text-[11px] text-amber-600 dark:text-amber-300">
-            Choose target · Esc cancels
+            Ziel wählen · Esc bricht ab
           </span>
         )}
       </div>
@@ -316,7 +390,7 @@ export function WorkjetWorkerOrganigram({
           }
         }}
         tabIndex={0}
-        aria-label="Luma dependency organigram"
+        aria-label="Luma-Organigramm"
       >
         <svg className="pointer-events-none absolute inset-0 size-full" aria-hidden="true">
           {cleanGraph.dependencies.map((dependency, index) => {
@@ -364,7 +438,7 @@ export function WorkjetWorkerOrganigram({
             >
               <button
                 type="button"
-                aria-label={`Connect dependency to ${worker.name}`}
+                aria-label={`Abhängigkeit zu ${worker.name}`}
                 className="absolute left-[-5px] top-1/2 size-2.5 -translate-y-1/2 rounded-full border-2 border-card bg-muted-foreground hover:bg-primary"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -373,11 +447,11 @@ export function WorkjetWorkerOrganigram({
               />
               <p className="truncate text-xs font-medium">{worker.name}</p>
               <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-muted-foreground">
-                {worker.instructions ?? "No task set."}
+                {worker.instructions ?? "—"}
               </p>
               <button
                 type="button"
-                aria-label={`Start dependency from ${worker.name}`}
+                aria-label={`Abhängigkeit von ${worker.name} beginnen`}
                 className="absolute right-[-5px] top-1/2 size-2.5 -translate-y-1/2 rounded-full border-2 border-card bg-muted-foreground hover:bg-primary"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -388,7 +462,7 @@ export function WorkjetWorkerOrganigram({
               />
               <button
                 type="button"
-                aria-label={`Add child Luma to ${worker.name}`}
+                aria-label={`Unter-Luma für ${worker.name}`}
                 className="absolute bottom-[-11px] right-2 grid size-[22px] place-items-center rounded-full border border-border bg-card text-muted-foreground hover:border-primary/60 hover:bg-primary hover:text-primary-foreground"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -400,6 +474,36 @@ export function WorkjetWorkerOrganigram({
             </article>
           );
         })}
+
+        {editor === undefined ? null : (
+          <div
+            ref={editorRef}
+            className="absolute z-10"
+            data-organigram-editor="true"
+            style={{
+              ...organigramEditorPosition(
+                editorAnchorId === null ? null : positionFor(editorAnchorId),
+                canvas.current?.clientWidth ?? EDITOR_WIDTH + 16,
+              ),
+              width: EDITOR_WIDTH,
+              pointerEvents: editor.open ? undefined : "none",
+            }}
+            // Typing in the editor must not reach the canvas shortcuts (Backspace).
+            onKeyDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <InlineExpand
+              className="rounded-lg border border-primary/40 bg-card pb-3 shadow-lg"
+              label={editor.label}
+              open={editor.open}
+              onOpenChange={(open) => {
+                if (!open) editor.onClose();
+              }}
+            >
+              {editor.content}
+            </InlineExpand>
+          </div>
+        )}
       </div>
     </section>
   );

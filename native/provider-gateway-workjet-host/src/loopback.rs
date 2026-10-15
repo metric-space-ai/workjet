@@ -125,7 +125,7 @@ async fn serve_one(
             stream,
             400,
             "Sign-in failed",
-            "The request could not be read. Start the sign-in again from the CTOX Desktop App.",
+            "The request could not be read. Start the sign-in again in Workjet.",
         )
         .await;
         return false;
@@ -164,7 +164,7 @@ async fn serve_one(
             stream,
             400,
             "Sign-in failed",
-            "This link belongs to a different sign-in session. Start the sign-in again from the CTOX Desktop App.",
+            "This link belongs to a different sign-in session. Start the sign-in again in Workjet.",
         )
         .await;
         return false;
@@ -174,7 +174,7 @@ async fn serve_one(
             stream,
             400,
             "Sign-in failed",
-            "The provider returned no authorization result. Start the sign-in again from the CTOX Desktop App.",
+            "The provider returned no authorization result. Start the sign-in again in Workjet.",
         )
         .await;
         return false;
@@ -187,7 +187,7 @@ async fn serve_one(
             stream,
             200,
             "Sign-in received",
-            "You can close this window and return to the CTOX Desktop App.",
+            "You can close this window and return to Workjet.",
         )
         .await;
     } else {
@@ -195,7 +195,7 @@ async fn serve_one(
             stream,
             400,
             "Sign-in expired",
-            "This sign-in is no longer active. Start it again from the CTOX Desktop App.",
+            "This sign-in is no longer active. Start it again in Workjet.",
         )
         .await;
     }
@@ -227,7 +227,7 @@ async fn read_request_target(stream: &mut TcpStream) -> Option<String> {
 }
 
 /// Renders the one page a person actually sees in this flow: the browser tab
-/// the provider redirects to. It is the CTOX Desktop App's face for a moment,
+/// the provider redirects to. It is Workjet's face for a moment,
 /// so it looks like the app — a centered card, the app's name, a clear
 /// verdict — instead of an unstyled paragraph. Title and message are
 /// compile-time strings from this module, never provider-controlled text, so
@@ -247,7 +247,7 @@ async fn respond(stream: &mut TcpStream, status: u16, title: &str, message: &str
         r##"<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CTOX Desktop App</title>
+<title>Workjet</title>
 <style>
   :root {{ color-scheme: light dark; }}
   * {{ box-sizing: border-box; }}
@@ -289,7 +289,7 @@ async fn respond(stream: &mut TcpStream, status: u16, title: &str, message: &str
   <div class="badge {badge_class}">{badge_glyph}</div>
   <h1>{title}</h1>
   <p>{message}</p>
-  <div class="app">CTOX Desktop App</div>
+  <div class="app">Workjet</div>
 </main>
 </body></html>
 "##

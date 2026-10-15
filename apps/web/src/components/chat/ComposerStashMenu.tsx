@@ -96,12 +96,10 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
           <CommandGroup>
             <CommandGroupLabel className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-secondary-label">
               <BookmarkIcon className="size-3" aria-hidden="true" />
-              Stashed prompts
+              Zwischenablage
             </CommandGroupLabel>
             {entries.length === 0 ? (
-              <p className="px-3 pb-3 pt-1 text-secondary-label text-xs">
-                Nothing stashed yet. Press ⌘S with a prompt in the composer to stash it.
-              </p>
+              <p className="px-3 pb-3 pt-1 text-secondary-label text-xs">Noch nichts gespeichert</p>
             ) : (
               entries.map((entry) => (
                 <CommandItem
@@ -141,13 +139,12 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
                   </span>
                   {entry.pendingImageCount ? (
                     <span className="shrink-0 text-[10px] text-secondary-label">
-                      saving {entry.pendingImageCount} image
-                      {entry.pendingImageCount === 1 ? "" : "s"}…
+                      {entry.pendingImageCount === 1 ? "Bild wird" : "Bilder werden"} gespeichert …
                     </span>
                   ) : missingImageCount(entry) > 0 ? (
                     <span className="shrink-0 text-[10px] text-warning-foreground">
-                      {missingImageCount(entry)} image
-                      {missingImageCount(entry) === 1 ? "" : "s"} dropped
+                      {missingImageCount(entry)}{" "}
+                      {missingImageCount(entry) === 1 ? "Bild" : "Bilder"} verworfen
                     </span>
                   ) : null}
                   <span className="shrink-0 text-secondary-label text-xs">
@@ -157,7 +154,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
                     variant="ghost"
                     size="icon-xs"
                     className="shrink-0 opacity-0 transition-opacity group-hover/stash:opacity-100"
-                    aria-label="Delete stashed prompt"
+                    aria-label="Eintrag löschen"
                     onClick={(event) => {
                       event.stopPropagation();
                       onDelete(entry);

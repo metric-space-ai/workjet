@@ -29,6 +29,24 @@ describe("project overview wire contract", () => {
       }).slots,
     ).toHaveLength(3);
   });
+  it("accepts an optional explicit website clear marker while legacy records stay valid", () => {
+    const cleared = { websiteUrl: null, websiteUrlCleared: true, slots: [null, null, null] };
+    expect(decode(cleared)).toEqual(cleared);
+    expect(decode({ websiteUrl: null, slots: [null, null, null] })).not.toHaveProperty(
+      "websiteUrlCleared",
+    );
+    expect(
+      decode({
+        websiteUrl: "https://example.org",
+        websiteUrlCleared: false,
+        slots: [null, null, null],
+      }).websiteUrlCleared,
+    ).toBe(false);
+    for (const websiteUrlCleared of [null, "true", 1])
+      expect(() =>
+        decode({ websiteUrl: null, websiteUrlCleared, slots: [null, null, null] }),
+      ).toThrow();
+  });
   it("persists a repository independently of the website and accepts legacy records", () => {
     const legacy = { websiteUrl: null, slots: [null, null, null] };
     expect(decode(legacy)).toEqual(legacy);

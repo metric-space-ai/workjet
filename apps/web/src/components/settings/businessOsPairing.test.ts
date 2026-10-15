@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   encodeWorkjetBusinessOsPairingLink,
   encodeWorkjetDevicePairingLink,
+  expandWorkjetPairingInvite,
   formatMobileInviteExpiry,
 } from "./businessOsPairing";
 
@@ -101,7 +102,28 @@ describe("Business OS mobile pairing", () => {
   });
 
   it("formats a valid expiry and fails closed to an unknown label", () => {
-    expect(formatMobileInviteExpiry("invalid", "en-US")).toBe("Unknown");
+    expect(formatMobileInviteExpiry("invalid", "de-DE")).toBe("—");
     expect(formatMobileInviteExpiry("2026-08-25T17:05:00Z", "en-US")).toMatch(/:05:00/);
+  });
+
+  it("expands a compact workjet://pair link into the invite object for the desktop import", () => {
+    const link = encodeWorkjetBusinessOsPairingLink(invite);
+    const expanded = JSON.parse(expandWorkjetPairingInvite(link)) as Record<string, unknown>;
+    expect(expanded).toEqual({ ...invite, secret_value_in_payload: true });
+    expect(
+      JSON.parse(expandWorkjetPairingInvite(`  ${link.replace("workjet:", "workjet-dev:")} `)),
+    ).toEqual(expanded);
+  });
+
+  it("leaves everything else untouched so the importer decides", () => {
+    for (const raw of [
+      "ctox-business-os-desktop://pair?payload=abc",
+      "workjet://pair?payload=***",
+      "workjet://app/settings",
+      '{"type":"ctox-business-os-invite"}',
+      "",
+    ]) {
+      expect(expandWorkjetPairingInvite(raw)).toBe(raw);
+    }
   });
 });

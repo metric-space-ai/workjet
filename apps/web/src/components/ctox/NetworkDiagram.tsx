@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  LaptopIcon,
   MaximizeIcon,
   MinusIcon,
+  MonitorIcon,
   PlusIcon,
   ServerIcon,
   SmartphoneIcon,
@@ -47,6 +47,8 @@ export function NetworkDiagram({
   const count = (satellites?.length ?? 0) + 1;
   const width = Math.max(720, count * 224 + 64);
   const scale = zoom ?? Math.min(1, Math.max(0.45, (viewportWidth - 40) / width));
+  // Die Zoom-Leiste erscheint nur, wenn die Karte nicht in den Abschnitt passt.
+  const showControls = zoom !== null || width > viewportWidth - 40;
   const center = width / 2;
   const start = center - ((count - 1) * 224) / 2;
   useEffect(() => {
@@ -60,12 +62,7 @@ export function NetworkDiagram({
   }, []);
   return (
     <div className="network-diagram" aria-label={`Netzwerkdiagramm: ${name}`}>
-      <div
-        className="network-viewport"
-        ref={viewport}
-        tabIndex={0}
-        aria-label="Netzwerkkarte, bei Vergrößerung scrollbar"
-      >
+      <div className="network-viewport" ref={viewport} tabIndex={0} aria-label="Netzwerkkarte">
         <div
           className="network-stage"
           style={{ width: Math.max(viewportWidth, width * scale), height: 570 * scale }}
@@ -110,13 +107,10 @@ export function NetworkDiagram({
                 <SmartphoneIcon size={21} />
               </span>
               <span className="network-node-copy">
-                <strong>App-Clients</strong>
+                <small className="network-node-role">GERÄTE</small>
+                <strong>Rechner · Mobil</strong>
                 <small>
-                  {empty
-                    ? "Desktop · Mobil"
-                    : registeredClients === null
-                      ? "Präsenz unbekannt"
-                      : `${registeredClients} registriert`}
+                  {empty || registeredClients === null ? "—" : `${registeredClients} gekoppelt`}
                 </small>
               </span>
               <i className="network-port-top" />
@@ -135,21 +129,19 @@ export function NetworkDiagram({
                 {empty ? <PlusIcon size={25} /> : <ServerIcon size={25} />}
               </span>
               <span className="network-node-copy">
-                <small className="network-node-role">
-                  {empty ? "DEIN ERSTES NETZWERK" : "CTOX · ZENTRALRECHNER"}
-                </small>
+                <small className="network-node-role">{empty ? "ERSTES NETZWERK" : "INSTANZ"}</small>
                 <strong>{empty ? "Instanz hinzufügen" : host}</strong>
-                <small>{empty ? "Erstellen oder verbinden" : "Sync & Ops"}</small>
+                <small>{empty ? "Erstellen oder verbinden" : "Abgleich · Ops"}</small>
               </span>
               {!empty && (
                 <span
                   className={`network-status ${ready ? "is-ready" : ""}`}
-                  title={ready ? "Datenverbindung bestätigt" : "Datenverbindung nicht bestätigt"}
+                  title={ready ? "Verbunden" : "Getrennt"}
                 />
               )}
             </button>
             <span className="network-edge-label" style={{ left: center + 14, top: 353 }}>
-              Sync
+              Abgleich
             </span>
             {(satellites ?? []).map((computer, index) => (
               <button
@@ -161,17 +153,15 @@ export function NetworkDiagram({
                 onClick={() => onInspect(computer.id)}
               >
                 <span className="network-node-icon">
-                  <LaptopIcon size={22} />
+                  <MonitorIcon size={22} />
                 </span>
                 <span className="network-node-copy">
                   <strong>{computer.name}</strong>
-                  <small>Satellit</small>
+                  <small>Rechner</small>
                 </span>
                 <span
                   className={`network-status ${computer.connected ? "is-ready" : ""}`}
-                  title={
-                    computer.connected ? "Mit dieser App verbunden" : "Verbindung nicht bestätigt"
-                  }
+                  title={computer.connected ? "Verbunden" : "Getrennt"}
                 />
               </button>
             ))}
@@ -181,41 +171,43 @@ export function NetworkDiagram({
               style={{ left: start + (count - 1) * 224 - 100, top: 426 }}
               disabled={empty || !canAdd}
               onClick={onAdd}
-              aria-label="Computer hinzufügen"
+              aria-label="Rechner hinzufügen"
             >
               <span className="network-node-icon">
                 <PlusIcon size={22} />
               </span>
               <span className="network-node-copy">
-                <strong>Computer hinzufügen</strong>
-                <small>Local · SSH · Tailscale</small>
+                <strong>Rechner hinzufügen</strong>
+                <small>Lokal · SSH · Tailscale</small>
               </span>
             </button>
           </div>
         </div>
       </div>
-      <div className="network-map-controls" aria-label="Kartenansicht">
-        <button
-          type="button"
-          aria-label="Verkleinern"
-          disabled={scale <= 0.45}
-          onClick={() => setZoom(Math.max(0.45, scale - 0.15))}
-        >
-          <MinusIcon size={15} />
-        </button>
-        <output aria-label="Zoom">{Math.round(scale * 100)}%</output>
-        <button
-          type="button"
-          aria-label="Vergrößern"
-          disabled={scale >= 1.6}
-          onClick={() => setZoom(Math.min(1.6, scale + 0.15))}
-        >
-          <PlusIcon size={15} />
-        </button>
-        <button type="button" aria-label="Netzwerk einpassen" onClick={() => setZoom(null)}>
-          <MaximizeIcon size={15} />
-        </button>
-      </div>
+      {showControls ? (
+        <div className="network-map-controls" aria-label="Kartenansicht">
+          <button
+            type="button"
+            aria-label="Verkleinern"
+            disabled={scale <= 0.45}
+            onClick={() => setZoom(Math.max(0.45, scale - 0.15))}
+          >
+            <MinusIcon size={15} />
+          </button>
+          <output aria-label="Zoom">{Math.round(scale * 100)}%</output>
+          <button
+            type="button"
+            aria-label="Vergrößern"
+            disabled={scale >= 1.6}
+            onClick={() => setZoom(Math.min(1.6, scale + 0.15))}
+          >
+            <PlusIcon size={15} />
+          </button>
+          <button type="button" aria-label="Netzwerk einpassen" onClick={() => setZoom(null)}>
+            <MaximizeIcon size={15} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

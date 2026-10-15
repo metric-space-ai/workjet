@@ -11,6 +11,9 @@ import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeInge
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
+import { WorkerSupervisorDecisionReactor } from "./WorkerSupervisorDecisionReactor.ts";
+import { PersistentGoalReactor } from "./PersistentGoalReactor.ts";
+import { SupervisorTickReactor } from "./SupervisorTickReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
 
 describe("OrchestrationReactor", () => {
@@ -28,6 +31,32 @@ describe("OrchestrationReactor", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
+        Layer.provideMerge(
+          Layer.succeed(SupervisorTickReactor, {
+            start: () => {
+              started.push("supervisor-tick-reactor");
+              return Effect.void;
+            },
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(WorkerSupervisorDecisionReactor, {
+            start: () => {
+              started.push("worker-supervisor-decisions");
+              return Effect.void;
+            },
+            drain: Effect.void,
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(PersistentGoalReactor, {
+            start: () => {
+              started.push("persistent-goal-reactor");
+              return Effect.void;
+            },
+            drain: Effect.void,
+          }),
+        ),
         Layer.provideMerge(
           Layer.succeed(ProviderRuntimeIngestionService, {
             start: () => {
@@ -87,6 +116,9 @@ describe("OrchestrationReactor", () => {
       "checkpoint-reactor",
       "thread-deletion-reactor",
       "agent-awareness-relay",
+      "persistent-goal-reactor",
+      "worker-supervisor-decisions",
+      "supervisor-tick-reactor",
     ]);
 
     await Effect.runPromise(Scope.close(scope, Exit.void));

@@ -111,35 +111,24 @@ export function WorkjetProductModeSwitch({
   return (
     <div
       className={cn(
-        "product-mode-switch no-drag relative z-10 flex h-8 min-w-0 shrink-0 items-center rounded-md outline-hidden",
+        "product-mode-switch no-drag relative z-10 flex h-7 min-w-0 shrink-0 items-center rounded-md outline-hidden",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       data-desktop-layout="titlebar"
       data-product-mode-switch=""
     >
       <div
-        aria-label="Workjet product mode"
+        aria-label="Workjet-Modus"
         className={cn(
-          "flex h-8 min-w-0 flex-1 items-center whitespace-nowrap rounded-md border p-0.5",
+          "flex h-7 min-w-0 flex-1 items-center whitespace-nowrap rounded-md border p-0.5",
           onBackdrop ? "border-white/20 bg-black/10" : "border-sidebar-border bg-sidebar-accent/35",
         )}
         role="radiogroup"
       >
-        {WORKJET_PRODUCT_MODES.map((productMode, index) => {
+        {WORKJET_PRODUCT_MODES.map((productMode) => {
           const isSelected = mode === productMode.value;
           return (
             <div className="contents" key={productMode.value}>
-              {index > 0 ? (
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "px-0.5 text-[10px]",
-                    onBackdrop ? "text-white/35" : "text-sidebar-muted-foreground/45",
-                  )}
-                >
-                  |
-                </span>
-              ) : null}
               <button
                 aria-checked={isSelected}
                 className={cn(
@@ -172,7 +161,7 @@ export function WorkjetProductModeSwitch({
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <Link
-      aria-label="Go to threads"
+      aria-label="Zu den Unterhaltungen"
       className={cn(
         "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2",
         onBackdrop ? "text-white" : "text-foreground",
@@ -222,7 +211,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={handleSettingsClick}>
             <SettingsIcon />
-            <span>Settings</span>
+            <span>Einstellungen</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

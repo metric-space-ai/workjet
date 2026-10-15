@@ -1,13 +1,9 @@
-import {
-  bootstrapRemoteBearerSession,
-  resolveRemoteWebSocketConnectionUrl,
-} from "@workjet/client-runtime/authorization";
+import { resolveRemoteWebSocketConnectionUrl } from "@workjet/client-runtime/authorization";
 import {
   type PreparedConnection,
   PrimaryConnectionTarget,
 } from "@workjet/client-runtime/connection";
-import { fetchRemoteEnvironmentDescriptor } from "@workjet/client-runtime/environment";
-import { ConnectionCatalogDocument } from "@workjet/client-runtime/platform";
+
 import { RpcSessionFactory } from "@workjet/client-runtime/rpc";
 import {
   WS_METHODS,
@@ -30,16 +26,19 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopConnectionCatalogStore from "../app/DesktopConnectionCatalogStore.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+import { DesktopLocalServiceSession } from "../backend/DesktopLocalServiceSession.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import { resolveCtoxBinary } from "./CtoxLocalDaemonLaunch.ts";
+import { makeDecisionHubEnvironmentResolver } from "./CtoxDecisionHubEnvironment.ts";
+import { ElectronWindow } from "../electron/ElectronWindow.ts";
+import { CONNECTION_CATALOG_WARNING_CHANNEL } from "../ipc/channels.ts";
 import {
   acquireWorkjetWorkerSourceGrant,
   revokeWorkjetWorkerSourceGrant,
   workerSourceGrantIdentity,
 } from "./CtoxWorkerSourceGrant.ts";
 
-const decodeCatalog = Schema.decodeUnknownEffect(Schema.fromJsonString(ConnectionCatalogDocument));
 const GrantResponse = Schema.Struct({
   ok: Schema.Literal(true),
   grant: Schema.Struct({
@@ -89,10 +88,12 @@ const make = Effect.gen(function* () {
   const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
   const catalogStore = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
+  const localServiceSession = yield* DesktopLocalServiceSession;
   const rpcFactory = yield* RpcSessionFactory;
   const httpClient = yield* HttpClient.HttpClient;
   const instanceRegistry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const windows = yield* ElectronWindow;
   const issuedGrants = yield* Ref.make<
     ReadonlyArray<{
       connectionId: WorkjetConnectionId;
@@ -102,56 +103,23 @@ const make = Effect.gen(function* () {
     }>
   >([]);
 
-  const resolveEnvironment = (environmentId: string) =>
-    Effect.gen(function* () {
-      const stored = yield* catalogStore.get;
-      if (Option.isSome(stored)) {
-        const catalog = yield* decodeCatalog(stored.value);
-        const target = catalog.targets.find(
-          (candidate) => candidate.environmentId === environmentId,
-        );
-        if (target?._tag === "BearerConnectionTarget") {
-          const profile = catalog.profiles.find(
-            (candidate) =>
-              candidate._tag === "BearerConnectionProfile" &&
-              candidate.connectionId === target.connectionId,
-          );
-          const credential = catalog.credentials.find(
-            (candidate) => candidate.connectionId === target.connectionId,
-          )?.credential;
-          if (
-            profile?._tag === "BearerConnectionProfile" &&
-            credential?._tag === "BearerConnectionCredential"
-          ) {
-            return {
-              httpBaseUrl: profile.httpBaseUrl,
-              wsBaseUrl: profile.wsBaseUrl,
-              bearerToken: credential.token,
-            };
-          }
-        }
-      }
-
+  const environmentResolver = yield* makeDecisionHubEnvironmentResolver({
+    readCatalog: catalogStore.get,
+    localConfigurations: Effect.gen(function* () {
+      const configs = [];
       for (const instance of yield* pool.list) {
         const config = yield* instance.currentConfig;
-        if (Option.isNone(config)) continue;
-        const descriptor = yield* fetchRemoteEnvironmentDescriptor({
-          httpBaseUrl: config.value.httpBaseUrl.href,
-        });
-        if (descriptor.environmentId !== environmentId) continue;
-        const session = yield* bootstrapRemoteBearerSession({
-          httpBaseUrl: config.value.httpBaseUrl.href,
-          credential: config.value.bootstrap.desktopBootstrapToken,
-          clientMetadata: { label: "Workjet Decision Hub", deviceType: "desktop" },
-        });
-        return {
-          httpBaseUrl: config.value.httpBaseUrl.href,
-          wsBaseUrl: config.value.httpBaseUrl.href.replace(/^http/, "ws"),
-          bearerToken: session.access_token,
-        };
+        if (Option.isSome(config)) configs.push(config.value);
       }
-      return yield* Effect.fail("environment_unavailable" as const);
-    }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
+      return configs;
+    }),
+    notifyCatalogError: windows.sendAll(CONNECTION_CATALOG_WARNING_CHANNEL),
+  });
+  const resolveEnvironment = (environmentId: string) =>
+    environmentResolver(environmentId).pipe(
+      Effect.provideService(HttpClient.HttpClient, httpClient),
+      Effect.provideService(DesktopLocalServiceSession, localServiceSession),
+    );
 
   const revokeGrant = (grant: {
     readonly tenantId: string;

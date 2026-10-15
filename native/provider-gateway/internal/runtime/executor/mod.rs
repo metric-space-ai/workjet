@@ -151,6 +151,7 @@ mod openai_responses_signature_test;
 mod websocket_lifecycle_bind_test;
 #[cfg(test)]
 mod websocket_session_target_test;
+mod xai_custom_tools;
 #[cfg(test)]
 mod xai_executor_test;
 #[cfg(test)]

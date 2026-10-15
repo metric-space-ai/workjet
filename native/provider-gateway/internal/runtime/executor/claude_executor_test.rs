@@ -18,6 +18,7 @@ use crate::internal::auth::claude::{
     RefreshHttpResponse, RefreshRequest, RefreshTransportFailure, SecretStoreError, SecretString,
     CLAUDE_DEVICE_IDS_METADATA_KEY,
 };
+use crate::internal::runtime::executor::helps;
 use crate::internal::runtime::executor::{
     AccountStateClock, ClaudeCloakPolicy, ClaudeMessagesRequest, ClaudeMessagesResponse,
     ClaudeMessagesStreamResponse, ClaudeMessagesStreamingTransport, ClaudeMessagesTransport,
@@ -444,6 +445,150 @@ fn adapter(
     ClaudeProviderExecutor::new(Arc::new(pool))
 }
 
+fn pool_with_disabled_fallback(
+    first: Arc<ClaudeSubscriptionMessagesExecutor>,
+    cooldowns: Arc<dyn CooldownStateStore>,
+) -> ClaudeSubscriptionAccountPool {
+    let conductor = Arc::new(CooldownConductor::new(cooldowns.clone()));
+    let fallback = account_executor(
+        "account-b",
+        Arc::new(MessagesOnlyTransport),
+        None,
+        conductor,
+    );
+    let candidates = ["account-a", "account-b"].map(|auth_id| AccountCandidate {
+        auth_id: auth_id.to_owned(),
+        provider: "claude".to_owned(),
+        priority: 0,
+        weight: 1,
+        websocket_enabled: false,
+        supported_models: vec!["claude-opus-5-5".to_owned()],
+        disabled: auth_id == "account-b",
+    });
+    let target = ClaudeUpstreamTarget::new("https", "api.anthropic.com").unwrap();
+    ClaudeSubscriptionAccountPool::with_clock(
+        Arc::new(AccountRouter::new(cooldowns)),
+        candidates.to_vec(),
+        HashMap::from([
+            ("account-a".to_owned(), first),
+            ("account-b".to_owned(), fallback),
+        ]),
+        Arc::new(FixedAccountClock),
+    )
+    .unwrap()
+    .with_targets(HashMap::from([
+        ("account-a".to_owned(), target.clone()),
+        ("account-b".to_owned(), target),
+    ]))
+    .unwrap()
+}
+
+#[tokio::test]
+async fn pool_preserves_buffered_upstream_rejection_when_fallback_is_disabled() {
+    for status in [429, 503] {
+        let cooldowns = Arc::new(MemoryCooldownStore::default());
+        let conductor = Arc::new(CooldownConductor::new(cooldowns.clone()));
+        let body = br#"{"error":{"type":"overloaded_error","message":"upstream failure"}}"#;
+        let transport = Arc::new(FixedMessagesTransport::new(status, body).with_headers(
+            Headers::from([("request-id".to_owned(), vec!["upstream-request".to_owned()])]),
+        ));
+        let first = account_executor("account-a", transport.clone(), None, conductor);
+        let pool = pool_with_disabled_fallback(first, cooldowns);
+        let outcome = pool
+            .execute_configured(
+                "claude-opus-5-5",
+                br#"{"model":"claude-opus-5-5","messages":[{"role":"user","content":"Hi"}]}"#
+                    .to_vec(),
+                false,
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome.outcome().response().status(), status);
+        assert_eq!(outcome.outcome().response().body(), body);
+        assert_eq!(outcome.attempted_auth_ids(), &["account-a".to_owned()]);
+        assert_eq!(transport.calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn pool_preserves_streaming_upstream_rejection_when_fallback_is_disabled() {
+    for status in [429, 503] {
+        let cooldowns = Arc::new(MemoryCooldownStore::default());
+        let conductor = Arc::new(CooldownConductor::new(cooldowns.clone()));
+        let body = br#"{"error":{"type":"overloaded_error","message":"upstream failure"}}"#;
+        let transport = Arc::new(FixedStreamingTransport {
+            status,
+            headers: Headers::new(),
+            error_body: body.to_vec(),
+            chunks: Vec::new(),
+            calls: AtomicUsize::new(0),
+        });
+        let first = account_executor(
+            "account-a",
+            Arc::new(MessagesOnlyTransport),
+            Some(transport.clone()),
+            conductor,
+        );
+        let pool = pool_with_disabled_fallback(first, cooldowns);
+        let outcome = pool.execute_stream_configured(
+            "claude-opus-5-5",
+            br#"{"model":"claude-opus-5-5","messages":[{"role":"user","content":"Hi"}],"stream":true}"#.to_vec(),
+        ).await.unwrap();
+        assert_eq!(outcome.outcome().response().status(), status);
+        assert_eq!(outcome.outcome().response().error_body(), body);
+        assert_eq!(outcome.attempted_auth_ids(), &["account-a".to_owned()]);
+        assert_eq!(transport.calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[derive(Default)]
+struct CooldownStoreFailingAfterSave {
+    failed: std::sync::atomic::AtomicBool,
+}
+
+impl CooldownStateStore for CooldownStoreFailingAfterSave {
+    fn load(&self) -> Result<Vec<CooldownStateRecord>, CooldownStoreError> {
+        if self.failed.load(Ordering::SeqCst) {
+            Err(CooldownStoreError::Read)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    fn save(&self, _records: &[CooldownStateRecord]) -> Result<(), CooldownStoreError> {
+        self.failed.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn pool_preserves_fail_closed_storage_errors_after_an_upstream_attempt() {
+    use crate::sdk::cliproxy::auth::AccountRoutingError;
+
+    let cooldowns = Arc::new(CooldownStoreFailingAfterSave::default());
+    let conductor = Arc::new(CooldownConductor::new(cooldowns.clone()));
+    let transport = Arc::new(FixedMessagesTransport::new(
+        429,
+        br#"{"error":{"type":"rate_limit_error"}}"#,
+    ));
+    let first = account_executor("account-a", transport.clone(), None, conductor);
+    let pool = pool_with_disabled_fallback(first, cooldowns);
+    let result = pool
+        .execute_configured(
+            "claude-opus-5-5",
+            br#"{"model":"claude-opus-5-5","messages":[{"role":"user","content":"Hi"}]}"#.to_vec(),
+            false,
+        )
+        .await;
+    assert!(matches!(
+        result,
+        Err(ClaudeAccountPoolError::Routing(AccountRoutingError::Store(
+            CooldownStoreError::Read
+        )))
+    ));
+    assert_eq!(transport.calls.load(Ordering::SeqCst), 1);
+}
+
 fn request(auth_id: &str, stream: bool) -> ExecutorRequest {
     ExecutorRequest {
         auth_id: auth_id.to_owned(),
@@ -508,6 +653,85 @@ async fn selected_upstream_failure_is_typed_and_never_fails_over() {
     assert_eq!(error.status(), Some(429));
     assert_eq!(transport_a.calls.load(Ordering::SeqCst), 1);
     assert_eq!(transport_b.calls.load(Ordering::SeqCst), 0);
+}
+
+struct ToolEchoStreamingTransport;
+
+impl ClaudeMessagesStreamingTransport for ToolEchoStreamingTransport {
+    fn execute_stream<'a>(
+        &'a self,
+        request: &'a ClaudeMessagesRequest,
+        _timeout: Duration,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<ClaudeMessagesStreamResponse, ClaudeMessagesTransportFailure>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            let body: serde_json::Value = serde_json::from_slice(request.body()).unwrap();
+            let alias = body["tools"][0]["name"].as_str().unwrap();
+            assert!(alias.starts_with("mcp__"));
+            let wire = format!(
+                "event: message_start\ndata: {{\"type\":\"message_start\",\"message\":{{\"id\":\"msg\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"usage\":{{\"input_tokens\":1,\"output_tokens\":0}}}}}}\n\nevent: content_block_start\ndata: {{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"{alias}\",\"input\":{{}}}}}}\n\nevent: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":0}}\n\nevent: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n"
+            );
+            let (sender, receiver) = mpsc::channel(8);
+            tokio::spawn(async move {
+                // Break JSON and SSE delimiters across transport chunks.
+                for chunk in wire.as_bytes().chunks(7) {
+                    if sender.send(Ok(chunk.to_vec())).await.is_err() {
+                        break;
+                    }
+                }
+            });
+            Ok(ClaudeMessagesStreamResponse::new(200, None, receiver))
+        })
+    }
+}
+
+#[tokio::test]
+async fn oauth_tool_stream_round_trips_twenty_successive_calls_per_harness_tool() {
+    let cooldowns = Arc::new(MemoryCooldownStore::default());
+    let conductor = Arc::new(CooldownConductor::new(cooldowns.clone()));
+    let executor = account_executor(
+        "account-a",
+        Arc::new(FixedMessagesTransport::new(200, b"unused")),
+        Some(Arc::new(ToolEchoStreamingTransport)),
+        conductor,
+    );
+    let adapter = adapter(vec![("account-a", executor)], cooldowns);
+    for tool in ["Bash", "Read", "exec_command"] {
+        let mut history = Vec::new();
+        for turn in 0..20 {
+            let mut input = request("account-a", true);
+            input.payload = serde_json::to_vec(&serde_json::json!({
+                "model": input.model,
+                "tools": [{"name": tool, "input_schema": {"type": "object"}}],
+                "messages": history,
+            }))
+            .unwrap();
+            let mut response = adapter.execute_stream(input).await.unwrap();
+            let mut received = Vec::new();
+            while let Some(chunk) = response.chunks.recv().await {
+                assert!(chunk.error.is_none(), "{tool} turn {turn}");
+                received.extend_from_slice(&chunk.payload);
+            }
+            let wire = std::str::from_utf8(&received).unwrap();
+            let starts: Vec<serde_json::Value> = wire
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .map(|data| serde_json::from_str(data).unwrap())
+                .filter(|data: &serde_json::Value| data["type"] == "content_block_start")
+                .collect();
+            assert_eq!(starts.len(), 1, "{tool} turn {turn}: {wire}");
+            assert_eq!(starts[0]["content_block"]["name"], tool, "turn {turn}");
+            assert!(wire.contains("\n\nevent: content_block_stop\n"));
+            history.push(serde_json::json!({"role": "assistant", "content": [starts[0]["content_block"].clone()]}));
+            history.push(serde_json::json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_1", "content": "ok"}]}));
+        }
+    }
 }
 
 #[tokio::test]
@@ -662,7 +886,7 @@ async fn provider_count_tokens_preserves_strong_native_session_and_profile() {
         ("X-App".to_owned(), vec!["cli".to_owned()]),
         (
             "User-Agent".to_owned(),
-            vec!["claude-cli/2.1.220 (external, cli)".to_owned()],
+            vec![helps::DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()],
         ),
         (
             "Anthropic-Beta".to_owned(),
@@ -674,7 +898,7 @@ async fn provider_count_tokens_preserves_strong_native_session_and_profile() {
         ),
         (
             "X-Stainless-Package-Version".to_owned(),
-            vec!["0.94.0".to_owned()],
+            vec![helps::DEFAULT_CLAUDE_FINGERPRINT_PACKAGE_VERSION.to_owned()],
         ),
         (
             "X-Stainless-Runtime-Version".to_owned(),
@@ -690,7 +914,7 @@ async fn provider_count_tokens_preserves_strong_native_session_and_profile() {
         let requests = transport.requests.lock().unwrap();
         let captured = requests.last().unwrap();
         assert_eq!(captured.session_id, session_id);
-        assert_eq!(captured.user_agent, "claude-cli/2.1.220 (external, cli)");
+        assert_eq!(captured.user_agent, "claude-cli/2.1.280 (external, cli)");
         assert_eq!(captured.authorization, "Bearer access-token");
         let body: serde_json::Value = serde_json::from_slice(&captured.body).unwrap();
         assert_eq!(body["system"], "native caller system");
@@ -710,7 +934,7 @@ async fn provider_count_tokens_preserves_strong_native_session_and_profile() {
         ("X-App".to_owned(), vec!["cli".to_owned()]),
         (
             "User-Agent".to_owned(),
-            vec!["claude-cli/2.1.220 (external, cli)".to_owned()],
+            vec![helps::DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()],
         ),
         (
             "Anthropic-Beta".to_owned(),
@@ -885,7 +1109,7 @@ async fn provider_path_does_not_promote_user_agent_only_to_verified_cloak_bypass
     provider_request.original_request = provider_request.payload.clone();
     provider_request.headers = [(
         "User-Agent".to_owned(),
-        vec!["claude-cli/2.1.220 (external, cli)".to_owned()],
+        vec![helps::DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()],
     )]
     .into_iter()
     .collect();

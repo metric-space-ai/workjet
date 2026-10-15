@@ -250,9 +250,26 @@ scientific auto-discovery into a successful empty result.
 gate. Set `CTOX_WEB_SEARCH_PROVIDER` in CTOX's authoritative SQLite runtime
 config at `runtime/ctox-runtime.sqlite3` to pin a specific backend.
 
+### Bright Data SERP API
+
+When the credential `BRIGHTDATA_API_KEY` is configured (CTOX: encrypted secret
+store, scope `credentials`, e.g. `ctox secret put --scope credentials --name
+BRIGHTDATA_API_KEY --value-stdin`), `auto` and `google` first ask Bright Data's
+SERP API (`POST https://api.brightdata.com/request`, zone
+`CTOX_WEB_SEARCH_BRIGHTDATA_ZONE`, default `ctox_serp`) for Google organic
+results. The requested country selects the Google domain plus `gl`/`hl`
+(`DE` → google.de, `AT` → google.at, `CH` → google.ch). Requests are bounded to
+at most 30 s. HTTP 401/403/404 report `brightdata: zone <zone> unavailable
+(HTTP <status>)` and the chain falls through to the scraping providers
+unchanged; Bright Data does not consume `CTOX_WEB_AUTO_PROVIDER_BUDGET`. Without
+a key the provider is absent and behaviour is identical to the plain cascade.
+The key is sent only as the `Authorization` header to the fixed Bright Data
+endpoint and never appears in logs, errors, or responses.
+
 | Provider             | Notes                                                                                                                                                                                                     |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auto` (default)     | Google → Brave → DuckDuckGo → Bing cascade                                                                                                                                                                |
+| `auto` (default)     | Bright Data (only with an API key) → Google → Brave → DuckDuckGo → Bing cascade                                                                                                                           |
+| `brightdata`         | Google organic results via the Bright Data SERP API. Needs credential `BRIGHTDATA_API_KEY`; zone from `CTOX_WEB_SEARCH_BRIGHTDATA_ZONE`.                                                                  |
 | `brave`              | Brave HTML scrape                                                                                                                                                                                         |
 | `bing`               | Bing HTML scrape                                                                                                                                                                                          |
 | `duckduckgo` / `ddg` | DuckDuckGo HTML scrape (header-augmented to avoid the anomaly modal)                                                                                                                                      |
@@ -279,8 +296,9 @@ cookie-bootstrap profile flow — Playwright owns the entire Google path.
 | Key                                                   | Purpose                                                                                                                                                  |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CTOX_WEB_SEARCH_OPENAI_MODE`                         | `local_stack` / `ctox_primary` routes OpenAI `web_search` tool calls through CTOX; `openai` / `passthrough` forwards them upstream unchanged.            |
-| `CTOX_WEB_SEARCH_PROVIDER`                            | `auto` (default), `brave`, `bing`, `duckduckgo`, `google`, `searxng`, `annas_archive`, or `mock`.                                                        |
+| `CTOX_WEB_SEARCH_PROVIDER`                            | `auto` (default), `brightdata`, `brave`, `bing`, `duckduckgo`, `google`, `searxng`, `annas_archive`, or `mock`.                                          |
 | `CTOX_WEB_SEARCH_SEARXNG_BASE_URL`                    | Required when `CTOX_WEB_SEARCH_PROVIDER=searxng`.                                                                                                        |
+| `CTOX_WEB_SEARCH_BRIGHTDATA_ZONE`                     | Bright Data SERP zone used by the `brightdata` provider (default `ctox_serp`).                                                                           |
 | `CTOX_WEB_SEARCH_LANGUAGE` / `CTOX_WEB_SEARCH_REGION` | Forwarded to providers as locale/`gl` hints.                                                                                                             |
 | `CTOX_WEB_SEARCH_TIMEOUT_MS`                          | Per-request timeout for HTTP and Playwright paths (default 7000).                                                                                        |
 | `CTOX_WEB_SEARCH_MAX_PAGE_BYTES`                      | Maximum response size for ordinary evidence pages (default 2 MB).                                                                                        |

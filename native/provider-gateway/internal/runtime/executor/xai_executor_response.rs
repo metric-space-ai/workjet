@@ -226,6 +226,20 @@ pub fn normalize_sse_stream(
     filter: &mut InternalXSearchResponseFilter,
     refs: &BTreeMap<String, NamespaceToolRef>,
 ) -> Vec<Vec<u8>> {
+    normalize_sse_stream_with_custom_tools(
+        chunk,
+        filter,
+        refs,
+        &mut super::xai_custom_tools::XaiCustomToolAdapter::default(),
+    )
+}
+
+pub(super) fn normalize_sse_stream_with_custom_tools(
+    chunk: &[u8],
+    filter: &mut InternalXSearchResponseFilter,
+    refs: &BTreeMap<String, NamespaceToolRef>,
+    custom: &mut super::xai_custom_tools::XaiCustomToolAdapter,
+) -> Vec<Vec<u8>> {
     let mut output = Vec::new();
     let text = String::from_utf8_lossy(chunk);
     let mut event_name = String::new();
@@ -234,20 +248,29 @@ pub fn normalize_sse_stream(
             event_name = normalize_reasoning_event_name(name.trim()).to_owned();
         } else if let Some(data) = line.strip_prefix("data:") {
             let data = normalize_reasoning_event_data(data.trim().as_bytes());
-            let data = restore_namespace_tool_calls(&data, refs);
-            let data = filter.apply(&data);
-            if !data.is_empty() {
-                let actual = serde_json::from_slice::<Value>(&data)
-                    .ok()
-                    .and_then(|v| v.get("type").and_then(Value::as_str).map(str::to_owned))
-                    .unwrap_or_else(|| event_name.clone());
-                output.push(
-                    format!(
-                        "event: {actual}\ndata: {}\n\n",
-                        String::from_utf8_lossy(&data)
-                    )
-                    .into_bytes(),
+            let events = match serde_json::from_slice::<Value>(&data) {
+                Ok(event) => custom.apply(event),
+                Err(_) => Vec::new(),
+            };
+            for event in events {
+                let data = restore_namespace_tool_calls(
+                    &serde_json::to_vec(&event).unwrap_or_default(),
+                    refs,
                 );
+                let data = filter.apply(&data);
+                if !data.is_empty() {
+                    let actual = serde_json::from_slice::<Value>(&data)
+                        .ok()
+                        .and_then(|v| v.get("type").and_then(Value::as_str).map(str::to_owned))
+                        .unwrap_or_else(|| event_name.clone());
+                    output.push(
+                        format!(
+                            "event: {actual}\ndata: {}\n\n",
+                            String::from_utf8_lossy(&data)
+                        )
+                        .into_bytes(),
+                    );
+                }
             }
         }
     }

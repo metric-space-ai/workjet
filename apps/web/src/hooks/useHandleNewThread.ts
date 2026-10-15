@@ -205,8 +205,8 @@ export function useNewThreadHandler() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to add project",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              title: "Projekt nicht hinzugefügt",
+              description: error instanceof Error ? error.message : "Unbekannter Fehler.",
             }),
           );
         },

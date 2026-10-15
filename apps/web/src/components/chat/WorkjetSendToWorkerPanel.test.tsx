@@ -28,7 +28,11 @@ import {
   rememberWorkjetRemoteThreadId,
   selectWorkjetRosterPeer,
   workjetMailboxFailureMessage,
-  WorkjetSendToWorkerPanelControl,
+  applyWorkjetSendRecipient,
+  setWorkjetSendTab,
+  workjetSendRecipientChoices,
+  workjetSendRecipientValue,
+  WorkjetSendToWorkerMenuItem,
   WorkjetSendToWorkerPanelContent,
   type WorkjetSendDraft,
   type WorkjetSendToWorkerPanelProps,
@@ -43,7 +47,13 @@ function descendants(node: ReactNode): InspectableElement[] {
   for (const child of Children.toArray(node)) {
     if (!isValidElement(child)) continue;
     const element = child as InspectableElement;
-    found.push(element, ...descendants(element.props.children));
+    // Menu triggers carry their button in the `render` prop.
+    const rendered = element.props.render;
+    found.push(
+      element,
+      ...(isValidElement(rendered) ? descendants(rendered as ReactNode) : []),
+      ...descendants(element.props.children),
+    );
   }
   return found;
 }
@@ -269,13 +279,16 @@ describe("workjet send payloads", () => {
 });
 
 describe("workjetMailboxFailureMessage", () => {
-  it("renders the contract's own sentence for a typed mailbox failure", () => {
+  it("renders a short German line for a typed mailbox failure", () => {
     expect(
       workjetMailboxFailureMessage({ _tag: "WorkjetMailboxError", reason: "unknown-target" }),
-    ).toBe("The mailbox target address is unknown.");
+    ).toBe("Empfänger unbekannt");
     expect(
       workjetMailboxFailureMessage({ _tag: "WorkjetMailboxError", reason: "unauthorized" }),
-    ).toBe("The mailbox operation is not authorized for this environment.");
+    ).toBe("Nicht berechtigt");
+    expect(
+      workjetMailboxFailureMessage({ _tag: "WorkjetMailboxError", reason: "target-offline" }),
+    ).toBe("Empfänger getrennt");
   });
 
   it("stays generic for anything that is not a bounded mailbox failure", () => {
@@ -286,135 +299,8 @@ describe("workjetMailboxFailureMessage", () => {
       { _tag: "WorkjetMailboxError", reason: "kaboom" },
       { _tag: "SomethingElse", reason: "unknown-target" },
     ]) {
-      expect(workjetMailboxFailureMessage(value)).toBe("The Workjet mailbox send failed.");
+      expect(workjetMailboxFailureMessage(value)).toBe("Senden fehlgeschlagen");
     }
-  });
-});
-
-describe("WorkjetSendToWorkerPanelContent", () => {
-  const render = (overrides: Partial<WorkjetSendToWorkerPanelProps> = {}) =>
-    WorkjetSendToWorkerPanelContent(panelProps(overrides)) as InspectableElement;
-
-  it("shows all three tabs and marks the active one", () => {
-    const tabs = descendants(render().props.children).filter(
-      (element) => element.props.role === "tab",
-    );
-
-    expect(tabs.map((tab) => textContent(tab.props.children))).toEqual([
-      "Message",
-      "Message + Task",
-      "Hand off",
-    ]);
-    expect(tabs.map((tab) => tab.props["aria-selected"])).toEqual([true, false, false]);
-  });
-
-  it("hides every task field until the task tab is chosen", () => {
-    const messageLabels = descendants(render().props.children).map(
-      (element) => element.props["aria-label"],
-    );
-    expect(messageLabels).not.toContain("Task prompt");
-    expect(messageLabels).not.toContain("Scope files, one per line");
-
-    const taskLabels = descendants(render({ draft: validTaskDraft }).props.children).map(
-      (element) => element.props["aria-label"],
-    );
-    expect(taskLabels).toContain("Task prompt");
-    expect(taskLabels).toContain("Scope files, one per line");
-    expect(taskLabels).toContain("Acceptance");
-    expect(taskLabels).toContain("Maximum delegation depth");
-    expect(taskLabels).toContain("Maximum review rounds");
-    expect(taskLabels).toContain("Time to live in seconds");
-  });
-
-  it("constrains the budget inputs to the contract bounds", () => {
-    const inputs = new Map(
-      descendants(render({ draft: validTaskDraft }).props.children)
-        .filter((element) => typeof element.props["aria-label"] === "string")
-        .map((element) => [element.props["aria-label"] as string, element.props]),
-    );
-
-    expect(inputs.get("Maximum delegation depth")).toMatchObject({ min: 1, max: 16 });
-    expect(inputs.get("Maximum review rounds")).toMatchObject({ min: 0, max: 16 });
-    expect(inputs.get("Time to live in seconds")).toMatchObject({
-      min: WORKJET_MIN_TTL_SECONDS,
-      max: WORKJET_MAX_TTL_SECONDS,
-    });
-  });
-
-  it("lists the known threads for a same-machine recipient", () => {
-    const select = descendants(render().props.children).find(
-      (element) => element.props["aria-label"] === "Recipient thread",
-    );
-
-    expect(select?.type).toBe("select");
-    expect(textContent(select?.props.children)).toContain("Worker thread");
-  });
-
-  it("offers a free-text environment id and says the send is queued", () => {
-    const panel = render({
-      draft: { ...validMessageDraft, recipientMode: "environment", targetEnvironmentId: "env-b" },
-    });
-    const children = descendants(panel.props.children);
-
-    expect(
-      children.some((element) => element.props["aria-label"] === "Recipient environment id"),
-    ).toBe(true);
-    expect(textContent(panel.props.children)).toContain("Queued until the mesh delivers.");
-  });
-
-  it("disables submit while the draft is invalid and enables it once complete", () => {
-    const submitOf = (props: Partial<WorkjetSendToWorkerPanelProps>) =>
-      descendants(render(props).props.children).find(
-        (element) => typeof element.props.onClick === "function" && element.props.onClick !== null,
-      );
-
-    const invalid = descendants(
-      render({ draft: { ...validMessageDraft, message: "" } }).props.children,
-    ).filter((element) => textContent(element.props.children) === "Send message");
-    expect(invalid[0]?.props.disabled).toBe(true);
-
-    const valid = descendants(render().props.children).filter(
-      (element) => textContent(element.props.children) === "Send message",
-    );
-    expect(valid[0]?.props.disabled).toBe(false);
-    expect(submitOf({})).toBeDefined();
-  });
-
-  it("labels the submit for the task tab and while busy", () => {
-    expect(textContent(render({ draft: validTaskDraft }).props.children)).toContain("Send task");
-    expect(textContent(render({ busy: true }).props.children)).toContain("Sending…");
-  });
-
-  it("calls back with the patched draft when a tab is switched", () => {
-    const onDraftChange = vi.fn();
-    const taskTab = descendants(render({ onDraftChange }).props.children).find(
-      (element) => textContent(element.props.children) === "Message + Task",
-    );
-
-    (taskTab?.props.onClick as () => void)();
-    expect(onDraftChange).toHaveBeenCalledWith({ ...validMessageDraft, tab: "task" });
-  });
-
-  it("renders each send outcome inline", () => {
-    expect(
-      textContent(render({ outcome: { _tag: "queued", envelopeId: "wjm-1" } }).props.children),
-    ).toContain("Queued as wjm-1.");
-    expect(
-      textContent(
-        render({
-          outcome: { _tag: "acknowledged", envelopeId: "wjm-2", disposition: "accepted-new" },
-        }).props.children,
-      ),
-    ).toContain("Delivered as wjm-2 (accepted-new).");
-    const failed = render({
-      outcome: { _tag: "error", message: "The mailbox target address is unknown." },
-    });
-    expect(textContent(failed.props.children)).toContain("The mailbox target address is unknown.");
-    expect(
-      descendants(failed.props.children).some(
-        (element) => element.props["data-workjet-send-outcome"] === "error",
-      ),
-    ).toBe(true);
   });
 });
 
@@ -505,240 +391,6 @@ describe("roster helpers", () => {
   });
 });
 
-describe("WorkjetSendToWorkerPanelContent remote recipients", () => {
-  const remoteDraft: WorkjetSendDraft = {
-    ...validMessageDraft,
-    recipientMode: "environment",
-    targetEnvironmentId: "",
-    targetThreadId: "",
-  };
-  const render = (overrides: Partial<WorkjetSendToWorkerPanelProps> = {}) =>
-    WorkjetSendToWorkerPanelContent(
-      panelProps({ draft: remoteDraft, roster: ROSTER, ...overrides }),
-    ) as InspectableElement;
-
-  it("groups the roster peers under a remote environments group, newest first", () => {
-    const select = descendants(render().props.children).find(
-      (element) => element.props["aria-label"] === "Remote environment",
-    );
-    const group = descendants(select?.props.children).find(
-      (element) => element.type === "optgroup",
-    );
-
-    expect(group?.props.label).toBe("Other computers");
-    const options = descendants(group?.props.children).filter(
-      (element) => element.type === "option",
-    );
-    expect(options.map((option) => option.props.value)).toEqual([
-      "environment-newer",
-      "environment-older",
-    ]);
-    // The pin date is shown as first contact, never as "last seen" or "online".
-    expect(textContent(group?.props.children)).toContain("first contact 2026-08-18");
-    expect(textContent(render().props.children)).not.toContain("online");
-  });
-
-  it("fills the address from a selected peer and drops the free-text field", () => {
-    const changes: WorkjetSendDraft[] = [];
-    const panel = render({ onDraftChange: (draft) => changes.push(draft) });
-    const select = descendants(panel.props.children).find(
-      (element) => element.props["aria-label"] === "Remote environment",
-    );
-
-    (select?.props.onChange as (event: { target: { value: string } }) => void)({
-      target: { value: "environment-newer" },
-    });
-    expect(changes[0]).toMatchObject({
-      recipientMode: "environment",
-      targetEnvironmentId: "environment-newer",
-    });
-
-    const selected = render({
-      draft: { ...remoteDraft, targetEnvironmentId: "environment-newer" },
-    });
-    const labels = descendants(selected.props.children).map(
-      (element) => element.props["aria-label"],
-    );
-    expect(labels).not.toContain("Recipient environment id");
-    expect(labels).toContain("Recipient thread id on the other machine");
-  });
-
-  it("keeps the free-text environment id for a machine the roster does not know", () => {
-    const labels = descendants(
-      render({ draft: { ...remoteDraft, targetEnvironmentId: "environment-unknown" } }).props
-        .children,
-    ).map((element) => element.props["aria-label"]);
-    expect(labels).toContain("Recipient environment id");
-  });
-
-  it("requires the remote thread id and says why it cannot be picked", () => {
-    const panel = render({
-      draft: { ...remoteDraft, targetEnvironmentId: "environment-newer" },
-    });
-    expect(
-      validateWorkjetSendDraft({ ...remoteDraft, targetEnvironmentId: "environment-newer" }),
-    ).toContain("recipient-remote-thread-required");
-    // The error is rendered through `ErrorNote`, so assert on the note the
-    // panel actually raises rather than on flattened text.
-    expect(
-      descendants(panel.props.children).some(
-        (element) => element.props.error === "recipient-remote-thread-required",
-      ),
-    ).toBe(true);
-    expect(WORKJET_SEND_FIELD_ERROR_MESSAGES["recipient-remote-thread-required"]).toBe(
-      "Enter the thread id on the other machine.",
-    );
-    expect(textContent(panel.props.children)).toContain("cannot list another machine");
-  });
-
-  it("says the machine has no peers yet instead of inventing one", () => {
-    const empty = render({ roster: { ...ROSTER, peers: [] } });
-    expect(textContent(empty.props.children)).toContain(
-      "This machine has not exchanged mail with any peer yet.",
-    );
-    expect(
-      descendants(empty.props.children).some(
-        (element) => element.props["aria-label"] === "Remote environment",
-      ),
-    ).toBe(false);
-  });
-
-  it("distinguishes an unread roster from an empty one", () => {
-    const unavailable = render({ roster: null });
-    expect(textContent(unavailable.props.children)).toContain(
-      "The mesh roster is not available yet.",
-    );
-    expect(
-      descendants(unavailable.props.children).some(
-        (element) => element.props["aria-label"] === "Recipient environment id",
-      ),
-    ).toBe(true);
-  });
-
-  it("reports the sealing state of the selected peer and roster truncation", () => {
-    const unsealed = render({
-      draft: { ...remoteDraft, targetEnvironmentId: "environment-newer" },
-      roster: { ...ROSTER, truncated: true },
-    });
-    const text = textContent(unsealed.props.children);
-    expect(text).toContain("No encryption key pinned yet");
-    expect(text).toContain("More peers are pinned than this list shows.");
-
-    expect(
-      textContent(
-        render({ draft: { ...remoteDraft, targetEnvironmentId: "environment-older" } }).props
-          .children,
-      ),
-    ).toContain("encryption key is pinned");
-  });
-
-  it("states each peer's trust level instead of implying they are all verified", () => {
-    // `sealedDeliveryReady` reads like an assurance about WHOSE machine this is
-    // and is not one, so the panel says the second thing separately.
-    const bound = textContent(
-      render({ draft: { ...remoteDraft, targetEnvironmentId: "environment-older" } }).props
-        .children,
-    );
-    expect(bound).toContain("signed for its own keys");
-    // Even the strongest level the mesh can establish is qualified: it does not
-    // say "verified", because first-contact impersonation remains open.
-    expect(bound).toContain("claimed this environment id first");
-    expect(bound).not.toContain("verified");
-
-    const tofuRoster: WorkjetMeshRoster = {
-      ...ROSTER,
-      peers: [rosterPeer("environment-tofu", "2026-08-02T09:00:00.000Z", true, "tofu")],
-    };
-    const unbound = textContent(
-      render({
-        draft: { ...remoteDraft, targetEnvironmentId: "environment-tofu" },
-        roster: tofuRoster,
-      }).props.children,
-    );
-    expect(unbound).toContain("without a signed key binding");
-    expect(unbound).toContain("authenticated CTOX connection alone");
-  });
-
-  it("labels both trust levels without overclaiming either", () => {
-    expect(workjetPeerTrustLabel("tofu")).toContain("authenticated CTOX connection alone");
-    expect(workjetPeerTrustLabel("self-signed")).toContain("no other machine in the connection");
-  });
-
-  it("leaves the same-machine thread list untouched", () => {
-    const local = WorkjetSendToWorkerPanelContent(
-      panelProps({ roster: ROSTER }),
-    ) as InspectableElement;
-    const select = descendants(local.props.children).find(
-      (element) => element.props["aria-label"] === "Recipient thread",
-    );
-    expect(textContent(select?.props.children)).toContain("Worker thread");
-    expect(
-      descendants(local.props.children).some(
-        (element) => element.props["aria-label"] === "Remote environment",
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("WorkjetSendToWorkerPanel compact variant", () => {
-  const trigger = (props: Partial<WorkjetSendToWorkerPanelProps>) => {
-    const control = WorkjetSendToWorkerPanelControl(panelProps(props)) as InspectableElement;
-    const [popoverTrigger, popup] = Children.toArray(control.props.children).filter(isValidElement);
-    return {
-      trigger: popoverTrigger as InspectableElement,
-      popup: popup as InspectableElement,
-    };
-  };
-
-  it("renders the labelled control by default", () => {
-    const { trigger: control } = trigger({});
-
-    expect(control.props["data-workjet-send-control-compact"]).toBe("false");
-    const rendered = control.props.render as InspectableElement;
-    expect(rendered.props["aria-label"]).toBe("Send to Luma");
-    expect(textContent(control.props.children)).toContain("Send to Luma");
-  });
-
-  it("keeps the send-to-worker trigger bounded for long localized labels", () => {
-    const { trigger: control } = trigger({});
-    const rendered = control.props.render as InspectableElement;
-
-    expect(rendered.props.className).toContain("max-w-40");
-    expect(rendered.props.className).toContain("min-w-0");
-    expect(
-      descendants(control.props.children).some((element) =>
-        String(element.props.className ?? "").includes("truncate"),
-      ),
-    ).toBe(true);
-  });
-
-  it("collapses to an icon button that still names itself, keeping the same popover", () => {
-    const { trigger: control, popup } = trigger({ compact: true });
-
-    expect(control.props["data-workjet-send-control-compact"]).toBe("true");
-    const rendered = control.props.render as InspectableElement;
-    // The visible label goes; the ACCESSIBLE name does not.
-    expect(rendered.props["aria-label"]).toBe("Send to Luma");
-    const label = descendants(control.props.children).find(
-      (element) => textContent(element) === "Send to Luma",
-    );
-    expect(label?.props.className).toBe("sr-only");
-    // The popover still holds the complete panel, not a reduced one.
-    const [content] = Children.toArray(popup.props.children).filter(isValidElement);
-    expect((content as InspectableElement).type).toBe(WorkjetSendToWorkerPanelContent);
-  });
-
-  it("gates identically in both variants: a disabled host disables the trigger", () => {
-    expect(trigger({ disabled: true }).trigger.props.disabled).toBe(true);
-    expect(trigger({ disabled: true, compact: true }).trigger.props.disabled).toBe(true);
-    expect(trigger({ compact: true }).trigger.props.disabled).toBe(false);
-  });
-});
-
-// ===============================
-// Hand off
-// ===============================
-
 const validHandoffDraft: WorkjetSendDraft = {
   ...EMPTY_WORKJET_SEND_DRAFT,
   tab: "handoff",
@@ -823,58 +475,214 @@ describe("buildWorkjetSendHandoffInput", () => {
   });
 });
 
-describe("WorkjetSendToWorkerPanelContent hand-off tab", () => {
-  const handoffPanel = (overrides: Partial<WorkjetSendToWorkerPanelProps> = {}) =>
-    WorkjetSendToWorkerPanelContent(panelProps({ draft: validHandoffDraft, ...overrides }));
+// ===============================
+// Inline row: Empfänger · Nachricht · Senden, Seltenes im ⋯-Menü
+// ===============================
 
-  it("offers a third tab and labels the action as a handoff", () => {
-    const tabs = descendants(handoffPanel()).filter((node) => node.props.role === "tab");
-    expect(tabs.map((tab) => textContent(tab.props.children))).toEqual([
-      "Message",
-      "Message + Task",
-      "Hand off",
-    ]);
-    const submit = descendants(handoffPanel()).find(
-      (node) => textContent(node.props.children) === "Hand off" && node.props.role !== "tab",
+describe("WorkjetSendToWorkerPanelContent inline row", () => {
+  const render = (overrides: Partial<WorkjetSendToWorkerPanelProps> = {}) =>
+    WorkjetSendToWorkerPanelContent(panelProps(overrides)) as InspectableElement;
+  const byLabel = (node: InspectableElement, label: string) =>
+    descendants(node.props.children).find((element) => element.props["aria-label"] === label);
+  const submitButton = (node: InspectableElement) =>
+    descendants(node.props.children).find(
+      (element) => typeof element.props.onClick === "function" && element.props.size === "sm",
     );
-    expect(submit).toBeDefined();
+
+  it("is one row: recipient dropdown, message, options menu and send", () => {
+    const panel = render();
+    expect(byLabel(panel, "Empfänger")).toBeDefined();
+    expect(byLabel(panel, "Nachricht")).toBeDefined();
+    expect(byLabel(panel, "Weitere Optionen")).toBeDefined();
+    expect(textContent(panel)).toContain("Senden");
+    expect(textContent(panel)).toContain("Worker thread");
   });
 
-  it("removes the thread pickers a handoff cannot answer", () => {
-    const labels = descendants(handoffPanel()).flatMap((node) =>
-      typeof node.props["aria-label"] === "string" ? [node.props["aria-label"]] : [],
+  it("never asks for a typed environment id or thread id", () => {
+    const labels = descendants(render({ roster: ROSTER }).props.children)
+      .map((element) => element.props["aria-label"])
+      .filter((label): label is string => typeof label === "string");
+    expect(labels.some((label) => /environment id|thread id/i.test(label))).toBe(false);
+    expect(labels).not.toContain("Recipient environment id");
+  });
+
+  it("hides the task fields until the task kind is chosen", () => {
+    expect(byLabel(render(), "Dateien")).toBeUndefined();
+    const task = render({ draft: validTaskDraft });
+    expect(byLabel(task, "Dateien")).toBeDefined();
+    expect(byLabel(task, "Nicht-Ziele")).toBeDefined();
+    expect(byLabel(task, "Abnahme")).toBeDefined();
+    // Depth, reviews and TTL are menu choices with defaults, never number fields.
+    expect(byLabel(task, "Maximum delegation depth")).toBeUndefined();
+    expect(textContent(task)).toContain("Laufzeit");
+    expect(textContent(task)).toContain("Prüfrunden");
+  });
+
+  it("disables send while the draft is invalid and enables it once complete", () => {
+    const invalid = submitButton(render({ draft: EMPTY_WORKJET_SEND_DRAFT }));
+    expect(invalid?.props.disabled).toBe(true);
+    const valid = submitButton(render());
+    expect(valid?.props.disabled).toBe(false);
+  });
+
+  it("shows the first problem as one short status line once touched", () => {
+    const panel = render({ draft: { ...EMPTY_WORKJET_SEND_DRAFT, message: "Hallo" } });
+    expect(textContent(panel)).toContain("Empfänger wählen");
+    expect(textContent(render({ draft: EMPTY_WORKJET_SEND_DRAFT }))).not.toContain(
+      "Empfänger wählen",
     );
-    expect(labels).not.toContain("Recipient thread");
-    expect(labels).not.toContain("Recipient thread id on the other machine");
-    expect(labels).toContain("Handoff note");
   });
 
-  it("says what the snapshot carries and that no branch is pushed", () => {
-    const text = textContent(handoffPanel());
-    expect(text).toContain("bounded context snapshot");
-    expect(text).toContain("full history stays here");
-    expect(text).toContain("No branch is pushed");
-  });
-
-  it("explains that a remote handoff needs no thread id", () => {
-    const text = textContent(
-      handoffPanel({
-        draft: {
-          ...validHandoffDraft,
-          recipientMode: "environment",
-          targetEnvironmentId: "environment-b",
-        },
+  it("reports outcomes without raw envelope ids", () => {
+    const queued = textContent(render({ outcome: { _tag: "queued", envelopeId: "envelope-123" } }));
+    expect(queued).toContain("In Warteschlange");
+    expect(queued).not.toContain("envelope-123");
+    const delivered = textContent(
+      render({
+        outcome: { _tag: "acknowledged", envelopeId: "envelope-9", disposition: "accepted" },
       }),
     );
-    expect(text).toContain("receiving side creates a new thread");
+    expect(delivered).toContain("Zugestellt");
+    expect(textContent(render({ outcome: { _tag: "error", message: "kaputt" } }))).toContain(
+      "kaputt",
+    );
   });
 
-  it("keeps the message tab unchanged", () => {
-    const labels = descendants(WorkjetSendToWorkerPanelContent(panelProps())).flatMap((node) =>
-      typeof node.props["aria-label"] === "string" ? [node.props["aria-label"]] : [],
+  it("labels the action per kind and while busy", () => {
+    expect(textContent(render({ draft: validTaskDraft }))).toContain("Auftrag senden");
+    expect(textContent(render({ busy: true }))).toContain("Sendet…");
+    expect(textContent(render({ draft: validHandoffDraft }))).toContain("Übergeben");
+  });
+
+  it("offers a close button only when the host can close the row", () => {
+    expect(byLabel(render(), "Schließen")).toBeUndefined();
+    const onClose = vi.fn();
+    const close = byLabel(render({ onClose }), "Schließen");
+    (close?.props.onClick as () => void)();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("recipient choices", () => {
+  it("lists this machine's chats and known peers, newest first", () => {
+    const choices = workjetSendRecipientChoices({
+      draft: validMessageDraft,
+      threads: [{ threadId: "thread-worker", title: "Worker thread" }],
+      roster: ROSTER,
+    });
+    expect(choices.map((choice) => choice.value)).toEqual([
+      "thread:thread-worker",
+      "peer:environment-newer",
+      "peer:environment-older",
+    ]);
+    // Without a known thread id a peer only takes a handoff.
+    expect(choices[1]?.disabledReason).toBe("nur Übergabe");
+  });
+
+  it("names a peer by its computer name, otherwise „Rechner ohne Namen“, never a shortened ID", () => {
+    const unnamed = workjetSendRecipientChoices({
+      draft: validHandoffDraft,
+      threads: [],
+      roster: ROSTER,
+    });
+    const peers = unnamed.filter((choice) => choice.group === "peer");
+    expect(peers.map((choice) => choice.label)).toEqual([
+      "Rechner ohne Namen",
+      "Rechner ohne Namen",
+    ]);
+    for (const choice of peers) expect(choice.label).not.toContain("environment");
+    const named = workjetSendRecipientChoices({
+      draft: validHandoffDraft,
+      threads: [],
+      roster: ROSTER,
+      computerLabels: { "environment-newer": "gpu3-a4500" },
+    });
+    expect(named.find((choice) => choice.value === "peer:environment-newer")?.label).toBe(
+      "gpu3-a4500",
     );
-    expect(labels).toContain("Recipient thread");
-    expect(labels).toContain("Message");
-    expect(labels).not.toContain("Handoff note");
+    expect(named.find((choice) => choice.value === "peer:environment-older")?.label).toBe(
+      "Rechner ohne Namen",
+    );
+  });
+
+  it("makes peers reachable for a handoff and offers a new chat here", () => {
+    const choices = workjetSendRecipientChoices({
+      draft: validHandoffDraft,
+      threads: [{ threadId: "thread-worker", title: "Worker thread" }],
+      roster: ROSTER,
+    });
+    expect(choices[0]?.value).toBe("here");
+    expect(choices.every((choice) => choice.disabledReason === null)).toBe(true);
+  });
+
+  it("keeps a peer reachable for messages when its thread id is remembered", () => {
+    const choices = workjetSendRecipientChoices({
+      draft: validMessageDraft,
+      threads: [],
+      roster: ROSTER,
+      rememberedThreadIds: { "environment-newer": "thread-remote" },
+    });
+    expect(
+      choices.find((choice) => choice.value === "peer:environment-newer")?.disabledReason,
+    ).toBe(null);
+  });
+
+  it("round-trips the dropdown value through the draft", () => {
+    const local = applyWorkjetSendRecipient({
+      draft: EMPTY_WORKJET_SEND_DRAFT,
+      value: "thread:thread-worker",
+    });
+    expect(local).toMatchObject({ recipientMode: "thread", targetThreadId: "thread-worker" });
+    expect(workjetSendRecipientValue(local)).toBe("thread:thread-worker");
+    const peer = applyWorkjetSendRecipient({
+      draft: validHandoffDraft,
+      value: "peer:environment-newer",
+    });
+    expect(peer).toMatchObject({
+      recipientMode: "environment",
+      targetEnvironmentId: "environment-newer",
+    });
+    expect(workjetSendRecipientValue(peer)).toBe("peer:environment-newer");
+    const here = applyWorkjetSendRecipient({ draft: peer, value: "here" });
+    expect(here.recipientMode).toBe("thread");
+    expect(workjetSendRecipientValue(here)).toBe("here");
+  });
+
+  it("carries the message along when the kind changes", () => {
+    const task = setWorkjetSendTab(validMessageDraft, "task");
+    expect(task.prompt).toBe(validMessageDraft.message);
+    const handoff = setWorkjetSendTab(validMessageDraft, "handoff");
+    expect(handoff.handoffNote).toBe(validMessageDraft.message);
+  });
+});
+
+describe("the options-menu entry", () => {
+  it("opens the inline row instead of a popover", () => {
+    const onOpen = vi.fn();
+    const item = WorkjetSendToWorkerMenuItem({ onOpen }) as InspectableElement;
+    expect(textContent(item)).toContain("An Luma senden");
+    (item.props.onClick as () => void)();
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(
+      (WorkjetSendToWorkerMenuItem({ onOpen, disabled: true }) as InspectableElement).props
+        .disabled,
+    ).toBe(true);
+  });
+});
+
+describe("short peer labels", () => {
+  it("names both trust levels in a few words without overclaiming", () => {
+    expect(workjetPeerTrustLabel("self-signed")).toBe("selbst signiert");
+    expect(workjetPeerTrustLabel("tofu")).toBe("beim Erstkontakt gepinnt");
+    expect(workjetPeerTrustLabel("tofu")).not.toMatch(/verifiziert|verified/i);
+  });
+
+  it("bounds the handoff note like the wire does", () => {
+    expect(
+      validateWorkjetSendDraft({
+        ...validHandoffDraft,
+        handoffNote: "x".repeat(WORKJET_HANDOFF_NOTE_MAX_LENGTH + 1),
+      }),
+    ).toContain("handoff-note-too-long");
   });
 });

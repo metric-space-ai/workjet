@@ -128,9 +128,7 @@ describe("native private chat binding", () => {
     const port = vi
       .fn<WorkjetProjectControlPort>()
       .mockResolvedValue({ _tag: "completed", response: { ...response, ...change } });
-    await expect(createWorkjetPrivateChat({ ...scope, port })).rejects.toThrow(
-      "different private chat",
-    );
+    await expect(createWorkjetPrivateChat({ ...scope, port })).rejects.toThrow("anderen Chat");
   });
   it("rejects a late response after the selection changed", async () => {
     let current = true;
@@ -140,7 +138,7 @@ describe("native private chat binding", () => {
     });
     await expect(
       createWorkjetPrivateChat({ ...scope, port, isCurrent: () => current }),
-    ).rejects.toThrow("selected project changed");
+    ).rejects.toThrow("zwischenzeitlich gewechselt");
   });
   it("never replaces an existing private conversation", () => {
     const chat = {
@@ -151,7 +149,7 @@ describe("native private chat binding", () => {
     const bound = bindWorkjetPrivateChat(DEFAULT_WORKJET_THREAD_CONFIG, chat);
     expect(() =>
       bindWorkjetPrivateChat(bound, { ...chat, chatId: "workjet_private_other" }),
-    ).toThrow("new thread");
+    ).toThrow("Neue Unterhaltung");
     expect(bindWorkjetPrivateChat(bound, chat)).toEqual(bound);
   });
 });

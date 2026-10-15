@@ -1,0 +1,43 @@
+{
+  "observedAt": "2026-10-10T01:49:35.799Z",
+  "requestModel": "grok-4.7",
+  "results": [
+    {
+      "case": "native-history",
+      "status": 502,
+      "upstream": "400",
+      "errorClass": "network-provider"
+    },
+    {
+      "case": "without-reasoning",
+      "status": 200,
+      "upstream": "200",
+      "errorClass": null
+    },
+    {
+      "case": "without-assistant",
+      "status": 502,
+      "upstream": "400",
+      "errorClass": "network-provider"
+    },
+    {
+      "case": "without-item-ids",
+      "status": 502,
+      "upstream": "400",
+      "errorClass": "network-provider"
+    },
+    {
+      "case": "without-reasoning-content",
+      "status": 200,
+      "upstream": "200",
+      "errorClass": null
+    },
+    {
+      "case": "without-encrypted-content",
+      "status": 502,
+      "upstream": "422",
+      "errorClass": "network-provider"
+    }
+  ],
+  "noLocalToolsExecuted": true
+}

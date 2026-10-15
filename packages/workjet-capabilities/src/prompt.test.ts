@@ -13,6 +13,17 @@ const withPrompt = (
 });
 
 describe("capability prompt compiler", () => {
+  it.each(["standard", "orchestrator", "worker"] as const)(
+    "coordinates %s threads without a preliminary guide call",
+    (role) => {
+      const prompt = compileCapabilityPrompt({ role, managedInstructions: "", manifests: [] });
+
+      expect(prompt).not.toContain("workjet_collective_guide");
+      expect(prompt).toContain("Use Workjet worker addresses and Workjet thread references");
+      expect(prompt).toContain("use secret handles and policy-gated operations only");
+    },
+  );
+
   it("places trimmed managed instructions first and capabilities in supplied order", () => {
     const manifests = [
       withPrompt(builtInCapabilityManifests[1]!, "  Search carefully.  "),

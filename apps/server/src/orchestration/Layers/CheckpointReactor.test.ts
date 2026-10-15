@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
+import { persistentThreadConfigForTest } from "../persistentThreadTestFixture.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -393,7 +393,11 @@ describe("CheckpointReactor", () => {
             model: "gpt-5-codex",
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          workjetConfig: persistentThreadConfigForTest(
+            await runtime.runPromise(snapshotQuery.getSnapshot()),
+            asProjectId("project-1"),
+            ThreadId.make("thread-1"),
+          ),
           runtimeMode: "approval-required",
           branch: options?.threadBranch ?? null,
           worktreePath: options?.threadWorktreePath ?? cwd,
@@ -413,7 +417,11 @@ describe("CheckpointReactor", () => {
                     model: "gpt-5-codex",
                   },
                   interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-                  workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+                  workjetConfig: persistentThreadConfigForTest(
+                    await runtime.runPromise(snapshotQuery.getSnapshot()),
+                    asProjectId("project-1"),
+                    ThreadId.make("thread-2"),
+                  ),
                   runtimeMode: "approval-required",
                   branch: null,
                   worktreePath: options?.threadWorktreePath ?? cwd,

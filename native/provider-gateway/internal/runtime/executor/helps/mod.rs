@@ -118,6 +118,8 @@ pub use claude_device_profile::{
     apply_claude_legacy_device_headers, claude_device_profile_stabilization_enabled,
     default_claude_device_profile, default_claude_version, map_stainless_arch, map_stainless_os,
     ClaudeDeviceProfile, ClaudeDeviceProfileCache, ClaudeHeaderDefaults,
+    DEFAULT_CLAUDE_CLI_VERSION, DEFAULT_CLAUDE_FINGERPRINT_PACKAGE_VERSION,
+    DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT,
 };
 pub use claude_diagnostics::{begin_claude_diagnostics, commit_claude_diagnostics};
 pub use claude_input_tokens::{

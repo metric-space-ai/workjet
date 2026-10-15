@@ -1,10 +1,61 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
+import {
+  WorkjetNativeProviderRequests,
+  WorkjetNativeModelCheckRequest,
+  WorkjetNativeModelCheckResponse,
+  WorkjetNativeProviderResponse,
+} from "./workjetNativeProviders.ts";
+export * from "./workjetNativeProviders.ts";
 import * as Schema from "effect/Schema";
+import { ComputerRoles, ComputerFacts } from "./computerDetection.ts";
+import {
+  WorkjetSupervisorRouteRequests,
+  WorkjetSupervisorRouteResponses,
+  isWorkjetSupervisorRouteReceiptForRequest,
+} from "./workjetSupervisorRoute.ts";
+export * from "./workjetSupervisorRoute.ts";
+import { WorkjetInstanceGrokRequests, WorkjetInstanceGrokResponse } from "./workjetInstanceGrok.ts";
+export * from "./workjetInstanceGrok.ts";
+import {
+  WorkjetSpeechSettingsRequests,
+  WorkjetSpeechSettingsResponse,
+  WorkjetSpeechPlaybackResponse,
+} from "./workjetSpeechSettings.ts";
+export * from "./workjetSpeechSettings.ts";
+import { WorkjetDictationRequests, WorkjetDictationResponse } from "./workjetDictation.ts";
+export * from "./workjetDictation.ts";
+import {
+  WorkjetJourFixeNarrationReadRequest,
+  WorkjetJourFixeNarrationReadResponse,
+} from "./workjetJourFixeNarration.ts";
+export * from "./workjetJourFixeNarration.ts";
+import {
+  WorkjetExitModelAssessment,
+  WorkjetExitModelReadRequest,
+  WorkjetExitModelRefreshRequest,
+  WorkjetExitModelResponse,
+  WorkjetExitModelSubmitRequest,
+} from "./workjetExitModel.ts";
+import {
+  WorkjetJourFixeSpeechRequests,
+  WorkjetJourFixeSpeechResponse,
+} from "./workjetJourFixeSpeech.ts";
 import {
   WorkjetJourFixeOwnerRequests,
   WorkjetJourFixeOwnerResponse,
 } from "./workjetJourFixeOwner.ts";
 export { isWorkjetJourFixeReceiptForRequest } from "./workjetJourFixeOwner.ts";
+import {
+  WorkjetPresentationRequests,
+  WorkjetPresentationResponses,
+} from "./workjetPresentation.ts";
+export * from "./workjetPresentation.ts";
+import {
+  WorkjetCalendarNativeRequests,
+  WorkjetCalendarNativeResponses,
+} from "./workjetCalendarNative.ts";
+export * from "./workjetCalendarNative.ts";
+
 import {
   WorkjetJourFixeReadRequest,
   WorkjetJourFixeReadResponse,
@@ -31,6 +82,9 @@ import {
   WorkjetSupervisorGoal,
   WorkjetSupervisorThreadId,
   WorkjetSupervisorTurn,
+  WorkjetSupervisorTurnKind,
+  WorkjetSupervisorTurnCapabilitiesResponse,
+  WorkjetSupervisorInputReceipt,
 } from "./workjetSupervisor.ts";
 import {
   WorkjetSupervisorExecutionPageRequest,
@@ -174,11 +228,32 @@ export const CtoxManagedInstance = Schema.Struct({
   architecture: Schema.optionalKey(CtoxHostArchitecture),
   decisionHub: Schema.optionalKey(CtoxDecisionHubAvailability),
   shellUpdate: Schema.optionalKey(BusinessOsShellUpdateStatus),
+  workjetState: Schema.optionalKey(Schema.Literals(["enabled", "disabled", "removed"])),
   healthSummary: CtoxManagedInstanceHealth,
 });
 export type CtoxManagedInstance = typeof CtoxManagedInstance.Type;
 
 /** Resolve a Desktop presentation row to the canonical Business OS authority. */
+export const CtoxInstancePreferenceInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  state: Schema.Literals(["enabled", "disabled", "removed"]),
+  selectedInstanceId: Schema.NullOr(CtoxManagedInstanceId),
+});
+export type CtoxInstancePreferenceInput = typeof CtoxInstancePreferenceInput.Type;
+export const CtoxInstancePreferenceResult = Schema.Union([
+  Schema.TaggedStruct("completed", {}),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals([
+      "invalid_input",
+      "selected_instance",
+      "local_not_removable",
+      "not_found",
+      "persistence_failed",
+    ]),
+  }),
+]);
+export type CtoxInstancePreferenceResult = typeof CtoxInstancePreferenceResult.Type;
+
 export const CtoxInstanceAuthorityResolveInput = Schema.Struct({
   instanceId: CtoxManagedInstanceId,
 });
@@ -318,7 +393,10 @@ const CtoxManagedDiscoveryHttpStatus = Schema.Int.check(
 const CtoxDiscoveryInstances = Schema.Array(CtoxManagedInstance).check(Schema.isMaxLength(1_000));
 
 export const CtoxManagedDiscoveryResult = Schema.Union([
-  Schema.TaggedStruct("ready", { instances: CtoxDiscoveryInstances }),
+  Schema.TaggedStruct("ready", {
+    instances: CtoxDiscoveryInstances,
+    sessionVerified: Schema.optionalKey(Schema.Literal(true)),
+  }),
   Schema.TaggedStruct("signed_out", {}),
   Schema.TaggedStruct("failed", {
     code: CtoxManagedDiscoveryFailureCode,
@@ -328,20 +406,47 @@ export const CtoxManagedDiscoveryResult = Schema.Union([
 export type CtoxManagedDiscoveryResult = typeof CtoxManagedDiscoveryResult.Type;
 
 /** Unified managed and accountless-pairing discovery state exposed to the renderer. */
+const CtoxKeyRecoveryStatus = Schema.Struct({
+  pendingLogin: Schema.Boolean,
+  connectionCatalogReset: Schema.Boolean,
+  generation: Schema.optionalKey(Schema.String),
+  attempt: Schema.optionalKey(Schema.Int),
+  nextAt: Schema.optionalKey(Schema.Number),
+  repairingInstanceIds: Schema.optionalKey(Schema.Array(CtoxManagedInstanceId)),
+  repairedInstanceIds: Schema.optionalKey(Schema.Array(CtoxManagedInstanceId)),
+  instanceIssues: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        instanceId: CtoxManagedInstanceId,
+        reason: Schema.Literals([
+          "repair_failed",
+          "login_required",
+          "pairing_required",
+          "retryable",
+        ]),
+        operation: Schema.optionalKey(Schema.String),
+        httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
+      }),
+    ),
+  ),
+});
 export const CtoxDiscoveryResult = Schema.Union([
   Schema.TaggedStruct("ready", {
     instances: CtoxDiscoveryInstances,
     managedState: Schema.optionalKey(Schema.Literals(["ready", "signed_out", "failed"])),
     managedFailureCode: Schema.optionalKey(CtoxManagedDiscoveryFailureCode),
     pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    keyRecovery: Schema.optionalKey(CtoxKeyRecoveryStatus),
   }),
   Schema.TaggedStruct("signed_out", {
     pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    keyRecovery: Schema.optionalKey(CtoxKeyRecoveryStatus),
   }),
   Schema.TaggedStruct("failed", {
     code: CtoxManagedDiscoveryFailureCode,
     httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
     pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    keyRecovery: Schema.optionalKey(CtoxKeyRecoveryStatus),
   }),
 ]);
 export type CtoxDiscoveryResult = typeof CtoxDiscoveryResult.Type;
@@ -570,12 +675,47 @@ export const CtoxWorkjetJourFixe = Schema.Struct({
     }),
   ),
 });
+/** Reader settings of the project feed (Übersicht), owned by the CTOX instance per project. */
+export const CTOX_WORKJET_FEED_SOURCE_KEYS = [
+  "disruptions",
+  "results",
+  "sessions",
+  "prs",
+  "meeting",
+  "setup",
+] as const;
+export const CtoxWorkjetFeedSettings = Schema.Struct({
+  /** Thema & Rhythmus */
+  title: Schema.optionalKey(Schema.NullOr(CtoxProjectText(120))),
+  windowDays: Schema.optionalKey(Schema.NullOr(Schema.Literals([1, 7, 30]))),
+  /** Quellen & Accounts */
+  sources: Schema.optionalKey(
+    Schema.Struct({
+      disruptions: Schema.optionalKey(Schema.Boolean),
+      results: Schema.optionalKey(Schema.Boolean),
+      sessions: Schema.optionalKey(Schema.Boolean),
+      prs: Schema.optionalKey(Schema.Boolean),
+      meeting: Schema.optionalKey(Schema.Boolean),
+      setup: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
+  /** Redaktion */
+  defaultTab: Schema.optionalKey(Schema.Literals(["top", "latest"])),
+  body: Schema.optionalKey(Schema.Literals(["short", "full"])),
+  replies: Schema.optionalKey(Schema.Literals(["three", "all"])),
+  /** Zustellung */
+  notifyDisruptions: Schema.optionalKey(Schema.Boolean),
+});
+export type CtoxWorkjetFeedSettings = typeof CtoxWorkjetFeedSettings.Type;
+
 export const CtoxWorkjetProjectConfiguration = Schema.Struct({
   description: Schema.optionalKey(Schema.NullOr(projectInfoText(4_096))),
   repoUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
   publicUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
+  supervisorLumaId: Schema.optionalKey(Schema.NullOr(CtoxProjectText(160))),
   info: Schema.optionalKey(Schema.NullOr(CtoxWorkjetProjectInfo)),
   jourFixe: Schema.optionalKey(Schema.NullOr(CtoxWorkjetJourFixe)),
+  feedSettings: Schema.optionalKey(Schema.NullOr(CtoxWorkjetFeedSettings)),
 });
 export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfiguration.Type;
 
@@ -583,9 +723,198 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  * Project control travels only through the selected CTOX guest's existing
  * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
  */
+// Full native wire value: strict IPC decoding must retain evidence and computation fields.
+// Source calculations remain server-authoritative (ctox.workjet.project_kpis.v1).
+const CtoxKpiRevision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
+const CtoxKpiTime = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const CtoxKpiValue = Schema.Number.check(Schema.makeFilter(Number.isFinite));
+const CtoxWorkjetKpiRecordPresentation = Schema.Struct({
+  prompt: Schema.Struct({
+    kpi_id: CtoxProjectText(128),
+    prompt: CtoxProjectText(1_024),
+    revision: CtoxKpiRevision,
+  }),
+  result: Schema.Struct({
+    status: Schema.Literals(["resolving", "ready", "stale", "missing_source", "failed"]),
+    reason_code: Schema.optionalKey(CtoxProjectText(64)),
+    message: Schema.optionalKey(CtoxProjectText(256)),
+    snapshot: Schema.optionalKey(
+      Schema.Struct({
+        project_id: ProjectId,
+        kpi_id: CtoxProjectText(128),
+        prompt_revision: CtoxKpiRevision,
+        label: CtoxProjectText(14),
+        value: CtoxKpiValue,
+        display_value: CtoxProjectText(32),
+        unit: CtoxProjectText(16),
+        sources: Schema.Array(
+          Schema.Struct({
+            source_key: CtoxProjectText(128),
+            kind: Schema.Literals(["native_metric", "github_metric", "connected_metric"]),
+            project_id: ProjectId,
+            connection_id: CtoxProjectText(128),
+            metric_key: CtoxProjectText(128),
+            snapshot_revision: CtoxProjectText(256),
+            evidence_ref: CtoxProjectText(256),
+            observed_at_ms: CtoxKpiTime,
+            value: CtoxKpiValue,
+          }),
+        ).check(Schema.isMinLength(1), Schema.isMaxLength(8)),
+        computation: Schema.Struct({
+          recipe_id: CtoxProjectText(128),
+          revision: CtoxKpiRevision,
+          operation: Schema.Literals(["identity", "sum", "average", "percentage"]),
+          input_keys: Schema.Array(CtoxProjectText(128)).check(
+            Schema.isMinLength(1),
+            Schema.isMaxLength(8),
+          ),
+          window_start_ms: CtoxKpiTime,
+          window_end_ms: CtoxKpiTime,
+        }),
+        freshness: Schema.Struct({
+          calculated_at_ms: CtoxKpiTime,
+          refresh_at_ms: CtoxKpiTime,
+          fresh_until_ms: CtoxKpiTime,
+        }),
+      }),
+    ),
+  }),
+}).check(
+  Schema.makeFilter(({ prompt, result }) => {
+    const snapshot = result.snapshot;
+    if (result.status === "ready" || result.status === "stale") {
+      return snapshot !== undefined &&
+        snapshot.kpi_id === prompt.kpi_id &&
+        snapshot.prompt_revision === prompt.revision &&
+        snapshot.sources.every((source) => source.project_id === snapshot.project_id)
+        ? true
+        : "KPI snapshot must match its prompt and project evidence.";
+    }
+    return snapshot === undefined ? true : "Unresolved KPI cannot carry a snapshot.";
+  }),
+);
+const CtoxWorkjetProjectKpis = Schema.Struct({
+  project_id: ProjectId,
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  items: Schema.Array(CtoxWorkjetKpiRecordPresentation).check(Schema.isMaxLength(3)),
+}).check(
+  Schema.makeFilter((kpis) =>
+    kpis.items.every(
+      (item) => !item.result.snapshot || item.result.snapshot.project_id === kpis.project_id,
+    )
+      ? true
+      : "KPI snapshot belongs to another project.",
+  ),
+);
+export type CtoxWorkjetProjectKpis = typeof CtoxWorkjetProjectKpis.Type;
+
+const CtoxWorkjetGalleryOrder = Schema.Struct({
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  projectIds: Schema.Array(ProjectId).check(Schema.isMaxLength(500)),
+});
+export type CtoxWorkjetGalleryOrder = typeof CtoxWorkjetGalleryOrder.Type;
+
+/** ctox.workjet.project_feed.v1 (metric-space-ai/ctox#686). */
+const FeedText = (max: number) => Schema.String.check(Schema.isMaxLength(max));
+export const CtoxWorkjetProjectFeedPost = Schema.Struct({
+  post_id: FeedText(64),
+  project_id: FeedText(128),
+  kind: Schema.Literals([
+    "pr_merged",
+    "session_completed",
+    "disruption",
+    "disruption_resolved",
+    "jour_fixe",
+    "goal_changed",
+    "owner_note",
+  ]),
+  author_kind: Schema.Literals(["supervisor", "worker", "owner"]),
+  author_thread: Schema.NullOr(FeedText(128)),
+  author_label: FeedText(64),
+  harness: Schema.NullOr(FeedText(32)),
+  headline: FeedText(140),
+  body: FeedText(600),
+  open_items: Schema.NullOr(Schema.Array(FeedText(140)).check(Schema.isMaxLength(5))),
+  sources: Schema.Array(
+    Schema.Struct({
+      type: Schema.Literals(["pr", "commit", "session", "file", "meeting", "url"]),
+      label: FeedText(80),
+      ref: FeedText(512),
+    }),
+  ).check(Schema.isMaxLength(8)),
+  action: Schema.NullOr(
+    Schema.Struct({
+      type: Schema.Literals(["open_chat", "open_pr", "open_meeting", "retry"]),
+      label_de: FeedText(40),
+      label_en: FeedText(40),
+      ref: FeedText(512),
+    }),
+  ),
+  thread_ref: Schema.NullOr(FeedText(128)),
+  occurred_at_ms: Schema.Int,
+});
+export type CtoxWorkjetProjectFeedPost = typeof CtoxWorkjetProjectFeedPost.Type;
+
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
+  ...WorkjetInstanceGrokRequests,
+  ...WorkjetNativeProviderRequests,
+  WorkjetNativeModelCheckRequest,
+  WorkjetJourFixeNarrationReadRequest,
+  WorkjetExitModelReadRequest,
+  WorkjetExitModelRefreshRequest,
+  WorkjetExitModelSubmitRequest,
   WorkjetJourFixeReadRequest,
   ...WorkjetJourFixeOwnerRequests,
+  ...WorkjetJourFixeSpeechRequests,
+  ...WorkjetPresentationRequests,
+  ...WorkjetCalendarNativeRequests,
+  ...WorkjetSpeechSettingsRequests,
+  ...WorkjetDictationRequests,
+  ...WorkjetSupervisorRouteRequests,
+  Schema.Struct({
+    action: Schema.Literal("project.kpis.read"),
+    commandId: CommandId,
+    projectId: ProjectId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.feed.read"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    before_ms: Schema.optional(Schema.Int),
+    limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.init"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    operationId: CtoxProjectText(128),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.kpis.refresh"),
+    commandId: CommandId,
+    projectId: ProjectId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.kpis.configure"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    operationId: CtoxProjectText(128),
+    expectedRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    prompts: Schema.Array(
+      Schema.Struct({ kpi_id: CtoxProjectText(128), prompt: CtoxProjectText(1_024) }),
+    ).check(Schema.isMaxLength(3)),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.gallery.order.read"),
+    commandId: CommandId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.gallery.order.set"),
+    commandId: CommandId,
+    operationId: CtoxProjectText(128),
+    expectedRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    projectIds: Schema.Array(ProjectId).check(Schema.isMaxLength(500)),
+  }),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,
@@ -598,6 +927,22 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     projectId: ProjectId,
     threadId: WorkjetSupervisorThreadId,
     goal: WorkjetSupervisorGoal,
+    turnKind: Schema.optionalKey(WorkjetSupervisorTurnKind),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.capabilities"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    threadId: WorkjetSupervisorThreadId,
+    includeInput: Schema.optionalKey(Schema.Boolean),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.input"),
+    commandId: CommandId.check(Schema.isMaxLength(120)),
+    projectId: ProjectId,
+    threadId: WorkjetSupervisorThreadId,
+    targetCommandId: CtoxProjectText(256),
+    body: WorkjetSupervisorGoal,
   }),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.turn.watch"),
@@ -618,6 +963,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("project.list"),
     includeConfiguration: Schema.optionalKey(Schema.Boolean),
+    includeSupervisorLuma: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({
     action: Schema.Literal("project.configure"),
@@ -675,14 +1021,29 @@ export const CtoxWorkjetProjectMetadataProjection = Schema.Struct({
   id: ProjectId,
   title: CtoxProjectText(256),
   createdAt: Schema.optionalKey(IsoDateTime),
+  exitModel: Schema.optionalKey(Schema.NullOr(WorkjetExitModelAssessment)),
   ...CtoxWorkjetProjectConfiguration.fields,
-});
+}).check(
+  Schema.makeFilter(
+    (project) =>
+      project.exitModel == null ||
+      project.exitModel.project_id === project.id ||
+      "Exit assessment belongs to another project.",
+  ),
+);
 export type CtoxWorkjetProjectMetadataProjection = typeof CtoxWorkjetProjectMetadataProjection.Type;
 
 export const CtoxWorkjetProjectProjection = Schema.Struct({
   ...CtoxWorkjetProjectMetadataProjection.fields,
   workingCopies: Schema.Array(CtoxWorkjetWorkingCopyProjection).check(Schema.isMaxLength(500)),
-});
+}).check(
+  Schema.makeFilter(
+    (project) =>
+      project.exitModel == null ||
+      project.exitModel.project_id === project.id ||
+      "Exit assessment belongs to another project.",
+  ),
+);
 export type CtoxWorkjetProjectProjection = typeof CtoxWorkjetProjectProjection.Type;
 
 const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
@@ -697,9 +1058,32 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
   }),
 );
 
+// ctox.workjet.project.init progress (ctox #653). Unknown ids/states are kept
+// as text so a newer CTOX step never breaks the card.
+export const CtoxWorkjetProjectInitStep = Schema.Struct({
+  id: CtoxProjectText(64),
+  state: CtoxProjectText(32),
+  detail: Schema.String.check(Schema.isMaxLength(256)),
+});
+export type CtoxWorkjetProjectInitStep = typeof CtoxWorkjetProjectInitStep.Type;
+
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
+  WorkjetInstanceGrokResponse,
+  WorkjetNativeProviderResponse,
+  WorkjetNativeModelCheckResponse,
+  WorkjetSupervisorTurnCapabilitiesResponse,
+  WorkjetSupervisorInputReceipt,
+  WorkjetJourFixeNarrationReadResponse,
+  WorkjetExitModelResponse,
   WorkjetJourFixeReadResponse,
   WorkjetJourFixeOwnerResponse,
+  WorkjetJourFixeSpeechResponse,
+  ...WorkjetPresentationResponses,
+  ...WorkjetCalendarNativeResponses,
+  WorkjetSpeechSettingsResponse,
+  WorkjetSpeechPlaybackResponse,
+  WorkjetDictationResponse,
+  ...WorkjetSupervisorRouteResponses,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,
@@ -770,6 +1154,70 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
     ),
   ),
   Schema.Struct({
+    action: Schema.Literal("project.init"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    operationId: CtoxProjectText(128),
+    steps: Schema.Array(CtoxWorkjetProjectInitStep).check(Schema.isMaxLength(12)),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.feed.read"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.project_feed.v1"),
+    posts: Schema.Array(CtoxWorkjetProjectFeedPost).check(Schema.isMaxLength(50)),
+    next_before_ms: Schema.NullOr(Schema.Int),
+  }).check(
+    Schema.makeFilter((response) =>
+      response.posts.every((post) => post.project_id === response.projectId)
+        ? true
+        : "Feed post belongs to another project.",
+    ),
+  ),
+  Schema.Struct({
+    action: Schema.Literals(["project.kpis.read", "project.kpis.configure"]),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.project_kpis.v1"),
+    kpis: CtoxWorkjetProjectKpis,
+  }).check(
+    Schema.makeFilter((response) =>
+      response.kpis.project_id === response.projectId
+        ? true
+        : "KPI result belongs to another project.",
+    ),
+  ),
+  Schema.Struct({
+    action: Schema.Literal("project.kpis.refresh"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.project_kpis.v1"),
+    kpis: CtoxWorkjetProjectKpis,
+    refresh: Schema.Struct({
+      completed: Schema.Boolean,
+      reasonCode: Schema.optionalKey(CtoxProjectText(128)),
+      items: Schema.Array(
+        Schema.Struct({
+          kpiId: CtoxProjectText(128),
+          status: Schema.Literals(["fresh", "stale", "blocked", "missing"]),
+          reasonCode: Schema.optionalKey(CtoxProjectText(128)),
+        }),
+      ).check(Schema.isMaxLength(3)),
+    }),
+  }).check(
+    Schema.makeFilter((response) =>
+      response.kpis.project_id === response.projectId
+        ? true
+        : "KPI result belongs to another project.",
+    ),
+  ),
+  Schema.Struct({
+    action: Schema.Literals(["project.gallery.order.read", "project.gallery.order.set"]),
+    commandId: CommandId,
+    contract: Schema.Literal("ctox.workjet.project_gallery_order.v1"),
+    order: CtoxWorkjetGalleryOrder,
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.list"),
     projects: CtoxWorkjetProjectList,
     count: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
@@ -806,6 +1254,21 @@ export function isWorkjetSupervisorReceiptForRequest(
   response: CtoxWorkjetProjectControlResponse,
 ): boolean {
   if (!request.action.startsWith("project.supervisor.")) return true;
+  if (
+    request.action === "project.supervisor.route.capabilities.v1" ||
+    request.action === "project.supervisor.route.read.v1" ||
+    request.action === "project.supervisor.route.capabilities.v2" ||
+    request.action === "project.supervisor.route.read.v2"
+  ) {
+    if (
+      response.action !== "project.supervisor.route.capabilities.v1" &&
+      response.action !== "project.supervisor.route.read.v1" &&
+      response.action !== "project.supervisor.route.capabilities.v2" &&
+      response.action !== "project.supervisor.route.read.v2"
+    )
+      return false;
+    return isWorkjetSupervisorRouteReceiptForRequest(request, response);
+  }
   if (!("binding" in response) || !("threadId" in request) || !("commandId" in response))
     return false;
   if (
@@ -817,7 +1280,21 @@ export function isWorkjetSupervisorReceiptForRequest(
   )
     return false;
   if (request.action === "project.supervisor.bind") return response.action === request.action;
+  if (request.action === "project.supervisor.turn.capabilities")
+    return (
+      response.action === request.action &&
+      (request.includeInput === true) === (response.inputContract !== undefined)
+    );
   if (!("turn" in response) || response.turn.threadId !== request.threadId) return false;
+  if (request.action === "project.supervisor.turn.input")
+    return (
+      response.action === request.action &&
+      response.turn.commandId === request.targetCommandId &&
+      response.turn.taskId !== null &&
+      response.input.body === request.body &&
+      response.delivery === "next_slice" &&
+      response.workerInterrupted === false
+    );
   if (
     request.action === "project.supervisor.turn.watch" ||
     request.action === "project.supervisor.turn.cancel"
@@ -842,13 +1319,86 @@ export function isWorkjetSupervisorReceiptForRequest(
   return response.action === "project.supervisor.turn.submit";
 }
 
+export const CtoxGuestPreparationReason = Schema.Literals([
+  "unknown",
+  "exception",
+  "unsupported_action",
+  "peer_unavailable",
+  "request_timeout",
+  "network_unavailable",
+  "owner_session_not_ready",
+  "project_control_not_ready",
+  "supervisor_control_not_ready",
+  "did_fail_load",
+  "blocked_navigation",
+  "destroyed",
+  "navigation_timeout",
+  "load_url",
+  "navigation_setup",
+  "unexpected_origin",
+]);
+export const CtoxGuestPreparationDiagnostic = Schema.Struct({
+  stage: Schema.Literals([
+    "discovery",
+    "launch",
+    "session",
+    "host_window",
+    "renderer_budget",
+    "create_view",
+    "request_guard",
+    "guest_handlers",
+    "attach",
+    "navigation_commit",
+    "session_events",
+  ]),
+  reason: CtoxGuestPreparationReason,
+  errorCode: Schema.optionalKey(Schema.Int),
+  httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
+});
+export type CtoxGuestPreparationDiagnostic = typeof CtoxGuestPreparationDiagnostic.Type;
+
+export const CtoxWorkjetProjectControlDiagnostic = Schema.Struct({
+  stage: Schema.Literals(["execute"]),
+  reason: Schema.Literals([
+    "peer_unavailable",
+    "request_timeout",
+    "network_unavailable",
+    "owner_session_not_ready",
+    "project_control_not_ready",
+    "supervisor_control_not_ready",
+    "core_outdated",
+    "access_denied",
+  ]),
+  phase: Schema.optionalKey(
+    Schema.Literals([
+      "collections",
+      "command",
+      "bridge",
+      "query_readiness",
+      "native_projection",
+      "native_request",
+    ]),
+  ),
+});
+export type CtoxWorkjetProjectControlDiagnostic = typeof CtoxWorkjetProjectControlDiagnostic.Type;
+
 export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
   Schema.TaggedStruct("failed", {
+    diagnostic: Schema.optionalKey(CtoxWorkjetProjectControlDiagnostic),
+    preparation: Schema.optionalKey(CtoxGuestPreparationDiagnostic),
+    discovery: Schema.optionalKey(
+      Schema.Struct({
+        code: CtoxManagedDiscoveryFailureCode,
+        httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
+      }),
+    ),
     code: Schema.Literals([
       "invalid_input",
       "not_active",
       "launch_failed",
+      "instance_disabled",
+      "instance_removed",
       "authentication_required",
       "unsupported",
       "timeout",
@@ -944,6 +1494,16 @@ export const CtoxComputerEndpoint = Schema.Union([
 ]);
 export type CtoxComputerEndpoint = typeof CtoxComputerEndpoint.Type;
 
+/** Private key bytes remain in the selected native Secret Store. */
+export const CtoxWorkjetComputerSshKey = Schema.Struct({
+  contract: Schema.Literal("ctox.workjet.computer-ssh-key.v1"),
+  computerId: CtoxComputerId,
+  privateKey: CtoxComputerSecretReference,
+  publicKey: CtoxProjectText(1024),
+  publicKeySha256: CtoxProjectText(80),
+});
+export type CtoxWorkjetComputerSshKey = typeof CtoxWorkjetComputerSshKey.Type;
+
 /** Computer membership is confirmed by the selected instance over RxDB/WebRTC. */
 export const CtoxWorkjetComputerControlRequest = Schema.Union([
   Schema.Struct({
@@ -954,15 +1514,26 @@ export const CtoxWorkjetComputerControlRequest = Schema.Union([
     action: Schema.Literal("computer.assign"),
     commandId: CommandId,
     computerId: CtoxComputerId,
+    /** Existing native pairing proof reference; the receiving Owner policy validates it. */
+    deviceBindingId: Schema.optionalKey(CtoxProjectText(160)),
     displayName: CtoxProjectText(256),
     hostingMode: CtoxComputerHostingMode,
     capabilities: CtoxComputerCapabilities,
     capabilityConfig: Schema.optionalKey(CtoxComputerOperationalCapabilities),
+    roles: Schema.optionalKey(ComputerRoles),
+    active: Schema.optionalKey(Schema.Boolean),
+    detectedFacts: Schema.optionalKey(ComputerFacts),
+    hostKeyFingerprint: Schema.optionalKey(Schema.NullOr(CtoxProjectText(256))),
     agentless: Schema.optionalKey(Schema.Boolean),
     selfHostedColocation: Schema.Literal(false),
   }),
   Schema.Struct({
     action: Schema.Literal("computer.unassign"),
+    commandId: CommandId,
+    computerId: CtoxComputerId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.ssh_key.ensure"),
     commandId: CommandId,
     computerId: CtoxComputerId,
   }),
@@ -993,6 +1564,10 @@ export const CtoxWorkjetComputerProjection = Schema.Struct({
   status: Schema.Literals(["assigned", "unassigned"]),
   capabilities: CtoxComputerCapabilities,
   capabilityConfig: Schema.optionalKey(CtoxComputerOperationalCapabilities),
+  roles: Schema.optionalKey(ComputerRoles),
+  active: Schema.optionalKey(Schema.Boolean),
+  detectedFacts: Schema.optionalKey(ComputerFacts),
+  hostKeyFingerprint: Schema.optionalKey(Schema.NullOr(CtoxProjectText(256))),
   agentless: Schema.optionalKey(Schema.Boolean),
   selfHostedColocation: Schema.Boolean,
 });
@@ -1017,6 +1592,10 @@ export const CtoxWorkjetComputerControlResponse = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("computer.unassign"),
     computer: CtoxWorkjetComputerProjection,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.ssh_key.ensure"),
+    ...CtoxWorkjetComputerSshKey.fields,
   }),
   Schema.Struct({
     action: Schema.Literals(["computer.endpoint.upsert", "computer.endpoint.disable"]),
@@ -1178,6 +1757,7 @@ export const CtoxWorkjetSessionProjection = Schema.Struct({
   fenceEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   activeTransferId: Schema.NullOr(CtoxSessionId),
   updatedAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  createdAtMs: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 export type CtoxWorkjetSessionProjection = typeof CtoxWorkjetSessionProjection.Type;
 
@@ -1328,12 +1908,14 @@ export type WorkjetDeviceInviteRedeemInput = typeof WorkjetDeviceInviteRedeemInp
 /** A bounded raw invite JSON document or CTOX desktop invite link. */
 export const CtoxPairingInviteImportInput = Schema.Struct({
   invite: Schema.String.check(Schema.isMaxLength(65_536)),
+  replacesInstanceId: Schema.optionalKey(CtoxManagedInstanceId),
 });
 export type CtoxPairingInviteImportInput = typeof CtoxPairingInviteImportInput.Type;
 
 /** Manual WebRTC pairing input. Secret-bearing fields are main-process only. */
 export const CtoxManualPairingImportInput = Schema.Struct({
   displayName: CtoxPairingDisplayName,
+  replacesInstanceId: Schema.optionalKey(CtoxManagedInstanceId),
   instanceId: Schema.optionalKey(CtoxPairingInstanceIdentity),
   syncRoom: CtoxPairingSyncRoom,
   signalingUrls: Schema.Array(CtoxPairingSignalingUrl).check(
@@ -1466,6 +2048,7 @@ export type CtoxGuestBounds = typeof CtoxGuestBounds.Type;
 export const CtoxManagedActivationInput = Schema.Struct({
   instanceId: CtoxManagedInstanceId,
   bounds: CtoxGuestBounds,
+  repair: Schema.optionalKey(Schema.Literal(true)),
 });
 export type CtoxManagedActivationInput = typeof CtoxManagedActivationInput.Type;
 
@@ -1478,6 +2061,8 @@ export const CtoxManagedActionFailureCode = Schema.Literals([
   "launch_failed",
   "guest_failed",
   "not_active",
+  "instance_disabled",
+  "instance_removed",
 ]);
 export type CtoxManagedActionFailureCode = typeof CtoxManagedActionFailureCode.Type;
 
@@ -1649,7 +2234,22 @@ export const CtoxManagedGuestResult = Schema.Union([
   Schema.TaggedStruct("ready", { instanceId: CtoxManagedInstanceId }),
   Schema.TaggedStruct("revoked", {}),
   Schema.TaggedStruct("failed", {
-    code: Schema.Literals(["invalid_input", "launch_failed", "guest_failed", "not_active"]),
+    preparation: Schema.optionalKey(CtoxGuestPreparationDiagnostic),
+    code: Schema.Literals([
+      "invalid_input",
+      "launch_failed",
+      "guest_failed",
+      "not_active",
+      "instance_disabled",
+      "instance_removed",
+      "authentication_required",
+    ]),
+    discovery: Schema.optionalKey(
+      Schema.Struct({
+        code: CtoxManagedDiscoveryFailureCode,
+        httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
+      }),
+    ),
   }),
 ]);
 export type CtoxManagedGuestResult = typeof CtoxManagedGuestResult.Type;

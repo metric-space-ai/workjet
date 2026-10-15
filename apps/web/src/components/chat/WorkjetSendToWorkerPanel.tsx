@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import {
-  WorkjetMailboxError,
   WorkjetMailboxFailureReason,
   WORKJET_MAILBOX_RPC_MAX_TTL_SECONDS,
   WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS,
@@ -16,11 +15,32 @@ import {
   type WorkjetMeshRosterPeer,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
-import { SendHorizonalIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  EllipsisIcon,
+  SendHorizonalIcon,
+  UserRoundIcon,
+  XIcon,
+} from "lucide-react";
 
 import { cn } from "../../lib/utils";
-import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import {
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
+  MenuTrigger,
+} from "../ui/menu";
+import { Textarea } from "../ui/textarea";
 
 /**
  * "Nachricht" versus "Nachricht + Auftrag" for an ORCHESTRATOR thread
@@ -141,24 +161,24 @@ export type WorkjetSendFieldError =
   | "budget-ttl-out-of-range";
 
 export const WORKJET_SEND_FIELD_ERROR_MESSAGES: Record<WorkjetSendFieldError, string> = {
-  "recipient-thread-required": "Pick a thread on this machine.",
-  "recipient-environment-required": "Enter the target environment id.",
-  "recipient-remote-thread-required": "Enter the thread id on the other machine.",
-  "message-required": "Write a message.",
-  "message-too-long": `A message is at most ${WORKJET_MESSAGE_MAX_LENGTH} characters.`,
-  "prompt-required": "Write the task prompt.",
-  "prompt-too-long": `A prompt is at most ${WORKJET_PROMPT_MAX_LENGTH} characters.`,
-  "scope-required": "List at least one repository-relative file.",
-  "scope-invalid-path": "Scope paths are repository-relative: no leading / and no ..",
-  "scope-too-many": `A scope holds at most ${WORKJET_SCOPE_MAX_FILES} files.`,
-  "acceptance-required": "Write what finished means.",
-  "acceptance-too-long": `Acceptance is at most ${WORKJET_ACCEPTANCE_MAX_LENGTH} characters.`,
-  "handoff-note-too-long": `A handoff note is at most ${WORKJET_HANDOFF_NOTE_MAX_LENGTH} characters.`,
-  "non-goals-required": "Write the non-goals.",
-  "non-goals-too-long": `Non-goals are at most ${WORKJET_NON_GOALS_MAX_LENGTH} characters.`,
-  "budget-depth-out-of-range": "Depth is between 1 and 16.",
-  "budget-review-rounds-out-of-range": "Review rounds are between 0 and 16.",
-  "budget-ttl-out-of-range": `A time-to-live is between ${WORKJET_MIN_TTL_SECONDS} and ${WORKJET_MAX_TTL_SECONDS} seconds.`,
+  "recipient-thread-required": "Empfänger wählen",
+  "recipient-environment-required": "Rechner wählen",
+  "recipient-remote-thread-required": "Für diesen Rechner nur Übergabe",
+  "message-required": "Nachricht fehlt",
+  "message-too-long": `Höchstens ${WORKJET_MESSAGE_MAX_LENGTH} Zeichen`,
+  "prompt-required": "Auftrag fehlt",
+  "prompt-too-long": `Auftrag höchstens ${WORKJET_PROMPT_MAX_LENGTH} Zeichen`,
+  "scope-required": "Mindestens eine Datei angeben",
+  "scope-invalid-path": "Dateien relativ zum Repo angeben",
+  "scope-too-many": `Höchstens ${WORKJET_SCOPE_MAX_FILES} Dateien`,
+  "acceptance-required": "Abnahme fehlt",
+  "acceptance-too-long": `Abnahme höchstens ${WORKJET_ACCEPTANCE_MAX_LENGTH} Zeichen`,
+  "handoff-note-too-long": `Notiz höchstens ${WORKJET_HANDOFF_NOTE_MAX_LENGTH} Zeichen`,
+  "non-goals-required": "Nicht-Ziele fehlen",
+  "non-goals-too-long": `Nicht-Ziele höchstens ${WORKJET_NON_GOALS_MAX_LENGTH} Zeichen`,
+  "budget-depth-out-of-range": "Tiefe zwischen 1 und 16",
+  "budget-review-rounds-out-of-range": "Prüfrunden zwischen 0 und 16",
+  "budget-ttl-out-of-range": "Laufzeit außerhalb des Rahmens",
 };
 
 const boundedProse = (value: string, maximum: number) => {
@@ -299,9 +319,7 @@ export function orderWorkjetRosterPeers(
  * "verified", because the mesh cannot yet make that claim about any peer.
  */
 export function workjetPeerTrustLabel(binding: WorkjetMeshPeerBinding): string {
-  return binding === "self-signed"
-    ? "This peer signed for its own keys, so no other machine in the connection could have substituted them. It is still the machine that claimed this environment id first."
-    : "Keys pinned on first contact only, without a signed key binding. Trust here rests on the authenticated CTOX connection alone.";
+  return binding === "self-signed" ? "selbst signiert" : "beim Erstkontakt gepinnt";
 }
 
 /** `2026-08-18T10:00:00.000Z` → `2026-08-18`, the honest resolution for a pin date. */
@@ -417,12 +435,39 @@ export function buildWorkjetSendHandoffInput(input: {
 const MAILBOX_FAILURE_REASONS: ReadonlySet<string> = new Set(WorkjetMailboxFailureReason.literals);
 
 /**
- * The typed operation error, rendered as the contract's own bounded sentence.
+ * Deutsche Statuszeile je Mailbox-Grund. Der Vertrag liefert englische Sätze;
+ * die Oberfläche zeigt eine kurze deutsche Zeile (höchstens 12 Wörter).
+ */
+const WORKJET_MAILBOX_FAILURE_TEXT: Readonly<Record<WorkjetMailboxFailureReason, string>> = {
+  unauthorized: "Nicht berechtigt",
+  "unknown-target": "Empfänger unbekannt",
+  "target-thread-deleted": "Unterhaltung gibt es nicht mehr",
+  "target-offline": "Empfänger getrennt",
+  "malformed-envelope": "Nachricht ungültig",
+  "invalid-signature": "Signatur ungültig",
+  "duplicate-envelope": "Bereits zugestellt",
+  "payload-too-large": "Nachricht zu groß",
+  "envelope-expired": "Vor Zustellung abgelaufen",
+  "delegation-expired": "Auftrag abgelaufen",
+  "depth-exceeded": "Tiefe ausgeschöpft",
+  "review-rounds-exceeded": "Prüfrunden ausgeschöpft",
+  "token-budget-exceeded": "Token-Budget ausgeschöpft",
+  "cost-budget-exceeded": "Kostenbudget ausgeschöpft",
+  "handoff-snapshot-unavailable": "Übergabe auf diesem Rechner nicht verfügbar",
+  "invalid-state-transition": "Statuswechsel nicht erlaubt",
+  "version-skew": "Gegenstelle hat eine andere Version",
+  "transport-unavailable": "Verbindung nicht verfügbar",
+  "mailbox-unavailable": "Postfach nicht verfügbar",
+  cancelled: "Abgebrochen",
+};
+
+/**
+ * The typed operation error, rendered as a short German status line.
  *
  * A mailbox failure is a bounded reason and nothing else — no prompt, no path,
- * no transport detail — so the panel reconstructs the error to read its
- * message rather than showing whatever a squashed cause happens to stringify
- * to. Anything that is not a mailbox error stays generic.
+ * no transport detail — so the panel reads the reason rather than showing
+ * whatever a squashed cause happens to stringify to. Anything that is not a
+ * mailbox error stays generic.
  */
 export function workjetMailboxFailureMessage(error: unknown): string {
   const reason =
@@ -435,8 +480,8 @@ export function workjetMailboxFailureMessage(error: unknown): string {
     MAILBOX_FAILURE_REASONS.has(error.reason)
       ? (error.reason as WorkjetMailboxFailureReason)
       : null;
-  if (reason === null) return "The Workjet mailbox send failed.";
-  return new WorkjetMailboxError({ reason }).message;
+  if (reason === null) return "Senden fehlgeschlagen";
+  return WORKJET_MAILBOX_FAILURE_TEXT[reason];
 }
 
 /** What the last submit produced, rendered inline under the form. */
@@ -450,388 +495,487 @@ export interface WorkjetSendToWorkerPanelProps {
   readonly threads: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
   /**
    * The mesh roster read (`workjet.mesh.roster`). `null` means the read has not
-   * answered yet or is unavailable — the panel then falls back to the typed
-   * environment id rather than pretending the mesh is empty.
+   * answered yet or is unavailable — other computers are then simply not listed.
    */
   readonly roster?: WorkjetMeshRoster | null;
   /** Last thread id used per remote environment. Panel-local memory only. */
   readonly rememberedThreadIds?: Readonly<Record<string, string>>;
   /**
-   * Narrow-composer rendering. The control keeps its popover and every field
-   * inside it; only the trigger collapses to an icon, exactly as the other
-   * composer controls do once the footer runs out of width.
+   * Anzeigenamen der Rechner je environmentId (z. B. aus den Einstellungen →
+   * Rechner). Ohne Namen zeigt der Empfänger „—“, nie eine gekürzte ID.
    */
+  readonly computerLabels?: Readonly<Record<string, string>> | undefined;
+  /** Kept for callers; the inline row has one layout at every width. */
   readonly compact?: boolean;
   readonly busy: boolean;
   readonly disabled?: boolean;
   readonly outcome: WorkjetSendOutcome | null;
   readonly onDraftChange: (draft: WorkjetSendDraft) => void;
   readonly onSubmit: () => void;
+  /** Schließt die Inline-Zeile. */
+  readonly onClose?: (() => void) | undefined;
 }
 
-const fieldClass =
-  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/70";
-
-function ErrorNote({ error }: { readonly error: WorkjetSendFieldError | undefined }) {
-  if (!error) return null;
-  return (
-    <p className="pt-0.5 text-[11px] text-destructive">
-      {WORKJET_SEND_FIELD_ERROR_MESSAGES[error]}
-    </p>
-  );
+/**
+ * Sichtbarer Name eines anderen Rechners aus dem Mesh: der Anzeigename des
+ * Rechners, sonst „Rechner ohne Namen“. Nie die (gekürzte) environmentId.
+ */
+export function workjetPeerLabel(
+  peer: WorkjetMeshRosterPeer,
+  computerLabels?: Readonly<Record<string, string>> | undefined,
+): string {
+  const label = computerLabels?.[peer.environmentId]?.trim();
+  return label !== undefined && label.length > 0 ? label : "Rechner ohne Namen";
 }
 
+const HERE_RECIPIENT = "here";
+
+/** Der Wert des Empfänger-Dropdowns für einen Entwurf. */
+export function workjetSendRecipientValue(draft: WorkjetSendDraft): string {
+  if (draft.recipientMode === "environment") {
+    const environmentId = draft.targetEnvironmentId.trim();
+    return environmentId.length > 0 ? `peer:${environmentId}` : "";
+  }
+  if (draft.tab === "handoff") return HERE_RECIPIENT;
+  const threadId = draft.targetThreadId.trim();
+  return threadId.length > 0 ? `thread:${threadId}` : "";
+}
+
+export interface WorkjetSendRecipientChoice {
+  readonly value: string;
+  readonly label: string;
+  readonly meta: string | null;
+  readonly group: "local" | "peer";
+  /** Kurzer Grund, warum der Eintrag nicht wählbar ist. */
+  readonly disabledReason: string | null;
+}
+
+/**
+ * Alle Empfänger als Auswahl, nie als Eingabefeld: Chats dieses Rechners und
+ * bekannte andere Rechner aus dem Mesh. Eine Thread-ID auf einem anderen
+ * Rechner kann hier niemand auflisten; ohne gemerkte ID ist dorthin daher nur
+ * die Übergabe möglich.
+ */
+export function workjetSendRecipientChoices(
+  props: Pick<
+    WorkjetSendToWorkerPanelProps,
+    "draft" | "threads" | "roster" | "rememberedThreadIds" | "computerLabels"
+  >,
+): ReadonlyArray<WorkjetSendRecipientChoice> {
+  const handoff = props.draft.tab === "handoff";
+  const local: WorkjetSendRecipientChoice[] = handoff
+    ? [
+        {
+          value: HERE_RECIPIENT,
+          label: "Hier, neuer Chat",
+          meta: null,
+          group: "local",
+          disabledReason: null,
+        },
+      ]
+    : props.threads.map((thread) => ({
+        value: `thread:${thread.threadId}`,
+        label: thread.title,
+        meta: null,
+        group: "local" as const,
+        disabledReason: null,
+      }));
+  const peers = orderWorkjetRosterPeers(props.roster).map((peer) => {
+    const reachable = handoff || props.rememberedThreadIds?.[peer.environmentId] !== undefined;
+    return {
+      value: `peer:${peer.environmentId}`,
+      label: workjetPeerLabel(peer, props.computerLabels),
+      meta: reachable ? workjetPeerTrustLabel(peer.binding) : "nur Übergabe",
+      group: "peer" as const,
+      disabledReason: reachable ? null : "nur Übergabe",
+    };
+  });
+  return [...local, ...peers];
+}
+
+/** Den Entwurf auf einen gewählten Empfänger setzen. */
+export function applyWorkjetSendRecipient(input: {
+  readonly draft: WorkjetSendDraft;
+  readonly value: string;
+  readonly rememberedThreadIds?: Readonly<Record<string, string>> | undefined;
+}): WorkjetSendDraft {
+  if (input.value === HERE_RECIPIENT) {
+    return { ...input.draft, recipientMode: "thread", targetEnvironmentId: "" };
+  }
+  if (input.value.startsWith("thread:")) {
+    return {
+      ...input.draft,
+      recipientMode: "thread",
+      targetEnvironmentId: "",
+      targetThreadId: input.value.slice("thread:".length),
+    };
+  }
+  if (input.value.startsWith("peer:")) {
+    return selectWorkjetRosterPeer({
+      draft: input.draft,
+      environmentId: input.value.slice("peer:".length),
+      rememberedThreadIds: input.rememberedThreadIds,
+    });
+  }
+  return input.draft;
+}
+
+/** Art des Sendens als Menü-Auswahl; ein Wechsel nimmt die Nachricht mit. */
+export function setWorkjetSendTab(draft: WorkjetSendDraft, tab: WorkjetSendTab): WorkjetSendDraft {
+  if (draft.tab === tab) return draft;
+  if (tab === "task") return { ...draft, tab, prompt: draft.message };
+  if (tab === "handoff") {
+    return {
+      ...draft,
+      tab,
+      handoffNote: draft.handoffNote.length > 0 ? draft.handoffNote : draft.message,
+    };
+  }
+  return { ...draft, tab };
+}
+
+const WORKJET_SEND_TAB_LABELS: Record<WorkjetSendTab, string> = {
+  message: "Nachricht",
+  task: "Auftrag",
+  handoff: "Übergabe",
+};
+
+export const WORKJET_SEND_TTL_PRESETS: ReadonlyArray<{
+  readonly seconds: number;
+  readonly label: string;
+}> = [
+  { seconds: 3_600, label: "1 Std." },
+  { seconds: 4 * 3_600, label: "4 Std." },
+  { seconds: 24 * 3_600, label: "1 Tag" },
+  { seconds: 7 * 24 * 3_600, label: "7 Tage" },
+].filter(
+  (preset) =>
+    preset.seconds >= WORKJET_MIN_TTL_SECONDS && preset.seconds <= WORKJET_MAX_TTL_SECONDS,
+);
+
+/** Scope-Dateien: im Entwurf zeilenweise, im Feld kommagetrennt. */
+function scopeFilesForField(scopeFiles: string): string {
+  return scopeFiles.split("\n").join(", ");
+}
+
+function scopeFilesFromField(value: string): string {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .join("\n");
+}
+
+function outcomeText(outcome: WorkjetSendOutcome): string {
+  switch (outcome._tag) {
+    case "error":
+      return outcome.message;
+    case "queued":
+      return "In Warteschlange";
+    case "acknowledged":
+      return "Zugestellt";
+  }
+}
+
+/**
+ * „An Luma senden“ als Inline-Zeile über dem Composer: Empfänger-Dropdown,
+ * Nachricht, „Senden“. Seltenes (Art, Laufzeit, Prüfrunden, Tiefe) steckt im
+ * ⋯-Menü mit Standardwerten. Kein Popover, keine getippten IDs.
+ */
 export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelProps) {
-  const { draft, threads, busy, outcome, onDraftChange, onSubmit } = props;
+  const { draft, busy, outcome, onDraftChange, onSubmit } = props;
   const disabled = props.disabled === true || busy;
   const errors = validateWorkjetSendDraft(draft);
-  const errorOf = (error: WorkjetSendFieldError) => (errors.includes(error) ? error : undefined);
   const patch = (next: Partial<WorkjetSendDraft>) => onDraftChange({ ...draft, ...next });
-  const remoteRecipient = draft.recipientMode === "environment";
-  // A handoff addresses a machine, so the thread pickers are not merely empty
-  // here — they would be a question with no answer, and are removed.
-  const handoffTab = draft.tab === "handoff";
-  const peers = orderWorkjetRosterPeers(props.roster);
-  // `undefined` means "not a roster peer", which is what reveals the free-text
-  // environment field: a hand-typed id stays possible, because the roster only
-  // knows machines this one has ALREADY exchanged mail with.
-  const selectedPeer = peers.find(
-    (peer) => peer.environmentId === draft.targetEnvironmentId.trim(),
-  );
+  const handoff = draft.tab === "handoff";
+  const task = draft.tab === "task";
+  const choices = workjetSendRecipientChoices(props);
+  const recipientValue = workjetSendRecipientValue(draft);
+  const selectedChoice = choices.find((choice) => choice.value === recipientValue) ?? null;
+  const localChoices = choices.filter((choice) => choice.group === "local");
+  const peerChoices = choices.filter((choice) => choice.group === "peer");
+  const touched =
+    draft.message.trim().length > 0 ||
+    draft.handoffNote.trim().length > 0 ||
+    recipientValue.length > 0;
+  const firstError = errors[0];
+  const status =
+    outcome !== null
+      ? { text: outcomeText(outcome), tone: outcome._tag === "error" ? "error" : "neutral" }
+      : touched && firstError !== undefined
+        ? { text: WORKJET_SEND_FIELD_ERROR_MESSAGES[firstError], tone: "neutral" }
+        : null;
+  const submitLabel = busy
+    ? handoff
+      ? "Übergibt…"
+      : "Sendet…"
+    : handoff
+      ? "Übergeben"
+      : task
+        ? "Auftrag senden"
+        : "Senden";
 
   return (
-    <div className="flex w-full flex-col gap-2" data-workjet-send-panel={draft.tab}>
-      <div className="flex items-center gap-1" role="tablist" aria-label="Workjet send mode">
-        {(["message", "task", "handoff"] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            aria-selected={draft.tab === tab}
+    <div
+      className="flex w-full min-w-0 flex-col gap-2 rounded-lg border bg-card/40 p-2"
+      data-workjet-send-panel={draft.tab}
+    >
+      <div className="flex min-w-0 flex-wrap items-start gap-2">
+        <Menu>
+          <MenuTrigger
             disabled={disabled}
-            onClick={() => patch({ tab })}
-            className={cn(
-              "rounded-md px-2 py-1 text-[12px]",
-              draft.tab === tab
-                ? "bg-accent/60 font-medium text-foreground"
-                : "text-muted-foreground hover:bg-accent/30",
-            )}
+            render={
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="min-w-0 max-w-56 shrink-0"
+                aria-label="Empfänger"
+              />
+            }
           >
-            {tab === "message" ? "Message" : tab === "task" ? "Message + Task" : "Hand off"}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-1">
-          {(["thread", "environment"] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              aria-pressed={draft.recipientMode === mode}
-              disabled={disabled}
-              onClick={() => patch({ recipientMode: mode })}
-              className={cn(
-                "rounded-md px-2 py-0.5 text-[11px]",
-                draft.recipientMode === mode
-                  ? "bg-accent/60 text-foreground"
-                  : "text-muted-foreground hover:bg-accent/30",
-              )}
+            <UserRoundIcon aria-hidden="true" />
+            <span className="min-w-0 truncate">{selectedChoice?.label ?? "Empfänger"}</span>
+            <ChevronDownIcon aria-hidden="true" className="size-3.5 opacity-70" />
+          </MenuTrigger>
+          <MenuPopup align="start" side="top" className="max-h-80 min-w-56 max-w-80">
+            <MenuRadioGroup
+              value={recipientValue}
+              onValueChange={(value) => {
+                if (typeof value !== "string" || value.length === 0) return;
+                onDraftChange(
+                  applyWorkjetSendRecipient({
+                    draft,
+                    value,
+                    rememberedThreadIds: props.rememberedThreadIds,
+                  }),
+                );
+              }}
             >
-              {mode === "thread" ? "This machine" : "Another machine"}
-            </button>
-          ))}
-        </div>
-        {draft.recipientMode === "thread" ? (
-          // A handoff to THIS machine needs no thread: the machine creates one.
-          handoffTab ? null : (
-            <select
-              aria-label="Recipient thread"
-              disabled={disabled}
-              className={fieldClass}
-              value={draft.targetThreadId}
-              onChange={(event) => patch({ targetThreadId: event.target.value })}
-            >
-              <option value="">Select a thread…</option>
-              {threads.map((thread) => (
-                <option key={thread.threadId} value={thread.threadId}>
-                  {thread.title}
-                </option>
-              ))}
-            </select>
-          )
-        ) : (
-          <>
-            {peers.length > 0 ? (
-              <select
-                aria-label="Remote environment"
-                disabled={disabled}
-                className={fieldClass}
-                value={selectedPeer ? selectedPeer.environmentId : ""}
-                onChange={(event) =>
-                  onDraftChange(
-                    event.target.value === ""
-                      ? { ...draft, targetEnvironmentId: "", targetThreadId: "" }
-                      : selectWorkjetRosterPeer({
-                          draft,
-                          environmentId: event.target.value,
-                          rememberedThreadIds: props.rememberedThreadIds,
-                        }),
-                  )
-                }
-              >
-                <option value="">Another environment id…</option>
-                <optgroup label="Other computers">
-                  {peers.map((peer) => (
-                    <option key={peer.environmentId} value={peer.environmentId}>
-                      {`${peer.environmentId} · ${peer.workspaceId} · first contact ${formatWorkjetFirstContact(peer.firstSeenAt)}`}
-                    </option>
+              {localChoices.length > 0 ? (
+                <MenuGroup>
+                  <MenuGroupLabel>Dieser Rechner</MenuGroupLabel>
+                  {localChoices.map((choice) => (
+                    <MenuRadioItem key={choice.value} value={choice.value} closeOnClick>
+                      <span className="block min-w-0 truncate">{choice.label}</span>
+                    </MenuRadioItem>
                   ))}
-                </optgroup>
-              </select>
-            ) : null}
-            {selectedPeer === undefined ? (
-              <input
-                aria-label="Recipient environment id"
-                placeholder="environment id"
-                disabled={disabled}
-                className={fieldClass}
-                value={draft.targetEnvironmentId}
-                onChange={(event) => patch({ targetEnvironmentId: event.target.value })}
-              />
-            ) : null}
-            {handoffTab ? (
-              <p className="text-[11px] text-muted-foreground">
-                A handoff addresses the machine. The receiving side creates a new thread, so there
-                is no thread id to enter.
-              </p>
-            ) : (
-              <>
-                <input
-                  aria-label="Recipient thread id on the other machine"
-                  placeholder="thread id"
-                  disabled={disabled}
-                  className={fieldClass}
-                  value={draft.targetThreadId}
-                  onChange={(event) => patch({ targetThreadId: event.target.value })}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  This machine cannot list another machine&rsquo;s threads, so the thread id has to
-                  be typed.
+                </MenuGroup>
+              ) : (
+                <p role="status" className="px-2 py-1.5 text-muted-foreground text-xs">
+                  Keine Chats
                 </p>
-              </>
-            )}
-          </>
-        )}
-        {handoffTab && draft.recipientMode === "thread" ? (
-          <p className="text-[11px] text-muted-foreground">
-            This machine will create a new thread from the snapshot.
-          </p>
-        ) : null}
-        <ErrorNote error={errorOf("recipient-thread-required")} />
-        <ErrorNote error={errorOf("recipient-environment-required")} />
-        <ErrorNote error={errorOf("recipient-remote-thread-required")} />
-        {remoteRecipient && peers.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground">
-            {props.roster
-              ? "This machine has not exchanged mail with any peer yet."
-              : "The mesh roster is not available yet."}
-          </p>
-        ) : null}
-        {remoteRecipient && props.roster?.truncated === true ? (
-          <p className="text-[11px] text-muted-foreground">
-            More peers are pinned than this list shows.
-          </p>
-        ) : null}
-        {selectedPeer ? (
-          <>
-            <p className="text-[11px] text-muted-foreground">
-              {selectedPeer.sealedDeliveryReady
-                ? "This peer's encryption key is pinned, so the payload is sealed."
-                : "No encryption key pinned yet, so the first envelope travels unsealed inside the CTOX connection."}
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              {workjetPeerTrustLabel(selectedPeer.binding)}
-            </p>
-          </>
-        ) : null}
-        {remoteRecipient ? (
-          <p className="text-[11px] text-muted-foreground">Queued until the mesh delivers.</p>
-        ) : null}
+              )}
+              {peerChoices.length > 0 ? (
+                <MenuGroup>
+                  <MenuGroupLabel>Andere Rechner</MenuGroupLabel>
+                  {peerChoices.map((choice) => (
+                    <MenuRadioItem
+                      key={choice.value}
+                      value={choice.value}
+                      disabled={choice.disabledReason !== null}
+                      closeOnClick
+                    >
+                      <span className="flex min-w-0 items-baseline">
+                        <span className="min-w-0 truncate">{choice.label}</span>
+                        {choice.meta ? (
+                          <span className="ms-auto shrink-0 ps-3 text-muted-foreground text-xs">
+                            {choice.meta}
+                          </span>
+                        ) : null}
+                      </span>
+                    </MenuRadioItem>
+                  ))}
+                </MenuGroup>
+              ) : null}
+            </MenuRadioGroup>
+          </MenuPopup>
+        </Menu>
+        <Textarea
+          rows={1}
+          size="sm"
+          className="min-w-40 flex-1"
+          aria-label={handoff ? "Notiz" : "Nachricht"}
+          placeholder={handoff ? "Notiz (optional)" : "Nachricht"}
+          maxLength={handoff ? WORKJET_HANDOFF_NOTE_MAX_LENGTH : WORKJET_MESSAGE_MAX_LENGTH}
+          disabled={disabled}
+          value={handoff ? draft.handoffNote : draft.message}
+          onChange={(event) =>
+            handoff
+              ? patch({ handoffNote: event.target.value })
+              : patch({
+                  message: event.target.value,
+                  ...(task ? { prompt: event.target.value } : {}),
+                })
+          }
+        />
+        <div className="flex shrink-0 items-center gap-1">
+          <Menu>
+            <MenuTrigger
+              disabled={disabled}
+              render={
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Weitere Optionen"
+                  title="Weitere Optionen"
+                />
+              }
+            >
+              <EllipsisIcon aria-hidden="true" />
+            </MenuTrigger>
+            <MenuPopup align="end" side="top" className="min-w-48">
+              <MenuGroup>
+                <MenuGroupLabel>Art</MenuGroupLabel>
+                <MenuRadioGroup
+                  value={draft.tab}
+                  onValueChange={(value) => {
+                    if (value === "message" || value === "task" || value === "handoff") {
+                      onDraftChange(setWorkjetSendTab(draft, value));
+                    }
+                  }}
+                >
+                  {(["message", "task", "handoff"] as const).map((tab) => (
+                    <MenuRadioItem key={tab} value={tab}>
+                      {WORKJET_SEND_TAB_LABELS[tab]}
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </MenuGroup>
+              {task ? (
+                <>
+                  <MenuSeparator />
+                  <MenuSub>
+                    <MenuSubTrigger>
+                      Laufzeit
+                      <span className="ms-auto ps-3 text-muted-foreground text-xs">
+                        {WORKJET_SEND_TTL_PRESETS.find(
+                          (preset) => preset.seconds === draft.ttlSeconds,
+                        )?.label ?? `${draft.ttlSeconds} s`}
+                      </span>
+                    </MenuSubTrigger>
+                    <MenuSubPopup>
+                      <MenuRadioGroup
+                        value={String(draft.ttlSeconds)}
+                        onValueChange={(value) => patch({ ttlSeconds: Number(value) })}
+                      >
+                        {WORKJET_SEND_TTL_PRESETS.map((preset) => (
+                          <MenuRadioItem key={preset.seconds} value={String(preset.seconds)}>
+                            {preset.label}
+                          </MenuRadioItem>
+                        ))}
+                      </MenuRadioGroup>
+                    </MenuSubPopup>
+                  </MenuSub>
+                  <MenuSub>
+                    <MenuSubTrigger>
+                      Prüfrunden
+                      <span className="ms-auto ps-3 text-muted-foreground text-xs">
+                        {draft.maxReviewRounds}
+                      </span>
+                    </MenuSubTrigger>
+                    <MenuSubPopup>
+                      <MenuRadioGroup
+                        value={String(draft.maxReviewRounds)}
+                        onValueChange={(value) => patch({ maxReviewRounds: Number(value) })}
+                      >
+                        {[0, 1, 2, 3].map((rounds) => (
+                          <MenuRadioItem key={rounds} value={String(rounds)}>
+                            {rounds}
+                          </MenuRadioItem>
+                        ))}
+                      </MenuRadioGroup>
+                    </MenuSubPopup>
+                  </MenuSub>
+                  <MenuSub>
+                    <MenuSubTrigger>
+                      Tiefe
+                      <span className="ms-auto ps-3 text-muted-foreground text-xs">
+                        {draft.maxDepth}
+                      </span>
+                    </MenuSubTrigger>
+                    <MenuSubPopup>
+                      <MenuRadioGroup
+                        value={String(draft.maxDepth)}
+                        onValueChange={(value) => patch({ maxDepth: Number(value) })}
+                      >
+                        {[1, 2, 3, 4].map((depth) => (
+                          <MenuRadioItem key={depth} value={String(depth)}>
+                            {depth}
+                          </MenuRadioItem>
+                        ))}
+                      </MenuRadioGroup>
+                    </MenuSubPopup>
+                  </MenuSub>
+                </>
+              ) : null}
+            </MenuPopup>
+          </Menu>
+          <Button
+            type="button"
+            size="sm"
+            disabled={disabled || errors.length > 0}
+            onClick={onSubmit}
+          >
+            <SendHorizonalIcon aria-hidden="true" />
+            {submitLabel}
+          </Button>
+          {props.onClose ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Schließen"
+              title="Schließen"
+              onClick={props.onClose}
+            >
+              <XIcon aria-hidden="true" />
+            </Button>
+          ) : null}
+        </div>
       </div>
-
-      {handoffTab ? (
-        <div className="flex flex-col gap-0.5">
-          <textarea
-            aria-label="Handoff note"
-            rows={3}
-            placeholder="Optional note for whoever continues this"
-            maxLength={WORKJET_HANDOFF_NOTE_MAX_LENGTH}
+      {task ? (
+        <div className="grid min-w-0 gap-2 sm:grid-cols-3" data-workjet-send-task-fields="true">
+          <Input
+            size="sm"
+            aria-label="Dateien"
+            placeholder="Dateien, kommagetrennt"
             disabled={disabled}
-            className={fieldClass}
-            value={draft.handoffNote}
-            onChange={(event) => patch({ handoffNote: event.target.value })}
+            value={scopeFilesForField(draft.scopeFiles)}
+            onChange={(event) =>
+              patch({ scopeFiles: scopeFilesFromField(event.currentTarget.value) })
+            }
           />
-          <ErrorNote error={errorOf("handoff-note-too-long")} />
-          <p className="text-[11px] text-muted-foreground">
-            A bounded context snapshot is composed on this machine: the thread title, its branch,
-            and the most recent messages. The full history stays here and is not copied.
-          </p>
-          <p className="text-[11px] text-muted-foreground">
-            No branch is pushed. The snapshot names the branch so it can be fetched deliberately.
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-0.5">
-          <textarea
-            aria-label="Message"
-            rows={3}
-            maxLength={WORKJET_MESSAGE_MAX_LENGTH}
+          <Input
+            size="sm"
+            aria-label="Nicht-Ziele"
+            placeholder="Nicht-Ziele"
+            maxLength={WORKJET_NON_GOALS_MAX_LENGTH}
             disabled={disabled}
-            className={fieldClass}
-            value={draft.message}
-            onChange={(event) => patch({ message: event.target.value })}
+            value={draft.nonGoals}
+            onChange={(event) => patch({ nonGoals: event.currentTarget.value })}
           />
-          <ErrorNote error={errorOf("message-required")} />
-          <ErrorNote error={errorOf("message-too-long")} />
+          <Input
+            size="sm"
+            aria-label="Abnahme"
+            placeholder="Abnahme"
+            maxLength={WORKJET_ACCEPTANCE_MAX_LENGTH}
+            disabled={disabled}
+            value={draft.acceptance}
+            onChange={(event) => patch({ acceptance: event.currentTarget.value })}
+          />
         </div>
-      )}
-
-      {draft.tab === "task" ? (
-        <>
-          <div className="flex flex-col gap-0.5">
-            <textarea
-              aria-label="Task prompt"
-              rows={4}
-              maxLength={WORKJET_PROMPT_MAX_LENGTH}
-              disabled={disabled}
-              className={fieldClass}
-              value={draft.prompt}
-              onChange={(event) => patch({ prompt: event.target.value })}
-            />
-            <ErrorNote error={errorOf("prompt-required")} />
-            <ErrorNote error={errorOf("prompt-too-long")} />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <textarea
-              aria-label="Scope files, one per line"
-              rows={3}
-              placeholder={"packages/contracts/src/rpc.ts\napps/server/src/ws.ts"}
-              disabled={disabled}
-              className={cn(fieldClass, "font-mono text-[11px]")}
-              value={draft.scopeFiles}
-              onChange={(event) => patch({ scopeFiles: event.target.value })}
-            />
-            <ErrorNote error={errorOf("scope-required")} />
-            <ErrorNote error={errorOf("scope-invalid-path")} />
-            <ErrorNote error={errorOf("scope-too-many")} />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <textarea
-              aria-label="Non-goals"
-              rows={2}
-              maxLength={WORKJET_NON_GOALS_MAX_LENGTH}
-              disabled={disabled}
-              className={fieldClass}
-              value={draft.nonGoals}
-              onChange={(event) => patch({ nonGoals: event.target.value })}
-            />
-            <ErrorNote error={errorOf("non-goals-required")} />
-            <ErrorNote error={errorOf("non-goals-too-long")} />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <textarea
-              aria-label="Acceptance"
-              rows={2}
-              maxLength={WORKJET_ACCEPTANCE_MAX_LENGTH}
-              disabled={disabled}
-              className={fieldClass}
-              value={draft.acceptance}
-              onChange={(event) => patch({ acceptance: event.target.value })}
-            />
-            <ErrorNote error={errorOf("acceptance-required")} />
-            <ErrorNote error={errorOf("acceptance-too-long")} />
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
-              Depth
-              <input
-                aria-label="Maximum delegation depth"
-                type="number"
-                min={1}
-                max={16}
-                step={1}
-                disabled={disabled}
-                className={fieldClass}
-                value={draft.maxDepth}
-                onChange={(event) => patch({ maxDepth: Number(event.target.value) })}
-              />
-            </label>
-            <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
-              Reviews
-              <input
-                aria-label="Maximum review rounds"
-                type="number"
-                min={0}
-                max={16}
-                step={1}
-                disabled={disabled}
-                className={fieldClass}
-                value={draft.maxReviewRounds}
-                onChange={(event) => patch({ maxReviewRounds: Number(event.target.value) })}
-              />
-            </label>
-            <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
-              TTL (s)
-              <input
-                aria-label="Time to live in seconds"
-                type="number"
-                min={WORKJET_MIN_TTL_SECONDS}
-                max={WORKJET_MAX_TTL_SECONDS}
-                step={1}
-                disabled={disabled}
-                className={fieldClass}
-                value={draft.ttlSeconds}
-                onChange={(event) => patch({ ttlSeconds: Number(event.target.value) })}
-              />
-            </label>
-          </div>
-          <ErrorNote error={errorOf("budget-depth-out-of-range")} />
-          <ErrorNote error={errorOf("budget-review-rounds-out-of-range")} />
-          <ErrorNote error={errorOf("budget-ttl-out-of-range")} />
-        </>
       ) : null}
-
-      <button
-        type="button"
-        disabled={disabled || errors.length > 0}
-        onClick={onSubmit}
-        className="self-end rounded-md border border-border/60 bg-card px-2.5 py-1 text-[12px] font-medium text-foreground hover:bg-accent/50 disabled:opacity-50"
-      >
-        {busy
-          ? handoffTab
-            ? "Handing off…"
-            : "Sending…"
-          : handoffTab
-            ? "Hand off"
-            : draft.tab === "task"
-              ? "Send task"
-              : "Send message"}
-      </button>
-
-      {outcome ? (
+      {status ? (
         <p
-          data-workjet-send-outcome={outcome._tag}
+          role={status.tone === "error" ? "alert" : "status"}
+          data-workjet-send-outcome={outcome?._tag}
           className={cn(
-            "text-[11px]",
-            outcome._tag === "error" ? "text-destructive" : "text-muted-foreground",
+            "px-1 text-xs",
+            status.tone === "error" ? "text-destructive" : "text-muted-foreground",
           )}
         >
-          {outcome._tag === "error"
-            ? outcome.message
-            : outcome._tag === "queued"
-              ? `Queued as ${outcome.envelopeId}.`
-              : `Delivered as ${outcome.envelopeId} (${outcome.disposition}).`}
+          {status.text}
         </p>
       ) : null}
     </div>
@@ -854,51 +998,24 @@ export function WorkjetSendToWorkerPanel(props: WorkjetSendToWorkerPanelProps) {
     },
     [onDraftChange],
   );
-  return WorkjetSendToWorkerPanelControl({
-    ...props,
-    rememberedThreadIds: props.rememberedThreadIds ?? rememberedThreadIds,
-    onDraftChange: handleDraftChange,
-  });
+  return (
+    <WorkjetSendToWorkerPanelContent
+      {...props}
+      rememberedThreadIds={props.rememberedThreadIds ?? rememberedThreadIds}
+      onDraftChange={handleDraftChange}
+    />
+  );
 }
 
-/**
- * The composer control itself: a trigger plus the popover that holds the whole
- * panel. It is hook-free and deliberately separate from the stateful wrapper
- * above, so the two variants can be inspected as plain values.
- */
-export function WorkjetSendToWorkerPanelControl(props: WorkjetSendToWorkerPanelProps) {
-  const content = props;
-  const compact = props.compact === true;
-
+/** Der Eintrag im Optionen-Menü des Composers, der die Inline-Zeile öffnet. */
+export function WorkjetSendToWorkerMenuItem(props: {
+  readonly disabled?: boolean;
+  readonly onOpen: () => void;
+}) {
   return (
-    <Popover>
-      <PopoverTrigger
-        disabled={props.disabled === true}
-        data-workjet-send-control-compact={compact ? "true" : "false"}
-        render={
-          <ComposerControl
-            type="button"
-            className={
-              compact
-                ? "min-w-0 max-w-40 shrink-0 px-2"
-                : "min-w-0 max-w-40 shrink-0 whitespace-nowrap"
-            }
-            aria-label="Send to Luma"
-          />
-        }
-      >
-        <ComposerControlIcon icon={SendHorizonalIcon} />
-        {/*
-         * Compact keeps the accessible name and drops only the visible one, so
-         * the control never becomes an unlabelled icon for a screen reader.
-         */}
-        <span className={compact ? "sr-only" : "sr-only sm:not-sr-only truncate"}>
-          Send to Luma
-        </span>
-      </PopoverTrigger>
-      <PopoverPopup align="start" className={compact ? "w-80" : "w-96"}>
-        <WorkjetSendToWorkerPanelContent {...content} />
-      </PopoverPopup>
-    </Popover>
+    <MenuItem disabled={props.disabled} onClick={props.onOpen}>
+      <SendHorizonalIcon aria-hidden="true" />
+      An Luma senden
+    </MenuItem>
   );
 }

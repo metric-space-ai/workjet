@@ -17,6 +17,9 @@ vi.mock("electron", () => ({}));
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
+import { CtoxControlDevice } from "./CtoxControlDevice.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
+import { makeControlDeviceClient } from "./CtoxControlDeviceClient.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 
 function response(status: number, payload?: unknown) {
@@ -94,6 +97,7 @@ function makeLoginWindow(): FakeLoginWindow {
 }
 
 interface HarnessOptions extends CtoxDevAuth.CtoxDevAuthOptions {
+  readonly device?: CtoxControlDevice["Service"];
   readonly fetchImpl?: ReturnType<typeof vi.fn>;
   readonly cookies?: readonly Cookie[];
   readonly loadURL?: () => Promise<void>;
@@ -156,7 +160,16 @@ function makeHarness(options: HarnessOptions = {}) {
     ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
     loginPollIntervalMs: options.loginPollIntervalMs ?? 50,
     loginTimeoutMs: options.loginTimeoutMs ?? 5_000,
-  }).pipe(Layer.provide(dependencies));
+  }).pipe(
+    Layer.provide(
+      Layer.merge(
+        dependencies,
+        options.device === undefined
+          ? Layer.empty
+          : Layer.succeed(CtoxControlDevice, options.device),
+      ),
+    ),
+  );
 
   return {
     accountSession,
@@ -205,6 +218,113 @@ afterEach(() => {
 });
 
 describe("CtoxDevAuth", () => {
+  it.effect("authenticated refresh retries device enrollment without opening login", () => {
+    const engine = makeControlDeviceClient({
+      baseUrl: "https://ctox.dev",
+      read: async () => undefined,
+      write: async () => undefined,
+      fetch: async () => new Response(),
+    });
+    const retryEnrollment = vi.fn(async () => {});
+    const h = makeHarness({
+      device: { ...engine, retryEnrollment },
+      fetchImpl: vi.fn(async () =>
+        response(200, {
+          account: { tenants: [{ id: "fixture", businessName: "Fixture", status: "active" }] },
+        }),
+      ),
+    });
+    return Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      assert.equal((yield* auth.refresh)._tag, "ready");
+      assert.equal(retryEnrollment.mock.calls.length, 1);
+      assert.equal(h.created.length, 0);
+    }).pipe(Effect.provide(h.layer));
+  });
+  it.effect("enrolls only after an ordinary login completes using the account session", () => {
+    const engine = makeControlDeviceClient({
+      baseUrl: "https://ctox.dev",
+      read: async () => undefined,
+      write: async () => undefined,
+      fetch: async () => new Response(),
+    });
+    const enroll = vi.fn(async (cookieFetch: Parameters<typeof engine.enroll>[0]) => {
+      await cookieFetch("https://ctox.dev/api/desktop/device-keys", { method: "POST" });
+    });
+    const h = makeHarness({ device: { ...engine, enroll } });
+    return Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      const login = yield* Effect.forkChild(auth.login);
+      const window = yield* waitForWindow(h);
+      yield* waitForLoginLoad(window);
+      assert.equal(enroll.mock.calls.length, 0);
+      window.emitWebContents("did-navigate", {}, "https://ctox.dev/desktop/auth/complete");
+      const completed = yield* Fiber.join(login);
+      assert.equal(completed._tag, "completed");
+      assert.equal(enroll.mock.calls.length, 1);
+      assert.isTrue(
+        h.fetchImpl.mock.calls.some(([url]) => url === "https://ctox.dev/api/desktop/device-keys"),
+      );
+    }).pipe(Effect.provide(h.layer), Effect.scoped);
+  });
+
+  it.effect("recovers signed-out managed discovery without opening a login window", () => {
+    const device = makeControlDeviceClient({
+      baseUrl: "https://ctox.dev",
+      read: async () => undefined,
+      write: async () => undefined,
+      fetch: async () => new Response(),
+    });
+    const recover = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            account: {
+              tenants: [
+                {
+                  id: "11111111-1111-4111-8111-111111111111",
+                  businessName: "Recovered",
+                  status: "active",
+                },
+              ],
+            },
+          }),
+        ),
+    );
+    let claims = 0;
+    const recovery = DesktopKeyRecovery.of({
+      inspect: Effect.succeed({
+        version: 1,
+        generation: "1-11111111-1111-4111-8111-111111111111",
+        pendingLogin: false,
+        unreadableStores: ["ctox"],
+      }),
+      completeLogin: Effect.void,
+      claimDeviceRecovery: Effect.sync(() => ++claims === 1),
+    });
+    const h = makeHarness({
+      device: {
+        ...device,
+        recoverOnce: recover,
+        status: async () => ({
+          state: "active",
+          createdAt: "2026-10-11T17:00:00Z",
+          lastUsedAt: null,
+          expiresAt: "2026-11-10T17:00:00Z",
+        }),
+      },
+    });
+    return Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      const result = yield* auth.refresh;
+      assert.equal(result._tag, "ready");
+      assert.equal((yield* auth.refresh)._tag, "ready");
+      assert.equal(h.created.length, 0);
+      assert.equal(recover.mock.calls.length, 1);
+    }).pipe(
+      Effect.provide(h.layer.pipe(Layer.provide(Layer.succeed(DesktopKeyRecovery, recovery)))),
+    );
+  });
   it.effect(
     "refreshes through the account session fetch and preserves redacted discovery states",
     () => {
@@ -363,11 +483,19 @@ describe("CtoxDevAuth", () => {
           {},
           "https://accounts.ctox.dev/dashboard?desktop=1&client=ctox-business-os-desktop&auth_completed=1",
         );
-        assert.deepEqual(yield* Fiber.join(loginFiber), {
-          _tag: "completed",
-          via: "url",
-          discovery: { _tag: "signed_out" },
-        });
+        const completed = yield* Fiber.join(loginFiber);
+        assert.equal(completed._tag, "completed");
+        if (completed._tag !== "completed") return;
+        assert.isString(completed.loginId);
+        assert.deepEqual(
+          { ...completed, loginId: undefined },
+          {
+            _tag: "completed",
+            via: "url",
+            discovery: { _tag: "signed_out" },
+            loginId: undefined,
+          },
+        );
         assert.strictEqual(loginWindow.close.mock.calls.length, 1);
         assert.strictEqual(loginWindow.listenerCount("closed"), 0);
         for (const event of [
@@ -409,6 +537,7 @@ describe("CtoxDevAuth", () => {
       const ready: CtoxManagedDiscoveryResult = {
         _tag: "ready",
         instances: [],
+        sessionVerified: true,
       };
       const fetchImpl = vi.fn(async () => response(200, { account: { tenants: [] } }));
       const harness = makeHarness({ fetchImpl });
@@ -419,16 +548,18 @@ describe("CtoxDevAuth", () => {
         const second = yield* Effect.forkChild(auth.login);
         const loginWindow = yield* waitForWindow(harness);
 
-        assert.deepEqual(yield* Fiber.join(first), {
+        const firstResult = yield* Fiber.join(first);
+        const secondResult = yield* Fiber.join(second);
+        assert.equal(firstResult._tag, "completed");
+        if (firstResult._tag !== "completed") return;
+        assert.isString(firstResult.loginId);
+        assert.deepEqual(firstResult, {
           _tag: "completed",
           via: "refresh",
           discovery: ready,
+          loginId: firstResult.loginId!,
         });
-        assert.deepEqual(yield* Fiber.join(second), {
-          _tag: "completed",
-          via: "refresh",
-          discovery: ready,
-        });
+        assert.deepEqual(secondResult, firstResult);
         assert.strictEqual(harness.create.mock.calls.length, 1);
         assert.strictEqual(loginWindow.listenerCount("closed"), 0);
         assert.strictEqual(loginWindow.webContentsListenerCount("did-fail-load"), 0);

@@ -1,3 +1,5 @@
+import { isWorkjetJourFixeSpeechReceiptForRequest } from "./workjetJourFixeSpeech.ts";
+import { isWorkjetJourFixeNarrationReceiptForRequest } from "./workjetJourFixeNarration.ts";
 import * as Schema from "effect/Schema";
 import { CommandId, ProjectId } from "./baseSchemas.ts";
 import {
@@ -145,8 +147,12 @@ export function isWorkjetJourFixeReceiptForRequest(request: unknown, response: u
     return false;
 
   if (!request.action.startsWith("project.jour_fixe.")) return true;
+  if (request.action === "project.jour_fixe.speech")
+    return isWorkjetJourFixeSpeechReceiptForRequest(request, response);
   if (request.action === "project.jour_fixe.meeting.read")
     return isWorkjetJourFixeReadReceiptForRequest(request, response);
+  if (request.action === "project.jour_fixe.narration.read")
+    return isWorkjetJourFixeNarrationReceiptForRequest(request, response);
 
   try {
     const intent = decodeRequest(request);

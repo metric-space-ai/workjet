@@ -15,7 +15,7 @@ import { shortcutLabelForCommand } from "~/keybindings";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
-  ProjectScriptEditorDialog,
+  ProjectScriptEditor,
   ScriptIcon,
   type NewProjectScriptInput,
   type ProjectScriptActionResult,
@@ -92,11 +92,11 @@ export default function ProjectScriptsControl({
   const dropdownItemClassName =
     "data-highlighted:bg-transparent data-highlighted:text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground data-highlighted:hover:bg-accent data-highlighted:hover:text-accent-foreground data-highlighted:focus-visible:bg-accent data-highlighted:focus-visible:text-accent-foreground";
 
-  const openAddDialog = () => {
+  const openAddEditor = () => {
     setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT });
   };
 
-  const openEditDialog = (script: ProjectScript) => {
+  const openEditEditor = (script: ProjectScript) => {
     setActionsMenuOpen({ scripts: false, imports: false });
     setEditorRequest(editorRequestForScript(script, keybindings));
   };
@@ -119,13 +119,13 @@ export default function ProjectScriptsControl({
     };
     const result = await onAddScript(payload);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      // Surface the failure through the regular add dialog, prefilled so the
+      // Surface the failure through the inline add form, prefilled so the
       // user can adjust and retry.
       const error = squashAtomCommandFailure(result);
       setEditorRequest({
         scriptId: null,
         initial: payload,
-        error: error instanceof Error ? error.message : "Failed to import action.",
+        error: error instanceof Error ? error.message : "Skript nicht übernommen.",
       });
     }
   };
@@ -134,7 +134,7 @@ export default function ProjectScriptsControl({
     <>
       {primaryScript && <MenuSeparator />}
       <MenuGroup>
-        <MenuGroupLabel>From workjet.json</MenuGroupLabel>
+        <MenuGroupLabel>Aus workjet.json</MenuGroupLabel>
         {importableScripts.map((fileScript) => (
           <MenuItem
             key={`${fileScript.name} ${fileScript.command}`}
@@ -144,7 +144,7 @@ export default function ProjectScriptsControl({
             <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4" />
             <span className="truncate">{fileScript.name}</span>
             <MenuShortcut className="ms-auto">
-              <DownloadIcon className="size-3.5" aria-label="Import" />
+              <DownloadIcon className="size-3.5" aria-label="Übernehmen" />
             </MenuShortcut>
           </MenuItem>
         ))}
@@ -155,7 +155,7 @@ export default function ProjectScriptsControl({
   return (
     <>
       {primaryScript ? (
-        <Group aria-label="Project scripts">
+        <Group aria-label="Projektskripte">
           <Tooltip>
             <TooltipTrigger
               render={
@@ -163,7 +163,7 @@ export default function ProjectScriptsControl({
                   size="xs"
                   variant="outline"
                   className="w-7 px-0 sm:w-6 @3xl/header-actions:w-auto! @3xl/header-actions:px-[calc(--spacing(2)-1px)]"
-                  aria-label={`Run ${primaryScript.name}`}
+                  aria-label={`${primaryScript.name} ausführen`}
                   // The tooltip wrapper replaces data-slot="button", so themed
                   // toolbar styling needs its own hook.
                   data-toolbar-control=""
@@ -176,7 +176,7 @@ export default function ProjectScriptsControl({
                 {primaryScript.name}
               </span>
             </TooltipTrigger>
-            <TooltipPopup side="top">Run {primaryScript.name}</TooltipPopup>
+            <TooltipPopup side="top">{primaryScript.name} ausführen</TooltipPopup>
           </Tooltip>
           <GroupSeparator className="hidden @3xl/header-actions:block" />
           <Menu
@@ -184,9 +184,7 @@ export default function ProjectScriptsControl({
             open={actionsMenuOpen.scripts}
             onOpenChange={(open) => setActionsMenuOpen({ scripts: open, imports: false })}
           >
-            <MenuTrigger
-              render={<Button size="icon-xs" variant="outline" aria-label="Script actions" />}
-            >
+            <MenuTrigger render={<Button size="icon-xs" variant="outline" aria-label="Skripte" />}>
               <ChevronDownIcon className="size-4" />
             </MenuTrigger>
             <MenuPopup align="end">
@@ -216,7 +214,7 @@ export default function ProjectScriptsControl({
                         variant="ghost"
                         size="icon-xs"
                         className="absolute right-0 top-1/2 size-6 -translate-y-1/2 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:pointer-events-auto"
-                        aria-label={`Edit ${script.name}`}
+                        aria-label={`${script.name} bearbeiten`}
                         onPointerDown={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -224,7 +222,7 @@ export default function ProjectScriptsControl({
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-                          openEditDialog(script);
+                          openEditEditor(script);
                         }}
                       >
                         <SettingsIcon className="size-3.5" />
@@ -234,9 +232,9 @@ export default function ProjectScriptsControl({
                 );
               })}
               {importMenuItems}
-              <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
+              <MenuItem className={dropdownItemClassName} onClick={openAddEditor}>
                 <PlusIcon className="size-4" />
-                Add action
+                Skript hinzufügen
               </MenuItem>
             </MenuPopup>
           </Menu>
@@ -247,18 +245,18 @@ export default function ProjectScriptsControl({
           open={actionsMenuOpen.imports}
           onOpenChange={(open) => setActionsMenuOpen({ scripts: false, imports: open })}
         >
-          <MenuTrigger render={<Button size="xs" variant="outline" aria-label="Project actions" />}>
+          <MenuTrigger render={<Button size="xs" variant="outline" aria-label="Projektskripte" />}>
             <PlusIcon className="size-3.5" />
             <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
-              Add action
+              Skript hinzufügen
             </span>
             <ChevronDownIcon className="size-3.5" />
           </MenuTrigger>
           <MenuPopup align="end">
             {importMenuItems}
-            <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
+            <MenuItem className={dropdownItemClassName} onClick={openAddEditor}>
               <PlusIcon className="size-4" />
-              Add action
+              Skript hinzufügen
             </MenuItem>
           </MenuPopup>
         </Menu>
@@ -270,24 +268,25 @@ export default function ProjectScriptsControl({
                 size="xs"
                 variant="outline"
                 className="w-7 px-0 sm:w-6 @3xl/header-actions:w-auto! @3xl/header-actions:px-[calc(--spacing(2)-1px)]"
-                aria-label="Add action"
+                aria-label="Skript hinzufügen"
                 // The tooltip wrapper replaces data-slot="button", so themed
                 // toolbar styling needs its own hook.
                 data-toolbar-control=""
-                onClick={openAddDialog}
+                onClick={openAddEditor}
               />
             }
           >
             <PlusIcon className="size-3.5" />
             <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
-              Add action
+              Skript hinzufügen
             </span>
           </TooltipTrigger>
-          <TooltipPopup side="top">Add action</TooltipPopup>
+          <TooltipPopup side="top">Skript hinzufügen</TooltipPopup>
         </Tooltip>
       )}
 
-      <ProjectScriptEditorDialog
+      <ProjectScriptEditor
+        className="mt-2 w-full"
         request={editorRequest}
         scripts={scripts}
         onSubmit={submitScript}

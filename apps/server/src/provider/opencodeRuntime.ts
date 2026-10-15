@@ -398,7 +398,11 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
   const netService = yield* NetService.NetService;
   const hostPlatform = yield* HostProcessPlatform;
   const resolveCommand = (command: string, args: ReadonlyArray<string>, env?: NodeJS.ProcessEnv) =>
-    resolveSpawnCommand(command, args, env ? { env } : {});
+    resolveSpawnCommand(
+      command,
+      args,
+      env ? { env, extendEnv: env.WORKJET_SOURCE_ISOLATED !== "true" } : {},
+    );
 
   const runOpenCodeCommand: OpenCodeRuntimeShape["runOpenCodeCommand"] = (input) =>
     Effect.gen(function* () {
@@ -406,7 +410,12 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       const child = yield* spawner.spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
           shell: spawnCommand.shell,
-          ...(input.environment ? { env: input.environment } : { extendEnv: true }),
+          ...(input.environment
+            ? {
+                env: input.environment,
+                extendEnv: input.environment.WORKJET_SOURCE_ISOLATED !== "true",
+              }
+            : { extendEnv: true }),
         }),
       );
       const [stdout, stderr, code] = yield* Effect.all(
@@ -467,7 +476,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             shell: spawnCommand.shell,
             env: {
               ...input.environment,
-              OPENCODE_CONFIG_CONTENT: OPENCODE_EMPTY_CONFIG_CONTENT,
+              OPENCODE_CONFIG_CONTENT:
+                input.environment?.OPENCODE_CONFIG_CONTENT ?? OPENCODE_EMPTY_CONFIG_CONTENT,
             },
             extendEnv: input.environment === undefined,
           }),
@@ -488,8 +498,11 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         hostPlatform === "win32"
           ? child.kill({ killSignal: signal, forceKillAfter: "1 second" }).pipe(Effect.asVoid)
           : Effect.sync(() => {
+              // Without a pid, `-Number(undefined)` is NaN, which Node turns into
+              // kill(0): a signal to our own process group, i.e. the whole server.
+              if (typeof child.pid !== "number" || child.pid <= 0) return;
               try {
-                process.kill(-Number(child.pid), signal);
+                process.kill(-child.pid, signal);
               } catch {
                 // The direct child may already have exited after starting the
                 // server; the process group kill is best-effort cleanup for

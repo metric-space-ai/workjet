@@ -19,6 +19,12 @@ export function formatUsd(value: number): string {
   return CURRENCY.format(value);
 }
 
+/** Keep missing prices distinct from a known zero cost, including partial totals. */
+export function formatUsageCost(value: number, unpriced: number): string {
+  if (unpriced > 0) return value > 0 ? `${formatUsd(value)} + unbekannt` : "Unbekannt";
+  return formatUsd(value);
+}
+
 export function formatCount(value: number): string {
   return INTEGER.format(Math.round(value));
 }

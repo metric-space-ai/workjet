@@ -1,5 +1,6 @@
-import { openInstanceSetup } from "../../instanceSetup";
-import { InstanceSetupDialog } from "./InstanceSetupDialog";
+import { openInstanceSetup, openInstanceRePair } from "../../instanceSetup";
+import { workjetUiLanguage } from "../../workjetProjectControl";
+import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
 import type {
   CtoxDiscoveryResult,
@@ -58,7 +59,9 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar"
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { WorkjetHeaderContent } from "../WorkjetHeaderSlots";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
+import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import {
@@ -106,57 +109,88 @@ export interface CtoxSshManagedFormValues {
   readonly stateRoot: string;
 }
 
-export const CTOX_IMPORT_SUCCESS_MESSAGE = "CTOX Backend hinzugefügt.";
-export const CTOX_IMPORT_ERROR_MESSAGE =
-  "CTOX Backend konnte nicht hinzugefügt werden. Eingaben prüfen und erneut versuchen.";
+export const CTOX_IMPORT_SUCCESS_MESSAGE = "Instanz hinzugefügt.";
+export const CTOX_IMPORT_ERROR_MESSAGE = "Instanz nicht hinzugefügt. Eingaben prüfen.";
 export const CTOX_REMOVE_SUCCESS_MESSAGE = "Verbindung entfernt.";
 export const CTOX_REMOVE_ERROR_MESSAGE =
   "Verbindung konnte nicht entfernt werden. Erneut versuchen.";
-export const CTOX_SSH_REMOVE_SUCCESS_MESSAGE = "SSH-Backend entfernt.";
-export const CTOX_SSH_REMOVE_ERROR_MESSAGE =
-  "SSH-Backend konnte nicht entfernt werden. Erneut versuchen.";
+export const CTOX_SSH_REMOVE_SUCCESS_MESSAGE = "SSH-Instanz entfernt.";
+export const CTOX_SSH_REMOVE_ERROR_MESSAGE = "SSH-Instanz nicht entfernt. Erneut versuchen.";
 /**
  * SSH-managed instances are discovered and listed, but not launchable: the
  * remote daemon's signaling endpoints live on the remote loopback interface,
  * which the desktop cannot reach without an SSH port forward.
  */
-export const CTOX_SSH_LAUNCH_PENDING_HINT = "Dieses SSH-Backend ist derzeit nicht erreichbar.";
+export const CTOX_SSH_LAUNCH_PENDING_HINT = "SSH-Instanz nicht erreichbar.";
 
 const SOURCE_GROUP_DEFINITIONS: readonly {
   readonly key: CtoxSourceGroupKey;
   readonly label: string;
 }[] = [
-  { key: "managed", label: "CTOX Backend" },
-  { key: "paired", label: "Verbundene Backends" },
-  { key: "local", label: "Lokale Backends" },
-  { key: "ssh", label: "SSH-Backends" },
+  { key: "managed", label: "ctox.dev" },
+  { key: "paired", label: "Verbundene Instanzen" },
+  { key: "local", label: "Lokale Instanzen" },
+  { key: "ssh", label: "SSH-Instanzen" },
 ];
 
 const SOURCE_LABELS: Record<CtoxManagedInstanceSource, string> = {
-  ctox_dev: "CTOX Backend",
+  ctox_dev: "ctox.dev",
   pairing_invite: "Desktop-Einladung",
   manual_pairing: "Manuell verbunden",
-  local_daemon: "Lokales Backend",
-  ssh_managed: "SSH-Backend",
+  local_daemon: "Lokale Instanz",
+  ssh_managed: "SSH-Instanz",
 };
+
+/**
+ * The instance shell knows exactly four connection states (#559): connected,
+ * connecting, disconnected, login needed. Every status enum maps onto them.
+ */
+export type CtoxInstanceConnectionState =
+  | "connected"
+  | "connecting"
+  | "disconnected"
+  | "needsLogin";
+
+const INSTANCE_STATE_WORDS: Record<"de" | "en", Record<CtoxInstanceConnectionState, string>> = {
+  de: {
+    connected: "Verbunden",
+    connecting: "Verbindet …",
+    disconnected: "Getrennt",
+    needsLogin: "Anmeldung nötig",
+  },
+  en: {
+    connected: "Connected",
+    connecting: "Connecting …",
+    disconnected: "Disconnected",
+    needsLogin: "Login needed",
+  },
+};
+
+function shellText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
+export function ctoxInstanceStateWord(state: CtoxInstanceConnectionState): string {
+  return INSTANCE_STATE_WORDS[workjetUiLanguage()][state];
+}
 
 /** Topbar wording for the guest connection — the raw enum leaked before (K-B4). */
-const CONNECTION_LABELS: Record<string, string> = {
-  idle: "Nicht verbunden",
-  connecting: "Wird verbunden…",
-  ready: "Geöffnet",
-  error: "Verbindungsfehler",
-  revoked: "Zugriff entzogen",
+const CONNECTION_STATES: Record<string, CtoxInstanceConnectionState> = {
+  idle: "disconnected",
+  connecting: "connecting",
+  ready: "connected",
+  error: "disconnected",
+  revoked: "needsLogin",
 };
 
-const STATUS_LABELS: Record<CtoxManagedInstance["status"], string> = {
-  available: "Verfügbar",
-  offline: "Offline",
-  needs_auth: "Anmeldung erforderlich",
-  pairing_expired: "Verbindung abgelaufen",
-  paired: "Verbunden",
-  installing: "Wird eingerichtet",
-  error: "Fehler",
+const INSTANCE_STATES: Record<CtoxManagedInstance["status"], CtoxInstanceConnectionState> = {
+  available: "connected",
+  paired: "connected",
+  installing: "connecting",
+  offline: "disconnected",
+  error: "disconnected",
+  needs_auth: "needsLogin",
+  pairing_expired: "needsLogin",
 };
 
 interface CtoxModeContextValue {
@@ -172,11 +206,18 @@ interface CtoxModeContextValue {
   readonly refresh: () => void;
   readonly login: () => void;
   readonly logout: () => void;
-  readonly importInvite: (invite: string) => Promise<CtoxMutationOutcome>;
+  readonly importInvite: (
+    invite: string,
+    replacesInstanceId?: string,
+  ) => Promise<CtoxMutationOutcome>;
   readonly importManualPairing: (
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxMutationOutcome>;
   readonly removePairedInstance: (instance: CtoxManagedInstance) => Promise<CtoxMutationOutcome>;
+  readonly setInstanceState: (
+    instance: CtoxManagedInstance,
+    state: "enabled" | "disabled" | "removed",
+  ) => Promise<CtoxMutationOutcome>;
   readonly addSshManagedInstance: (
     input: CtoxSshManagedInstanceAddInput,
   ) => Promise<CtoxMutationOutcome>;
@@ -184,6 +225,8 @@ interface CtoxModeContextValue {
     instance: CtoxManagedInstance,
   ) => Promise<CtoxMutationOutcome>;
   readonly select: (instance: CtoxManagedInstance) => Promise<boolean>;
+  /** One-shot: true when the pending activation of this instance came from a user gesture. */
+  readonly takeRepairRequest: (instanceId: string) => boolean;
   readonly showNetwork: () => Promise<boolean>;
   /** Re-check async mutations against the live selected instance ref. */
   readonly isSelected: (instanceId: string) => boolean;
@@ -220,6 +263,7 @@ export function isRemovableCtoxInstance(instance: CtoxManagedInstance): boolean 
 }
 
 export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean {
+  if ((instance.workjetState ?? "enabled") !== "enabled") return false;
   if (instance.source === "ctox_dev") return instance.status === "available";
   // A local daemon is launchable exactly while it is answering: the main
   // process mints its pairing material from that daemon on every activation.
@@ -261,7 +305,10 @@ export function groupCtoxInstances(
     key,
     label,
     instances: instances
-      .filter((instance) => sourceGroupKey(instance.source) === key)
+      .filter(
+        (instance) =>
+          instance.workjetState !== "removed" && sourceGroupKey(instance.source) === key,
+      )
       .toSorted((left, right) =>
         left.displayName === right.displayName
           ? left.id.localeCompare(right.id)
@@ -274,18 +321,25 @@ export function activateCtoxInstance(
   bridge: DesktopCtoxBridge | undefined,
   instance: CtoxManagedInstance,
   bounds: CtoxGuestBounds,
+  repair = false,
 ): Promise<CtoxManagedGuestResult> | undefined {
   if (bridge === undefined || !canActivateCtoxInstance(instance)) return undefined;
-  return bridge.activate(instance.id, bounds);
+  // Only an explicit gesture asks Desktop Main to retry a failed repair now;
+  // automatic re-activation keeps the durable backoff intact.
+  return repair ? bridge.activate(instance.id, bounds, true) : bridge.activate(instance.id, bounds);
 }
 
 export async function submitCtoxInvite(
   bridge: DesktopCtoxBridge | undefined,
   invite: string,
+  replacesInstanceId?: string,
 ): Promise<CtoxMutationOutcome> {
   if (bridge === undefined) return { ok: false, message: CTOX_IMPORT_ERROR_MESSAGE };
   try {
-    const result = await bridge.importInvite(invite);
+    const result =
+      replacesInstanceId === undefined
+        ? await bridge.importInvite(invite)
+        : await bridge.importInvite(invite, replacesInstanceId);
     return result._tag === "completed"
       ? { ok: true, message: CTOX_IMPORT_SUCCESS_MESSAGE }
       : { ok: false, message: CTOX_IMPORT_ERROR_MESSAGE };
@@ -469,6 +523,17 @@ export function applyCtoxGuestStateEvent(
   return next;
 }
 
+export function useCtoxInstanceState(
+  instanceId: string | null,
+): CtoxManagedInstance["workjetState"] {
+  const mode = useContext(CtoxModeContext);
+  return mode?.discovery !== undefined &&
+    mode.discovery !== "loading" &&
+    mode.discovery._tag === "ready"
+    ? mode.discovery.instances.find((instance) => instance.id === instanceId)?.workjetState
+    : undefined;
+}
+
 export function useCtoxMode(): CtoxModeContextValue {
   const value = useContext(CtoxModeContext);
   if (value === null) throw new Error("CTOX mode shell must be rendered inside CtoxModeProvider.");
@@ -562,20 +627,6 @@ export function CtoxModeProvider({
 
   useEffect(() => subscribeActiveWorkjetHostContext(refresh), [refresh]);
 
-  const login = useCallback(() => {
-    if (bridge === undefined) return;
-    setRefreshing(true);
-    void bridge
-      .login()
-      .then((result) => {
-        if (result._tag === "completed") applyDiscovery(result.discovery);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (mountedRef.current) setRefreshing(false);
-      });
-  }, [applyDiscovery, bridge]);
-
   const logout = useCallback(() => {
     if (bridge === undefined) return;
     setRefreshing(true);
@@ -601,8 +652,8 @@ export function CtoxModeProvider({
   }, [bridge, clearSelection, refresh]);
 
   const importInvite = useCallback(
-    async (invite: string) => {
-      const outcome = await submitCtoxInvite(bridge, invite);
+    async (invite: string, replacesInstanceId?: string) => {
+      const outcome = await submitCtoxInvite(bridge, invite, replacesInstanceId);
       if (outcome.ok) refresh();
       return outcome;
     },
@@ -616,6 +667,36 @@ export function CtoxModeProvider({
       return outcome;
     },
     [bridge, refresh],
+  );
+
+  const setInstanceState = useCallback(
+    async (instance: CtoxManagedInstance, state: "enabled" | "disabled" | "removed") => {
+      if (!bridge?.setInstanceState) return { ok: false, message: "Nur in der Desktop-App" };
+      if (state === "disabled" && selectedIdRef.current === instance.id)
+        return { ok: false, message: "Zuerst andere Instanz wählen" };
+      const result = await bridge.setInstanceState({
+        instanceId: instance.id,
+        state,
+        selectedInstanceId: selectedIdRef.current,
+      });
+      if (result._tag !== "completed")
+        return { ok: false, message: "Instanzänderung nicht gespeichert" };
+      setDiscovery((current) =>
+        current !== "loading" && current._tag === "ready"
+          ? {
+              ...current,
+              instances: current.instances.map((row) =>
+                row.id === instance.id ? { ...row, workjetState: state } : row,
+              ),
+            }
+          : current,
+      );
+      if (state === "removed" && selectedIdRef.current === instance.id)
+        await clearSelection("idle");
+      refresh();
+      return { ok: true, message: "" };
+    },
+    [bridge, clearSelection, refresh],
   );
 
   const removePairedInstance = useCallback(
@@ -649,13 +730,23 @@ export function CtoxModeProvider({
     [bridge, clearSelection, refresh],
   );
 
+  // Every select() is a user gesture (click, retry, link, login); mode entry
+  // and restored selections activate without it.
+  const repairRequestRef = useRef<string | null>(null);
+  const takeRepairRequest = useCallback((instanceId: string) => {
+    if (repairRequestRef.current !== instanceId) return false;
+    repairRequestRef.current = null;
+    return true;
+  }, []);
+
   const select = useCallback(
-    async (instance: CtoxManagedInstance) => {
+    async (instance: CtoxManagedInstance, forceReconnect = false) => {
       if (!canActivateCtoxInstance(instance)) return false;
       // A re-selection retries a failed or stalled guest. A ready guest remains
       // attached without a needless reload.
       if (selectedIdRef.current === instance.id) {
-        if (connection !== "ready") {
+        if (forceReconnect || connection !== "ready") {
+          repairRequestRef.current = instance.id;
           setActivationKey((current) => current + 1);
           setConnection("connecting");
         }
@@ -664,6 +755,7 @@ export function CtoxModeProvider({
       try {
         const accepted = await requestActiveWorkjetSelection(instance.id);
         if (!accepted || !mountedRef.current) return false;
+        repairRequestRef.current = instance.id;
         setActivationKey((current) => current + 1);
         setConnection("connecting");
         return true;
@@ -674,6 +766,36 @@ export function CtoxModeProvider({
     [connection],
   );
   const isSelected = useCallback((instanceId: string) => selectedIdRef.current === instanceId, []);
+
+  const login = useCallback(() => {
+    if (bridge === undefined) return;
+    const restoringKey = discovery !== "loading" && discovery.keyRecovery?.pendingLogin === true;
+    const previousSelection = selectedIdRef.current;
+    setRefreshing(true);
+    void bridge
+      .login()
+      .then(async (result) => {
+        if (result._tag !== "completed" || !mountedRef.current) return;
+        applyDiscovery(result.discovery);
+        if (
+          restoringKey &&
+          result.discovery._tag === "ready" &&
+          result.discovery.keyRecovery?.pendingLogin === false
+        ) {
+          const managed = result.discovery.instances.filter(
+            (instance) => instance.source === "ctox_dev" && canActivateCtoxInstance(instance),
+          );
+          const target =
+            managed.find((instance) => instance.id === previousSelection) ?? managed[0];
+          if (target !== undefined && (await select(target, true)))
+            refreshWorkjetProjectRegistry(target.id);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (mountedRef.current) setRefreshing(false);
+      });
+  }, [applyDiscovery, bridge, discovery, select]);
 
   const [appRailVersion, setAppRailVersion] = useState(0);
   const guestBoundsRef = useRef<CtoxGuestBounds | null>(null);
@@ -694,8 +816,14 @@ export function CtoxModeProvider({
           // (Befund K-BH4).
           toastManager.add({
             type: "error",
-            title: "App konnte nicht geöffnet werden",
-            description: "Bitte Verbindung prüfen und erneut versuchen.",
+            title: shellText(
+              "Die App konnte nicht geöffnet werden.",
+              "The app could not be opened.",
+            ),
+            description: shellText(
+              "Prüfe die Verbindung und versuche es erneut.",
+              "Check the connection and try again.",
+            ),
           });
         })
         .then(() => {
@@ -906,9 +1034,11 @@ export function CtoxModeProvider({
       importInvite,
       importManualPairing,
       removePairedInstance,
+      setInstanceState,
       addSshManagedInstance,
       removeSshManagedInstance,
       select,
+      takeRepairRequest,
       showNetwork: () => clearSelection("idle"),
       isSelected,
       setConnection,
@@ -938,22 +1068,19 @@ export function CtoxModeProvider({
       refresh,
       refreshing,
       removePairedInstance,
+      setInstanceState,
       removeSshManagedInstance,
       reportGuestBounds,
       select,
       selectedId,
       setAppDocked,
+      takeRepairRequest,
       workspaceNames,
       reportWorkspaceName,
     ],
   );
 
-  return (
-    <CtoxModeContext value={value}>
-      {children}
-      <InstanceSetupDialog />
-    </CtoxModeContext>
-  );
+  return <CtoxModeContext value={value}>{children}</CtoxModeContext>;
 }
 
 export function ctoxInstanceStatusLabel(
@@ -967,7 +1094,7 @@ export function ctoxInstanceStatusLabel(
     ? "Synchronisierung verfügbar"
     : "Synchronisierung nicht verfügbar";
   const opened = guestOpened ? " · Geöffnet · Datenstand unbestätigt" : "";
-  return `${STATUS_LABELS[instance.status]} · ${health}${opened}`;
+  return `${ctoxInstanceStateWord(INSTANCE_STATES[instance.status])} · ${health}${opened}`;
 }
 
 export function ctoxShellUpdateLabel(instance: CtoxManagedInstance): string {
@@ -1104,9 +1231,11 @@ function ConfirmingTextAction({
     return () => clearTimeout(id);
   }, [armed]);
   return (
-    <button
+    <Button
       type="button"
-      className={cn(className, armed && "visible font-medium text-destructive")}
+      size="xs"
+      variant={armed ? "destructive" : "outline"}
+      className={className}
       disabled={disabled}
       aria-busy={busy}
       aria-label={armed ? `Bestätigen: ${ariaLabel}` : ariaLabel}
@@ -1121,7 +1250,7 @@ function ConfirmingTextAction({
       }}
     >
       {armed ? confirmLabel : label}
-    </button>
+    </Button>
   );
 }
 
@@ -1321,7 +1450,7 @@ function CtoxAppRailRow({
         data-ctox-app-id={app.id}
         data-ctox-app-open={open}
         data-ctox-app-docked={app.docked}
-        title={launchable ? undefined : "Dieses Backend ist nicht verfügbar."}
+        title={launchable ? undefined : "Instanz nicht verfügbar."}
         onClick={() => onOpen(app.id)}
       >
         <span
@@ -1372,8 +1501,20 @@ function CtoxAppRailCategory({
     ),
   );
   const [expanded, setExpanded] = useState(false);
-  const visible = visibleCtoxRailApps(group.apps, expanded);
-  const hidden = group.apps.length - visible.length;
+  const visible = visibleCtoxRailApps(group.apps, false);
+  const extra = group.apps.slice(visible.length);
+  const hidden = extra.length;
+  const renderRow = (app: CtoxInstanceApp) => (
+    <CtoxAppRailRow
+      key={app.id}
+      app={app}
+      instanceReady={instanceReady}
+      stale={stale}
+      launchable={launchable}
+      onOpen={onOpen}
+      onToggleDock={onToggleDock}
+    />
+  );
   return (
     <li data-ctox-app-category={group.category}>
       <button
@@ -1399,25 +1540,38 @@ function CtoxAppRailCategory({
           {group.apps.length}
         </span>
       </button>
-      {collapsed ? null : (
+      <InlineExpand
+        hideCollapseControl
+        independent
+        label={group.category}
+        open={!collapsed}
+        onOpenChange={(open) => {
+          setCollapsed(!open);
+          writeCtoxRailCollapsed(instance.id, group.category, !open);
+        }}
+      >
         <ul className="space-y-px">
-          {visible.map((app) => (
-            <CtoxAppRailRow
-              key={app.id}
-              app={app}
-              instanceReady={instanceReady}
-              stale={stale}
-              launchable={launchable}
-              onOpen={onOpen}
-              onToggleDock={onToggleDock}
-            />
-          ))}
-          {hidden > 0 || expanded ? (
+          {visible.map(renderRow)}
+          {hidden > 0 ? (
+            <li>
+              <InlineExpand
+                hideCollapseControl
+                independent
+                label={group.category}
+                open={expanded}
+                onOpenChange={setExpanded}
+              >
+                <ul className="space-y-px">{extra.map(renderRow)}</ul>
+              </InlineExpand>
+            </li>
+          ) : null}
+          {hidden > 0 ? (
             <li>
               <button
                 type="button"
                 className="w-full rounded-md px-5 py-1 text-left text-[11px] text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
                 data-ctox-app-category-more={group.category}
+                aria-expanded={expanded}
                 onClick={() => setExpanded((value) => !value)}
               >
                 {expanded ? "Weniger anzeigen" : `Mehr anzeigen (${hidden})`}
@@ -1425,7 +1579,7 @@ function CtoxAppRailCategory({
             </li>
           ) : null}
         </ul>
-      )}
+      </InlineExpand>
     </li>
   );
 }
@@ -1489,7 +1643,7 @@ export function CtoxAppRailList({
  * like any other instance.
  */
 export function unavailableHint(instance: CtoxManagedInstance): string | undefined {
-  if (instance.source === "local_daemon") return "Dieses lokale Backend läuft nicht.";
+  if (instance.source === "local_daemon") return "Lokale Instanz läuft nicht.";
   if (instance.source === "ssh_managed") {
     return instance.status === "available" ? undefined : CTOX_SSH_LAUNCH_PENDING_HINT;
   }
@@ -1625,7 +1779,15 @@ function CtoxInstanceCard({
           />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
         </button>
-        {removable && onRemove !== undefined ? (
+        {isPairedCtoxInstance(instance) && instance.status === "error" ? (
+          <button
+            type="button"
+            className="px-2 py-1 text-xs text-sidebar-foreground"
+            onClick={() => openInstanceRePair(instance)}
+          >
+            Neu koppeln
+          </button>
+        ) : removable && onRemove !== undefined ? (
           <Menu>
             <MenuTrigger
               className="invisible inline-flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:visible group-hover/ctox-instance:visible data-popup-open:visible"
@@ -1699,7 +1861,7 @@ export function CtoxManagedInstanceList({
 }: {
   readonly instances: readonly CtoxManagedInstance[];
 }) {
-  return <CtoxInstanceList instances={instances} label="CTOX Backends" />;
+  return <CtoxInstanceList instances={instances} label="Instanzen" />;
 }
 
 const fieldClassName =
@@ -1713,6 +1875,7 @@ export function PairingAddSurface({
   initialChoice = "invite",
   existingOnly = false,
   onBusyChange,
+  replacesInstanceId,
 }: {
   readonly onClose: () => void;
   readonly onImported: (outcome: CtoxMutationOutcome) => void;
@@ -1720,6 +1883,7 @@ export function PairingAddSurface({
   readonly initialChoice?: "invite" | "manual";
   readonly existingOnly?: boolean;
   readonly onBusyChange?: (busy: boolean) => void;
+  readonly replacesInstanceId?: string | undefined;
 }) {
   const { importInvite, importManualPairing, addSshManagedInstance } = useCtoxMode();
   const [choice, setChoice] = useState<"invite" | "manual" | "ssh">(initialChoice);
@@ -1769,7 +1933,7 @@ export function PairingAddSurface({
     event.preventDefault();
     setSubmitting(true);
     setFeedback(null);
-    void importInvite(invite)
+    void importInvite(invite, replacesInstanceId)
       .then(finish)
       .finally(() => setSubmitting(false));
   };
@@ -1795,7 +1959,10 @@ export function PairingAddSurface({
       setSubmitting(false);
       return;
     }
-    void importManualPairing(input)
+    void importManualPairing({
+      ...input,
+      ...(replacesInstanceId === undefined ? {} : { replacesInstanceId }),
+    })
       .then(finish)
       .finally(() => setSubmitting(false));
   };
@@ -1903,7 +2070,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            CTOX-Datenordner auf diesem Host (optional)
+            CTOX-Datenordner
             <input
               className={fieldClassName}
               value={sshStateRoot}
@@ -1914,17 +2081,13 @@ export function PairingAddSurface({
               maxLength={1_024}
             />
           </label>
-          <p className="text-[11px] leading-snug text-sidebar-muted-foreground">
-            Deine SSH-Konfiguration und Schlüssel werden verwendet. Es werden keine Zugangsdaten
-            gespeichert.
-          </p>
           <button
             type="submit"
             className="rounded-md bg-sidebar-primary px-3 py-1.5 text-xs font-medium text-sidebar-primary-foreground disabled:opacity-50"
             disabled={submitting}
             aria-busy={submitting}
           >
-            SSH-Backend hinzufügen
+            SSH-Instanz hinzufügen
           </button>
         </form>
       ) : choice === "invite" ? (
@@ -1952,7 +2115,7 @@ export function PairingAddSurface({
       ) : (
         <form className="mt-3 space-y-2" onSubmit={submitManual}>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Name (optional)
+            Name
             <input
               className={fieldClassName}
               value={displayName}
@@ -1973,7 +2136,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Signaling-Server
+            Server
             <textarea
               className={cn(fieldClassName, "min-h-16 resize-y")}
               value={signalingUrls}
@@ -2021,46 +2184,58 @@ export function PairingAddSurface({
   );
 }
 
-function ManagedAccountState({
-  state,
-  hasPairedInstances,
-}: {
-  readonly state: CtoxManagedState;
-  readonly hasPairedInstances: boolean;
-}) {
-  const { refreshing, login, logout } = useCtoxMode();
-  if (state === "loading") {
+/** Ein Laden endet nach 10 s (UI-Vertrag §1.3). */
+function useLoadingExpired(loading: boolean): boolean {
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    setExpired(false);
+    if (!loading) return;
+    const timer = setTimeout(() => setExpired(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+  return loading && expired;
+}
+
+function ManagedAccountState({ state }: { readonly state: CtoxManagedState }) {
+  const { refreshing, login, logout, refresh } = useCtoxMode();
+  const expired = useLoadingExpired(state === "loading");
+  if (state === "loading" && !expired) {
     return (
       <p className="text-sm text-sidebar-muted-foreground" role="status">
-        CTOX Backends werden geladen…
+        Instanzen werden geladen …
       </p>
     );
   }
   if (state === "signed_out") {
     return (
-      <div className="flex items-center justify-between gap-2 px-2 py-1">
-        <p className="truncate text-xs text-sidebar-muted-foreground">
-          Nicht bei ctox.dev angemeldet
-        </p>
-        <button
-          type="button"
-          className="shrink-0 text-xs font-medium text-sidebar-primary underline-offset-2 hover:underline disabled:opacity-50"
+      <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1">
+        <p className="text-xs text-sidebar-muted-foreground">Nicht bei ctox.dev angemeldet</p>
+        <Button
+          size="xs"
+          variant="outline"
+          className="shrink-0"
           onClick={login}
           disabled={refreshing}
           aria-busy={refreshing}
         >
           Anmelden
-        </button>
+        </Button>
       </div>
     );
   }
-  if (state === "failed") {
+  if (state === "failed" || state === "loading") {
     return (
-      <p className="px-2 py-1 text-xs text-destructive" role="alert">
-        {hasPairedInstances
-          ? "CTOX Backend konnte nicht geladen werden. Verbundene Backends bleiben verfügbar."
-          : "CTOX Backend konnte nicht geladen werden. Bitte erneut versuchen."}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1">
+        <p className="text-xs text-destructive" role="alert">
+          {shellText(
+            "Die Instanz ist gerade nicht erreichbar.",
+            "The instance cannot be reached right now.",
+          )}
+        </p>
+        <Button size="xs" variant="outline" disabled={refreshing} onClick={refresh}>
+          {shellText("Erneut versuchen", "Try again")}
+        </Button>
+      </div>
     );
   }
   return (
@@ -2068,7 +2243,7 @@ function ManagedAccountState({
       label="Abmelden"
       confirmLabel="Abmelden?"
       ariaLabel="Abmelden"
-      className="text-xs text-sidebar-muted-foreground underline-offset-2 hover:underline disabled:opacity-50"
+      className="self-start"
       disabled={refreshing}
       onConfirm={logout}
     />
@@ -2084,7 +2259,7 @@ export function CtoxSidebarFooter() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={() => void navigate({ to: "/settings/business-os" })}>
             <SettingsIcon />
-            <span>Settings</span>
+            <span>Einstellungen</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -2117,13 +2292,13 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
       <SidebarContent className="gap-0" data-ctox-sidebar-shell="">
         <SidebarGroup className="px-[calc(var(--sidebar-content-inset)+0.5rem)] py-4">
           <div className="mb-4 flex items-center justify-between gap-2 px-1">
-            <p className="text-sm font-semibold text-sidebar-foreground">Aktives Backend</p>
+            <p className="text-sm font-semibold text-sidebar-foreground">Aktive Instanz</p>
             <div className="flex items-center gap-1">
               {/* Refresh lives ONCE, in the footer strip — the second copy
                   fifteen lines away confused more than it helped (K-B10). */}
-              <button
-                type="button"
-                className="rounded-md p-1 text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground disabled:opacity-50"
+              <Button
+                size="icon-xs"
+                variant="ghost"
                 onClick={() => {
                   setMutationFeedback(null);
                   openInstanceSetup();
@@ -2133,20 +2308,26 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
                 title="Instanz hinzufügen"
               >
                 <Plus className="size-3.5" aria-hidden />
-              </button>
+              </Button>
             </div>
           </div>
 
           {bridge === undefined ? (
             <p className="mb-3 text-xs text-sidebar-muted-foreground" role="status">
-              CTOX Backend-Dienste sind nicht verfügbar.
+              {shellText(
+                "Instanzen lassen sich nur in der Desktop-App öffnen.",
+                "Instances open only in the desktop app.",
+              )}
             </p>
           ) : null}
-          {discovery !== "loading" && discovery.pairedUnavailable === true ? (
+          {discovery !== "loading" &&
+          discovery.pairedUnavailable === true &&
+          discovery.keyRecovery === undefined ? (
             <p className="mb-3 text-xs text-destructive" role="alert">
-              Gespeicherte Backend-Verbindungen sind teilweise oder vollständig nicht lesbar. Die
-              gespeicherten Daten wurden nicht verändert. Bitte den Schlüsselbundzugriff prüfen und
-              die Backends erneut aktualisieren.
+              {shellText(
+                "Die gespeicherten Verbindungen lassen sich nicht lesen.",
+                "The saved connections cannot be read.",
+              )}
             </p>
           ) : null}
 
@@ -2164,22 +2345,20 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
             </p>
           )}
           {discovery !== "loading" && discovery._tag === "failed" ? (
-            <p className="text-xs text-destructive" role="alert">
-              CTOX Backends konnten nicht geladen werden. Bitte aktualisieren.
-            </p>
+            <ManagedAccountState state="failed" />
           ) : activeInstance === undefined ? (
             <div className="space-y-3">
               <p className="text-xs text-sidebar-muted-foreground" role="status">
-                Wähle ein Backend im Dropdown oben aus.
+                {shellText("Es ist noch keine Instanz gewählt.", "No instance is selected yet.")}
               </p>
-              <ManagedAccountState state={managedState} hasPairedInstances={false} />
+              <ManagedAccountState state={managedState} />
             </div>
           ) : (
             <div className="space-y-3">
-              <ManagedAccountState state={managedState} hasPairedInstances={true} />
+              <ManagedAccountState state={managedState} />
               <CtoxInstanceList
                 instances={[activeInstance]}
-                label="Aktives Backend"
+                label="Aktive Instanz"
                 removingId={removingId}
                 onRemove={remove}
               />
@@ -2304,6 +2483,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
     setConnection,
     reportGuestBounds,
     select,
+    takeRepairRequest,
   } = useCtoxMode();
   const hostRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
@@ -2365,7 +2545,12 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
       modeReady,
       selectedId,
     };
-    const activation = activateCtoxInstance(bridge, instance, bounds);
+    const activation = activateCtoxInstance(
+      bridge,
+      instance,
+      bounds,
+      takeRepairRequest(instance.id),
+    );
     if (activation === undefined) {
       setConnection("error");
       return;
@@ -2380,7 +2565,16 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
         ),
       setConnection,
     );
-  }, [activationKey, bounds, bridge, instance, modeReady, selectedId, setConnection]);
+  }, [
+    activationKey,
+    bounds,
+    bridge,
+    instance,
+    modeReady,
+    selectedId,
+    setConnection,
+    takeRepairRequest,
+  ]);
 
   useEffect(() => {
     if (bridge === undefined || bounds === null || connection !== "ready") return;
@@ -2414,12 +2608,12 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 
   const fallback = {
     connecting: connectingTooLong
-      ? "Die Verbindung dauert länger als erwartet. Das Backend ist möglicherweise nicht erreichbar. Bitte erneut auswählen oder die Backends aktualisieren."
+      ? "Instanz antwortet nicht. Erneut auswählen."
       : "Business OS wird verbunden…",
     ready: "Business OS ist bereit.",
     error: "Business OS konnte nicht geöffnet werden.",
-    revoked: "Zugriff auf dieses Backend ist nicht mehr verfügbar.",
-    idle: "CTOX Backend auswählen, um Business OS zu öffnen.",
+    revoked: "Zugriff entzogen.",
+    idle: "Instanz auswählen",
   }[connection];
 
   return (
@@ -2451,13 +2645,9 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
               fallback
             )}
             {(connectingTooLong || connection === "error") && (
-              <button
-                type="button"
-                className="rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-muted"
-                onClick={() => void select(instance)}
-              >
-                Erneut verbinden
-              </button>
+              <Button size="sm" variant="outline" onClick={() => void select(instance)}>
+                {shellText("Erneut versuchen", "Try again")}
+              </Button>
             )}
           </span>
         </div>
@@ -2467,7 +2657,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 }
 
 export function CtoxMainShell() {
-  const { discovery, selectedId, connection } = useCtoxMode();
+  const { discovery, selectedId, connection, refresh } = useCtoxMode();
   const navigate = useNavigate();
   const knownSelected =
     discovery !== "loading" && discovery._tag === "ready"
@@ -2478,33 +2668,45 @@ export function CtoxMainShell() {
       ? knownSelected
       : undefined;
 
-  const emptyState =
+  const loadingExpired = useLoadingExpired(discovery === "loading");
+  const openSettings = () => void navigate({ to: "/settings/business-os" });
+  // Leerzustand: ein kurzer ganzer Satz und genau ein Knopf (#559).
+  const emptyState: { readonly title: string; readonly action?: ReactNode } =
     connection === "revoked"
       ? {
-          title: "Zugriff entzogen",
-          description: "Zugriff auf das ausgewählte Backend ist nicht mehr verfügbar.",
+          title: shellText(
+            "Der Zugriff auf diese Instanz wurde entzogen.",
+            "Access to this instance was revoked.",
+          ),
+          action: <Button onClick={openSettings}>{shellText("Einstellungen", "Settings")}</Button>,
         }
-      : discovery !== "loading" && discovery._tag === "failed"
+      : (discovery !== "loading" && discovery._tag === "failed") ||
+          loadingExpired ||
+          knownSelected !== undefined
         ? {
-            title: "CTOX Backend nicht verfügbar",
-            description:
-              "Instanzen konnten nicht geladen werden. Öffnen Sie Einstellungen → Business OS, um die Verbindung zu aktualisieren.",
+            title: shellText(
+              "Die Instanz ist gerade nicht erreichbar.",
+              "The instance cannot be reached right now.",
+            ),
+            action: (
+              <Button variant="outline" onClick={refresh}>
+                {shellText("Erneut versuchen", "Try again")}
+              </Button>
+            ),
           }
         : discovery === "loading"
-          ? {
-              title: "CTOX Backends werden geladen",
-              description: "Die Backends werden noch geladen.",
-            }
-          : knownSelected !== undefined
-            ? {
-                title: "Backend derzeit nicht verfügbar",
-                description:
-                  "Die ausgewählte Instanz bleibt gespeichert. Aktualisieren Sie die Backends und versuchen Sie es erneut.",
-              }
-            : {
-                title: "Kein Backend ausgewählt",
-                description: "Wählen Sie ein verfügbares Backend aus, um Business OS zu öffnen.",
-              };
+          ? { title: shellText("Instanzen werden geladen …", "Loading instances …") }
+          : {
+              title: shellText(
+                "Es ist noch keine Instanz gewählt.",
+                "No instance is selected yet.",
+              ),
+              action: (
+                <Button onClick={openSettings}>
+                  {shellText("Instanz auswählen", "Choose instance")}
+                </Button>
+              ),
+            };
 
   return (
     <SidebarInset
@@ -2540,7 +2742,7 @@ export function CtoxMainShell() {
               )}
               aria-hidden
             />
-            {CONNECTION_LABELS[connection]}
+            {ctoxInstanceStateWord(CONNECTION_STATES[connection] ?? "disconnected")}
           </span>
         ) : null}
       </WorkjetHeaderContent>
@@ -2548,11 +2750,13 @@ export function CtoxMainShell() {
         <Empty className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
-              <EmptyTitle className="text-xl text-foreground">{emptyState.title}</EmptyTitle>
-              <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                {emptyState.description}
-              </EmptyDescription>
+              <EmptyTitle className="text-xl text-foreground" role="status">
+                {emptyState.title}
+              </EmptyTitle>
             </EmptyHeader>
+            {emptyState.action === undefined ? null : (
+              <EmptyContent className="mx-auto mt-4">{emptyState.action}</EmptyContent>
+            )}
           </div>
         </Empty>
       ) : (

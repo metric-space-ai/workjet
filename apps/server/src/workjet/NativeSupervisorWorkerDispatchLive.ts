@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import {
+  canCoordinateWorkjet,
   RemoteWorkerDispatchError,
   RemoteWorkerResult,
   type NativeSupervisorWorkerIntent,
@@ -30,6 +31,21 @@ import {
 } from "./NativeSupervisorWorkerDispatch.ts";
 import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
 import { WorkerDispatch, type WorkerDispatchError } from "./WorkerDispatch.ts";
+import { WorkerPullRequestStore } from "./WorkerPullRequestStore.ts";
+import { makeNativeWorkerOutcomePublisher } from "./NativeWorkerOutcomePublisher.ts";
+import { refreshRemoteWorkerOutcome } from "./RemoteWorkerOutcome.ts";
+import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
+
+export function isNativeSupervisorWorkerSource(
+  parent: Pick<OrchestrationThread, "deletedAt" | "archivedAt" | "workjetConfig">,
+): boolean {
+  return (
+    parent.deletedAt === null &&
+    parent.archivedAt === null &&
+    canCoordinateWorkjet(parent.workjetConfig) &&
+    (parent.workjetConfig.schemaVersion !== 2 || parent.workjetConfig.team?.role === "supervisor")
+  );
+}
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
 const encodeResult = Schema.encodeEffect(RemoteWorkerResult);
@@ -58,7 +74,8 @@ export const reconcileNativeWorkerFailure = Effect.fn(
   return Option.some<NativeSupervisorWorkerCompletion>({
     schemaVersion: 1,
     status: "failed",
-    reason: error.reason,
+    // Preserve the installed native completion vocabulary for opt-in failures.
+    reason: error.reason === "execution-policy-invalid" ? "capability-escalation" : error.reason,
   });
 });
 
@@ -72,6 +89,8 @@ export const make = Effect.gen(function* () {
   const connections = yield* DecisionHubConnectionRegistry;
   const workers = yield* WorkerDispatch;
   const broker = yield* RemoteWorkerBroker;
+  const pullRequests = yield* WorkerPullRequestStore;
+  const sourceControl = yield* SourceControlProviderRegistry;
   const native = makeCtoxNativeSupervisorWorkers({
     connections,
     transport: makeCtoxMcpTransport(yield* HttpClient.HttpClient),
@@ -80,15 +99,32 @@ export const make = Effect.gen(function* () {
   const sourceFor = Effect.fn("NativeSupervisorWorkerDispatch.sourceFor")(function* (
     parent: OrchestrationThread,
   ) {
-    if (
-      parent.deletedAt !== null ||
-      parent.archivedAt !== null ||
-      parent.workjetConfig.role !== "orchestrator" ||
-      (parent.workjetConfig.schemaVersion === 2 && parent.workjetConfig.team?.role !== "supervisor")
-    )
+    const persistedBinding =
+      parent.workjetConfig.schemaVersion === 2
+        ? parent.workjetConfig.capabilityBindings.find(
+            (binding) => binding.capabilityId === "ctox-business-os",
+          )?.target
+        : undefined;
+    yield* Effect.annotateCurrentSpan({
+      threadId: parent.id,
+      projectId: parent.projectId,
+      ...(persistedBinding
+        ? { connectionId: persistedBinding.connectionId, instanceId: persistedBinding.instanceId }
+        : {}),
+    });
+    if (!isNativeSupervisorWorkerSource(parent)) {
+      yield* Effect.annotateCurrentSpan({ reason: "ineligible-thread" });
       return yield* failure();
+    }
     const facts = yield* bindings.fromStartConfig(parent.workjetConfig);
-    if (!facts.binding) return yield* failure();
+    if (!facts.binding) {
+      yield* Effect.annotateCurrentSpan({ reason: "binding-unavailable" });
+      return yield* failure();
+    }
+    yield* Effect.annotateCurrentSpan({
+      connectionId: facts.binding.connectionId,
+      instanceId: facts.binding.instanceId,
+    });
     return {
       source: {
         sourceEnvironmentId: facts.environmentId,
@@ -110,11 +146,41 @@ export const make = Effect.gen(function* () {
     return { parent, source };
   });
 
+  const outcomes = makeNativeWorkerOutcomePublisher({
+    now: Clock.currentTimeMillis,
+    listStopped: (after) => pullRequests.listStopped(after).pipe(Effect.mapError(failure)),
+    readStartup: broker.read,
+    refresh: (receipt, startup) =>
+      Effect.gen(function* () {
+        const saved = yield* broker.read(receipt.threadId);
+        if (Option.isNone(saved)) return yield* failure();
+        return yield* refreshRemoteWorkerOutcome(receipt, startup, saved.value.request).pipe(
+          Effect.provideService(ProjectionSnapshotQuery, query),
+          Effect.provideService(SourceControlProviderRegistry, sourceControl),
+          Effect.provideService(WorkerPullRequestStore, pullRequests),
+        );
+      }),
+    currentSource: (worker) =>
+      Effect.gen(function* () {
+        const model = yield* query.getCommandReadModel().pipe(Effect.mapError(failure));
+        const parent = model.threads.find((thread) => thread.id === worker.request.parent.threadId);
+        if (
+          !parent ||
+          parent.projectId !== worker.request.project.id ||
+          worker.request.parent.environmentId !== (yield* environment.getEnvironmentId)
+        )
+          return yield* failure();
+        return yield* sourceFor(parent);
+      }),
+    report: ({ source, registration }, startup, receipt) =>
+      native.reportOutcome(source.scope, registration, startup, receipt),
+  });
   return makeNativeSupervisorWorkerDispatch({
+    reportOutcomes: outcomes.run,
     sources: Effect.gen(function* () {
       const model = yield* query.getCommandReadModel().pipe(Effect.mapError(failure));
       const sources: NativeSupervisorWorkerSource[] = [];
-      for (const parent of model.threads) {
+      for (const parent of model.threads.filter(isNativeSupervisorWorkerSource)) {
         const source = yield* sourceFor(parent).pipe(Effect.option);
         if (Option.isSome(source)) sources.push(source.value);
       }

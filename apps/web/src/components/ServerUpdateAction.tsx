@@ -16,9 +16,9 @@ import { toastManager } from "./ui/toast";
 // folds it into the download phase; everything after the handoff is the
 // restart the user is actually waiting through.
 const UPDATE_STAGE_LABELS: Record<ServerUpdateStage, string> = {
-  downloading: "Downloading…",
-  installing: "Downloading…",
-  resuming: "Restarting…",
+  downloading: "Wird geladen …",
+  installing: "Wird geladen …",
+  resuming: "Startet neu …",
 };
 const pendingUpdateEnvironmentIds = new Set<EnvironmentId>();
 
@@ -27,7 +27,7 @@ export function serverUpdateStageLabel(stage: ServerUpdateStage): string {
 }
 
 function updateFailureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Server update failed.";
+  return error instanceof Error ? error.message : "Aktualisierung fehlgeschlagen.";
 }
 
 /**
@@ -72,7 +72,7 @@ export function ServerUpdateAction({
   serverLabel,
   selfUpdate,
   targetVersion,
-  label = "Update",
+  label = "Aktualisieren",
 }: {
   readonly environmentId: EnvironmentId;
   readonly serverLabel: string;
@@ -85,17 +85,16 @@ export function ServerUpdateAction({
   });
   const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
     target: "update command",
-    onCopy: ({ command }) => {
+    onCopy: () => {
       toastManager.add({
         type: "success",
-        title: "Update command copied",
-        description: `Run \`${command}\` on ${serverLabel} to update it.`,
+        title: "Befehl kopiert",
       });
     },
     onError: (error) => {
       toastManager.add({
         type: "error",
-        title: "Could not copy update command",
+        title: "Kopieren fehlgeschlagen",
         description: error.message,
       });
     },
@@ -117,15 +116,15 @@ export function ServerUpdateAction({
         }
         toastManager.add({
           type: "error",
-          title: "Server update failed",
+          title: "Aktualisierung fehlgeschlagen",
           description: updateFailureMessage(squashAtomCommandFailure(result)),
         });
         return;
       }
       toastManager.add({
         type: "success",
-        title: `${serverLabel} updated`,
-        description: `Reconnected on workjet@${result.value.targetVersion}.`,
+        title: `${serverLabel} aktualisiert`,
+        description: `Verbunden mit workjet@${result.value.targetVersion}`,
       });
     } finally {
       pendingUpdateEnvironmentIds.delete(environmentId);
@@ -133,18 +132,14 @@ export function ServerUpdateAction({
   };
 
   if (selfUpdate === "desktop-managed") {
-    return (
-      <span className="text-muted-foreground text-xs">
-        Update the desktop app on that machine to update this server.
-      </span>
-    );
+    return <span className="text-muted-foreground text-xs">Desktop-App aktualisieren</span>;
   }
 
   if (selfUpdate === null) {
     const command = manualServerUpdateCommand(targetVersion);
     return (
       <Button size="xs" variant="outline" onClick={() => copyToClipboard(command, { command })}>
-        Copy update command
+        Befehl kopieren
       </Button>
     );
   }

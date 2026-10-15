@@ -38,12 +38,12 @@ export function ProjectTeamPanel(props: {
     );
   });
   const directory = (
-    <div className="mt-3 grid gap-3 sm:grid-cols-3" aria-label="Project Lumas">
+    <div className="mt-3 grid gap-3 sm:grid-cols-3" aria-label="Projekt-Lumas">
       {(
         [
-          ["supervisor", "Supervisor", "border-primary/50", "No supervisor yet."],
-          ["specialist", "Parents", "border-emerald-500/50", "No parents yet."],
-          ["worker", "Workers", "border-amber-500/50", "No workers yet."],
+          ["supervisor", "Supervisor", "border-primary/50", "Noch kein Supervisor"],
+          ["specialist", "Feste Luma", "border-emerald-500/50", "Noch keine festen Lumas"],
+          ["worker", "Einmal-Luma", "border-amber-500/50", "Noch keine Einmal-Lumas"],
         ] as const
       ).map(([role, label, accent, empty]) => {
         const group = members.filter(
@@ -85,7 +85,7 @@ export function ProjectTeamPanel(props: {
                         <p className="text-xs text-muted-foreground">{membership.domain}</p>
                       ) : null}
                       {owner ? (
-                        <p className="text-xs text-muted-foreground">Parent: {owner.title}</p>
+                        <p className="text-xs text-muted-foreground">Eltern: {owner.title}</p>
                       ) : null}
                     </li>
                   );
@@ -105,10 +105,10 @@ export function ProjectTeamPanel(props: {
         thread.workjetConfig.team?.role === "supervisor",
     );
     return (
-      <section aria-label="Project team" className="border-b px-4 py-2 text-sm">
+      <section aria-label="Projektteam" className="border-b px-4 py-2 text-sm">
         {supervisor ? (
           <button type="button" onClick={() => props.onOpen(supervisor.id)}>
-            Open project supervisor
+            Supervisor öffnen
           </button>
         ) : (
           <button
@@ -120,16 +120,13 @@ export function ProjectTeamPanel(props: {
               void props
                 .onCreateSupervisor()
                 .then((saved) => {
-                  if (!saved)
-                    setError(
-                      "Could not create the project supervisor. Reload the project before retrying.",
-                    );
+                  if (!saved) setError("Supervisor nicht erstellt");
                 })
-                .catch(() => setError("Could not create the project supervisor."))
+                .catch(() => setError("Supervisor nicht erstellt"))
                 .finally(() => setBusy(false));
             }}
           >
-            Create project supervisor
+            Supervisor erstellen
           </button>
         )}
         {error ? <p role="alert">{error}</p> : null}
@@ -143,16 +140,16 @@ export function ProjectTeamPanel(props: {
     setBusy(true);
     setError(null);
     try {
-      if (!(await action())) setError("The team change could not be saved. Please try again.");
+      if (!(await action())) setError("Teamänderung nicht gespeichert");
     } catch {
-      setError("The team change could not be saved. Please try again.");
+      setError("Teamänderung nicht gespeichert");
     } finally {
       setBusy(false);
     }
   };
   return (
     <section
-      aria-label="Project team"
+      aria-label="Projektteam"
       className={
         props.compact
           ? "flex max-h-52 shrink-0 flex-wrap items-start gap-x-4 gap-y-1 overflow-auto border-b px-4 py-2 text-xs"
@@ -161,7 +158,13 @@ export function ProjectTeamPanel(props: {
       data-workjet-team-toolbar={props.compact ? "compact" : undefined}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <strong className="capitalize">{team.role}</strong>
+        <strong>
+          {team.role === "supervisor"
+            ? "Supervisor"
+            : team.role === "specialist"
+              ? "Feste Luma"
+              : "Einmal-Luma"}
+        </strong>
         {team.role === "specialist" ? <span>{team.domain}</span> : null}
         {props.compact ? null : (
           <span>
@@ -170,13 +173,13 @@ export function ProjectTeamPanel(props: {
         )}
         {team.parentThreadId ? (
           <button type="button" onClick={() => props.onOpen(team.parentThreadId!)}>
-            Parent: {parent?.title ?? team.parentThreadId}
+            Eltern: {parent?.title ?? team.parentThreadId}
           </button>
         ) : null}
       </div>
-      {props.compact ? null : <p className="mt-1">Goal: {team.goal}</p>}
+      {props.compact ? null : <p className="mt-1">Ziel: {team.goal}</p>}
       <details className="mt-1">
-        <summary className="text-xs text-muted-foreground">Project goal</summary>
+        <summary className="text-xs text-muted-foreground">Projektziel</summary>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -188,7 +191,7 @@ export function ProjectTeamPanel(props: {
           }}
         >
           <textarea
-            aria-label="Team goal"
+            aria-label="Teamziel"
             maxLength={4096}
             required
             value={editedGoal ?? team.goal}
@@ -196,14 +199,14 @@ export function ProjectTeamPanel(props: {
             className="mt-2 w-full rounded border p-2"
           />
           <button type="submit" disabled={busy || !(editedGoal ?? team.goal).trim()}>
-            Save goal
+            Ziel speichern
           </button>
         </form>
       </details>
       {props.compact ? null : directory}
       {team.role === "supervisor" ? (
         <details className="mt-2">
-          <summary>Add domain specialist</summary>
+          <summary>Worker hinzufügen</summary>
           <form
             className="mt-2 grid gap-2"
             onSubmit={(event) => {
@@ -219,7 +222,7 @@ export function ProjectTeamPanel(props: {
             }}
           >
             <input
-              aria-label="Specialist domain"
+              aria-label="Fachgebiet"
               required
               maxLength={256}
               value={domain}
@@ -227,7 +230,7 @@ export function ProjectTeamPanel(props: {
               className="rounded border p-2"
             />
             <textarea
-              aria-label="Specialist goal"
+              aria-label="Ziel"
               required
               maxLength={4096}
               value={goal}
@@ -235,7 +238,7 @@ export function ProjectTeamPanel(props: {
               className="rounded border p-2"
             />
             <button type="submit" disabled={busy || !domain.trim() || !goal.trim()}>
-              Add specialist
+              Worker hinzufügen
             </button>
           </form>
         </details>

@@ -1,42 +1,46 @@
 import type { ComponentType } from "react";
 import {
   ActivityIcon,
+  AudioLinesIcon,
   ArchiveIcon,
-  BriefcaseBusinessIcon,
+  CpuIcon,
+  FileTextIcon,
+  FolderKanbanIcon,
+  GaugeIcon,
   GitBranchIcon,
-  KeyboardIcon,
   MonitorIcon,
   PaletteIcon,
-  SparklesIcon,
-  TerminalIcon,
+  ServerIcon,
   Settings2Icon,
-  WrenchIcon,
+  UserRoundIcon,
 } from "lucide-react";
 import { SETTINGS_SECTION_LABELS, type SettingsPath } from "./settingsSearch";
 
 export const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
-  "/settings/business-os": BriefcaseBusinessIcon,
+  "/settings/business-os": ServerIcon,
   "/settings/general": Settings2Icon,
   "/settings/appearance": PaletteIcon,
-  "/settings/keybindings": KeyboardIcon,
-  "/settings/harnesses": TerminalIcon,
-  "/settings/models": SparklesIcon,
+  "/settings/models": CpuIcon,
+  "/settings/speech": AudioLinesIcon,
   "/settings/computers": MonitorIcon,
-  "/settings/workjet": WrenchIcon,
+  "/settings/workjet": UserRoundIcon,
+  "/settings/prompts": FileTextIcon,
+  "/settings/projects": FolderKanbanIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/diagnostics": ActivityIcon,
   "/settings/archived": ArchiveIcon,
+  "/settings/usage": GaugeIcon,
 };
 
-export const SETTINGS_NAV_ITEMS = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])
-  .filter((to) => to !== "/settings/keybindings")
-  .map((to) => ({
+export const SETTINGS_NAV_ITEMS = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[]).map(
+  (to) => ({
     to,
     label: SETTINGS_SECTION_LABELS[to],
     icon: SETTINGS_SECTION_ICONS[to],
-  }));
+  }),
+);
 
 export const INSTANCE_SETTINGS_NAV_ITEMS = SETTINGS_NAV_ITEMS.filter(
   (item) => item.to !== "/settings/business-os",

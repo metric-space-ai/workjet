@@ -128,6 +128,7 @@ function sshPreparationError(cause: unknown) {
   const normalized = message.toLowerCase();
   if (
     normalized.includes("cancel") ||
+    normalized.includes("tailscale ssh requires an additional check") ||
     /permission denied \((?:publickey|password|keyboard-interactive|hostbased|gssapi-with-mic)[^)]*\)/u.test(
       normalized,
     ) ||
@@ -146,7 +147,7 @@ function sshPreparationError(cause: unknown) {
   }
   return new ConnectionTransientError({
     reason: "remote-unavailable",
-    detail: `Could not prepare the SSH environment: ${message}`,
+    detail: `SSH-Umgebung nicht vorbereitet: ${message}`,
   });
 }
 
@@ -164,7 +165,7 @@ export const provisionDesktopSshEnvironment = Effect.fn(
   if (pairingToken === null) {
     return yield* new ConnectionBlockedError({
       reason: "authentication",
-      detail: "The SSH environment did not issue a pairing credential.",
+      detail: "SSH-Umgebung lieferte keinen Kopplungsschlüssel.",
     });
   }
   const descriptor = yield* Effect.tryPromise({
@@ -195,7 +196,7 @@ const capabilitiesLayer = Layer.effectContext(
         if (session === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",
-            detail: "Sign in to Workjet Connect to connect this environment.",
+            detail: "Bei Workjet Connect anmelden.",
           });
         }
         const token = yield* session.readClerkToken().pipe(
@@ -210,7 +211,7 @@ const capabilitiesLayer = Layer.effectContext(
         if (token === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",
-            detail: "The Workjet Connect session is unavailable.",
+            detail: "Workjet-Connect-Sitzung nicht verfügbar.",
           });
         }
         return token;
@@ -225,7 +226,7 @@ const capabilitiesLayer = Layer.effectContext(
         catch: (cause) =>
           new ConnectionTransientError({
             reason: "remote-unavailable",
-            detail: `Could not load the desktop primary credential: ${String(cause)}`,
+            detail: `Desktop-Zugang nicht geladen: ${String(cause)}`,
           }),
       }).pipe(Effect.map(Option.fromNullishOr)),
     });
@@ -235,7 +236,7 @@ const capabilitiesLayer = Layer.effectContext(
         if (bridge === undefined) {
           return yield* new ConnectionBlockedError({
             reason: "unsupported",
-            detail: "SSH environments are only available in the desktop app.",
+            detail: "SSH nur in der Desktop-App verfügbar.",
           });
         }
         return yield* provisionDesktopSshEnvironment(bridge, target);
@@ -245,7 +246,7 @@ const capabilitiesLayer = Layer.effectContext(
         if (bridge === undefined) {
           return yield* new ConnectionBlockedError({
             reason: "unsupported",
-            detail: "SSH environments are only available in the desktop app.",
+            detail: "SSH nur in der Desktop-App verfügbar.",
           });
         }
         const bootstrap = yield* Effect.tryPromise({
@@ -258,7 +259,7 @@ const capabilitiesLayer = Layer.effectContext(
         if (bootstrap.pairingToken === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",
-            detail: "The SSH environment did not issue a pairing credential.",
+            detail: "SSH-Umgebung lieferte keinen Kopplungsschlüssel.",
           });
         }
         const access = yield* Effect.tryPromise({
@@ -281,7 +282,7 @@ const capabilitiesLayer = Layer.effectContext(
           catch: (cause) =>
             new ConnectionTransientError({
               reason: "remote-unavailable",
-              detail: `Could not disconnect the SSH environment: ${String(cause)}`,
+              detail: `SSH-Umgebung nicht getrennt: ${String(cause)}`,
             }),
         });
       }),
@@ -295,7 +296,7 @@ const capabilitiesLayer = Layer.effectContext(
           catch: (cause) =>
             new ConnectionTransientError({
               reason: "remote-unavailable",
-              detail: `Could not release the SSH tunnel: ${String(cause)}`,
+              detail: `SSH-Tunnel nicht freigegeben: ${String(cause)}`,
             }),
         });
       }),
@@ -339,7 +340,7 @@ const loadSecondaryConnectionRegistration = Effect.fn(
   ) {
     return yield* new ConnectionTransientError({
       reason: "endpoint-unavailable",
-      detail: `Desktop-local backend ${entry.id} is not ready yet.`,
+      detail: `Lokales Backend ${entry.id} noch nicht bereit.`,
     });
   }
   const httpBaseUrl = entry.httpBaseUrl;

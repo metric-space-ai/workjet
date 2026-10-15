@@ -119,6 +119,33 @@ function render(overrides: Partial<WorkjetGatewaySectionState> = {}) {
 }
 
 describe("Workjet gateway account surface", () => {
+  it("derives Kimi discovery errors only from the typed reason, never an echoed key", () => {
+    const message = workjetGatewayFailureDescription({
+      _tag: "WorkjetGatewayOperationError",
+      reason: "kimi-key-not-accepted",
+      message: "provider echoed private-fixture-key",
+    });
+    expect(message).toContain("GET /models");
+    expect(message).toContain("https://api.kimi.com/coding/v1");
+    expect(message).toContain("https://api.kimi.ai/coding/v1");
+    expect(message).toContain("https://api.moonshot.ai/v1");
+    expect(message).toContain("https://api.moonshot.cn/v1");
+    expect(message).not.toContain("private-fixture-key");
+  });
+  it.each(["api-key-model-list-unavailable", "invalid-model-selection"] as const)(
+    "shows the secret-free %s retry from the typed contract",
+    (reason) => {
+      const message = workjetGatewayFailureDescription({
+        _tag: "WorkjetGatewayOperationError",
+        reason,
+        message: "provider echoed private-fixture-key",
+      });
+      expect(message).toContain("live model list");
+      expect(message).toContain("retry");
+      expect(message).not.toContain("private-fixture-key");
+      expect(message).not.toContain("Credentials rejected");
+    },
+  );
   it("lists every gateway provider with its accounts, enablement, and model count", () => {
     const markup = render();
 
@@ -126,26 +153,29 @@ describe("Workjet gateway account surface", () => {
     expect(markup).toContain("Codex");
     expect(markup).toContain("Antigravity");
     expect(markup).toContain("Claude Work");
-    expect(markup).toContain("Enabled");
-    expect(markup).toContain("2 account patterns");
-    expect(markup).toContain("recorded");
+    expect(markup).toContain("In Rotation");
+    expect(markup).toContain("2 Kontomuster");
+    expect(markup).toContain("erfasst");
     expect(markup).toContain("Codex Personal");
-    expect(markup).toContain("Disabled");
-    expect(markup).toContain("1 account pattern");
-    expect(markup).toContain("Explain gateway model counts");
+    expect(markup).toContain("Deaktiviert");
+    expect(markup).toContain("1 Kontomuster");
+    expect(markup).toContain("Zählweise der Modelle");
+    // One Row per account, no explanatory row description.
+    expect(markup.match(/data-slot="row"/g)).toHaveLength(3);
+    expect(markup).not.toContain("Connect the LLM accounts");
     // The prose that used to sit here — "No accounts are configured for this
     // provider." — said exactly what the button beside it says, seven times
     // over, and turned the page into something nobody could scan. Absence of
     // accounts is now shown by the provider sitting under "Available".
     expect(markup).not.toContain("No accounts are configured");
-    expect(markup).toContain("Connected");
-    expect(markup).toContain("Available");
-    expect(markup).toContain("Add account");
+    expect(markup).toContain("Verbunden");
+    expect(markup).toContain("Verfügbar");
+    expect(markup).toContain("Konto hinzufügen");
     // The happy path never asks the user to start or stop anything: the server
     // starts the gateway when a login begins.
     expect(markup).not.toContain("Start gateway");
     expect(markup).not.toContain("Stop gateway");
-    expect(markup).not.toContain("Retry gateway");
+    expect(markup).not.toContain("Gateway neu starten");
   });
 
   it("selects accounts by gateway provider only", () => {
@@ -161,13 +191,14 @@ describe("Workjet gateway account surface", () => {
       status: { ...READY_STATUS, phase: "stopped", pid: null, providerEndpoint: null },
     });
 
-    expect(markup).toContain("Stopped");
+    expect(markup).toContain("Gestoppt");
     expect(markup).not.toContain("Start gateway");
-    expect(markup).not.toContain("Retry gateway");
+    expect(markup).not.toContain("Gateway neu starten");
   });
 
-  it("shows the endpoint on a ready gateway and a retry with the reason when faulted", () => {
-    expect(render()).toContain("http://127.0.0.1:8317");
+  it("hides the raw endpoint and offers a retry with the reason when faulted", () => {
+    expect(render()).not.toContain("http://127.0.0.1:8317");
+    expect(render()).toContain("Bereit · 2 Konten · 5 Modelle");
 
     const markup = render({
       status: {
@@ -179,12 +210,12 @@ describe("Workjet gateway account surface", () => {
       },
     });
 
-    expect(markup).toContain("Retry gateway");
+    expect(markup).toContain("Gateway neu starten");
     expect(markup).toContain("The Workjet provider gateway process exited unexpectedly.");
     expect(markup).not.toContain("Start gateway");
   });
 
-  it("shows the pending login with a masked handle and a cancel control", () => {
+  it("shows the pending login without the handle and with a cancel control", () => {
     const login: WorkjetGatewayLoginState = {
       status: "pending",
       provider: "claude",
@@ -193,13 +224,13 @@ describe("Workjet gateway account surface", () => {
     };
     const markup = render({ login });
 
-    expect(markup).toContain("Finish the Claude login in your browser");
-    expect(markup).toContain("abcd…mnop");
+    expect(markup).toContain("Claude-Anmeldung im Browser abschließen.");
     // The opaque handle and the authorization URL never reach the rendered page.
+    expect(markup).not.toContain("abcd…mnop");
     expect(markup).not.toContain("abcdefghijklmnop");
     expect(markup).not.toContain("provider.example.test");
-    expect(markup).toContain("Cancel login");
-    expect(markup).toContain("Workjet never sees your credentials.");
+    expect(markup).toContain("Anmeldung abbrechen");
+    expect(markup).not.toContain("Workjet never sees your credentials.");
   });
 
   it("masks short handles entirely", () => {
@@ -231,12 +262,12 @@ describe("Workjet gateway account surface", () => {
           accountIds: ["account-antigravity-1"],
         },
       }),
-    ).toContain("Added one Antigravity account.");
+    ).toContain("Antigravity-Konto hinzugefügt.");
     expect(
       render({
         login: { status: "completed", provider: "claude", accountIds: ["a", "b"] },
       }),
-    ).toContain("Added 2 Claude accounts.");
+    ).toContain("2 Claude-Konten hinzugefügt.");
   });
 
   it("surfaces a catalog failure without hiding the provider list", () => {
@@ -256,10 +287,10 @@ describe("Workjet gateway account surface", () => {
       ),
     ).toBe("A Workjet provider gateway credential is unavailable.");
     expect(workjetGatewayFailureDescription({ _tag: "SomethingElse" })).toBe(
-      "The Workjet provider gateway operation failed.",
+      "Gateway-Vorgang fehlgeschlagen.",
     );
     expect(workjetGatewayFailureDescription(new Error("boom"))).toBe(
-      "The Workjet provider gateway operation failed.",
+      "Gateway-Vorgang fehlgeschlagen.",
     );
     expect(workjetGatewayOauthSessionInvalidMessage()).toBe(
       "The Workjet provider gateway login session is invalid or expired.",
@@ -267,9 +298,9 @@ describe("Workjet gateway account surface", () => {
   });
 
   it("summarizes each runtime phase from the reported status", () => {
-    expect(workjetGatewayPhaseSummary(null)).toContain("Select a primary environment");
-    expect(workjetGatewayPhaseSummary(READY_STATUS)).toBe("Ready · 2 accounts · 5 models");
-    expect(workjetGatewayPhaseSummary({ ...READY_STATUS, phase: "starting" })).toBe("Starting…");
+    expect(workjetGatewayPhaseSummary(null)).toBe("Kein Rechner gewählt");
+    expect(workjetGatewayPhaseSummary(READY_STATUS)).toBe("Bereit · 2 Konten · 5 Modelle");
+    expect(workjetGatewayPhaseSummary({ ...READY_STATUS, phase: "starting" })).toBe("Startet …");
     expect(
       workjetGatewayPhaseSummary({
         ...READY_STATUS,
@@ -341,17 +372,17 @@ describe("WorkjetGatewayAccounts · API-key providers", () => {
     expect(WORKJET_GATEWAY_PROVIDERS).toHaveLength(7);
   });
 
-  it("offers 'Add API key' for key providers and 'Add account' for OAuth providers", () => {
+  it("offers 'API-Key hinzufügen' for key providers and 'Konto hinzufügen' for OAuth providers", () => {
     const markup = render();
-    expect(markup).toContain("Add API key");
-    expect(markup).toContain("Add account");
+    expect(markup).toContain("API-Key hinzufügen");
+    expect(markup).toContain("Konto hinzufügen");
   });
 
   it("shows only the masked suffix for an API-key account, never a key", () => {
     const markup = render();
     expect(markup).toContain("Z.ai key");
-    expect(markup).toContain("Key ••••9xyz");
-    expect(maskGatewayCredentialSuffix("9xyz")).toBe("Key ••••9xyz");
+    expect(markup).toContain("API-Key ••••9xyz");
+    expect(maskGatewayCredentialSuffix("9xyz")).toBe("API-Key ••••9xyz");
     expect(maskGatewayCredentialSuffix(null)).toBeNull();
     expect(maskGatewayCredentialSuffix("   ")).toBeNull();
     // Nothing in the rendered list resembles a full credential.
@@ -382,9 +413,9 @@ describe("WorkjetGatewayAccounts · API-key providers", () => {
     });
     expect(failed).toContain("The key could not be stored.");
     const saving = render({ apiKey: { status: "saving", provider: "kimi" } });
-    expect(saving).toContain("Storing the Kimi (Moonshot) key…");
+    expect(saving).toContain("Kimi (Moonshot)-Key wird gespeichert …");
     const done = render({ apiKey: { status: "completed", provider: "minimax" } });
-    expect(done).toContain("Added a MiniMax account.");
+    expect(done).toContain("MiniMax-Konto hinzugefügt.");
   });
 
   it("keeps the key input bounded exactly like the contract", () => {
@@ -398,7 +429,7 @@ describe("WorkjetGatewayAccounts · API-key providers", () => {
    */
   it("reports pool eligibility per account, and falls back only when no pool exists", () => {
     const [claude, codex] = CATALOG.accounts;
-    expect(gatewayAccountRotationLabel(CATALOG, claude!)).toBe("In rotation");
+    expect(gatewayAccountRotationLabel(CATALOG, claude!)).toBe("In Rotation");
     // No pool for codex in this catalog: nothing is asserted about it.
     expect(gatewayAccountRotationLabel(CATALOG, codex!)).toBeNull();
     expect(gatewayAccountRotationLabel(null, claude!)).toBeNull();
@@ -412,7 +443,7 @@ describe("WorkjetGatewayAccounts · API-key providers", () => {
         },
       ],
     };
-    expect(gatewayAccountRotationLabel(heldBack, claude!)).toBe("Held back by priority");
-    expect(render({ catalog: heldBack })).toContain("Held back by priority");
+    expect(gatewayAccountRotationLabel(heldBack, claude!)).toBe("Zurückgestellt");
+    expect(render({ catalog: heldBack })).toContain("Zurückgestellt");
   });
 });

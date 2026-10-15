@@ -9,6 +9,8 @@ import {
   type WorkjetGatewayRoutingStrategy,
   type WorkjetGatewayUpdateRoutingInput,
 } from "@workjet/contracts";
+import { Checkbox } from "../ui/checkbox";
+import { OptionSelect } from "../ui/option-select";
 import { TriangleAlertIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -32,17 +34,17 @@ export const WORKJET_GATEWAY_ROUTING_STRATEGIES: ReadonlyArray<WorkjetGatewayRou
 export const WORKJET_GATEWAY_ROUTING_STRATEGY_LABELS: Readonly<
   Record<WorkjetGatewayRoutingStrategy, string>
 > = {
-  "round-robin": "Round robin",
-  "fill-first": "Fill first",
-  "weighted-round-robin": "Weighted round robin",
+  "round-robin": "Reihum",
+  "fill-first": "Zuerst füllen",
+  "weighted-round-robin": "Gewichtet reihum",
 };
 
 export const WORKJET_GATEWAY_ROUTING_STRATEGY_DESCRIPTIONS: Readonly<
   Record<WorkjetGatewayRoutingStrategy, string>
 > = {
-  "round-robin": "Rotates evenly over the usable accounts. Weights are ignored.",
-  "fill-first": "Always picks the same first account until it stops being usable.",
-  "weighted-round-robin": "Rotates in proportion to each account's weight.",
+  "round-robin": "Gleichmäßig über nutzbare Konten, ohne Gewichte.",
+  "fill-first": "Erstes Konto, bis es ausfällt.",
+  "weighted-round-robin": "Anteilig nach Gewicht.",
 };
 
 /**
@@ -52,16 +54,16 @@ export const WORKJET_GATEWAY_ROUTING_STRATEGY_DESCRIPTIONS: Readonly<
  */
 export function gatewayObservedAgeLabel(observedAtMs: number, nowMs: number): string {
   const elapsedMs = nowMs - observedAtMs;
-  if (!Number.isFinite(elapsedMs)) return "check time unknown";
-  if (elapsedMs < 0) return "checked just now";
+  if (!Number.isFinite(elapsedMs)) return "Prüfzeit unbekannt";
+  if (elapsedMs < 0) return "gerade geprüft";
   const seconds = Math.floor(elapsedMs / 1_000);
-  if (seconds < 5) return "checked just now";
-  if (seconds < 60) return `checked ${seconds}s ago`;
+  if (seconds < 5) return "gerade geprüft";
+  if (seconds < 60) return `vor ${seconds} s geprüft`;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `checked ${minutes}m ago`;
+  if (minutes < 60) return `vor ${minutes} min geprüft`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `checked ${hours}h ago`;
-  return `checked ${Math.floor(hours / 24)}d ago`;
+  if (hours < 24) return `vor ${hours} h geprüft`;
+  return `vor ${Math.floor(hours / 24)} d geprüft`;
 }
 
 /**
@@ -72,19 +74,17 @@ export function gatewayObservedAgeLabel(observedAtMs: number, nowMs: number): st
  */
 export function gatewayPoolBehaviourDescription(pool: WorkjetGatewayProviderPool): string {
   if (!pool.weightHonored && !pool.priorityExclusive) {
-    return "The gateway sorts this pool by priority and then rotates over every enabled account. It does not read weights or the selection strategy for this provider.";
+    return "Nach Priorität, dann reihum; ohne Gewichte und Strategie.";
   }
   const base = WORKJET_GATEWAY_ROUTING_STRATEGY_DESCRIPTIONS[pool.strategy];
-  const priority = pool.priorityExclusive
-    ? " Only accounts at the highest priority are eligible; the rest are held back until those stop being usable."
-    : "";
-  const weight = pool.weightHonored ? "" : " Weights are not used under this strategy.";
+  const priority = pool.priorityExclusive ? " Nur höchste Priorität." : "";
+  const weight = pool.weightHonored ? "" : " Ohne Gewichte.";
   return `${base}${priority}${weight}`;
 }
 
 export function gatewayPoolMemberStateLabel(member: WorkjetGatewayPoolMember): string {
-  if (!member.enabled) return "Disabled";
-  return member.selectable ? "In rotation" : "Held back by priority";
+  if (!member.enabled) return "Deaktiviert";
+  return member.selectable ? "In Rotation" : "Zurückgestellt";
 }
 
 export type WorkjetGatewayRoutingState =
@@ -208,12 +208,11 @@ function PoolMemberRow({
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border/40 pt-2 first:border-t-0 first:pt-0">
       <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-foreground">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={draft.enabled}
           disabled={disabled}
-          aria-label={`Enable ${member.label}`}
-          onChange={(event) => onChange({ ...draft, enabled: event.target.checked })}
+          aria-label={`${member.label} aktivieren`}
+          onCheckedChange={(checked) => onChange({ ...draft, enabled: checked })}
         />
         <span className="min-w-0 truncate">{member.label}</span>
       </label>
@@ -221,7 +220,7 @@ function PoolMemberRow({
         htmlFor={`${idBase}-priority`}
         className="flex items-center gap-1.5 text-xs text-muted-foreground"
       >
-        Priority
+        Priorität
         <input
           id={`${idBase}-priority`}
           type="number"
@@ -253,7 +252,7 @@ function PoolMemberRow({
           htmlFor={`${idBase}-weight`}
           className="flex items-center gap-1.5 text-xs text-muted-foreground"
         >
-          Weight
+          Gewicht
           <input
             id={`${idBase}-weight`}
             type="number"
@@ -279,129 +278,6 @@ function PoolMemberRow({
       ) : null}
       <span className="text-xs text-muted-foreground">{gatewayPoolMemberStateLabel(member)}</span>
     </div>
-  );
-}
-
-function GatewayHealthRow({
-  health,
-  healthError,
-  nowMs,
-}: {
-  readonly health: WorkjetGatewayHealth | null;
-  readonly healthError: string | null;
-  readonly nowMs: number;
-}) {
-  if (healthError !== null) {
-    return (
-      <SettingsRow
-        title="Health"
-        status={
-          <span role="alert" className="flex items-start gap-1.5 text-destructive">
-            <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-            {healthError}
-          </span>
-        }
-      />
-    );
-  }
-  if (health === null) {
-    return (
-      <SettingsRow
-        title="Health"
-        status={<span className="text-muted-foreground">No health reading yet.</span>}
-      />
-    );
-  }
-  return (
-    <SettingsRow
-      title="Health"
-      description="Read from the running gateway. The gateway reports provider-level state only: it does not publish per-account rate-limit, cooldown, or capacity figures, so none are shown here."
-      status={
-        <div className="space-y-0.5">
-          <p role="status">{gatewayObservedAgeLabel(health.observedAtMs, nowMs)}</p>
-          {health.providers.length === 0 ? (
-            <p className="text-muted-foreground">No provider is configured.</p>
-          ) : (
-            health.providers.map((provider) => (
-              <p key={provider.provider} className="text-muted-foreground">
-                {WORKJET_GATEWAY_PROVIDER_LABELS[provider.provider]} ·{" "}
-                {provider.enabledAccountCount} of {provider.accountCount} enabled ·{" "}
-                {provider.phase === "ready"
-                  ? "serving"
-                  : provider.phase === "waiting-for-subscription"
-                    ? "waiting for an account"
-                    : "state unknown"}
-              </p>
-            ))
-          )}
-          <p className="text-muted-foreground">
-            Per-account health: not reported by the gateway. Capacity: not reported by the gateway.
-          </p>
-        </div>
-      }
-    />
-  );
-}
-
-function GatewayModelsRow({
-  models,
-  modelsError,
-  nowMs,
-}: {
-  readonly models: WorkjetGatewayModelDiscovery | null;
-  readonly modelsError: string | null;
-  readonly nowMs: number;
-}) {
-  if (modelsError !== null) {
-    return (
-      <SettingsRow
-        title="Models"
-        status={
-          <span role="alert" className="flex items-start gap-1.5 text-destructive">
-            <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-            {modelsError}
-          </span>
-        }
-      />
-    );
-  }
-  if (models === null) {
-    return (
-      <SettingsRow
-        title="Models"
-        status={<span className="text-muted-foreground">No model reading yet.</span>}
-      />
-    );
-  }
-  return (
-    <SettingsRow
-      title="Models"
-      description="What the gateway says each provider serves. This comes from the gateway's own model catalog and from the models recorded on each account — the gateway does not ask the provider, so neither list is a live capability answer."
-      status={
-        <div className="space-y-0.5">
-          <p role="status">{gatewayObservedAgeLabel(models.observedAtMs, nowMs)}</p>
-          {models.providers.length === 0 ? (
-            <p className="text-muted-foreground">No provider is configured.</p>
-          ) : (
-            models.providers.map((provider) => {
-              const fromCatalog = provider.models.filter(
-                (model) => model.source === "gateway-catalog",
-              ).length;
-              const configured = provider.models.length - fromCatalog;
-              return (
-                <p key={provider.provider} className="text-muted-foreground">
-                  {WORKJET_GATEWAY_PROVIDER_LABELS[provider.provider]} ·{" "}
-                  {provider.catalogAvailable
-                    ? `${fromCatalog} from the gateway catalog`
-                    : "no gateway catalog for this provider"}
-                  {configured > 0 ? ` · ${configured} from account configuration` : ""}
-                </p>
-              );
-            })
-          )}
-        </div>
-      }
-    />
   );
 }
 
@@ -471,32 +347,24 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
       headerAction={
         <Button type="button" size="sm" onClick={save} disabled={disabled || !isDirty}>
           {isSaving ? <Spinner className="size-3.5" /> : null}
-          Save pools
+          Speichern
         </Button>
       }
     >
       <SettingsRow
-        title="Selection strategy"
-        description="One strategy for the whole gateway. The gateway holds a single selection strategy for every pool, not one per provider, so this choice applies everywhere."
+        title="Strategie"
         control={
-          <select
-            aria-label="Gateway selection strategy"
+          <OptionSelect
+            aria-label="Auswahlstrategie"
+            className="w-auto"
             value={draft.strategy}
             disabled={disabled}
-            onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                strategy: event.target.value as WorkjetGatewayRoutingStrategy,
-              }))
-            }
-            className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
-          >
-            {WORKJET_GATEWAY_ROUTING_STRATEGIES.map((strategy) => (
-              <option key={strategy} value={strategy}>
-                {WORKJET_GATEWAY_ROUTING_STRATEGY_LABELS[strategy]}
-              </option>
-            ))}
-          </select>
+            options={WORKJET_GATEWAY_ROUTING_STRATEGIES.map((strategy) => ({
+              value: strategy,
+              label: WORKJET_GATEWAY_ROUTING_STRATEGY_LABELS[strategy],
+            }))}
+            onValueChange={(strategy) => setDraft((current) => ({ ...current, strategy }))}
+          />
         }
         status={
           <span className="text-muted-foreground">
@@ -507,7 +375,7 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
 
       {state.routing.status === "failed" ? (
         <SettingsRow
-          title="Pools not saved"
+          title="Nicht gespeichert"
           status={
             <span role="alert" className="flex items-start gap-1.5 text-destructive">
               <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
@@ -519,12 +387,8 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
 
       {pools.length === 0 ? (
         <SettingsRow
-          title="No pools"
-          status={
-            <span className="text-muted-foreground">
-              A pool appears for each provider once it has an account.
-            </span>
-          }
+          title="Keine Pools"
+          status={<span className="text-muted-foreground">—</span>}
         />
       ) : (
         pools.map((pool) => {
@@ -558,11 +422,11 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
                     .join(" · ")
                 : accountPatternCount > 0
                   ? formatWorkjetGatewayAccountPatternCount(accountPatternCount)
-                  : "no gateway catalog";
+                  : "kein Katalog";
           const facts = [
             providerHealth === undefined
               ? null
-              : `${providerHealth.enabledAccountCount} of ${providerHealth.accountCount} enabled · ${providerHealth.phase}`,
+              : `${providerHealth.enabledAccountCount} von ${providerHealth.accountCount} aktiv · ${providerHealth.phase === "ready" ? "bereit" : providerHealth.phase === "waiting-for-subscription" ? "wartet auf Konto" : "unbekannt"}`,
             // Account-recorded patterns serve fine without a host catalog;
             // hiding them behind "no gateway catalog" made a freshly
             // configured Z.ai account look as dead as an empty one.
@@ -622,8 +486,8 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
                             {/* The warning applies to an EMPTY list; with ids
                                 present it read as a standing error (F13). */}
                             {memberDraft.models.trim().length > 0
-                              ? "Model ids this account serves (no provider catalog — this list is authoritative)."
-                              : "Model ids this account serves — the gateway has no catalog for this provider, so it can serve nothing until they are listed."}
+                              ? `Modelle ${member.label}`
+                              : `Modelle ${member.label} · ohne Liste keine Antwort`}
                           </label>
                           <input
                             id={id}
@@ -653,11 +517,9 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
         })
       )}
 
-      {/* One line for the whole section instead of two more provider lists.
-          What each provider serves now sits ON that provider's row above. */}
+      {/* One line for the whole section: the age of the gateway reading. */}
       <SettingsRow
-        title="Where these figures come from"
-        description="The gateway's own catalog and the models recorded on each account. It does not ask the provider, so no figure here is a live capability answer."
+        title="Stand"
         status={
           <span className="text-muted-foreground">
             {state.healthError ??

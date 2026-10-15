@@ -1,5 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The Claude SDK spawn hook exposes the harness child so stopSession can terminate and verify its process group.
 import * as NodeChildProcess from "node:child_process";
+import { oneShotClaudePolicy } from "../oneShotClaudePolicy.ts";
+import type { NativeSupervisorSdkJournal } from "../../workjet/NativeSupervisorSdkJournal.ts";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 
 /**
@@ -82,6 +84,14 @@ import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
+import { readWorkerSourceHarness } from "../../workjet/WorkerSourceHarness.ts";
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
+import { prepareWorkerSourceNamespace } from "../../workjet/WorkerSourceNamespace.ts";
+import {
+  prepareClaudeNamespaceSpawn,
+  spawnAdmittedClaudeProcess,
+} from "../Drivers/ClaudeNamespaceSpawn.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
@@ -241,6 +251,9 @@ interface ClaudeTaskAgentState {
 
 interface ClaudeSessionContext {
   session: ProviderSession;
+  readonly observeGoalAuthor: boolean;
+  readonly sdkJournal: NativeSupervisorSdkJournal | undefined;
+  lastGoalAuthor: { readonly turnId: TurnId; readonly model: string } | undefined;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
   readonly query: ClaudeQueryRuntime;
   readonly processes: readonly ProviderTrackedProcess[];
@@ -320,6 +333,8 @@ export interface ClaudeAdapterLiveOptions {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
   }) => ClaudeQueryRuntime;
+  /** Private original-Source service only; never supplied by settings/RPC. */
+  readonly createNativeSupervisorSdkJournal?: (threadId: ThreadId) => NativeSupervisorSdkJournal;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
 }
@@ -1720,6 +1735,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   options?: ClaudeAdapterLiveOptions,
 ) {
   const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("claudeAgent");
+  const namespaceContext = yield* Effect.context<never>();
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig;
@@ -3032,6 +3048,34 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (context.turnState) {
+      const authorModel = trimmedString(message.message.model);
+      if (
+        authorModel &&
+        context.observeGoalAuthor &&
+        (context.lastGoalAuthor?.turnId !== context.turnState.turnId ||
+          context.lastGoalAuthor.model !== authorModel)
+      ) {
+        const stamp = yield* makeEventStamp();
+        yield* offerRuntimeEvent({
+          type: "thread.metadata.updated",
+          eventId: stamp.eventId,
+          provider: PROVIDER,
+          createdAt: stamp.createdAt,
+          threadId: context.session.threadId,
+          turnId: asCanonicalTurnId(context.turnState.turnId),
+          payload: { metadata: { workjetAuthorModel: authorModel } },
+          ...(context.session.providerInstanceId !== undefined
+            ? { providerInstanceId: context.session.providerInstanceId }
+            : {}),
+          providerRefs: nativeProviderRefs(context),
+          raw: {
+            source: "claude.sdk.message",
+            method: "claude/assistant/model",
+            payload: { model: authorModel, messageId: message.uuid },
+          },
+        });
+        context.lastGoalAuthor = { turnId: context.turnState.turnId, model: authorModel };
+      }
       context.turnState.items.push(message.message);
       yield* backfillAssistantTextBlocksFromSnapshot(context, message);
     }
@@ -3185,6 +3229,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       case "background_tasks_changed":
       case "vcs_state_changed":
       case "code_change_published":
+      case "per_turn_effort_changed":
+        // Per-turn effort activation is an informational CLI state notice.
         return;
     }
 
@@ -3603,10 +3649,30 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
   });
 
+  const observeNativeSdk = Effect.fn("observeNativeSdk")(function* (
+    context: ClaudeSessionContext,
+    observe: (journal: NativeSupervisorSdkJournal) => Promise<void>,
+  ) {
+    if (context.sdkJournal)
+      yield* Effect.tryPromise({
+        try: () => observe(context.sdkJournal!),
+        catch: (cause) =>
+          new ProviderAdapterProcessError({
+            provider: PROVIDER,
+            threadId: context.session.threadId,
+            detail: "Original SDK observation could not be committed.",
+            cause,
+          }),
+      });
+  });
+
   const handleSdkMessage = Effect.fn("handleSdkMessage")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
   ) {
+    yield* observeNativeSdk(context, (journal) =>
+      journal.observeSdkMessage(message, context.turnState?.turnId),
+    );
     yield* logNativeSdkMessage(context, message);
     yield* ensureThreadId(context, message);
 
@@ -3677,6 +3743,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ),
         ),
       ),
+      Effect.onExit(() => observeNativeSdk(context, (journal) => journal.sdkStreamJoined())),
     );
 
   const handleStreamExit = Effect.fn("handleStreamExit")(function* (
@@ -3762,6 +3829,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           cause,
         }),
     }).pipe(
+      Effect.tap(() => observeNativeSdk(context, (journal) => journal.sdkQueryCloseReturned())),
       Effect.catch((error) =>
         emitRuntimeError(context, "Failed to close Claude runtime query.", {
           errorTag: error._tag,
@@ -3829,6 +3897,82 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           provider: PROVIDER,
           operation: "startSession",
           issue: `Expected provider '${PROVIDER}' but received '${input.provider}'.`,
+        });
+      }
+      if (options?.createNativeSupervisorSdkJournal && options.createQuery !== undefined) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "startSession",
+          issue:
+            "Original SDK observation requires the actual SDK child; a query override is unsupported.",
+        });
+      }
+      const sdkJournal = options?.createNativeSupervisorSdkJournal
+        ? yield* Effect.try({
+            try: () => options.createNativeSupervisorSdkJournal!(input.threadId),
+            catch: (cause) =>
+              new ProviderAdapterProcessError({
+                provider: PROVIDER,
+                threadId: input.threadId,
+                detail: "Original SDK observer could not be created.",
+                cause,
+              }),
+          })
+        : undefined;
+      const workerSource = readWorkerSourceHarness(input.threadId);
+      const namespaceCapture = yield* prepareWorkerSourceNamespace(input, PROVIDER).pipe(
+        Effect.provideContext(namespaceContext),
+      );
+      const namespaceProfile = namespaceCapture
+        ? yield* admitWorkerSourceNativeProfile(input, PROVIDER)
+        : undefined;
+      if (namespaceCapture && options?.createQuery !== undefined)
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "startSession",
+          issue: "Claude namespace execution requires the actual SDK process hook.",
+        });
+      if (input.workjetConfig?.role === "worker") {
+        const environment = yield* Effect.serviceOption(ServerEnvironment);
+        const localEnvironmentId = Option.isSome(environment)
+          ? yield* environment.value.getEnvironmentId
+          : undefined;
+        const foreign = input.workjetConfig.parent.environmentId !== localEnvironmentId;
+        if (
+          foreign &&
+          (!workerSource ||
+            workerSource.harness !== "claude-code" ||
+            workerSource.identity.sourceEnvironmentId !==
+              input.workjetConfig.parent.environmentId ||
+            workerSource.identity.targetEnvironmentId !== localEnvironmentId)
+        ) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue:
+              "Foreign worker source route is unavailable or mismatched; reconnect its source before restart.",
+          });
+        }
+      }
+      if (workerSource) {
+        if (
+          workerSource.harness !== "claude-code" ||
+          workerSource.model !== input.modelSelection?.model
+        ) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Worker harness or model differs from the source permit.",
+          });
+        }
+        yield* Effect.tryPromise({
+          try: () => workerSource.admit(),
+          catch: () =>
+            new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: "Foreign worker source admission failed or expired.",
+            }),
         });
       }
       const resumeState = readClaudeResumeState(input.resumeCursor);
@@ -4241,13 +4385,68 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
         runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
+      // MCP elicitation uses the same provider event channel and central role policy as native questions.
+      const onElicitation: NonNullable<ClaudeQueryOptions["onElicitation"]> = (
+        request,
+        callbackOptions,
+      ) =>
+        runPromise(
+          Effect.gen(function* () {
+            const context = yield* Ref.get(contextRef);
+            if (!context) return { action: "cancel" as const };
+            const properties = Schema.decodeUnknownOption(
+              Schema.Record(Schema.String, Schema.Unknown),
+            )(request.requestedSchema?.properties);
+            const fields = Option.isSome(properties) ? Object.keys(properties.value) : [];
+            const questions = (fields.length ? fields : [request.message]).map((field) => ({
+              question: field,
+              header: request.message,
+              options: [],
+              multiSelect: false,
+            }));
+            const result = yield* handleAskUserQuestion(context, { questions }, callbackOptions);
+            if (result.behavior !== "allow") return { action: "cancel" as const };
+            const answers = Schema.decodeUnknownOption(
+              Schema.Record(Schema.String, Schema.Unknown),
+            )(result.updatedInput.answers);
+            const content: Record<string, string | number | boolean | string[]> = {};
+            if (Option.isSome(answers))
+              for (const field of fields) {
+                const value = answers.value[field];
+                const definition = Option.isSome(properties)
+                  ? Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))(
+                      properties.value[field],
+                    )
+                  : Option.none();
+                const fieldType = Option.isSome(definition) ? definition.value.type : undefined;
+                if (fieldType === "boolean") content[field] = value === true || value === "true";
+                else if (
+                  (fieldType === "number" || fieldType === "integer") &&
+                  Number.isFinite(Number(value))
+                )
+                  content[field] = Number(value);
+                else if (
+                  typeof value === "string" ||
+                  typeof value === "number" ||
+                  typeof value === "boolean"
+                )
+                  content[field] = value;
+                else if (Array.isArray(value) && value.every((item) => typeof item === "string"))
+                  content[field] = value;
+              }
+            return { action: "accept" as const, content };
+          }),
+        );
+
       const claudeBinaryPath = claudeSdkExecutablePath;
-      const extraArgs = parseCliArgs(claudeSettings.launchArgs).flags;
+      const extraArgs = workerSource ? {} : parseCliArgs(claudeSettings.launchArgs).flags;
       const modelSelection =
         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const descriptors = getProviderOptionDescriptors({ caps });
-      const apiModelId = modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined;
+      const apiModelId =
+        workerSource?.model ??
+        (modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined);
       const initialContextWindow = selectedClaudeContextWindow(modelSelection);
       const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
       const effort = resolveClaudeEffort(caps, rawEffort) ?? null;
@@ -4281,15 +4480,50 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // The resolver returns the per-instance merge only, so the Claude home
       // isolation (CLAUDE_CONFIG_DIR) is re-applied on top of it exactly as
       // it is for the construction-time environment.
-      const sessionEnvironment = options?.resolveSessionEnvironment
-        ? yield* makeClaudeEnvironment(
-            claudeSettings,
-            // The API model id is what actually travels on the wire, so it is
-            // the identity the gateway catalog has to be matched against.
-            yield* options.resolveSessionEnvironment({ model: apiModelId }),
-          ).pipe(Effect.provideService(Path.Path, path))
-        : claudeEnvironment;
+      const sessionEnvironment =
+        namespaceProfile?.environment ??
+        (workerSource
+          ? {
+              PATH: process.env.PATH,
+              HOME: process.env.HOME,
+              TMPDIR: process.env.TMPDIR,
+              LANG: process.env.LANG,
+              CLAUDE_CONFIG_DIR: path.join(
+                serverConfig.stateDir,
+                "worker-harnesses",
+                input.threadId,
+                "claude",
+              ),
+              ANTHROPIC_BASE_URL: workerSource.baseUrl.slice(0, -3),
+              ANTHROPIC_API_KEY: workerSource.apiKey,
+              WORKJET_WORKER_SOURCE_URL: workerSource.baseUrl,
+              WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey,
+              ANTHROPIC_AUTH_TOKEN: undefined,
+              CLAUDE_CODE_OAUTH_TOKEN: undefined,
+              CLAUDE_CODE_USE_BEDROCK: undefined,
+              CLAUDE_CODE_USE_VERTEX: undefined,
+              CLAUDE_CODE_USE_FOUNDRY: undefined,
+              ANTHROPIC_CUSTOM_HEADERS: undefined,
+            }
+          : options?.resolveSessionEnvironment
+            ? yield* makeClaudeEnvironment(
+                claudeSettings,
+                // The API model id is what actually travels on the wire, so it is
+                // the identity the gateway catalog has to be matched against.
+                yield* options.resolveSessionEnvironment({ model: apiModelId }),
+              ).pipe(Effect.provideService(Path.Path, path))
+            : claudeEnvironment);
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      if (namespaceCapture && mcpSession)
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "startSession",
+          issue: "Claude namespace MCP execution requires a confined server.",
+        });
+      const oneShotPolicy =
+        mcpSession?.projectTeamRole === "worker" && input.cwd
+          ? oneShotClaudePolicy(input.cwd)
+          : undefined;
       // The attachments dir grant lets the agent Read/copy pasted images at
       // the paths ProviderService injects into the turn text, without an
       // approval prompt. It is a leaf directory holding only attachment
@@ -4300,7 +4534,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ];
       const processes: Array<ProviderTrackedProcess> = [];
       const hostPlatform = yield* HostProcessPlatform;
-      const spawnClaudeCodeProcess = (spawnOptions: SpawnOptions): SpawnedProcess => {
+      const startClaudeChild = (spawnOptions: SpawnOptions) => {
         const child = NodeChildProcess.spawn(spawnOptions.command, spawnOptions.args, {
           cwd: spawnOptions.cwd,
           env: spawnOptions.env,
@@ -4311,6 +4545,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         if (child.pid !== undefined) {
           const pid = child.pid;
+          sdkJournal?.captureOwnedSdkChild(child);
           processes.push({
             pid,
             isRunning: Effect.sync(() => child.exitCode === null && child.signalCode === null),
@@ -4325,14 +4560,37 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               }),
           });
         }
-        return child as SpawnedProcess;
+        return child;
       };
+      const spawnClaudeCodeProcess = (spawnOptions: SpawnOptions): SpawnedProcess =>
+        namespaceCapture
+          ? spawnAdmittedClaudeProcess(
+              spawnOptions,
+              (spawn) => runPromise(prepareClaudeNamespaceSpawn(spawn, namespaceCapture)),
+              startClaudeChild,
+            )
+          : startClaudeChild(spawnOptions);
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
         systemPrompt: claudeSystemPrompt(mcpSession?.compiledManagedPrompt),
-        settingSources: [...CLAUDE_SETTING_SOURCES],
+        ...(mcpSession?.projectTeamRole
+          ? { disallowedTools: ["AskUserQuestion", "ExitPlanMode"] }
+          : {}),
+        ...(oneShotPolicy ? { sandbox: oneShotPolicy.sandbox } : {}),
+        ...(mcpSession
+          ? {
+              allowedTools: (
+                mcpSession.requiredWorkjetToolNames ?? [
+                  "workjet_worker_kanban",
+                  "workjet_update_goal",
+                  "workjet_answer_worker",
+                ]
+              ).map((name) => `mcp__workjet__${name}`),
+            }
+          : {}),
+        settingSources: workerSource ? [] : [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
         ...(effectiveEffort
@@ -4347,18 +4605,26 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),
-        ...(resumeConfirmed
+        ...(resumeConfirmed || oneShotPolicy
           ? {
               hooks: {
-                SessionStart: [{ hooks: [verifyOriginalSession], timeout: 10 }],
-                UserPromptSubmit: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+                ...oneShotPolicy?.hooks,
+                ...(resumeConfirmed
+                  ? {
+                      SessionStart: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+                      UserPromptSubmit: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+                    }
+                  : {}),
               },
             }
           : {}),
         includePartialMessages: true,
         canUseTool,
+        onElicitation,
         env: sessionEnvironment,
-        additionalDirectories,
+        additionalDirectories: namespaceCapture
+          ? [input.cwd!]
+          : (oneShotPolicy?.additionalDirectories ?? additionalDirectories),
         ...(options?.createQuery === undefined ? { spawnClaudeCodeProcess } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession
@@ -4442,6 +4708,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
       const context: ClaudeSessionContext = {
         session,
+        observeGoalAuthor:
+          input.workjetConfig?.schemaVersion === 2 &&
+          input.workjetConfig.team?.role === "specialist",
+        lastGoalAuthor: undefined,
+        sdkJournal,
         promptQueue,
         query: queryRuntime,
         processes,
@@ -4679,6 +4950,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       boundInstanceId,
     });
 
+    yield* observeNativeSdk(context, (journal) => journal.turnSubmitted(turnId));
     yield* Queue.offer(context.promptQueue, {
       type: "message",
       message,

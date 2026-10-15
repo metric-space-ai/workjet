@@ -30,6 +30,62 @@ const computer = {
 };
 
 describe("CTOX computer control boundary", () => {
+  it("carries detected facts, roles and active without manual capacity input", () => {
+    const detectedFacts = {
+      checkedAt: "2026-10-11T00:00:00Z",
+      machineId: "fixture-machine",
+      operatingSystem: "Linux",
+      architecture: "x86_64",
+      cpuCores: 16,
+      ramBytes: 34359738368,
+      homeDirectory: "/home/fixture",
+      workDirectory: "/home/fixture/.workjet/computer-work",
+      freeBytes: 50000000000,
+      gpus: [],
+      toolchains: { node: "node fixture-version" },
+      codingTools: {},
+      warnings: [],
+    };
+    const fields = {
+      roles: { build: true, storage: false },
+      active: false,
+      detectedFacts,
+      hostKeyFingerprint: "SHA256:fixture",
+    };
+    const input = decodeInput({ ...assign, request: { ...assign.request, ...fields } });
+    expect(input.request).toMatchObject(fields);
+    expect(input.request).not.toHaveProperty("capabilityConfig");
+    expect(
+      decodeResponse({ action: "computer.assign", computer: { ...computer, ...fields } }),
+    ).toMatchObject({ computer: fields });
+  });
+  it("preserves a native pairing binding for assignment without accepting caller authority", () => {
+    const request = { ...assign.request, deviceBindingId: "native-device-proof" };
+    expect(decodeInput({ ...assign, request })).toEqual({ ...assign, request });
+    expect(decodeInput(assign)).toEqual(assign);
+    for (const deviceBindingId of ["", " ", "bad\u0000binding", "x".repeat(161), null, 1]) {
+      expect(() => decodeInput({ ...assign, request: { ...request, deviceBindingId } })).toThrow();
+    }
+    for (const fields of [
+      { ownerUserId: "foreign" },
+      { inviterUserId: "foreign" },
+      { deviceBinding: { id: "native-device-proof", credential: "secret" } },
+    ]) {
+      expect(() => decodeInput({ ...assign, request: { ...request, ...fields } })).toThrow();
+    }
+    expect(() =>
+      decodeInput({
+        ...assign,
+        request: {
+          action: "computer.unassign",
+          commandId: "command-1",
+          computerId: "computer-1",
+          deviceBindingId: "native-device-proof",
+        },
+      }),
+    ).toThrow();
+  });
+
   it("accepts optional native operational details and rejects invalid or secret-bearing details", () => {
     const gpu = { kind: "gpu", model: "A4500", vram_gib: 20 };
     expect(decodeResponse({ action: "computer.list", computers: [computer] })).toMatchObject({

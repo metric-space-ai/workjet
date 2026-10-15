@@ -32,6 +32,8 @@ import * as EnvironmentAuthPolicy from "./EnvironmentAuthPolicy.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
+import * as ServerConfig from "../config.ts";
+import { DESKTOP_RENDERER_ORIGINS } from "./utils.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
 import { layerConfig as SqlitePersistenceLayer } from "../persistence/Layers/Sqlite.ts";
 
@@ -503,6 +505,27 @@ const AUTHORIZATION_PREFIX = "Bearer ";
 const DPOP_AUTHORIZATION_PREFIX = "DPoP ";
 const WEBSOCKET_TICKET_QUERY_PARAM = "wsTicket";
 
+export function isAllowedWebSocketCookieOrigin(input: {
+  readonly origin: string | undefined;
+  readonly host: string | undefined;
+  readonly allowedOrigins: ReadonlyArray<string>;
+}): boolean {
+  // Non-browser clients may omit Origin, but browsers always send it on WebSocket upgrades.
+  if (input.origin === undefined) return true;
+  if (input.allowedOrigins.includes(input.origin)) return true;
+  if (!input.host) return false;
+  try {
+    const origin = new URL(input.origin);
+    return (
+      (origin.protocol === "http:" || origin.protocol === "https:") &&
+      origin.origin === input.origin &&
+      origin.host.toLowerCase() === input.host.toLowerCase()
+    );
+  } catch {
+    return false;
+  }
+}
+
 const bySessionPriority = (left: AuthClientSession, right: AuthClientSession) => {
   const leftCanManage = left.scopes.includes(AuthAccessWriteScope);
   const rightCanManage = right.scopes.includes(AuthAccessWriteScope);
@@ -557,6 +580,7 @@ function parseDpopToken(request: HttpServerRequest.HttpServerRequest): string | 
 }
 
 export const make = Effect.gen(function* () {
+  const config = yield* ServerConfig.ServerConfig;
   const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
   const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
   const sessions = yield* SessionStore.SessionStore;
@@ -930,11 +954,12 @@ export const make = Effect.gen(function* () {
 
   const issueWebSocketTicket: EnvironmentAuth["Service"]["issueWebSocketTicket"] = (session) =>
     sessions
-      .issueWebSocketToken(session.sessionId, {
-        ...(session.localDesktopEnvironmentId === undefined
+      .issueWebSocketToken(
+        session.sessionId,
+        session.localDesktopEnvironmentId === undefined
           ? {}
-          : { localDesktopEnvironmentId: session.localDesktopEnvironmentId }),
-      })
+          : { localDesktopEnvironmentId: session.localDesktopEnvironmentId },
+      )
       .pipe(
         Effect.mapError((cause) => new ServerAuthWebSocketTokenIssueError({ cause })),
         Effect.map(
@@ -972,6 +997,23 @@ export const make = Effect.gen(function* () {
             mapSessionVerificationErrors,
           );
         }
+      }
+
+      if (
+        request.cookies[sessions.cookieName] !== undefined &&
+        !isAllowedWebSocketCookieOrigin({
+          origin: request.headers.origin,
+          host: request.headers.host,
+          allowedOrigins: [
+            ...DESKTOP_RENDERER_ORIGINS,
+            ...(config.devUrl ? [config.devUrl.origin] : []),
+            ...config.devAllowedOrigins,
+          ],
+        })
+      ) {
+        return yield* new ServerAuthInvalidCredentialError({
+          diagnostic: "Cross-origin WebSocket cookie request rejected.",
+        });
       }
 
       return yield* authenticateRequest(request);

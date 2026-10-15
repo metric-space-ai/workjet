@@ -64,12 +64,72 @@ function platformArch(
   }
 }
 
+/** Optional host metadata must not delay or prevent server startup. */
+export const readServerHostId = Effect.fn("ServerEnvironment.readServerHostId")(function* (
+  platform: NodeJS.Platform,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const processRunner = yield* ProcessRunner.ProcessRunner;
+  const commandHostId = (command: string, args: readonly string[], pattern: RegExp) =>
+    processRunner
+      .run({
+        command,
+        args,
+        timeout: "2 seconds",
+        maxOutputBytes: 16 * 1024,
+        timeoutBehavior: "timedOutResult",
+      })
+      .pipe(
+        Effect.map((result) =>
+          result.code === 0 ? pattern.exec(result.stdout)?.[1]?.trim() : undefined,
+        ),
+        Effect.catch(() => Effect.succeed(undefined)),
+      );
+  const raw = yield* platform === "linux"
+    ? fileSystem.readFileString("/etc/machine-id").pipe(
+        Effect.map((value) => value.trim()),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+    : platform === "darwin"
+      ? commandHostId(
+          "ioreg",
+          ["-rd1", "-c", "IOPlatformExpertDevice"],
+          /"IOPlatformUUID" = "([^"]+)"/,
+        )
+      : platform === "win32"
+        ? commandHostId(
+            "reg",
+            ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"],
+            /MachineGuid\s+REG_SZ\s+(\S+)/,
+          )
+        : Effect.succeed(undefined);
+  const normalized = raw?.toLowerCase();
+  if (
+    !normalized ||
+    !/^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/.test(normalized) ||
+    /^0[-0]*$/.test(normalized)
+  )
+    return undefined;
+  const crypto = yield* Crypto.Crypto;
+  // Keep the OS identity local; expose an app-scoped stable digest.
+  return yield* crypto
+    .digest("SHA-256", new TextEncoder().encode(`workjet:computer:v1:${platform}:${normalized}`))
+    .pipe(
+      Effect.map(
+        (digest) =>
+          `workjet-host-v1:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`,
+      ),
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+});
+
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const crypto = yield* Crypto.Crypto;
+
   const hostPlatform = yield* HostProcessPlatform;
   const hostArchitecture = yield* HostProcessArchitecture;
 
@@ -138,9 +198,12 @@ export const make = Effect.gen(function* () {
     launcherManaged: launcher.managed,
   });
 
+  const hostId = yield* readServerHostId(hostPlatform);
+
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId,
     runtimeInstanceId,
+    ...(hostId === undefined ? {} : { hostId }),
     label,
     platform: {
       os: platformOs(hostPlatform),

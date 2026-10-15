@@ -1,5 +1,6 @@
 import * as NodeUtil from "node:util";
 import {
+  canCoordinateWorkjet,
   ModelSelection,
   RemoteWorkerDispatchError,
   type RemoteWorkerRequest,
@@ -34,7 +35,7 @@ export const make = Effect.gen(function* () {
         parent &&
         parent.deletedAt === null &&
         parent.archivedAt == null &&
-        parent.workjetConfig.role === "orchestrator" &&
+        canCoordinateWorkjet(parent.workjetConfig) &&
         computer.length === 1 &&
         computer[0]?.environmentId === request.targetEnvironmentId &&
         request.enabledCapabilityIds.every((id) =>

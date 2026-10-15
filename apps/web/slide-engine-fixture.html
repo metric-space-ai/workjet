@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Workjet desktop renderer policy (apps/desktop/src/electron/ElectronProtocol.ts) without the
+         Clerk and Cloudflare hosts, so the fixture proves the canvas runs under it. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' http: https: ws: wss:; img-src 'self' workjet: blob: data: http: https:; style-src 'self' 'unsafe-inline'; font-src 'self' workjet: data:; worker-src 'self' blob:; frame-src 'self' http: https:; form-action 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workjet slide canvas · isolated fixture</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/fixtures/slide-engine.fixture.tsx"></script>
+  </body>
+</html>

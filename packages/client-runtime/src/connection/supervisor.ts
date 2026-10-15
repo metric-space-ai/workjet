@@ -30,6 +30,8 @@ import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 
 const RETRY_DELAYS_MS = [3_000, 4_000, 8_000, 16_000] as const;
+const SSH_SETUP_RETRY_DELAYS_MS = [3_000, 15_000, 60_000] as const;
+const MAX_AUTOMATIC_SSH_SETUP_ATTEMPTS = SSH_SETUP_RETRY_DELAYS_MS.length + 1;
 const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";
 const MOBILE_CONNECTION_PROBE_TIMEOUT = "3 seconds";
@@ -381,7 +383,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         case "ConnectRequested":
           break;
         case "Wakeup":
-          if (next.reason === "application-active-reconnect") {
+          if (
+            next.reason === "application-active-reconnect" &&
+            target._tag !== "SshConnectionTarget"
+          ) {
             return true;
           }
           if (next.reason === "credentials-changed" && target._tag === "RelayConnectionTarget") {
@@ -614,7 +619,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     return failureFromExit(target, connectedExit, true, connectedForMs >= BACKOFF_RESET_AFTER_MS);
   }, Effect.ensuring(clearLease));
 
-  const waitForRetrySignal = Effect.fnUntraced(function* (delayMs: number) {
+  const waitForRetrySignal = Effect.fnUntraced(function* (
+    delayMs: number,
+    ignorePassiveWakeups = false,
+  ) {
     return yield* Effect.raceFirst(
       Effect.sleep(delayMs).pipe(Effect.as(false)),
       Effect.gen(function* () {
@@ -622,6 +630,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           const next = yield* Queue.take(signals);
           switch (next._tag) {
             case "Wakeup":
+              if (ignorePassiveWakeups) break;
               return ConnectionWakeups.isApplicationActiveWakeup(next.reason);
             case "ConnectRequested":
             case "DisconnectRequested":
@@ -640,19 +649,36 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     ),
   );
 
+  const waitForSshSetupRetry = Effect.fnUntraced(function* () {
+    for (;;) {
+      const next = yield* Queue.take(signals);
+      if (
+        next._tag === "RetryRequested" ||
+        next._tag === "ConnectRequested" ||
+        next._tag === "DisconnectRequested" ||
+        (next._tag === "NetworkChanged" && next.network === "online")
+      )
+        return;
+      // Focus and account events cannot restart an unreachable SSH route.
+    }
+  });
+
   const run = Effect.fnUntraced(function* () {
     let failureCount = 0;
+    let sshSetupFailureCount = 0;
     let generation = 0;
     let latestFailure: ConnectionAttemptError | null = null;
     let pendingRetry = Option.none<PendingRetryTrace>();
     const resetRetryLadder = () => {
       failureCount = 0;
+      sshSetupFailureCount = 0;
       pendingRetry = Option.none();
     };
 
     for (;;) {
       if (yield* Ref.getAndSet(resetRetryState, false)) {
         failureCount = 0;
+        sshSetupFailureCount = 0;
         latestFailure = null;
         pendingRetry = Option.none();
       }
@@ -700,6 +726,34 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       const attemptSpan: Option.Option<Tracer.Span> = outcome.failure.attemptSpan;
       const error: ConnectionAttemptError = outcome.failure.error;
       latestFailure = error;
+      const sshSetupUnavailable =
+        target._tag === "SshConnectionTarget" &&
+        !outcome.established &&
+        error._tag === "ConnectionTransientError" &&
+        (error.reason === "remote-unavailable" || error.reason === "timeout");
+      if (outcome.established) sshSetupFailureCount = 0;
+      if (sshSetupUnavailable) sshSetupFailureCount += 1;
+      if (sshSetupFailureCount >= MAX_AUTOMATIC_SSH_SETUP_ATTEMPTS) {
+        latestFailure = new ConnectionTransientError({
+          reason: error.reason === "timeout" ? "timeout" : "remote-unavailable",
+          detail: `Automatic SSH setup stopped after ${MAX_AUTOMATIC_SSH_SETUP_ATTEMPTS} attempts. Check the host or jump route, then reconnect. ${error.message}`,
+          ...(error.traceId === undefined ? {} : { traceId: error.traceId }),
+        });
+        const blockedIntent = yield* Ref.get(intent);
+        yield* setState({
+          desired: blockedIntent.desired,
+          network: blockedIntent.network,
+          phase: "blocked",
+          stage: null,
+          attempt,
+          generation,
+          lastFailure: latestFailure,
+          retryAt: null,
+        });
+        yield* waitForSshSetupRetry();
+        resetRetryLadder();
+        continue;
+      }
       if (error._tag === "ConnectionBlockedError") {
         const blockedIntent = yield* Ref.get(intent);
         yield* setState({
@@ -730,7 +784,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       }
 
       failureCount += 1;
-      const delayMs = retryDelayMs(failureCount - 1);
+      const delayMs = sshSetupUnavailable
+        ? (SSH_SETUP_RETRY_DELAYS_MS[sshSetupFailureCount - 1] ?? 60_000)
+        : retryDelayMs(failureCount - 1);
       pendingRetry = Option.map(attemptSpan, (previousAttempt) => ({
         previousAttempt,
         failureCount,
@@ -748,7 +804,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         lastFailure: error,
         retryAt: (yield* Clock.currentTimeMillis) + delayMs,
       });
-      const applicationActivated = yield* waitForRetrySignal(delayMs);
+      const applicationActivated = yield* waitForRetrySignal(delayMs, sshSetupUnavailable);
       if (applicationActivated) {
         resetRetryLadder();
       }

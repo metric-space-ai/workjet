@@ -4,31 +4,51 @@ Choose **All projects** to see the projects saved in the current instance.
 A project saved locally remains visible while its native registration is pending.
 An existing local history linked through this instance's working copy also keeps
 its saved overview and archive state while the instance reconnects.
-Opening its card shows the project's overview. Choose a conversation from
-Supervisor, Parents or Workers to open its history and message composer.
-The overview itself has no message composer. Its sidebar shows the same groups,
-counts and status dots; empty groups are hidden. A Parent is a specialist with
-its own goal. Use **+ Parent** to add one to this project.
+Opening its card shows the project's overview. It begins with the saved project
+summary and four metrics: the configured project KPI, merged PRs since the last
+Jour fixe, open tasks and the five-year value. Missing values or comparisons are
+explained in sentences rather than shown as empty numbers.
 
-A worker running on another connected computer appears in its source project’s
-Workers group. Opening that row opens the worker’s real conversation on that
-computer. Archived workers leave the overview and sidebar while their history
-remains retained.
+**Needs you** shows pending questions and answer choices. Permissions link to
+the conversation where you can inspect the action and decide. Connection
+problems appear separately from project decisions.
 
-The overview also shows the project's saved goal, phase, links and Jour fixe.
-Yellow status dots mean a session is running; rose dots mean an approval or
-answer is waiting for you. Failed sessions have a red error dot, and idle
-histories remain gray. The overview and sidebar use the same session state.
-Each Parent row shows its latest assistant message, falling back to its current
-plan step when no message is available. Equal conversation titles retain their
-names and show the harness beside them in both the overview and sidebar.
+The goals table uses the confirmed Jour fixe to-do list when one is available.
+Otherwise it shows the persistent workers' saved goals, with an owner and status
+for each row. Results list evidenced merged PRs. History lists recorded project
+events in sentences. The next and previous Jour fixe, recorded owner decisions
+and project links appear beside these sections.
 
-On **All projects**, choose **Calendar** to see the weekly regular meetings.
-The calendar reads each project's saved Jour fixe: weekday, time and timezone.
-Times use the timezone written next to the project; they are not silently
-converted to your computer's timezone. Choose **Projects** to return to the cards.
+**Diagnostics** starts collapsed. Open it to inspect saved and actual execution
+information, computers, instructions and raw session data. A saved model is not
+presented as proof of the instance's actual execution route.
 
-Projects without a regular meeting appear below the week. Select a project
+The overview has no message composer. Choose a conversation from Supervisor,
+Persistent Workers or One-Shot Workers in the sidebar to open its history and
+composer. Status words show running, waiting, asking you or disrupted. Only
+active one-shots appear with the team; inactive and completed one-shots remain
+accessible in the archive. This does not delete their history.
+
+A worker running on another connected computer appears in its source project.
+Opening its row opens its real conversation on that computer. Use **Add
+persistent worker** to save another worker and its goal.
+
+Choose System, German or English under **Settings → General → Project
+language** for the overview and its project navigation. Saved project names,
+goals and questions retain their authored text.
+
+If no CTOX instance is connected, **All projects** explains that nothing can load yet and offers **Connect an instance**. It no longer shows an empty page.
+
+On **All projects**, choose **Calendar** to open a calendar with **Day**, **Week**,
+**Month** and **Year** views. Use the arrows and **Today** to move through time,
+and select a date in the mini calendar to jump to it.
+
+Each project's saved Jour fixe appears as a repeating meeting in the **Project
+meetings** calendar. A meeting is shown at its time on your computer's timezone;
+hover or focus it to see the timezone the project uses. Clear the checkbox next to
+**Project meetings** to hide these meetings from the calendar.
+
+Projects without a regular meeting are listed beside the calendar. Select a project
 from either section to open its overview. To add or change its meeting, open
 that project's configuration and save its Jour fixe. Viewing the calendar does
 not create appointments or change a project's schedule.

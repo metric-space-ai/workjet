@@ -96,6 +96,8 @@ import type { ClientSettings } from "./settings.ts";
 import type {
   CtoxAppActionResult,
   CtoxDiscoveryResult,
+  CtoxInstancePreferenceInput,
+  CtoxInstancePreferenceResult,
   CtoxDecisionHubDisconnectInput,
   CtoxDecisionHubDisconnectResult,
   CtoxDecisionHubProvisionInput,
@@ -1113,8 +1115,23 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   input: PreviewAutomationWaitForInput,
 });
 
+import type {
+  ComputerControlInput,
+  ComputerControlResult,
+  ComputerSshKeyInfo,
+} from "./computerDetection.ts";
+
 export interface DesktopBridge {
+  controlComputers?: (input: ComputerControlInput) => Promise<ComputerControlResult>;
+  listComputerSshKeys?: () => Promise<readonly ComputerSshKeyInfo[]>;
+  assignDetectedComputer?: (input: {
+    id: string;
+    instanceId: string;
+  }) => Promise<CtoxWorkjetComputerControlResult>;
   getAppBranding: () => DesktopAppBranding | null;
+  // Preferred OS languages (BCP 47), most preferred first. Optional so older
+  // desktop builds and the web build degrade to navigator.languages.
+  getSystemLanguages?: () => readonly string[];
   // One bootstrap per pool instance currently registered with bootstrap
   // info (omits instances whose backend hasn't produced a config yet).
   // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
@@ -1187,6 +1204,8 @@ export interface DesktopBridge {
    * be delivered twice by racing the push against the drain.
    */
   onDeepLinkPending?: (listener: () => void) => () => void;
+  /** A saved connection catalog could not be read; local provisioning continues. */
+  onConnectionCatalogWarning?: (listener: () => void) => () => void;
   getWslState: () => Promise<DesktopWslState>;
   setWslBackendEnabled: (enabled: boolean) => Promise<DesktopWslState>;
   setWslDistro: (distro: string | null) => Promise<DesktopWslState>;
@@ -1234,7 +1253,10 @@ export interface DesktopBridge {
 }
 
 export interface DesktopCtoxBridge {
+  deviceStatus?: () => Promise<import("./ctoxControlDevice.ts").CtoxControlDeviceStatus>;
+  resetDevice?: () => Promise<import("./ctoxControlDevice.ts").CtoxControlDeviceStatus>;
   refresh: () => Promise<CtoxDiscoveryResult>;
+  setInstanceState?: (input: CtoxInstancePreferenceInput) => Promise<CtoxInstancePreferenceResult>;
   login: () => Promise<CtoxManagedLoginResult>;
   logout: () => Promise<CtoxManagedActionResult>;
   provisionDecisionHub?: (
@@ -1243,7 +1265,10 @@ export interface DesktopCtoxBridge {
   disconnectDecisionHub?: (
     input: CtoxDecisionHubDisconnectInput,
   ) => Promise<CtoxDecisionHubDisconnectResult>;
-  importInvite: (invite: string) => Promise<CtoxPairedInstanceImportResult>;
+  importInvite: (
+    invite: string,
+    replacesInstanceId?: string,
+  ) => Promise<CtoxPairedInstanceImportResult>;
   importManualPairing: (
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxPairedInstanceImportResult>;
@@ -1283,7 +1308,12 @@ export interface DesktopCtoxBridge {
   removeSshManagedInstance: (instanceId: string) => Promise<CtoxSshManagedInstanceRemoveResult>;
   enterBusinessOsMode: () => Promise<CtoxManagedActionResult>;
   exitBusinessOsMode: () => Promise<CtoxManagedActionResult>;
-  activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;
+  /** Set repair only for an explicit reconnect/selection gesture; automatic activation preserves backoff. */
+  activate: (
+    instanceId: string,
+    bounds: CtoxGuestBounds,
+    repair?: true,
+  ) => Promise<CtoxManagedGuestResult>;
   /** Load the selected CTOX instance for control without attaching its native view. */
   ensurePooled?: (instanceId: string) => Promise<CtoxManagedGuestResult>;
   /** Detach the active native guest while keeping it warm for later re-attachment. */

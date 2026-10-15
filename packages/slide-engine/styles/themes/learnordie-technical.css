@@ -1,0 +1,17 @@
+@layer learnordie-slide-engine {
+  :where(.ld-deck-renderer[data-theme="learnordie-technical"]) {
+    --slide: oklch(98.5% 0.005 230);
+    --ink: oklch(18% 0.035 235);
+    --muted: oklch(47% 0.034 235);
+    --line: oklch(82% 0.024 230);
+    --panel: oklch(98.8% 0.006 230);
+    --panel-soft: oklch(92.8% 0.017 230);
+    --accent: oklch(62% 0.14 72);
+    --accent-soft: oklch(90% 0.06 74);
+    --brand-night: oklch(18% 0.045 242);
+    --lb-kinematic: oklch(53% 0.095 218);
+    --lb-kinematic-soft: oklch(91% 0.035 218);
+    --lb-origin-blue: oklch(58% 0.095 218);
+    --shadow: 0 22px 70px oklch(5% 0.02 236 / 0.26);
+  }
+}

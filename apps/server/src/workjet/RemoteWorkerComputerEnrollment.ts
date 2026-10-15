@@ -135,7 +135,10 @@ export const makeRemoteWorkerComputerEnrollment = Effect.fn("RemoteWorkerCompute
         Effect.mapError(failure),
       )).filter(
         (connection) =>
-          connection.instanceId === input.selectedInstanceId && connection.status === "ready",
+          connection.instanceId === input.selectedInstanceId &&
+          connection.status === "ready" &&
+          (input.sourceConnectionId === undefined ||
+            connection.connectionId === input.sourceConnectionId),
       );
       if (candidates.length !== 1) return yield* failure();
       const selected = candidates[0]!;

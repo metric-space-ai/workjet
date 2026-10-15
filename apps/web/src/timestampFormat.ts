@@ -117,10 +117,37 @@ export function formatRelativeTime(isoDate: string): RelativeTimeParts | null {
   return { value: `${days}d`, suffix: "ago" };
 }
 
-export function formatRelativeTimeLabel(isoDate: string) {
+function relativeAmount(isoDate: string): { amount: number; unit: "m" | "h" | "d" } | "now" | null {
   const relative = formatRelativeTime(isoDate);
-  if (!relative) return "";
-  return relative.suffix ? `${relative.value} ${relative.suffix}` : relative.value;
+  if (!relative) return null;
+  const match = /^(\d+)([mhd])$/.exec(relative.value);
+  if (!relative.suffix || !match) return "now";
+  return { amount: Number(match[1]), unit: match[2] as "m" | "h" | "d" };
+}
+
+/** „vor 3 Std.“, „vor 2 Tagen“ oder „gerade eben“. */
+export function formatRelativeTimeLabel(isoDate: string) {
+  const relative = relativeAmount(isoDate);
+  if (relative === null) return "";
+  if (relative === "now") return "gerade eben";
+  const unit =
+    relative.unit === "m"
+      ? "Min."
+      : relative.unit === "h"
+        ? "Std."
+        : relative.amount === 1
+          ? "Tag"
+          : "Tagen";
+  return `vor ${relative.amount} ${unit}`;
+}
+
+/** Kurzform für dichte Listen: „jetzt“, „4 Min“, „3 Std“, „2 T“. */
+export function formatCompactRelativeTimeLabel(isoDate: string) {
+  const relative = relativeAmount(isoDate);
+  if (relative === null) return "";
+  if (relative === "now") return "jetzt";
+  const unit = relative.unit === "m" ? "Min" : relative.unit === "h" ? "Std" : "T";
+  return `${relative.amount} ${unit}`;
 }
 
 export function getRelativeTimeState(isoDate: string | null): RelativeTimeState {

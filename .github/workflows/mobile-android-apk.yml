@@ -11,6 +11,7 @@ on:
           - preview
           - production
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".github/workflows/mobile-android-apk.yml"
       - "apps/mobile/**"
@@ -27,6 +28,7 @@ concurrency:
 
 jobs:
   apk:
+    if: ${{ !github.event.pull_request.draft }}
     name: Standalone Android ${{ inputs.variant || 'preview' }} APK
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -53,6 +55,10 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
+      - name: Verify native build configuration and runtime guard
+        run: |
+          vp test scripts/android-ndk-runtime.test.mjs
+          python3 scripts/verify-android-native-runtime.test.py
       - name: Generate native Android project
         working-directory: apps/mobile
         run: vp exec expo prebuild --platform android --clean --no-install
@@ -73,6 +79,7 @@ jobs:
           grep -Fq "package: name='$expected_package'" "$RUNNER_TEMP/android-package.txt"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK_PATH" > "$RUNNER_TEMP/android-signature.txt"
           node scripts/verify-mobile-business-os-apk.mjs "$APK_PATH"
+          python3 scripts/verify-android-native-runtime.py "$APK_PATH"
           mkdir -p "$RUNNER_TEMP/workjet-apk"
           cp "$APK_PATH" "$RUNNER_TEMP/workjet-apk/Workjet-$APP_VARIANT-arm64.apk"
           cp "$RUNNER_TEMP/android-package.txt" "$RUNNER_TEMP/android-signature.txt" "$RUNNER_TEMP/workjet-apk/"

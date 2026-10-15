@@ -48,8 +48,7 @@ const meshOverviewAtom = Atom.make((get): readonly EnvironmentMeshOverviewStatus
       environmentId,
       label: presentation.entry.target.label,
       isPending: result.waiting,
-      error:
-        result._tag === "Failure" ? "This environment could not report its mesh overview." : null,
+      error: result._tag === "Failure" ? "Mesh-Übersicht nicht verfügbar" : null,
       overview: Option.getOrNull(AsyncResult.value(result)),
     });
   }
@@ -124,19 +123,12 @@ export function useMeshOverview(): MeshOverviewView {
           const revoked = result.value.outcome === "revoked";
           toastManager.add({
             type: revoked ? "success" : "warning",
-            title: revoked ? "Peer trust revoked" : "No pinned keys for that machine",
-            // Say what changed AND what did not: the pin is gone, but the
-            // machine is not blocked — it will be trusted again on its next
-            // verified envelope, which is the whole point of the recovery path.
-            description: revoked
-              ? `${target.peerEnvironmentId} is no longer trusted. Its old keys are refused permanently; the next envelope that verifies from it establishes a new pin.`
-              : "Nothing was destroyed. This machine had no pinned keys for that address.",
+            title: revoked ? "Vertrauen entzogen" : "Keine Schlüssel für diesen Rechner",
           });
         } else if (!isAtomCommandInterrupted(result)) {
           toastManager.add({
             type: "error",
-            title: "The trust pin was not revoked",
-            description: "Nothing was changed. The peer is still trusted as before.",
+            title: "Vertrauen nicht entzogen",
           });
         }
       })().finally(() => setRevoking(null));

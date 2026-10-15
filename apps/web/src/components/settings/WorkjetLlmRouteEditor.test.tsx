@@ -26,6 +26,28 @@ const accounts: ReadonlyArray<WorkjetGatewayAccountSummary> = [
 ];
 
 describe("WorkjetLlmRouteEditor", () => {
+  it("keeps the native holding account when only the route label changes", () => {
+    const native = {
+      id: WorkjetLlmRouteId.make("native"),
+      label: "Native Claude",
+      nativeAccountReference: {
+        accountId: "196a89ba-ee86-4413-885c-04ca60e6f291",
+        holderInstanceId: "322084e5-8239-48d7-b3c5-c5178fbe5822",
+        accountRevision: 3,
+      },
+    };
+    const draft = createWorkjetLlmRouteDraft({ route: native, accounts });
+    expect(draft.gatewayAccountId).toBe("");
+    expect(saveWorkjetLlmRouteDraft({ ...draft, label: "Renamed Claude" })).toEqual({
+      ...native,
+      label: "Renamed Claude",
+    });
+    const paired = { ...native, gatewayAccountId: accounts[0]!.id };
+    expect(
+      saveWorkjetLlmRouteDraft(createWorkjetLlmRouteDraft({ route: paired, accounts })),
+    ).toEqual(paired);
+  });
+
   it("saves only a gateway-account reference without model or credentials", () => {
     const draft = createWorkjetLlmRouteDraft({ accounts, id: "route-work" });
     const saved = saveWorkjetLlmRouteDraft({ ...draft, label: " Codex production " });
@@ -42,10 +64,10 @@ describe("WorkjetLlmRouteEditor", () => {
   it("requires a gateway account before saving", () => {
     expect(() =>
       saveWorkjetLlmRouteDraft({ id: "route-1", label: "Route", gatewayAccountId: "" }),
-    ).toThrowError("Choose a provider-gateway account.");
+    ).toThrowError("Gateway-Konto wählen.");
   });
 
-  it("offers gateway accounts and explains where secrets stay", () => {
+  it("offers gateway accounts without explanatory text", () => {
     const markup = renderToStaticMarkup(
       <WorkjetLlmRouteEditor
         accounts={accounts}
@@ -54,12 +76,10 @@ describe("WorkjetLlmRouteEditor", () => {
       />,
     );
 
-    expect(markup).toContain("Provider-gateway account");
+    expect(markup).toContain("Gateway-Konto");
     expect(markup).toContain("Codex Work");
-    expect(markup).toContain("Models stay on");
-    expect(markup).toContain(
-      "credentials stay protected by the provider-gateway account authority",
-    );
+    expect(markup).not.toContain("Models stay on");
+    expect(markup).toContain("Speichern");
   });
 
   it("does not present Code harness runtimes as provider-gateway accounts", () => {
@@ -67,8 +87,8 @@ describe("WorkjetLlmRouteEditor", () => {
       <WorkjetLlmRouteEditor accounts={[]} onSave={() => undefined} onCancel={() => undefined} />,
     );
 
-    expect(markup).toContain("No Workjet provider-gateway accounts");
-    expect(markup).toContain("harness runtimes");
+    expect(markup).toContain("Keine Gateway-Konten");
+    expect(markup).not.toContain("harness runtimes");
     expect(markup).toContain('disabled=""');
   });
 });

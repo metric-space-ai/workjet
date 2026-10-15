@@ -1,6 +1,7 @@
 // Origin: CTOX
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
+pub mod chat_completions_bridge;
 mod codex_client_models;
 mod openai_handlers;
 mod openai_images_handlers;

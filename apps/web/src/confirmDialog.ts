@@ -1,23 +1,35 @@
 import type { ConfirmDialogOptions, ConfirmDialogVariant } from "@workjet/contracts";
 
-export type ConfirmDialogState =
-  | { readonly status: "idle" }
-  | {
-      readonly status: "confirming";
-      readonly message: string;
-      readonly variant: ConfirmDialogVariant;
-    }
-  | {
-      readonly status: "closing";
-      readonly message: string;
-      readonly variant: ConfirmDialogVariant;
-    };
+/**
+ * Optionen einer Inline-Bestätigung. `confirmLabel` ersetzt „Bestätigen“ auf
+ * der Primäraktion; die übrigen Felder kommen aus dem Desktop-Vertrag.
+ */
+export type InlineConfirmOptions = ConfirmDialogOptions & {
+  readonly confirmLabel?: string;
+};
 
-type PendingConfirmation = {
+type ConfirmationView = {
   readonly message: string;
   readonly variant: ConfirmDialogVariant;
+  readonly confirmLabel?: string;
+};
+
+export type ConfirmDialogState =
+  | { readonly status: "idle" }
+  | ({ readonly status: "confirming" } & ConfirmationView)
+  | ({ readonly status: "closing" } & ConfirmationView);
+
+type PendingConfirmation = ConfirmationView & {
   readonly resolve: (confirmed: boolean) => void;
 };
+
+function viewOf(confirmation: ConfirmationView): ConfirmationView {
+  return {
+    message: confirmation.message,
+    variant: confirmation.variant,
+    ...(confirmation.confirmLabel ? { confirmLabel: confirmation.confirmLabel } : {}),
+  };
+}
 
 const idleState: ConfirmDialogState = { status: "idle" };
 let state: ConfirmDialogState = idleState;
@@ -54,7 +66,7 @@ export function subscribeConfirmDialog(listener: () => void): () => void {
 }
 
 /**
- * Registers the renderer host that can present themed confirmations. The
+ * Registers the renderer host that presents inline confirmations. The
  * returned cleanup function also cancels any request left without a host.
  */
 export function registerConfirmDialogHost(): () => void {
@@ -74,28 +86,31 @@ export function registerConfirmDialogHost(): () => void {
 }
 
 /**
- * Requests a themed confirmation when a host is mounted. An undefined result
- * means no themed host is currently available.
+ * Requests an inline confirmation when a host is mounted. An undefined result
+ * means no host is currently available.
  */
 export function requestConfirmDialog(
   message: string,
-  options?: ConfirmDialogOptions,
+  options?: InlineConfirmOptions,
 ): Promise<boolean> | undefined {
   if (registeredHostCount === 0) return undefined;
 
   const confirmation = new Promise<boolean>((resolve) => {
-    const pending = {
-      message,
-      variant: options?.variant ?? "default",
+    const pending: PendingConfirmation = {
+      ...viewOf({
+        message,
+        variant: options?.variant ?? "default",
+        ...(options?.confirmLabel ? { confirmLabel: options.confirmLabel } : {}),
+      }),
       resolve,
-    } satisfies PendingConfirmation;
+    };
     if (activeConfirmation || state.status === "closing") {
       queuedConfirmations.push(pending);
       return;
     }
 
     activeConfirmation = pending;
-    publish({ status: "confirming", message, variant: pending.variant });
+    publish({ status: "confirming", ...viewOf(pending) });
   });
 
   return confirmation;
@@ -107,7 +122,7 @@ export function respondToConfirmDialog(confirmed: boolean): void {
   const confirmation = activeConfirmation;
   activeConfirmation = null;
   confirmation.resolve(confirmed);
-  publish({ status: "closing", message: state.message, variant: state.variant });
+  publish({ status: "closing", ...viewOf(state) });
 }
 
 export function completeConfirmDialogClose(): void {
@@ -120,7 +135,7 @@ export function completeConfirmDialogClose(): void {
   }
 
   activeConfirmation = next;
-  publish({ status: "confirming", message: next.message, variant: next.variant });
+  publish({ status: "confirming", ...viewOf(next) });
 }
 
 export function resetConfirmDialogForTests(): void {

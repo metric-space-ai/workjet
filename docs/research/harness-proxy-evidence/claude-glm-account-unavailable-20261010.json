@@ -1,0 +1,13 @@
+{
+  "recordedAt": "2026-10-10T06:19:42.947Z",
+  "harness": "Claude Code",
+  "model": "glm-5.3-flash",
+  "workjetThreadId": "fa8c84ec-48d6-4d12-8bc4-03208b86b2fb",
+  "routeViaGateway": true,
+  "httpStatus": 503,
+  "successfulToolCalls": 0,
+  "error": "no API-key account is currently available for this model",
+  "passed": false,
+  "classification": "Account availability; no tool call started",
+  "runtimeSourceHead": "3b4b4f7c24bf732708982caac99971f15b39eb56"
+}

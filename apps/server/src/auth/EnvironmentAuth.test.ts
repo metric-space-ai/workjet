@@ -60,6 +60,26 @@ const requestMetadata = {
 };
 
 it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
+  it.effect("only accepts trusted browser origins for cookie-backed websocket upgrades", () =>
+    Effect.sync(() => {
+      const allows = (origin: string | undefined) =>
+        EnvironmentAuth.isAllowedWebSocketCookieOrigin({
+          origin,
+          host: "app.example.test:3773",
+          allowedOrigins: ["workjet://app", "http://localhost:5173"],
+        });
+
+      expect(allows(undefined)).toBe(true);
+      expect(allows("https://app.example.test:3773")).toBe(true);
+      expect(allows("workjet://app")).toBe(true);
+      expect(allows("http://localhost:5173")).toBe(true);
+      expect(allows("https://evil.example.test:3773")).toBe(false);
+      expect(allows("https://app.example.test:3774")).toBe(false);
+      expect(allows("null")).toBe(false);
+      expect(allows("https://app.example.test:3773/path")).toBe(false);
+    }),
+  );
+
   it.effect("classifies invalid bootstrap credential failures for the HTTP boundary", () =>
     Effect.sync(() => {
       const error = EnvironmentAuth.toBootstrapExchangeError(

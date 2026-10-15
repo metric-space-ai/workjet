@@ -1,7 +1,10 @@
 import { EnvironmentId, ThreadId } from "@workjet/contracts";
+import { OptionSelect } from "./ui/option-select";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { browserBusinessOsLaunchUrl } from "../crossMode/browserBusinessOsLaunch";
+import { openInstanceSetup } from "../instanceSetup";
+
 import { readActiveEnvironmentId, useActiveEnvironmentId } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
@@ -112,13 +115,19 @@ function BrowserBusinessOsEnvironmentNavigation({
 
   return (
     <div className="no-drag flex min-w-0 flex-wrap items-center gap-1">
-      <select
+      <OptionSelect
         aria-label="Aktive Business-OS-Instanz"
+        className="w-auto max-w-48"
         disabled={pending || environmentId === null}
         value={selected?.connectionId ?? ""}
-        className="max-w-36 rounded-md border border-border bg-background px-2 py-1 text-xs"
-        onChange={(event) => {
-          const row = rows.find((candidate) => candidate.connectionId === event.target.value);
+        placeholder="Instanz auswählen"
+        options={rows.map((row) => ({
+          value: row.connectionId,
+          label: `${row.displayName} · ${row.instanceId}${row.status !== "ready" ? " (nicht verbunden)" : ""}`,
+          disabled: row.status !== "ready",
+        }))}
+        onValueChange={(connectionId) => {
+          const row = rows.find((candidate) => candidate.connectionId === connectionId);
           setSelection(row?.connectionId ?? null);
           try {
             if (row) sessionStorage.setItem(selectionKey, row.connectionId);
@@ -128,15 +137,7 @@ function BrowserBusinessOsEnvironmentNavigation({
           }
           setError(null);
         }}
-      >
-        <option value="">Instanz auswählen</option>
-        {rows.map((row) => (
-          <option key={row.connectionId} value={row.connectionId} disabled={row.status !== "ready"}>
-            {row.displayName} · {row.instanceId}
-            {row.status !== "ready" ? " (nicht verbunden)" : ""}
-          </option>
-        ))}
-      </select>
+      />
       <Button
         size="sm"
         variant="ghost"
@@ -174,15 +175,9 @@ function BrowserBusinessOsEnvironmentNavigation({
         </span>
       ) : null}
       {!connections.isPending && rows.length === 0 ? (
-        <a
-          href="https://ctox.dev/workjet-pair"
-          target="_blank"
-          rel="noopener noreferrer"
-          referrerPolicy="no-referrer"
-          className="text-xs underline"
-        >
+        <Button size="sm" variant="ghost" onClick={() => openInstanceSetup("connect")}>
           Instanz verbinden
-        </a>
+        </Button>
       ) : null}
     </div>
   );

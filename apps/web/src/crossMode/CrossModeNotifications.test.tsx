@@ -118,7 +118,7 @@ describe("CrossModeNotificationList", () => {
     );
 
     expect(markup).toContain("data-cross-mode-notifications-loading");
-    expect(markup).toContain("Checking both modes");
+    expect(markup).toContain("Wird geladen …");
     expect(markup).not.toContain("data-cross-mode-notifications-empty");
   });
 
@@ -132,7 +132,7 @@ describe("CrossModeNotificationList", () => {
     );
 
     expect(markup).toContain("data-cross-mode-notifications-empty");
-    expect(markup).toContain("No cross-mode activity");
+    expect(markup).toContain("Keine Aktivität");
     expect(markup).not.toContain("data-cross-mode-notifications-loading");
   });
 
@@ -164,7 +164,7 @@ describe("CrossModePendingApprovalIndicator", () => {
       });
       expect(findByMarker(element, "data-cross-mode-approval-open")).toBeNull();
       const markup = renderToStaticMarkup(element);
-      expect(markup).toContain(settled ? "No approvals are waiting" : "Checking for pending");
+      expect(markup).toContain(settled ? "Keine offenen Freigaben" : "Freigaben werden geladen");
     }
   });
 
@@ -183,6 +183,6 @@ describe("CrossModePendingApprovalIndicator", () => {
     expect(open).not.toBeNull();
     open?.onClick?.();
     expect(opened).toEqual([businessOsTarget]);
-    expect(renderToStaticMarkup(element)).toContain("2 approvals are waiting in Business OS");
+    expect(renderToStaticMarkup(element)).toContain("2 offene Freigaben in Business OS");
   });
 });

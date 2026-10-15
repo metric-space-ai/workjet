@@ -1,5 +1,6 @@
 import {
   WorkjetConnectionId,
+  workjetCtoxWorkerSourceSuccessor,
   type WorkjetConnectionSummary,
   WorkjetDecisionHubConnectionError,
   type WorkjetDecisionHubProvisionInput,
@@ -247,6 +248,9 @@ const make = Effect.gen(function* () {
         Effect.matchEffect({
           onSuccess: () => setStatus(connectionId, "ready", null),
           onFailure: (error) => {
+            if (error.reason === "authentication-required") {
+              return setStatus(connectionId, "needs_auth", error.reason);
+            }
             if (
               error.reason === "remote-identity-mismatch" ||
               error.reason === "remote-tools-missing"
@@ -299,11 +303,20 @@ const make = Effect.gen(function* () {
   ) =>
     Effect.gen(function* () {
       const summary = yield* getSummary(connectionId);
-      if (summary.status !== "ready") return yield* failure("connection-unavailable");
       if (expectedInstanceId !== undefined && summary.instanceId !== expectedInstanceId) {
         return yield* failure("connection-instance-mismatch");
       }
-      return yield* readTarget(connectionId);
+      // Existing MCP sessions retain the credential reference they started with.
+      // Resolve it through the same tenant/instance guard as persisted thread
+      // rotation, without changing saved native requests or their receipt fences.
+      let ready = summary;
+      if (summary.status !== "ready") {
+        const successor = workjetCtoxWorkerSourceSuccessor(yield* list, summary).connection;
+        if (!successor) return yield* failure("connection-unavailable");
+        ready = yield* getSummary(successor.connectionId);
+        if (ready.status !== "ready") return yield* failure("connection-unavailable");
+      }
+      return yield* readTarget(ready.connectionId);
     });
 
   const verifyReadyTarget: DecisionHubConnectionRegistryShape["verifyReadyTarget"] = (

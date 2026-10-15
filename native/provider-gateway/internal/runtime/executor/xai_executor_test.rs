@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime};
 use serde_json::{json, Value};
 
 use super::*;
+use crate::internal::runtime::executor::xai_executor_execute::XaiExecutionError;
 use crate::sdk::cliproxy::auth::Auth;
 use crate::sdk::cliproxy::executor::{ExecutionMetadata, Headers, Options, Request};
 
@@ -53,7 +54,10 @@ fn promotes_additional_tools_and_qualifies_namespaces() {
     .unwrap();
     let body: Value = serde_json::from_slice(&prepared.body).unwrap();
     assert_eq!(body["tools"][0]["name"], "collaboration__spawn_agent");
-    assert_eq!(body["tools"][0]["parameters"]["oneOf"][0]["type"], "object");
+    assert_eq!(
+        body["tools"][0]["parameters"]["properties"]["input"]["oneOf"][0]["type"],
+        "object"
+    );
     assert!(body["input"].as_array().unwrap().is_empty());
     assert_eq!(
         prepared.namespace_tools["collaboration__spawn_agent"].namespace,
@@ -83,7 +87,10 @@ fn normalizes_custom_tool_history() {
     let prepared = prepare_xai_responses_body(br#"{"input":[{"type":"custom_tool_call","name":"shell","input":"ls"},{"type":"custom_tool_call_output","output":"ok"}]}"#, XaiRequestPolicy { model:"grok", ..Default::default() }).unwrap();
     let body: Value = serde_json::from_slice(&prepared.body).unwrap();
     assert_eq!(body["input"][0]["type"], "function_call");
-    assert_eq!(body["input"][0]["arguments"], "ls");
+    assert_eq!(
+        serde_json::from_str::<Value>(body["input"][0]["arguments"].as_str().unwrap()).unwrap(),
+        json!({"input":"ls"})
+    );
     assert_eq!(body["input"][1]["type"], "function_call_output");
 }
 
@@ -456,6 +463,77 @@ async fn execute_aggregates_completed_event() {
         .as_ref()
         .unwrap()
         .ends_with("/responses"));
+}
+
+#[tokio::test]
+async fn execute_preserves_incomplete_response_and_previous_session_replay() {
+    let store = Arc::new(MemoryReplay::default());
+    let scope = XaiReasoningReplayScope::new("xai", "session-1", None).unwrap();
+    let previous =
+        vec![br#"{"type":"reasoning","encrypted_content":"YWJjZGVmZ2hpamtsbW5vcA=="}"#.to_vec()];
+    store.store(&scope.key(), &previous).unwrap();
+    let terminal = json!({
+        "type": "response.incomplete",
+        "response": {
+            "id": "token-limited",
+            "status": "incomplete",
+            "incomplete_details": { "reason": "max_output_tokens" },
+            "output": [{
+                "type": "message",
+                "role": "assistant",
+                "content": [{ "type": "output_text", "text": "Hi" }]
+            }]
+        }
+    });
+    let transport = Arc::new(HttpFixture {
+        response: Mutex::new(Some((200, format!("data: {terminal}\n\n").into_bytes()))),
+        seen: Mutex::new(None),
+        seen_body: Mutex::new(None),
+    });
+    let executor = XaiExecutor::new(transport, Duration::from_secs(5))
+        .unwrap()
+        .with_replay_store(store.clone());
+    let request = Request {
+        model: "grok-4.7".into(),
+        payload: br#"{"input":[{"role":"user","content":"Hi"}],"max_output_tokens":8}"#.to_vec(),
+        ..Request::default()
+    };
+    let options = Options {
+        metadata: ExecutionMetadata {
+            execution_session_id: Some("session-1".into()),
+            ..ExecutionMetadata::default()
+        },
+        ..Options::default()
+    };
+
+    let response = executor.execute(None, &request, &options).await.unwrap();
+    let event: Value = serde_json::from_slice(&response.payload).unwrap();
+    assert_eq!(event, terminal);
+    assert_eq!(store.load(&scope.key()).unwrap(), previous);
+}
+
+#[tokio::test]
+async fn execute_does_not_accept_failed_terminal_as_success() {
+    let transport = Arc::new(HttpFixture {
+        response: Mutex::new(Some((
+            200,
+            b"data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\"}}\n\n"
+                .to_vec(),
+        ))),
+        seen: Mutex::new(None),
+        seen_body: Mutex::new(None),
+    });
+    let executor = XaiExecutor::new(transport, Duration::from_secs(5)).unwrap();
+    let request = Request {
+        model: "grok-4.7".into(),
+        payload: br#"{"input":"Hi"}"#.to_vec(),
+        ..Request::default()
+    };
+
+    assert!(matches!(
+        executor.execute(None, &request, &Options::default()).await,
+        Err(XaiExecutionError::MissingCompleted)
+    ));
 }
 
 #[tokio::test]

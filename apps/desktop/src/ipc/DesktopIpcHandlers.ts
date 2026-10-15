@@ -43,6 +43,7 @@ import {
   getAppBranding,
   getLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
+  getSystemLanguages,
   getWindowFullscreenState,
   openExternal,
   pickFolder,
@@ -53,6 +54,7 @@ import {
 import * as CtoxIpc from "./methods/ctox.ts";
 import * as PreviewIpc from "./methods/preview.ts";
 import * as ProvisioningIpc from "./methods/provisioning.ts";
+import * as ComputersIpc from "./methods/computers.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
@@ -61,6 +63,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
 
   yield* ipc.handleSync(getAppBranding);
   yield* ipc.handleSync(getWindowFullscreenState);
+  yield* ipc.handleSync(getSystemLanguages);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
 
@@ -109,6 +112,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(downloadUpdate);
   yield* ipc.handle(installUpdate);
   yield* ipc.handle(checkForUpdate);
+  for (const method of ComputersIpc.methods) yield* ipc.handle(method);
   for (const provisioningMethod of ProvisioningIpc.methods) {
     yield* ipc.handle(provisioningMethod);
   }

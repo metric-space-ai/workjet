@@ -1,7 +1,10 @@
 import type { CtoxManagedInstance } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import selectorSource from "./ActiveCtoxInstanceSelector.tsx?raw";
+
 import {
+  INSTANCE_PICKER_SEARCH_THRESHOLD,
   resolveActiveCtoxInstanceId,
   selectableCtoxInstances,
   filterCtoxInstances,
@@ -62,15 +65,43 @@ describe("instance picker identity and discovery", () => {
   });
   it("does not call a discoverable instance connected before the data plane is ready", () => {
     const ready = instance("one", "Ready");
-    expect(ctoxInstancePickerStatus(ready)).toBe("Connected");
+    expect(ctoxInstancePickerStatus(ready)).toBe("verbunden");
     expect(
       ctoxInstancePickerStatus({
         ...ready,
         healthSummary: { ...healthSummary, dataPlaneReady: false },
       }),
-    ).toBe("Connection not confirmed");
+    ).toBe("verbindet");
     expect(ctoxInstancePickerStatus({ ...ready, status: "pairing_expired" })).toBe(
-      "Invitation expired",
+      "Kopplung abgelaufen",
     );
+  });
+});
+
+describe("instance dropdown", () => {
+  it("shows one row per instance: duplicates by domain collapse, removed entries disappear", () => {
+    const managed = { ...instance("managed:welsch", "Welsch"), domain: "welsch.ctox.dev" };
+    const paired = {
+      ...instance("paired:welsch", "Welsch", "pairing_invite"),
+      domain: "welsch.ctox.dev",
+    };
+    const removed = { ...instance("gone", "Alt"), workjetState: "removed" as const };
+    const result = selectableCtoxInstances(
+      { _tag: "ready", instances: [paired, managed, removed] },
+      "paired:welsch",
+    );
+    expect(result.map((entry) => entry.id)).toEqual(["paired:welsch"]);
+  });
+
+  it("only offers a search field above twelve instances", () => {
+    expect(INSTANCE_PICKER_SEARCH_THRESHOLD).toBe(12);
+  });
+
+  it("has no network-overview entry and no popover with content", () => {
+    expect(selectorSource).not.toContain("Network overview");
+    expect(selectorSource).not.toContain("showNetwork");
+    expect(selectorSource).not.toContain("PopoverPopup");
+    expect(selectorSource).toContain("Instanz hinzufügen");
+    expect(selectorSource).toContain("Instanzen verwalten");
   });
 });

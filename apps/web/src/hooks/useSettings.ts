@@ -1,3 +1,4 @@
+import { notifySettingsSaved } from "../settingsSavedSignal";
 /**
  * Environment-scoped settings hooks.
  *
@@ -272,21 +273,6 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
   });
 }
 
-/**
- * Whether the legacy sidebar (Settings → General → Legacy features) replaces
- * the default one.
- *
- * Held at the default sidebar until client settings hydrate: the pre-hydration
- * snapshot is just the schema defaults, so resolving against it could mount one
- * sidebar and then swap it out once persisted settings land — remounting the
- * whole tree for everyone instead of only for legacy opt-ins.
- */
-export function useLegacySidebarEnabled(): boolean {
-  const settingsHydrated = useClientSettingsHydrated();
-  const legacySidebarEnabled = useClientSettingsValue().legacySidebarEnabled;
-  return settingsHydrated && legacySidebarEnabled;
-}
-
 /** Read current settings for one environment, merged with client-local preferences. */
 export function useEnvironmentSettings<T = UnifiedSettings>(
   environmentId: EnvironmentId,
@@ -320,10 +306,12 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
 
       if (Object.keys(serverPatch).length > 0) {
         if (environmentId) {
-          void persistServerSettings({
-            environmentId,
-            input: { patch: serverPatch },
-          });
+          void Promise.resolve(
+            persistServerSettings({
+              environmentId,
+              input: { patch: serverPatch },
+            }),
+          ).then(notifySettingsSaved, () => undefined);
         }
       }
       if (Object.keys(clientPatch).length > 0) {
@@ -331,6 +319,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
           ...getClientSettingsSnapshot(),
           ...clientPatch,
         });
+        notifySettingsSaved();
       }
     },
     [environmentId, persistServerSettings],

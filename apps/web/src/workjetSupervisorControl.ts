@@ -7,6 +7,7 @@ import {
   type CtoxWorkjetProjectControlResult,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
+import { Effect, Random } from "effect";
 import {
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
@@ -25,7 +26,7 @@ const decodeJournal = Schema.decodeUnknownSync(WorkjetSupervisorJournal, {
 });
 
 async function confirmedControl(
-  intent: WorkjetSupervisorTurnIntent,
+  intent: Pick<WorkjetSupervisorTurnIntent, "instanceId">,
   request: CtoxWorkjetProjectControlRequest,
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
@@ -37,6 +38,42 @@ async function confirmedControl(
     return { _tag: "failed", code: "guest_failed" };
   }
   return result;
+}
+
+/** Set up the native supervisor without creating a message or an execution task. */
+export function bindWorkjetSupervisor(
+  scope: Pick<WorkjetSupervisorTurnIntent, "instanceId" | "projectId" | "threadId">,
+  commandId: CommandId,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  return confirmedControl(
+    scope,
+    {
+      action: "project.supervisor.bind",
+      commandId,
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+    },
+    port,
+  );
+}
+
+/** Query the current native capability without creating a model turn. */
+export function readWorkjetSupervisorTurnCapabilities(
+  scope: Pick<WorkjetSupervisorTurnIntent, "instanceId" | "projectId" | "threadId">,
+  commandId: CommandId,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  return confirmedControl(
+    scope,
+    {
+      action: "project.supervisor.turn.capabilities",
+      commandId,
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+    },
+    port,
+  );
 }
 
 /** Save before dispatch. A lost response is resumed with the exact saved intent. */
@@ -55,10 +92,17 @@ async function dispatchSavedSupervisorTurn(
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   const { intent } = saved;
-  if (saved.submission === "not-submitted")
+  if (
+    saved.submission === "not-submitted" &&
+    saved.submissionError !== "not_active" &&
+    saved.submissionError !== "timeout"
+  )
     return { _tag: "failed", code: saved.submissionError ?? "unsupported" };
-  await journal.save(saved);
-  if (saved.submission === "prepared") {
+  // Older clients stored a transient bind failure as a refusal. Replay its
+  // original binding command before submitting the original user intent.
+  const submission = saved.submission === "not-submitted" ? "prepared" : saved.submission;
+  await journal.save({ ...saved, submission });
+  if (submission === "prepared") {
     const binding = await confirmedControl(
       intent,
       {
@@ -73,10 +117,33 @@ async function dispatchSavedSupervisorTurn(
       await journal.save({
         intent,
         turn: null,
-        submission: "not-submitted",
+        submission:
+          binding.code === "not_active" || binding.code === "timeout"
+            ? "prepared"
+            : "not-submitted",
         submissionError: binding.code,
       });
       return binding;
+    }
+  }
+  if (submission === "prepared" && intent.turnKind === "conversation") {
+    const capabilityNonce = Effect.runSync(Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER));
+    const capability = await readWorkjetSupervisorTurnCapabilities(
+      intent,
+      CommandId.make(`supervisor-kind-${capabilityNonce}`),
+      port,
+    );
+    if (capability._tag !== "completed") {
+      await journal.save({
+        intent,
+        turn: null,
+        submission:
+          capability.code === "not_active" || capability.code === "timeout"
+            ? "prepared"
+            : "not-submitted",
+        submissionError: capability.code,
+      });
+      return capability;
     }
   }
   // Persist the uncertainty boundary before the first native submit can start.
@@ -89,6 +156,7 @@ async function dispatchSavedSupervisorTurn(
       projectId: intent.projectId,
       threadId: intent.threadId,
       goal: intent.goal,
+      ...(intent.turnKind === "conversation" ? { turnKind: intent.turnKind } : {}),
     },
     port,
   );
@@ -120,7 +188,7 @@ export async function resumeWorkjetSupervisorTurn(
   );
   if (result._tag === "completed" && result.response.action === "project.supervisor.turn.watch") {
     await journal.save({
-      intent: saved.intent,
+      ...saved,
       turn: result.response.turn,
       submission: "confirmed",
     });

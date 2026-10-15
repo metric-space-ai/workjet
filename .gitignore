@@ -49,3 +49,7 @@ node_modules/
 # CTOX runtime state accidentally created by running ctox from this checkout.
 # Contains ctox-secrets.key — must never be committed.
 /runtime/
+
+# Slide engine business-scene QA bundle and screenshots
+packages/slide-engine/qa/dist/
+/output/slide-engine-scenes/

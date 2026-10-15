@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Business-Szenen QA</title>
+    <!-- Counts animation frames so the screenshot script can prove render-on-demand. -->
+    <script>
+      (() => {
+        const original = window.requestAnimationFrame.bind(window);
+        window.__qaRafCount = 0;
+        window.requestAnimationFrame = (callback) => {
+          window.__qaRafCount++;
+          return original(callback);
+        };
+      })();
+    </script>
+    <link rel="stylesheet" href="../styles/core.css" />
+    <!-- Excalifont/Virgil as data URIs (built from the learnordie font files), after core.css. -->
+    <link rel="stylesheet" href="dist/fonts.css" />
+    <style>
+      :root {
+        color-scheme: light;
+        --qa-paper: #fbfaf6;
+        --qa-ink: #343a40;
+        --qa-muted: #868e96;
+        --qa-frame: #e9ecef;
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --qa-paper: #121212;
+        --qa-ink: #e9ecef;
+        --qa-muted: #868e96;
+        --qa-frame: #2b2b31;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--qa-paper);
+        color: var(--qa-ink);
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+      h1 {
+        margin: 0 0 16px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      h2 {
+        margin: 0 0 8px;
+        color: var(--qa-muted);
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .qa-case {
+        margin: 0 0 28px;
+      }
+      .qa-frame {
+        box-sizing: border-box;
+        overflow: hidden;
+        outline: 1px dashed var(--qa-frame);
+        background: var(--qa-paper);
+      }
+      /* Same host rules as the learnordie canvas embed (ui-excalidraw.css). */
+      .qa-canvas-scene {
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+      }
+      .qa-canvas-scene .lb-scene3d {
+        height: 100%;
+        min-height: 0;
+        font-size: 20px;
+      }
+      .qa-canvas-scene .lb-scene3d-stage {
+        flex: 1 1 0;
+        min-height: 0;
+        aspect-ratio: auto;
+      }
+      .qa-canvas-scene .lb-scene3d-controls {
+        flex: 0 0 auto;
+        padding: 6px 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="dist/scenes-qa.js"></script>
+  </body>
+</html>

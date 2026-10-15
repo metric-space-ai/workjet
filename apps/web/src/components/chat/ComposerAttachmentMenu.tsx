@@ -1,5 +1,5 @@
 import { memo, useRef } from "react";
-import { FileSearchIcon, ImagePlusIcon, PaperclipIcon } from "lucide-react";
+import { FileSearchIcon, ImagePlusIcon, PlusIcon } from "lucide-react";
 
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -45,22 +45,21 @@ export const ComposerAttachmentMenu = memo(function ComposerAttachmentMenu(
           render={
             <ComposerControl
               type="button"
-              className="shrink-0 whitespace-nowrap max-sm:size-7 max-sm:justify-center max-sm:px-0"
-              aria-label="Add images or project files"
+              className="size-7 shrink-0 justify-center px-0"
+              aria-label="Anhang hinzufügen"
             />
           }
         >
-          <ComposerControlIcon icon={PaperclipIcon} />
-          <span className="max-sm:sr-only">Upload</span>
+          <ComposerControlIcon icon={PlusIcon} />
         </MenuTrigger>
         <MenuPopup align="start" side="top" className="w-52">
           <MenuItem onClick={() => imageInputRef.current?.click()}>
             <ImagePlusIcon />
-            Upload images
+            Bilder hochladen
           </MenuItem>
           <MenuItem onClick={props.onAddProjectFile}>
             <FileSearchIcon />
-            Add project file
+            Projektdatei hinzufügen
           </MenuItem>
         </MenuPopup>
       </Menu>

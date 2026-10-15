@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "version": "2026-10-10.1",
+  "checkedAt": "2026-10-10T20:36:13.052Z",
+  "upstreamRevision": "3981228d7038383fcc7e998e2561ef124f8c878c",
+  "liveCatalog": {
+    "schemaVersion": 1,
+    "checkedAt": "2026-10-10T20:36:13.052Z",
+    "expiresAt": "2026-10-10T20:37:13.809Z",
+    "providers": [
+      {
+        "provider": "kimi",
+        "status": "observed",
+        "models": ["k3", "k3-256k", "kimi-for-coding", "kimi-for-coding-highspeed"]
+      },
+      {
+        "provider": "minimax",
+        "status": "observed",
+        "models": ["MiniMax-M3"]
+      },
+      {
+        "provider": "zai",
+        "status": "observed",
+        "models": ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx"]
+      }
+    ]
+  },
+  "document": {
+    "MiniMax-M3": {
+      "input_cost_per_token": 3e-7,
+      "output_cost_per_token": 1.2e-6,
+      "cache_read_input_token_cost": 6e-8
+    },
+    "glm-5.3": {
+      "cache_creation_input_token_cost": 0,
+      "cache_read_input_token_cost": 2.6e-7,
+      "input_cost_per_token": 1.4e-6,
+      "output_cost_per_token": 4.4e-6
+    },
+    "glm-5.3-flash": {
+      "cache_creation_input_token_cost": 0,
+      "cache_read_input_token_cost": 3e-8,
+      "input_cost_per_token": 1.5e-7,
+      "output_cost_per_token": 5e-7
+    }
+  }
+}

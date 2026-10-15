@@ -187,6 +187,38 @@ it.effect(
 );
 
 it.effect(
+  "uses the explicitly selected source grant when another grant has the same native pin",
+  () =>
+    Effect.gen(function* () {
+      const other = { ...ready, connectionId: WorkjetConnectionId.make("other-grant") };
+      const f = fixture([other, ready]);
+      const service = yield* f.make;
+      const result = yield* service.enroll({ ...input, sourceConnectionId: connectionId });
+      assert.equal(result.computerId, nativeId);
+      assert.equal(f.calls(), 1);
+    }),
+);
+
+it.effect("rejects an unknown or foreign explicit source grant before native enrollment", () =>
+  Effect.gen(function* () {
+    for (const entries of [[ready], [{ ...ready, instanceId: "foreign" }]]) {
+      const f = fixture(entries);
+      const service = yield* f.make;
+      yield* Effect.flip(
+        service.enroll({
+          ...input,
+          sourceConnectionId:
+            entries[0]!.instanceId === "foreign"
+              ? connectionId
+              : WorkjetConnectionId.make("unknown-grant"),
+        }),
+      );
+      assert.equal(f.calls(), 0);
+    }
+  }),
+);
+
+it.effect(
   "retains the issued ID and all configuration links before ACK and after a lost ACK retry",
   () =>
     Effect.gen(function* () {

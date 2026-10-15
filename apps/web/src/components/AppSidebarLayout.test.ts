@@ -30,7 +30,7 @@ describe("AppSidebarLayout mode ownership", () => {
     expect(appSidebarLayoutSource).not.toContain("WorkjetDevicePairingDialog");
     expect(appSidebarLayoutSource).not.toContain("businessOsSettingsRequestKey");
     expect(appSidebarLayoutSource).not.toContain("openSettingsRequestKey=");
-    expect(appSidebarLayoutSource).toContain("<SettingsSidebarNav pathname={pathname} />");
+    expect(appSidebarLayoutSource).not.toContain("<SettingsSidebarNav");
   });
 
   it("keeps one instance selector in the shared header and releases the Ops sidebar", () => {

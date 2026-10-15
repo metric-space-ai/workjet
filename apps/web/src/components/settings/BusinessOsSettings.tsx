@@ -1,5 +1,5 @@
-import { openInstanceSetup } from "../../instanceSetup";
-import { encodeBusinessOsManualCredential } from "./businessOsManualCredential";
+import { scheduleUndoableDelete } from "../../lib/undoableDelete";
+import { useUiText } from "../../hooks/useUiText";
 import type {
   CtoxDiscoveryResult,
   CtoxManagedInstance,
@@ -7,49 +7,29 @@ import type {
   WorkjetDeviceBindingSummary,
   WorkjetManagedDeviceInviteManualConnectionResult,
 } from "@workjet/contracts";
-import {
-  ArrowRightIcon,
-  CircleAlertIcon,
-  CopyIcon,
-  EyeIcon,
-  EyeOffIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  SmartphoneIcon,
-  UnplugIcon,
-} from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { ChevronRightIcon, CircleAlertIcon, CopyIcon, RefreshCwIcon } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
-
+import {
+  INSTANCES_SETTINGS_PATH,
+  instanceAddRequestFromSearch,
+  registerInstanceSetupNavigator,
+  requestInstanceAdd,
+} from "../../instanceSetup";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
-import {
-  canActivateCtoxInstance,
-  isRemovableCtoxInstance,
-  useCtoxMode,
-} from "../ctox/CtoxModeShell";
-import { INSTANCE_SETTINGS_NAV_ITEMS } from "./settingsNavigation";
+import { useCtoxMode } from "../ctox/CtoxModeShell";
+import { InstanceAddInline, SEGMENT_TOGGLE_CLASS } from "../ctox/InstanceAddInline";
+import { InstanceNetworkOverview } from "../ctox/InstanceNetworkOverview";
+import { Banner } from "../ui/banner";
 import { Button } from "../ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
+import { InlinePanel } from "../ui/inline-panel";
 import { QRCodeSvg } from "../ui/qr-code";
+import { Row } from "../ui/row";
 import { Spinner } from "../ui/spinner";
-import {
-  AlertDialog,
-  AlertDialogPopup,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-} from "../ui/alert-dialog";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   businessOsDeviceControlErrorMessage,
   createBusinessOsDeviceInvite,
@@ -58,8 +38,10 @@ import {
   revokeBusinessOsDevice,
   revokeBusinessOsDeviceInvite,
 } from "./businessOsDeviceControl";
+import { encodeBusinessOsManualCredential } from "./businessOsManualCredential";
 import { formatMobileInviteExpiry } from "./businessOsPairing";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { dedupeCtoxInstances, InstancesTable } from "./InstancesTable";
+import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
 const EMPTY_DEVICES: readonly WorkjetDeviceBindingSummary[] = [];
@@ -80,282 +62,436 @@ export function resolveActiveBusinessOsInstanceId(target: CrossModeTarget | null
     : null;
 }
 
-function instanceStatus(instance: CtoxManagedInstance): string {
-  if (instance.status === "available" || instance.status === "paired") {
-    return instance.healthSummary.dataPlaneReady
-      ? "Connected and synchronized"
-      : "Connected, sync degraded";
-  }
-  if (instance.status === "needs_auth") return "Sign-in required";
-  if (instance.status === "pairing_expired") return "Device authorization expired";
-  if (instance.status === "offline") return "Unavailable";
-  if (instance.status === "installing") return "Setting up";
-  return "Connection failed";
-}
-
 export function manualConnectionCredentialText(credential: string, visible: boolean): string {
   return visible ? credential : "••••••••••••";
 }
 
-function DevicePairingDialog({
-  instanceName,
+function IconAction({
+  label,
+  onClick,
+  children,
+}: {
+  readonly label: string;
+  readonly onClick: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<Button aria-label={label} size="icon-sm" variant="ghost" onClick={onClick} />}
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipPopup>{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+async function copyValue(value: string, sensitive = false) {
+  await navigator.clipboard.writeText(value);
+  if (!sensitive) return;
+  window.setTimeout(() => {
+    void navigator.clipboard
+      .readText()
+      .then((current) => (current === value ? navigator.clipboard.writeText("") : undefined))
+      .catch(() => undefined);
+  }, 30_000);
+}
+
+/**
+ * Verbindungsdaten nur als beschriftete Kopieren-Knöpfe, nie als Rohtext.
+ * Das Verbindungspasswort trägt Server und Raum selbst; das Einfügefeld unter
+ * „Instanz hinzufügen › Verbindungsdaten“ liest genau diesen einen Wert.
+ */
+function ManualConnectionFields({
+  connection,
+}: {
+  readonly connection: WorkjetManagedDeviceInviteManualConnectionResult;
+}) {
+  const [copied, setCopied] = useState(false);
+  const credential = encodeBusinessOsManualCredential(connection);
+  return (
+    <div className="flex flex-wrap gap-2" data-workjet-device-manual-connection="">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          void copyValue(credential, true).then(() => setCopied(true));
+        }}
+      >
+        <CopyIcon aria-hidden />
+        {copied ? "Verbindungsdaten kopiert" : "Verbindungsdaten kopieren"}
+      </Button>
+    </div>
+  );
+}
+
+/** „Gültig bis 14:30:00 · noch 23 Min.“ – die Restdauer zählt mit. */
+export function formatInviteValidity(expiresAt: string, now: number): string {
+  const until = formatMobileInviteExpiry(expiresAt, "de-DE");
+  const milliseconds = Date.parse(expiresAt);
+  if (!Number.isFinite(milliseconds)) return `Gültig bis ${until}`;
+  const remaining = milliseconds - now;
+  if (remaining <= 0) return "Abgelaufen";
+  const minutes = Math.ceil(remaining / 60_000);
+  const rest = minutes >= 120 ? `noch ${Math.floor(minutes / 60)} Std.` : `noch ${minutes} Min.`;
+  return `Gültig bis ${until} · ${rest}`;
+}
+
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+/**
+ * Gerät koppeln (QR für Telefone) inline auf der Seite, nie als Dialog.
+ * Segment QR-Code | Verbindungsdaten, Fuß „Abbrechen“ (widerruft die
+ * Einladung) und je Segment „Neuer QR-Code“ bzw. „Neue Verbindungsdaten“.
+ */
+function DeviceInvitePanel({
   invite,
   onClose,
   onRenew,
-  onRevoke,
   onLoadManualConnection,
-  revoking,
+  busy,
 }: {
-  readonly instanceName: string | null;
-  readonly invite: BusinessOsWebRtcDeviceInvite | null;
-  readonly onClose: (() => void) | undefined;
-  readonly onRenew: (() => void) | undefined;
-  readonly onRevoke: (() => void) | undefined;
+  readonly invite: BusinessOsWebRtcDeviceInvite;
+  readonly onClose: () => void;
+  readonly onRenew: () => void;
   readonly onLoadManualConnection:
     | (() => Promise<WorkjetManagedDeviceInviteManualConnectionResult>)
     | undefined;
-  readonly revoking: boolean;
+  readonly busy: boolean;
 }) {
+  const [view, setView] = useState<"qr" | "manual">("qr");
   const [copied, setCopied] = useState(false);
-  const [manualConnection, setManualConnection] =
-    useState<WorkjetManagedDeviceInviteManualConnectionResult | null>(null);
-  const [manualLoading, setManualLoading] = useState(false);
-  const [manualError, setManualError] = useState(false);
-  const [credentialVisible, setCredentialVisible] = useState(false);
-  const link = invite?.link ?? null;
+  const [manual, setManual] = useState<WorkjetManagedDeviceInviteManualConnectionResult | null>(
+    null,
+  );
+  const [manualState, setManualState] = useState<"idle" | "loading" | "failed">("idle");
+  const now = useNow(15_000);
 
   useEffect(() => {
     setCopied(false);
-    setManualConnection(null);
-    setManualLoading(false);
-    setManualError(false);
-    setCredentialVisible(false);
+    setManual(null);
+    setManualState("idle");
   }, [invite]);
 
-  useEffect(() => {
-    const hidePassword = () => {
-      if (document.visibilityState !== "visible") setCredentialVisible(false);
-    };
-    document.addEventListener("visibilitychange", hidePassword);
-    return () => document.removeEventListener("visibilitychange", hidePassword);
-  }, []);
-
-  const copyValue = async (value: string, sensitive = false) => {
-    await navigator.clipboard.writeText(value);
-    if (!sensitive) return;
-    window.setTimeout(() => {
-      void navigator.clipboard
-        .readText()
-        .then((current) => (current === value ? navigator.clipboard.writeText("") : undefined))
-        .catch(() => undefined);
-    }, 30_000);
-  };
-
-  const loadManualConnection = () => {
-    if (manualConnection !== null || manualLoading || onLoadManualConnection === undefined) {
+  const loadManual = () => {
+    if (manual !== null || manualState === "loading" || onLoadManualConnection === undefined)
       return;
-    }
-    setManualLoading(true);
-    setManualError(false);
+    setManualState("loading");
     void onLoadManualConnection().then(
       (result) => {
-        setManualConnection(result);
-        setManualLoading(false);
+        setManual(result);
+        setManualState("idle");
       },
-      () => {
-        setManualError(true);
-        setManualLoading(false);
-      },
+      () => setManualState("failed"),
     );
   };
 
-  const close = () => {
-    setCredentialVisible(false);
-    setManualConnection(null);
-    onClose?.();
-  };
+  // Nach „Neue Verbindungsdaten“ lädt das Segment die frischen Daten selbst.
+  useEffect(() => {
+    if (view === "manual" && manual === null && manualState === "idle") loadManual();
+  });
+
+  const status =
+    manualState === "failed"
+      ? "Verbindungsdaten nicht verfügbar."
+      : formatInviteValidity(invite.expiresAt, now);
+
+  let body: ReactNode = null;
+  if (view === "qr") {
+    body = (
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="rounded-xl bg-white p-2 shadow-sm ring-1 ring-black/8">
+          <QRCodeSvg
+            value={invite.link}
+            size={200}
+            level="M"
+            marginSize={2}
+            title="QR-Code für das Gerät"
+            className="size-44"
+          />
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            void copyValue(invite.link).then(() => setCopied(true));
+          }}
+        >
+          <CopyIcon aria-hidden />
+          {copied ? "Link kopiert" : "Link kopieren"}
+        </Button>
+      </div>
+    );
+  } else if (manual !== null) {
+    body = <ManualConnectionFields connection={manual} />;
+  } else if (manualState === "loading") {
+    body = (
+      <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+        <Spinner className="size-3.5" /> Verbindungsdaten werden geladen …
+      </p>
+    );
+  } else if (manualState === "failed") {
+    body = (
+      <div>
+        <Button size="sm" variant="outline" onClick={loadManual}>
+          Erneut versuchen
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <Dialog open={invite !== null} onOpenChange={(open) => (open ? undefined : close())}>
-      <DialogPopup className="max-w-lg overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Connect a Workjet device</DialogTitle>
-          <DialogDescription>
-            Scan the QR code with Workjet on the new device. Code and Business OS will connect
-            together to {instanceName ?? "this instance"}.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogPanel className="flex flex-col items-center gap-4">
-          {link === null || invite === null ? null : (
-            <>
-              <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/8">
-                <QRCodeSvg
-                  value={link}
-                  size={320}
-                  level="M"
-                  marginSize={4}
-                  title={`QR code for ${instanceName ?? "Business OS"}`}
-                  className="h-auto w-full max-w-80"
-                />
-              </div>
-              <div className="w-full rounded-lg bg-muted/40 px-3 py-3 text-center">
-                <p className="text-sm font-medium">{instanceName ?? "Business OS"}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Expires at {formatMobileInviteExpiry(invite.expiresAt, "en-US")}
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  void copyValue(link).then(() => setCopied(true));
-                }}
-              >
-                <CopyIcon aria-hidden />
-                {copied ? "Link copied" : "Copy connection link"}
-              </Button>
+    <InlinePanel
+      triggerLabel="Gerät hinzufügen"
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      segment={
+        <ToggleGroup
+          aria-label="Art der Kopplung"
+          size="sm"
+          variant="outline"
+          value={[view]}
+          onValueChange={(value) => {
+            const next = value[0];
+            if (next === "qr" || next === "manual") {
+              setView(next);
+              if (next === "manual") loadManual();
+            }
+          }}
+        >
+          <Toggle className={SEGMENT_TOGGLE_CLASS} value="qr">
+            QR-Code
+          </Toggle>
+          <Toggle
+            className={SEGMENT_TOGGLE_CLASS}
+            value="manual"
+            disabled={onLoadManualConnection === undefined}
+          >
+            Verbindungsdaten
+          </Toggle>
+        </ToggleGroup>
+      }
+      submitLabel={view === "manual" ? "Neue Verbindungsdaten" : "Neuer QR-Code"}
+      onSubmit={onRenew}
+      busy={busy}
+      status={status}
+      statusTone={manualState === "failed" ? "error" : "neutral"}
+    >
+      {body}
+    </InlinePanel>
+  );
+}
 
-              <details
-                className="w-full rounded-xl border border-border/80 bg-muted/20"
-                onToggle={(event) => {
-                  if (event.currentTarget.open) loadManualConnection();
-                  else setCredentialVisible(false);
-                }}
-              >
-                <summary className="cursor-pointer px-3 py-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  Manual connection details
-                </summary>
-                <div className="border-t border-border/70 px-3 py-3">
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    These details connect CTOX synchronization only. For the complete Workjet
-                    connection with Code and Business OS, use the QR code or connection link.
-                  </p>
-                  {manualLoading ? (
-                    <p
-                      className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"
-                      role="status"
-                    >
-                      <Spinner className="size-3.5" /> Loading connection details …
-                    </p>
-                  ) : manualError ? (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm text-destructive" role="alert">
-                        Could not load manual connection details.
-                      </p>
-                      <Button size="sm" variant="outline" onClick={loadManualConnection}>
-                        Try again
-                      </Button>
-                    </div>
-                  ) : manualConnection === null ? null : (
-                    <dl className="mt-3 space-y-3">
-                      <div>
-                        <dt className="text-xs font-medium text-muted-foreground">Server</dt>
-                        {manualConnection.signalingUrls.map((url) => (
-                          <dd key={url} className="mt-1 flex items-center gap-2">
-                            <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
-                              {url}
-                            </code>
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              aria-label="Copy server"
-                              onClick={() => void copyValue(url)}
-                            >
-                              <CopyIcon aria-hidden />
-                            </Button>
-                          </dd>
-                        ))}
-                      </div>
-                      <div>
-                        <dt className="text-xs font-medium text-muted-foreground">Room</dt>
-                        <dd className="mt-1 flex items-center gap-2">
-                          <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
-                            {manualConnection.room}
-                          </code>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label="Copy room"
-                            onClick={() => void copyValue(manualConnection.room)}
-                          >
-                            <CopyIcon aria-hidden />
-                          </Button>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs font-medium text-muted-foreground">
-                          Connection password
-                        </dt>
-                        <dd className="mt-1 flex items-center gap-2">
-                          <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
-                            {manualConnectionCredentialText(
-                              encodeBusinessOsManualCredential(manualConnection),
-                              credentialVisible,
-                            )}
-                          </code>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label={
-                              credentialVisible
-                                ? "Hide connection password"
-                                : "Show connection password"
-                            }
-                            onClick={() => setCredentialVisible((visible) => !visible)}
-                          >
-                            {credentialVisible ? (
-                              <EyeOffIcon aria-hidden />
-                            ) : (
-                              <EyeIcon aria-hidden />
-                            )}
-                          </Button>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label="Copy connection password"
-                            onClick={() =>
-                              void copyValue(
-                                encodeBusinessOsManualCredential(manualConnection),
-                                true,
-                              )
-                            }
-                          >
-                            <CopyIcon aria-hidden />
-                          </Button>
-                        </dd>
-                      </div>
-                    </dl>
-                  )}
-                </div>
-              </details>
-            </>
+function DevicesSection({
+  instanceName,
+  devices,
+  devicesLoading,
+  devicesError,
+  blockedReason,
+  onAddDevice,
+  onRevokeDevice,
+  onRetryDevices,
+  addingDevice,
+  activeInvite,
+  onCloseInvite,
+  onRenewInvite,
+  onLoadManualConnection,
+  renewingInvite,
+  defaultOpen = false,
+}: {
+  readonly defaultOpen?: boolean;
+  readonly instanceName: string;
+  readonly devices: readonly WorkjetDeviceBindingSummary[];
+  readonly devicesLoading: boolean;
+  readonly devicesError: string | null;
+  readonly blockedReason: string | null;
+  readonly onAddDevice: (() => void) | undefined;
+  readonly onRevokeDevice: ((devicePairingId: string) => void) | undefined;
+  readonly onRetryDevices: (() => void) | undefined;
+  readonly addingDevice: boolean;
+  readonly activeInvite: BusinessOsWebRtcDeviceInvite | null;
+  readonly onCloseInvite: (() => void) | undefined;
+  readonly onRenewInvite: (() => void) | undefined;
+  readonly onLoadManualConnection:
+    | (() => Promise<WorkjetManagedDeviceInviteManualConnectionResult>)
+    | undefined;
+  readonly renewingInvite: boolean;
+}) {
+  const t = useUiText();
+  // Paired Workjet apps are a rare admin task: closed by default, named for
+  // what they are, with their count, instead of a list of dates (#559 rest).
+  const [openByUser, setOpen] = useState(defaultOpen);
+  // States that need attention open the section by themselves.
+  const open =
+    openByUser || activeInvite !== null || blockedReason !== null || devicesError !== null;
+  // Undo instead of a confirmation (#637).
+  const [pendingRevoke, setPendingRevoke] = useState<ReadonlySet<string>>(() => new Set());
+  const revokeWithUndo = (devicePairingId: string) => {
+    if (onRevokeDevice === undefined) return;
+    setPendingRevoke((current) => new Set(current).add(devicePairingId));
+    const show = () =>
+      setPendingRevoke((current) => {
+        const next = new Set(current);
+        next.delete(devicePairingId);
+        return next;
+      });
+    scheduleUndoableDelete({
+      title: t("Gerät getrennt", "Device disconnected"),
+      undoLabel: t("Rückgängig", "Undo"),
+      run: () => {
+        onRevokeDevice(devicePairingId);
+        show();
+      },
+      onUndo: show,
+    });
+  };
+  return (
+    <section
+      aria-label={`${t("Gekoppelte Workjet-Apps", "Paired Workjet apps")} · ${instanceName}`}
+      className="space-y-1"
+      data-workjet-instance-devices=""
+    >
+      <Button
+        size="sm"
+        variant="ghost"
+        className="-ms-2 text-muted-foreground"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <ChevronRightIcon
+          aria-hidden
+          className={`transition-transform ${open ? "rotate-90" : ""}`}
+        />
+        {t("Gekoppelte Workjet-Apps", "Paired Workjet apps")}
+        {devicesLoading || devicesError !== null ? null : ` (${devices.length})`}
+      </Button>
+      {!open ? null : (
+        <div className="flex flex-col gap-2">
+          {blockedReason !== null ? (
+            <Banner
+              icon={CircleAlertIcon}
+              {...(onRetryDevices === undefined
+                ? {}
+                : { action: { label: "Erneut prüfen", onClick: onRetryDevices } })}
+            >
+              {blockedReason}
+            </Banner>
+          ) : devicesLoading ? (
+            <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+              <Spinner className="size-3.5" /> Geräte werden geladen …
+            </p>
+          ) : devicesError !== null ? (
+            <Banner
+              icon={CircleAlertIcon}
+              {...(onRetryDevices === undefined
+                ? {}
+                : { action: { label: "Erneut versuchen", onClick: onRetryDevices } })}
+            >
+              <span role="alert">{devicesError}</span>
+            </Banner>
+          ) : devices.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Keine weiteren Geräte</p>
+          ) : (
+            <ul aria-label="Geräte" className="-mx-3 divide-y divide-border/60 sm:-mx-4">
+              {devices
+                .filter((device) => !pendingRevoke.has(device.devicePairingId))
+                .map((device) => (
+                  <li key={device.devicePairingId}>
+                    <Row
+                      name={`Gerät vom ${new Date(device.pairedAtMillis).toLocaleString("de-DE", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}`}
+                      status="ok"
+                      statusLabel="Gekoppelt"
+                      {...(onRevokeDevice === undefined
+                        ? {}
+                        : { onDelete: () => revokeWithUndo(device.devicePairingId) })}
+                      deleteLabel="Trennen"
+                    />
+                  </li>
+                ))}
+            </ul>
           )}
-        </DialogPanel>
-        <DialogFooter className="sm:flex-wrap">
-          <Button variant="ghost" onClick={close}>
-            Close
-          </Button>
-          <Button variant="outline" onClick={onRenew} disabled={revoking}>
-            Create a new QR code
-          </Button>
-          <Button variant="destructive" onClick={onRevoke} disabled={revoking}>
-            {revoking ? <Spinner className="size-3.5" /> : null}
-            Revoke invitation
-          </Button>
-        </DialogFooter>
-      </DialogPopup>
-    </Dialog>
+          {activeInvite !== null && onCloseInvite !== undefined && onRenewInvite !== undefined ? (
+            <DeviceInvitePanel
+              invite={activeInvite}
+              onClose={onCloseInvite}
+              onRenew={onRenewInvite}
+              onLoadManualConnection={onLoadManualConnection}
+              busy={renewingInvite}
+            />
+          ) : (
+            <Button
+              className="self-start"
+              size="sm"
+              variant="outline"
+              disabled={onAddDevice === undefined || blockedReason !== null || addingDevice}
+              onClick={onAddDevice}
+            >
+              {addingDevice ? <Spinner className="size-3.5" /> : null}
+              {addingDevice ? "QR-Code wird erstellt …" : "Gerät hinzufügen"}
+            </Button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function networkInstancesForSelection<T extends { readonly id: string }>(
+  instances: readonly T[],
+  activeInstanceId: string | null,
+): readonly T[] {
+  if (activeInstanceId === null) return instances;
+  const active = instances.filter((instance) => instance.id === activeInstanceId);
+  return active.length > 0 ? active : instances;
+}
+
+function NetworkSection({ children }: { readonly children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const t = useUiText();
+  return (
+    <section className="space-y-3" data-workjet-instance-network="">
+      <div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="-ms-2 text-muted-foreground"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <ChevronRightIcon
+            aria-hidden
+            className={`transition-transform ${open ? "rotate-90" : ""}`}
+          />
+          {t("Netzwerk", "Network")}
+        </Button>
+      </div>
+      {open ? <div>{children}</div> : null}
+    </section>
   );
 }
 
 export function BusinessOsSettingsView({
   instances,
   activeInstanceId,
-  requiresInstanceSelection = true,
   loading = false,
   discoveryFailed = false,
   refreshDisabled = false,
-
   devices = EMPTY_DEVICES,
   devicesLoading = false,
   devicesError = null,
@@ -365,371 +501,134 @@ export function BusinessOsSettingsView({
   onAddDevice,
   onRevokeDevice,
   onRetryDevices,
-  revokingDeviceId = null,
   addingDevice = false,
   activeInvite = null,
   onCloseInvite,
   onRenewInvite,
-  onRevokeInvite,
   onLoadManualConnection,
-  revokingInvite = false,
-  onRemoveInstance,
+  renewingInvite = false,
+  onStateChange,
+  addPanel = null,
+  network = null,
+  devicesDefaultOpen = false,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
-  readonly requiresInstanceSelection?: boolean;
   readonly loading?: boolean;
   readonly discoveryFailed?: boolean;
   readonly refreshDisabled?: boolean;
-
   readonly devices?: readonly WorkjetDeviceBindingSummary[];
   readonly devicesLoading?: boolean;
   readonly devicesError?: string | null;
   readonly deviceManagementBlockedReason?: string | null;
   readonly onSelectInstance?: (instanceId: string) => void | Promise<boolean>;
-  readonly onRemoveInstance?: (instance: CtoxManagedInstance) => Promise<string | null>;
+  readonly onStateChange?: (
+    instance: CtoxManagedInstance,
+    state: "enabled" | "disabled" | "removed",
+  ) => Promise<string | null>;
   readonly onRefresh?: () => void;
   readonly onAddDevice?: () => void;
   readonly onRevokeDevice?: (devicePairingId: string) => void;
   readonly onRetryDevices?: () => void;
-  readonly revokingDeviceId?: string | null;
   readonly addingDevice?: boolean;
   readonly activeInvite?: BusinessOsWebRtcDeviceInvite | null;
   readonly onCloseInvite?: () => void;
   readonly onRenewInvite?: () => void;
-  readonly onRevokeInvite?: () => void;
   readonly onLoadManualConnection?: () => Promise<WorkjetManagedDeviceInviteManualConnectionResult>;
-  readonly revokingInvite?: boolean;
+  readonly renewingInvite?: boolean;
+  /** Das Inline-Panel „Instanz hinzufügen“ (braucht den CTOX-Kontext). */
+  readonly addPanel?: ReactNode;
+  /** Inhalt des aufklappbaren Abschnitts „Netzwerk“. */
+  readonly network?: ReactNode;
+  /** Gekoppelte Workjet-Apps aufgeklappt zeigen (Tests, Deep-Links). */
+  readonly devicesDefaultOpen?: boolean;
 }) {
+  const t = useUiText();
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
-  const selectedDisplayName = selected === null ? null : ctoxInstanceDisplayTitle(selected);
-  const navigate = useNavigate();
-  const [switchingInstanceId, setSwitchingInstanceId] = useState<string | null>(null);
-  const [selectionError, setSelectionError] = useState<string | null>(null);
-  const [removalTarget, setRemovalTarget] = useState<CtoxManagedInstance | null>(null);
-  const [removing, setRemoving] = useState(false);
-  const [removalError, setRemovalError] = useState<string | null>(null);
-
-  const chooseInstance = async (instance: CtoxManagedInstance) => {
-    if (onSelectInstance === undefined) return;
-    setSwitchingInstanceId(instance.id);
-    setSelectionError(null);
-    try {
-      if ((await onSelectInstance(instance.id)) === false) {
-        setSelectionError("The instance switch could not be confirmed. Please try again.");
-      }
-    } catch {
-      setSelectionError("The instance could not be selected. Please try again.");
-    } finally {
-      setSwitchingInstanceId(null);
-    }
-  };
-
-  const confirmRemoval = async () => {
-    if (removalTarget === null || onRemoveInstance === undefined) return;
-    setRemoving(true);
-    setRemovalError(null);
-    try {
-      const error = await onRemoveInstance(removalTarget);
-      if (error === null) setRemovalTarget(null);
-      else setRemovalError(error);
-    } catch {
-      setRemovalError("The connection could not be removed. Please try again.");
-    } finally {
-      setRemoving(false);
-    }
-  };
-
+  const visibleCount = instances.filter((instance) => instance.workjetState !== "removed").length;
   return (
-    <SettingsPageContainer className="gap-6">
+    <SettingsPageContainer className="gap-5">
       <SettingsSection
-        title="Instances"
+        title={t("CTOX-Instanzen", "CTOX instances")}
         headerAction={
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onRefresh}
-              disabled={refreshDisabled || onRefresh === undefined}
-            >
-              <RefreshCwIcon className={loading ? "animate-spin" : undefined} aria-hidden />
-              Refresh
-            </Button>
-            <Button size="sm" onClick={() => openInstanceSetup()}>
-              <PlusIcon aria-hidden />
-              Add instance
-            </Button>
-          </div>
+          <IconAction
+            label={t("Aktualisieren", "Refresh")}
+            onClick={() => {
+              if (!refreshDisabled) onRefresh?.();
+            }}
+          >
+            <RefreshCwIcon className={loading ? "animate-spin" : undefined} aria-hidden />
+          </IconAction>
         }
       >
-        <p className="px-3 text-[13px] text-muted-foreground sm:px-4">
-          Manage your CTOX instances and open their settings.
+        <p
+          className="px-3 text-xs text-muted-foreground sm:px-4"
+          data-workjet-instance-explainer=""
+        >
+          {t(
+            "Eine Instanz ist dein CTOX-Server: Dort liegen Projekte, Worker und Konten. Workjet arbeitet immer mit einer gewählten Instanz.",
+            "An instance is your CTOX server: it holds projects, workers and accounts. Workjet always works with one selected instance.",
+          )}
         </p>
-        <div>
-          {loading ? (
-            <p className="text-sm text-muted-foreground" role="status">
-              Loading CTOX instances …
-            </p>
-          ) : discoveryFailed ? (
-            <div className="flex items-start gap-3" role="alert">
-              <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-              <div>
-                <p className="text-sm font-medium">Could not load CTOX instances</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Check the connection and choose Refresh to try again.
-                </p>
-              </div>
-            </div>
-          ) : instances.length === 0 ? (
-            <div className="flex items-start gap-3" role="status">
-              <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-              <div>
-                <p className="text-sm font-medium">No CTOX instance connected</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Connect an existing CTOX master or set up a new instance.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <ul aria-label="CTOX instances" className="divide-y divide-border/60">
-              {instances.map((instance) => (
-                <li key={instance.id}>
-                  <SettingsRow
-                    title={ctoxInstanceDisplayTitle(instance)}
-                    description={
-                      instance.domain ??
-                      (instance.source === "local_daemon" ? "This computer" : undefined)
-                    }
-                    status={instanceStatus(instance)}
-                    control={
-                      <>
-                        {instance.id === activeInstanceId ? (
-                          <span
-                            className="px-2 text-xs font-medium text-primary"
-                            aria-label="Active instance"
-                          >
-                            Active
-                          </span>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={
-                              onSelectInstance === undefined ||
-                              switchingInstanceId !== null ||
-                              removing ||
-                              !canActivateCtoxInstance(instance)
-                            }
-                            onClick={() => void chooseInstance(instance)}
-                          >
-                            {switchingInstanceId === instance.id ? (
-                              <Spinner className="size-3.5" />
-                            ) : null}
-                            {switchingInstanceId === instance.id ? "Selecting …" : "Select"}
-                          </Button>
-                        )}
-                        {onRemoveInstance !== undefined && isRemovableCtoxInstance(instance) ? (
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            disabled={switchingInstanceId !== null || removing}
-                            aria-label={`Remove connection to ${ctoxInstanceDisplayTitle(instance)}`}
-                            onClick={() => {
-                              setRemovalError(null);
-                              setRemovalTarget(instance);
-                            }}
-                          >
-                            <UnplugIcon aria-hidden />
-                          </Button>
-                        ) : null}
-                      </>
-                    }
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-          {selectionError === null ? null : (
-            <p className="px-4 py-2 text-sm text-destructive" role="alert">
-              {selectionError}
-            </p>
-          )}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        title={
-          instances.length > 1 && selectedDisplayName !== null
-            ? `Settings for ${selectedDisplayName}`
-            : "Settings"
-        }
-      >
-        {selected === null && requiresInstanceSelection ? (
-          <p className="px-3 text-sm text-muted-foreground sm:px-4" role="status">
-            Select an instance first.
+        {loading ? (
+          <p
+            className="flex items-center gap-2 px-3 text-xs text-muted-foreground sm:px-4"
+            role="status"
+          >
+            <Spinner className="size-3.5" />{" "}
+            {t("Instanzen werden geladen …", "Loading instances …")}
+          </p>
+        ) : discoveryFailed ? (
+          <div className="px-3 sm:px-4">
+            <Banner
+              icon={CircleAlertIcon}
+              {...(onRefresh === undefined
+                ? {}
+                : { action: { label: "Erneut versuchen", onClick: onRefresh } })}
+            >
+              <span role="alert">{t("Instanzen nicht erreichbar", "Instances unreachable")}</span>
+            </Banner>
+          </div>
+        ) : visibleCount === 0 ? (
+          <p className="px-3 text-[13.5px] font-medium sm:px-4" role="status">
+            {t("Keine CTOX-Instanz verbunden", "No CTOX instance connected")}
           </p>
         ) : (
-          <div className="grid gap-1 sm:grid-cols-2">
-            {INSTANCE_SETTINGS_NAV_ITEMS.map((item) => (
-              <button
-                key={item.to}
-                type="button"
-                data-workjet-action={`instance-hub:${item.to}`}
-                className="flex min-h-11 min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-left text-sm hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4"
-                onClick={() => void navigate({ to: item.to })}
-              >
-                <item.icon className="size-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              </button>
-            ))}
-          </div>
+          <InstancesTable
+            instances={instances}
+            activeInstanceId={activeInstanceId}
+            onSelect={onSelectInstance}
+            onStateChange={onStateChange}
+            selectedDetails={
+              selected === null ? null : (
+                <>
+                  <DevicesSection
+                    defaultOpen={devicesDefaultOpen}
+                    instanceName={ctoxInstanceDisplayTitle(selected)}
+                    devices={devices}
+                    devicesLoading={devicesLoading}
+                    devicesError={devicesError}
+                    blockedReason={deviceManagementBlockedReason}
+                    onAddDevice={onAddDevice}
+                    onRevokeDevice={onRevokeDevice}
+                    onRetryDevices={onRetryDevices}
+                    addingDevice={addingDevice}
+                    activeInvite={activeInvite}
+                    onCloseInvite={onCloseInvite}
+                    onRenewInvite={onRenewInvite}
+                    onLoadManualConnection={onLoadManualConnection}
+                    renewingInvite={renewingInvite}
+                  />
+                  {network === null ? null : <NetworkSection>{network}</NetworkSection>}
+                </>
+              )
+            }
+          />
+        )}
+        {addPanel === null ? null : (
+          <div className="flex flex-col px-3 pt-2 sm:px-4">{addPanel}</div>
         )}
       </SettingsSection>
-
-      <details className="mx-3 border-t border-border/60 sm:mx-4" data-workjet-instance-devices="">
-        <summary className="cursor-pointer py-3 text-sm font-medium">Connected devices</summary>
-        <div className="pb-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <SmartphoneIcon
-                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                aria-hidden
-              />
-              <div>
-                <p className="text-sm font-medium">
-                  {selectedDisplayName === null
-                    ? "Select an instance"
-                    : `Devices for ${selectedDisplayName}`}
-                </p>
-                <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                  {selected === null
-                    ? "Select a CTOX instance first."
-                    : "Connect another computer, phone or tablet to this instance."}
-                </p>
-              </div>
-            </div>
-            <Button
-              size="sm"
-              disabled={
-                selected === null ||
-                onAddDevice === undefined ||
-                deviceManagementBlockedReason !== null ||
-                addingDevice
-              }
-              onClick={onAddDevice}
-              title={deviceManagementBlockedReason ?? undefined}
-            >
-              {addingDevice ? <Spinner className="size-3.5" /> : <PlusIcon aria-hidden />}
-              {addingDevice ? "Creating QR code …" : "Add device"}
-            </Button>
-          </div>
-          {selected === null ? null : deviceManagementBlockedReason !== null ? (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/35 px-3 py-3">
-              <p className="text-sm text-muted-foreground">{deviceManagementBlockedReason}</p>
-              {onRetryDevices === undefined ? null : (
-                <Button size="sm" variant="outline" onClick={onRetryDevices}>
-                  <RefreshCwIcon aria-hidden />
-                  Check again
-                </Button>
-              )}
-            </div>
-          ) : devicesLoading ? (
-            <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground" role="status">
-              <Spinner className="size-3.5" /> Loading devices …
-            </p>
-          ) : devicesError !== null ? (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-3">
-              <p className="text-sm text-destructive" role="alert">
-                {devicesError}
-              </p>
-              {onRetryDevices === undefined ? null : (
-                <Button size="sm" variant="outline" onClick={onRetryDevices}>
-                  Try again
-                </Button>
-              )}
-            </div>
-          ) : devices.length === 0 ? (
-            <p className="mt-4 rounded-lg bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-              No other Workjet device is connected to this instance yet.
-            </p>
-          ) : (
-            <ul className="mt-3 divide-y divide-border rounded-md border border-border">
-              {devices.map((device) => (
-                <li
-                  key={device.devicePairingId}
-                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      Workjet device · {device.deviceId.slice(-8)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Connected on {new Date(device.pairedAtMillis).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={revokingDeviceId === device.devicePairingId}
-                      onClick={() => onRevokeDevice?.(device.devicePairingId)}
-                    >
-                      {revokingDeviceId === device.devicePairingId ? (
-                        <Spinner className="size-3.5" />
-                      ) : null}
-                      Revoke
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </details>
-
-      <AlertDialog
-        open={removalTarget !== null}
-        onOpenChange={(open) => {
-          if (!open && !removing) setRemovalTarget(null);
-        }}
-      >
-        <AlertDialogPopup>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove instance connection?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {removalTarget === null ? "" : ctoxInstanceDisplayTitle(removalTarget)} will be
-              removed from Workjet. The instance and its data will be preserved.
-            </AlertDialogDescription>
-            {removalError === null ? null : (
-              <p role="alert" className="text-sm text-destructive">
-                {removalError}
-              </p>
-            )}
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <Button variant="outline" disabled={removing} onClick={() => setRemovalTarget(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" disabled={removing} onClick={() => void confirmRemoval()}>
-              {removing ? "Removing …" : "Remove connection"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogPopup>
-      </AlertDialog>
-      <DevicePairingDialog
-        instanceName={selectedDisplayName}
-        invite={activeInvite}
-        onClose={onCloseInvite}
-        onRenew={onRenewInvite}
-        onRevoke={onRevokeInvite}
-        onLoadManualConnection={
-          activeInvite === null || onLoadManualConnection === undefined
-            ? undefined
-            : onLoadManualConnection
-        }
-        revoking={revokingInvite}
-      />
     </SettingsPageContainer>
   );
 }
@@ -740,19 +639,45 @@ export async function importBusinessOsSettingsInvite(
   select: (instance: CtoxManagedInstance) => void,
   refresh: () => void,
 ): Promise<string | null> {
-  if (bridge === undefined) return "This Workjet edition cannot import a backend invitation.";
+  if (bridge === undefined) return "Einladungen nur in der Desktop-App.";
   try {
     const result = await bridge.importInvite(invite);
-    if (result._tag !== "completed") return "The backend invitation is invalid or expired.";
+    if (result._tag !== "completed") return "Einladung ungültig oder abgelaufen.";
     select(result.instance);
     refresh();
     return null;
   } catch {
-    return "Business OS could not be added. Check the connection and invitation.";
+    return "Instanz konnte nicht hinzugefügt werden.";
   }
 }
 
+/**
+ * Deep-Link `workjet://pair?payload=…` (Desktop) und Suchparameter
+ * `?add=…`: Panel öffnen, Einladungslink vorbelegen, Parameter aus der
+ * Adresse entfernen. Importiert wird erst nach „Hinzufügen“.
+ */
+function useInstanceAddFromLocation() {
+  const navigate = useNavigate();
+  const search = useLocation({
+    select: (location) => (location as { search?: Readonly<Record<string, unknown>> }).search,
+  });
+  useEffect(
+    () => registerInstanceSetupNavigator((path) => void navigate({ to: path })),
+    [navigate],
+  );
+  useEffect(() => {
+    const request = instanceAddRequestFromSearch(search);
+    if (request === null) return;
+    requestInstanceAdd(
+      request.option,
+      request.invite === undefined ? {} : { invite: request.invite },
+    );
+    void navigate({ to: INSTANCES_SETTINGS_PATH, search: {}, replace: true });
+  }, [navigate, search]);
+}
+
 export function BusinessOsSettings() {
+  useInstanceAddFromLocation();
   const {
     bridge,
     discovery,
@@ -760,8 +685,7 @@ export function BusinessOsSettings() {
     refreshing,
     selectedId: activeInstanceId,
     select,
-    removePairedInstance,
-    removeSshManagedInstance,
+    setInstanceState,
   } = useCtoxMode();
   const instances = useMemo(() => visibleBusinessOsInstances(discovery), [discovery]);
   const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[]>([]);
@@ -770,8 +694,7 @@ export function BusinessOsSettings() {
   const [deviceRefreshKey, setDeviceRefreshKey] = useState(0);
   const [addingDevice, setAddingDevice] = useState(false);
   const [activeInvite, setActiveInvite] = useState<BusinessOsWebRtcDeviceInvite | null>(null);
-  const [revokingDeviceId, setRevokingDeviceId] = useState<string | null>(null);
-  const [revokingInvite, setRevokingInvite] = useState(false);
+  const [renewingInvite, setRenewingInvite] = useState(false);
   const deviceControlAvailable =
     activeInstanceId !== null && bridge?.requestDeviceControl !== undefined;
 
@@ -780,11 +703,12 @@ export function BusinessOsSettings() {
     return instance !== undefined && (await select(instance));
   };
 
-  const removeInstance = async (instance: CtoxManagedInstance): Promise<string | null> => {
-    const result = await (instance.source === "ssh_managed"
-      ? removeSshManagedInstance(instance)
-      : removePairedInstance(instance));
-    return result.ok ? null : result.message;
+  const changeInstanceState = async (
+    instance: CtoxManagedInstance,
+    state: "enabled" | "disabled" | "removed",
+  ): Promise<string | null> => {
+    const result = await setInstanceState(instance, state);
+    return result.ok ? null : "Änderung nicht gespeichert. Bitte erneut versuchen.";
   };
 
   useEffect(() => {
@@ -804,10 +728,7 @@ export function BusinessOsSettings() {
         if (cancelled) return;
         setDevices([]);
         setDevicesError(
-          businessOsDeviceControlErrorMessage(
-            error,
-            "Device connection is not available yet. Check the connection and try again.",
-          ),
+          businessOsDeviceControlErrorMessage(error, "Geräteverbindung noch nicht verfügbar."),
         );
         setDevicesLoading(false);
       },
@@ -819,11 +740,9 @@ export function BusinessOsSettings() {
 
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
   const deviceManagementBlockedReason =
-    selected === null
+    selected === null || deviceControlAvailable
       ? null
-      : !deviceControlAvailable
-        ? `Open ${ctoxInstanceDisplayTitle(selected)} in Business OS once to connect a device through CTOX Sync.`
-        : null;
+      : `${ctoxInstanceDisplayTitle(selected)} zuerst einmal in Ops öffnen.`;
 
   const createDeviceInvite = async () => {
     if (activeInstanceId === null || bridge === undefined || selected === null) return;
@@ -839,31 +758,10 @@ export function BusinessOsSettings() {
       );
     } catch (error) {
       setDevicesError(
-        businessOsDeviceControlErrorMessage(
-          error,
-          "Could not create the QR code. The secure device connection is currently unavailable.",
-        ),
+        businessOsDeviceControlErrorMessage(error, "QR-Code konnte nicht erstellt werden."),
       );
     } finally {
       setAddingDevice(false);
-    }
-  };
-
-  const revokeInvite = async () => {
-    if (activeInstanceId === null || bridge === undefined || activeInvite === null) return;
-    setRevokingInvite(true);
-    try {
-      await revokeBusinessOsDeviceInvite(bridge, activeInstanceId, activeInvite.inviteId);
-      setActiveInvite(null);
-    } catch (error) {
-      setDevicesError(
-        businessOsDeviceControlErrorMessage(
-          error,
-          "Die Einladung konnte nicht widerrufen werden. Bitte erneut versuchen.",
-        ),
-      );
-    } finally {
-      setRevokingInvite(false);
     }
   };
 
@@ -874,9 +772,7 @@ export function BusinessOsSettings() {
     if (activeInstanceId === null || bridge === undefined) return;
     void revokeBusinessOsDeviceInvite(bridge, activeInstanceId, inviteToRevoke.inviteId).catch(
       () => {
-        setDevicesError(
-          "Die geschlossene Einladung konnte nicht widerrufen werden. Erstelle vor der Weitergabe einen neuen QR-Code.",
-        );
+        setDevicesError("Einladung nicht widerrufen. Vor Weitergabe neuen QR-Code erstellen.");
       },
     );
   };
@@ -889,7 +785,7 @@ export function BusinessOsSettings() {
       selected === null
     )
       return;
-    setRevokingInvite(true);
+    setRenewingInvite(true);
     try {
       await revokeBusinessOsDeviceInvite(bridge, activeInstanceId, activeInvite.inviteId);
       setActiveInvite(
@@ -901,31 +797,22 @@ export function BusinessOsSettings() {
       );
     } catch (error) {
       setDevicesError(
-        businessOsDeviceControlErrorMessage(
-          error,
-          "Es konnte kein neuer QR-Code erstellt werden. Bitte erneut versuchen.",
-        ),
+        businessOsDeviceControlErrorMessage(error, "Kein neuer QR-Code. Bitte erneut versuchen."),
       );
     } finally {
-      setRevokingInvite(false);
+      setRenewingInvite(false);
     }
   };
 
   const revokeDevice = async (devicePairingId: string) => {
     if (activeInstanceId === null || bridge === undefined) return;
-    setRevokingDeviceId(devicePairingId);
     try {
       await revokeBusinessOsDevice(bridge, activeInstanceId, devicePairingId);
       setDeviceRefreshKey((key) => key + 1);
     } catch (error) {
       setDevicesError(
-        businessOsDeviceControlErrorMessage(
-          error,
-          "Could not disconnect the device. Please try again.",
-        ),
+        businessOsDeviceControlErrorMessage(error, "Gerät nicht getrennt. Bitte erneut versuchen."),
       );
-    } finally {
-      setRevokingDeviceId(null);
     }
   };
 
@@ -933,7 +820,6 @@ export function BusinessOsSettings() {
     <BusinessOsSettingsView
       instances={instances}
       activeInstanceId={activeInstanceId}
-      requiresInstanceSelection={bridge !== undefined}
       loading={discovery === "loading"}
       discoveryFailed={
         bridge !== undefined && discovery !== "loading" && discovery._tag === "failed"
@@ -944,23 +830,35 @@ export function BusinessOsSettings() {
       devicesError={devicesError}
       deviceManagementBlockedReason={deviceManagementBlockedReason}
       onSelectInstance={selectInstance}
-      onRemoveInstance={removeInstance}
+      onStateChange={changeInstanceState}
       onRefresh={() => void refresh()}
       {...(!deviceControlAvailable ? {} : { onAddDevice: () => void createDeviceInvite() })}
       addingDevice={addingDevice}
       onRetryDevices={() => setDeviceRefreshKey((key) => key + 1)}
       onRevokeDevice={(devicePairingId) => void revokeDevice(devicePairingId)}
-      revokingDeviceId={revokingDeviceId}
       activeInvite={activeInvite}
       onCloseInvite={closeInvite}
-      onRevokeInvite={() => void revokeInvite()}
       onRenewInvite={() => void renewInvite()}
       {...(!deviceControlAvailable || activeInvite === null
         ? {}
-        : {
-            onLoadManualConnection: async () => activeInvite.manualConnection,
-          })}
-      revokingInvite={revokingInvite}
+        : { onLoadManualConnection: async () => activeInvite.manualConnection })}
+      renewingInvite={renewingInvite}
+      addPanel={<InstanceAddInline />}
+      network={
+        <InstanceNetworkOverview
+          variant="section"
+          // Settings are scoped to the selected instance: its network only,
+          // never the first instance in discovery order (QA 0.0.95 D).
+          instances={networkInstancesForSelection(
+            dedupeCtoxInstances(
+              instances.filter((instance) => instance.workjetState !== "removed"),
+              activeInstanceId,
+            ),
+            activeInstanceId,
+          )}
+          onSelect={(instance) => void select(instance)}
+        />
+      }
     />
   );
 }

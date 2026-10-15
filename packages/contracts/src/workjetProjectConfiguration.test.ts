@@ -31,7 +31,27 @@ const decodeResponse = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRespons
 });
 
 describe("CTOX project configuration contract", () => {
+  it("preserves omission and explicitly sets or clears the configured Supervisor Luma", () => {
+    expect(decode(request)).not.toHaveProperty("supervisorLumaId");
+    for (const supervisorLumaId of ["molecularity-supervisor", null]) {
+      expect(decode({ ...request, supervisorLumaId })).toMatchObject({ supervisorLumaId });
+      const read = Schema.decodeUnknownSync(CtoxWorkjetProjectProjection, {
+        onExcessProperty: "error",
+      });
+      expect(
+        read({ id: request.projectId, title: request.title, workingCopies: [], supervisorLumaId }),
+      ).toMatchObject({ supervisorLumaId });
+    }
+    for (const supervisorLumaId of ["", "x".repeat(161), "bad\u0000id", 1]) {
+      expect(() => decode({ ...request, supervisorLumaId })).toThrow();
+    }
+  });
+
   it("negotiates optional configuration with a boolean flag", () => {
+    expect(
+      decode({ action: "project.list", includeConfiguration: true, includeSupervisorLuma: true }),
+    ).toEqual({ action: "project.list", includeConfiguration: true, includeSupervisorLuma: true });
+    expect(() => decode({ action: "project.list", includeSupervisorLuma: "true" })).toThrow();
     expect(decode({ action: "project.list", includeConfiguration: true })).toEqual({
       action: "project.list",
       includeConfiguration: true,

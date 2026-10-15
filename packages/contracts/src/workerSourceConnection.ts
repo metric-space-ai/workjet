@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { DesktopSshEnvironmentTargetSchema } from "./ipc.ts";
 import { CtoxComputerOperationalCapability } from "./ctox.ts";
-import { WorkjetComputerId } from "./workjet.ts";
+import { WorkjetComputerId, WorkjetConnectionId } from "./workjet.ts";
 import { RemoteWorkerRequest } from "./remoteWorker.ts";
 
 const Digest = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
@@ -51,6 +51,7 @@ export const RemoteWorkerTargetRouteInput = Schema.Struct({
 /** Explicit editor values; no inferred build capacity or host-derived identity. */
 export const RemoteWorkerComputerEnrollmentInput = Schema.Struct({
   selectedInstanceId: TrimmedNonEmptyString,
+  sourceConnectionId: Schema.optional(WorkjetConnectionId),
   computerId: WorkjetComputerId,
   displayName: TrimmedNonEmptyString,
   hostingMode: Schema.Literals(["workstation", "self_hosted"]),

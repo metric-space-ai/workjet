@@ -10,6 +10,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
+import * as DesktopLocalServiceAttachment from "./DesktopLocalServiceAttachment.ts";
 import * as DesktopLocalServiceSession from "./DesktopLocalServiceSession.ts";
 import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
 
@@ -49,6 +50,9 @@ export const make = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const httpClient = yield* HttpClient.HttpClient;
   const localSession = yield* DesktopLocalServiceSession.DesktopLocalServiceSession;
+  const attachment = yield* Effect.serviceOption(
+    DesktopLocalServiceAttachment.DesktopLocalServiceAttachment,
+  );
   const tokenRef = yield* Ref.make(
     Option.none<{ config: DesktopBackendStartConfig; token: string }>(),
   );
@@ -64,7 +68,12 @@ export const make = Effect.gen(function* () {
           return yield* new DesktopLocalEnvironmentAuthBackendNotConfiguredError();
         }
         const config = configOption.value;
-        if (config.localSession !== undefined) {
+        // A foreground backend (no background service on this host) authenticates
+        // with its own bootstrap token, like a development backend.
+        const foreground = Option.isSome(attachment)
+          ? yield* attachment.value.ownsForegroundBackend
+          : false;
+        if (config.localSession !== undefined && !foreground) {
           return yield* localSession.get(config);
         }
         const cached = yield* Ref.get(tokenRef);

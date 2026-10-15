@@ -8,6 +8,7 @@ import {
   type WorkjetDeliveryDisposition,
   type WorkjetMeshWorkspaceId,
 } from "@workjet/contracts";
+import { OptionSelect } from "../ui/option-select";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
@@ -113,24 +114,24 @@ export function parseWorkjetMailboxActivity(
 export function dispositionBadgeLabel(disposition: WorkjetDeliveryDisposition | null): string {
   switch (disposition) {
     case "accepted-new":
-      return "delivered";
+      return "zugestellt";
     case "duplicate-ignored":
-      return "duplicate ignored";
+      return "Duplikat ignoriert";
     case "expired":
-      return "expired";
+      return "abgelaufen";
     case "rejected":
-      return "rejected";
+      return "abgelehnt";
     case null:
-      return "queued";
+      return "wartend";
   }
 }
 
 const DISPOSITION_TONE: Record<string, string> = {
-  delivered: "text-success",
-  "duplicate ignored": "text-muted-foreground",
-  expired: "text-destructive",
-  rejected: "text-destructive",
-  queued: "text-muted-foreground",
+  zugestellt: "text-success",
+  "Duplikat ignoriert": "text-muted-foreground",
+  abgelaufen: "text-destructive",
+  abgelehnt: "text-destructive",
+  wartend: "text-muted-foreground",
 };
 
 /**
@@ -305,14 +306,14 @@ export function parseDelegationReasons(reasons: string): ReadonlyArray<string> {
 }
 
 const ACTION_LABEL: Record<WorkjetDelegationActionKind, string> = {
-  reply: "Reply",
-  "request-review": "Request review",
-  "follow-up": "Follow up",
-  revise: "Revise",
-  reassign: "Reassign…",
-  cancel: "Cancel",
-  approve: "Approve",
-  "request-changes": "Request changes",
+  reply: "Antworten",
+  "request-review": "Review anfordern",
+  "follow-up": "Nachfassen",
+  revise: "Überarbeiten",
+  reassign: "Neu zuweisen …",
+  cancel: "Abbrechen",
+  approve: "Freigeben",
+  "request-changes": "Änderungen anfordern",
 };
 
 const ACTION_ICON: Record<WorkjetDelegationActionKind, typeof MessageSquareIcon> = {
@@ -463,9 +464,9 @@ function WorkjetDelegationActionRow(props: {
         <div className="flex flex-col gap-1 rounded-md border border-border/60 bg-background/60 p-1.5">
           {state.open === "request-review" || state.open === "request-changes" ? (
             <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              Round
+              Runde
               <input
-                aria-label="Review round"
+                aria-label="Review-Runde"
                 type="number"
                 min={1}
                 max={16}
@@ -479,31 +480,29 @@ function WorkjetDelegationActionRow(props: {
             </label>
           ) : null}
           {state.open === "reassign" ? (
-            <select
-              aria-label="Reassign to thread"
+            <OptionSelect
+              aria-label="Unterhaltung wählen"
               disabled={busy}
-              className={actionFieldClass}
+              className="w-auto"
               value={state.reassignTargetThreadId}
-              onChange={(event) =>
-                onStateChange({ ...state, reassignTargetThreadId: event.target.value })
+              placeholder="Unterhaltung wählen …"
+              options={reassignThreads.map((thread) => ({
+                value: thread.threadId,
+                label: thread.title,
+              }))}
+              onValueChange={(reassignTargetThreadId) =>
+                onStateChange({ ...state, reassignTargetThreadId })
               }
-            >
-              <option value="">Select a thread…</option>
-              {reassignThreads.map((thread) => (
-                <option key={thread.threadId} value={thread.threadId}>
-                  {thread.title}
-                </option>
-              ))}
-            </select>
+            />
           ) : null}
           {needsText || optionalText ? (
             <textarea
               aria-label={
                 state.open === "reply"
-                  ? "Reply message"
+                  ? "Antwort"
                   : state.open === "follow-up"
-                    ? "Follow-up note (optional)"
-                    : "Review request message"
+                    ? "Notiz (optional)"
+                    : "Review-Nachricht"
               }
               rows={2}
               disabled={busy}
@@ -514,8 +513,8 @@ function WorkjetDelegationActionRow(props: {
           ) : null}
           {state.open === "request-changes" ? (
             <textarea
-              aria-label="Change reasons, one per line"
-              placeholder="One reason per line"
+              aria-label="Gründe"
+              placeholder="Ein Grund je Zeile"
               rows={2}
               disabled={busy}
               className={actionFieldClass}
@@ -530,7 +529,7 @@ function WorkjetDelegationActionRow(props: {
               onClick={close}
               className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/30"
             >
-              Cancel
+              Abbrechen
             </button>
             <button
               type="button"
@@ -557,8 +556,8 @@ export function WorkjetMailboxActivityCard(props: WorkjetMailboxActivityCardProp
   const { model, onOpenPeerThread, onDelegationAction, onActionStateChange } = props;
   const outbound = model.direction === "outbound";
   const DirectionIcon = outbound ? ArrowUpRightIcon : ArrowDownLeftIcon;
-  const label = model.kind === "task" ? "Task" : "Message";
-  const lead = outbound ? `${label} to` : `${label} from`;
+  const label = model.kind === "task" ? "Aufgabe" : "Nachricht";
+  const lead = outbound ? `${label} an` : `${label} von`;
   const disposition = dispositionBadgeLabel(model.disposition);
   const linkable = model.peerIsLocal && onOpenPeerThread !== undefined;
   const peerLabel = `${shortEnvironmentId(model.peerEnvironmentId)} · ${model.peerThreadId}`;

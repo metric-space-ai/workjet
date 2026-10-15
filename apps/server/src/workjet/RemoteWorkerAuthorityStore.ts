@@ -72,7 +72,18 @@ export const make = Effect.gen(function* () {
     if (
       row.intent.request.requestId !== id ||
       row.intent.binding.requestId !== id ||
-      (row.receipt !== null && !NodeUtil.isDeepStrictEqual(row.receipt.binding, row.intent.binding))
+      !NodeUtil.isDeepStrictEqual(
+        row.intent.binding.executionPolicy,
+        row.intent.request.executionPolicy,
+      ) ||
+      !NodeUtil.isDeepStrictEqual(
+        row.intent.binding.parentTeamBinding,
+        row.intent.request.parentTeamBinding,
+      ) ||
+      (row.receipt !== null &&
+        (!NodeUtil.isDeepStrictEqual(row.receipt.binding, row.intent.binding) ||
+          (row.intent.binding.parentTeamBinding !== undefined &&
+            row.receipt.ownerUserId !== row.intent.binding.parentTeamBinding.owner_user_id)))
     )
       return yield* invalid();
     return Option.some(row);
@@ -94,6 +105,10 @@ export const make = Effect.gen(function* () {
       binding.sourceInstanceId !== scope.instanceId ||
       binding.targetEnvironmentId !== request.targetEnvironmentId ||
       binding.projectId !== request.project.id ||
+      !NodeUtil.isDeepStrictEqual(binding.executionPolicy, request.executionPolicy) ||
+      !NodeUtil.isDeepStrictEqual(binding.parentTeamBinding, request.parentTeamBinding) ||
+      (binding.executionPolicy !== undefined &&
+        binding.executionPolicy.projectId !== binding.projectId) ||
       binding.repositoryHead !== request.revision
     )
       return yield* invalid();
@@ -111,7 +126,12 @@ export const make = Effect.gen(function* () {
     next: RemoteWorkerNativeReceipt,
   ) {
     const record = Option.getOrUndefined(yield* get(id));
-    if (!record || !NodeUtil.isDeepStrictEqual(next.binding, record.intent.binding))
+    if (
+      !record ||
+      !NodeUtil.isDeepStrictEqual(next.binding, record.intent.binding) ||
+      (next.binding.parentTeamBinding !== undefined &&
+        next.ownerUserId !== next.binding.parentTeamBinding.owner_user_id)
+    )
       return yield* invalid();
     if (NodeUtil.isDeepStrictEqual(record.receipt, next)) return;
     if (!NodeUtil.isDeepStrictEqual(record.receipt, expected)) return yield* conflict();

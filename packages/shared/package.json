@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./projectControlRead": {
+      "types": "./src/projectControlRead.ts",
+      "import": "./src/projectControlRead.ts"
+    },
+    "./projectTokenBudget": {
+      "types": "./src/projectTokenBudget.ts",
+      "import": "./src/projectTokenBudget.ts"
+    },
     "./localServiceTarget": {
       "types": "./src/localServiceTarget.ts",
       "import": "./src/localServiceTarget.ts"

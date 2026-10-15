@@ -11,22 +11,22 @@ function textOf(node: ReactNode): string {
 }
 
 describe("PullRequestsUnavailableState", () => {
-  it("can explain an unsupported environment without offering a futile retry", () => {
+  it("zeigt einen nicht unterstützten Server ohne sinnlosen Wiederholversuch", () => {
     const text = textOf(
       PullRequestsUnavailableState({
-        title: "Pull requests unavailable",
-        error: "Update this environment's CTOX server to browse pull requests.",
+        title: "Pull Requests nicht verfügbar",
+        error: "CTOX-Server aktualisieren",
       }),
     );
 
-    expect(text).toContain("Pull requests unavailable");
-    expect(text).toContain("Update this environment's CTOX server");
-    expect(text).not.toContain("Retry");
+    expect(text).toContain("Pull Requests nicht verfügbar");
+    expect(text).toContain("CTOX-Server aktualisieren");
+    expect(text).not.toContain("Erneut versuchen");
   });
 
-  it("retains the retry for transient load failures", () => {
+  it("behält den Wiederholversuch für vorübergehende Fehler", () => {
     expect(
-      textOf(PullRequestsUnavailableState({ error: "GitHub did not answer.", onRetry: () => {} })),
-    ).toContain("Retry");
+      textOf(PullRequestsUnavailableState({ error: "GitHub antwortet nicht.", onRetry: () => {} })),
+    ).toContain("Erneut versuchen");
   });
 });

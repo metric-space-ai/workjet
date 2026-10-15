@@ -7,7 +7,7 @@ import {
   type WorkjetComputer,
 } from "@workjet/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { createComputerMembershipStore } from "./workjetComputerMembership";
+import { MEMBERSHIP_DEADLINE_MS, createComputerMembershipStore } from "./workjetComputerMembership";
 import type { OperationalComputerEnrollment } from "./computerCapabilityEnrollment";
 
 function deferredResult() {
@@ -119,7 +119,9 @@ describe("instance computer membership", () => {
     await Promise.resolve();
     expect(store.getSnapshot().pendingComputerId).toBe(nas.computerId);
     expect(store.getSnapshot().computers).toEqual([]);
-    await expect(store.enroll("selected", nas, bridge(request))).rejects.toThrow("Wait");
+    await expect(store.enroll("selected", nas, bridge(request))).rejects.toThrow(
+      "prüft ihre Rechner",
+    );
     pending.resolve({
       _tag: "completed",
       response: {
@@ -149,15 +151,15 @@ describe("instance computer membership", () => {
         computer: nasProjection,
       },
     });
-    await expect(enrollment).rejects.toThrow("selected Business OS changed");
+    await expect(enrollment).rejects.toThrow("Instanz gewechselt");
     expect(request).toHaveBeenCalledTimes(2);
     expect(store.getSnapshot()).toMatchObject({ instanceId: "other", computers: [] });
   });
   it.each([
-    ["sync_unavailable", "synchronization was interrupted"],
-    ["query_unsupported", "does not support loading"],
-    ["command_failed", "could not complete"],
-    ["response_invalid", "incompatible computer result"],
+    ["sync_unavailable", "Synchronisierung"],
+    ["query_unsupported", "Rechnerliste noch nicht laden"],
+    ["command_failed", "nicht ausführen"],
+    ["response_invalid", "unpassendes Ergebnis"],
   ] as const)(
     "explains %s without granting membership and permits a successful retry",
     async (code, message) => {
@@ -186,7 +188,7 @@ describe("instance computer membership", () => {
     pending.resolve({ _tag: "failed", code: "authentication_required" });
     await refresh;
     expect(store.getSnapshot().computers).toEqual([]);
-    expect(store.getSnapshot().error).toContain("Sign in");
+    expect(store.getSnapshot().error).toContain("anmelden");
   });
   it("waits for native confirmation, then adds and removes the exact computer", async () => {
     const store = createComputerMembershipStore();
@@ -260,15 +262,35 @@ describe("instance computer membership", () => {
     });
     expect(await store.setAssigned("managed:welsch", computer, true, bridge(request))).toBe(false);
     expect(store.getSnapshot().computers).toEqual([]);
-    expect(store.getSnapshot().error).toContain("Could not confirm");
+    expect(store.getSnapshot().error).toContain("nicht bestätigt werden");
     expect(store.getSnapshot().pendingComputerId).toBeNull();
+  });
+
+  it("stops checking a blocked instance after the deadline and allows a retry", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = createComputerMembershipStore();
+      const request = port()
+        .mockReturnValueOnce(new Promise(() => undefined))
+        .mockResolvedValueOnce(listed([projection]));
+      const refresh = store.refresh("managed:welsch", bridge(request));
+      expect(store.getSnapshot().phase).toBe("loading");
+      await vi.advanceTimersByTimeAsync(MEMBERSHIP_DEADLINE_MS);
+      await refresh;
+      expect(store.getSnapshot()).toMatchObject({ phase: "failed", computers: [] });
+      expect(store.getSnapshot().error).toBe("Instanz antwortet nicht.");
+      await store.refresh("managed:welsch", bridge(request));
+      expect(store.getSnapshot()).toMatchObject({ phase: "ready", computers: [projection] });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reports unsupported shells and never invents a local grant", async () => {
     const store = createComputerMembershipStore();
     await store.refresh("managed:welsch", undefined);
     expect(store.getSnapshot()).toMatchObject({ phase: "failed", computers: [] });
-    expect(store.getSnapshot().error).toContain("needs an update");
+    expect(store.getSnapshot().error).toContain("braucht ein Update");
   });
 
   it("serializes visible mutations and excludes duplicate submits", async () => {
@@ -282,6 +304,6 @@ describe("instance computer membership", () => {
     expect(request).toHaveBeenCalledTimes(2);
     pending.resolve({ _tag: "failed", code: "timeout" });
     expect(await first).toBe(false);
-    expect(store.getSnapshot().error).toContain("not confirmed");
+    expect(store.getSnapshot().error).toContain("noch nicht bestätigt");
   });
 });

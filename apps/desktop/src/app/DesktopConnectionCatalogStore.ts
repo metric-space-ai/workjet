@@ -13,6 +13,7 @@ import {
 import type { PersistedSavedEnvironmentRecord } from "@workjet/contracts";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { fromLenientJson } from "@workjet/shared/schemaJson";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -27,6 +28,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import * as DesktopSavedEnvironments from "../settings/DesktopSavedEnvironments.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import { DesktopKeyRecovery } from "./DesktopKeyRecovery.ts";
 
 const EncryptedConnectionCatalogDocument = Schema.Struct({
   version: Schema.Literal(1),
@@ -45,6 +47,9 @@ const RuntimeConnectionCatalogDocumentJson = Schema.fromJsonString(
   RuntimeConnectionCatalogDocument,
 );
 const encodeRuntimeConnectionCatalogDocumentJson = Schema.encodeEffect(
+  RuntimeConnectionCatalogDocumentJson,
+);
+const decodeRuntimeConnectionCatalogDocumentJson = Schema.decodeUnknownEffect(
   RuntimeConnectionCatalogDocumentJson,
 );
 
@@ -121,6 +126,7 @@ export class DesktopConnectionCatalogStoreDocumentDecodeError extends Schema.Tag
     return `Failed to decode the desktop connection catalog document at ${this.catalogPath}.`;
   }
 }
+const isDocumentDecodeError = Schema.is(DesktopConnectionCatalogStoreDocumentDecodeError);
 
 export class DesktopConnectionCatalogStoreMigrationError extends Schema.TaggedErrorClass<DesktopConnectionCatalogStoreMigrationError>()(
   "DesktopConnectionCatalogStoreMigrationError",
@@ -161,6 +167,7 @@ export class DesktopConnectionCatalogStore extends Context.Service<
       | DesktopConnectionCatalogStoreDecodeError
       | DesktopConnectionCatalogStoreMigrationError
       | DesktopConnectionCatalogStoreProtectionError
+      | DesktopConnectionCatalogStoreWriteError
     >;
     readonly set: (
       catalog: string,
@@ -410,6 +417,7 @@ export const make = Effect.gen(function* () {
   const platform = yield* HostProcessPlatform;
   const crypto = yield* Crypto.Crypto;
   const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
+  const keyRecovery = yield* Effect.serviceOption(DesktopKeyRecovery);
   const lock = yield* Semaphore.make(1);
   const catalogPath = path.join(environment.stateDir, "connection-catalog.json");
   const encryptionAvailable = safeStorage.isEncryptionAvailable.pipe(
@@ -543,13 +551,27 @@ export const make = Effect.gen(function* () {
       Effect.withSpan("desktop.connectionCatalogStore.clear"),
     ),
     recover: Effect.gen(function* () {
-      const current = yield* Effect.result(getCatalog);
+      const current = yield* Effect.result(
+        getCatalog.pipe(
+          Effect.tap((catalog) =>
+            Option.isNone(catalog)
+              ? Effect.void
+              : decodeRuntimeConnectionCatalogDocumentJson(catalog.value).pipe(
+                  Effect.asVoid,
+                  Effect.mapError(
+                    (cause) =>
+                      new DesktopConnectionCatalogStoreDocumentDecodeError({ catalogPath, cause }),
+                  ),
+                ),
+          ),
+        ),
+      );
       if (current._tag === "Success") {
         return null;
       }
       const error = current.failure;
       if (
-        !Schema.is(DesktopConnectionCatalogStoreDocumentDecodeError)(error) &&
+        !isDocumentDecodeError(error) &&
         !Schema.is(DesktopConnectionCatalogStoreDecodeError)(error) &&
         !(
           Schema.is(DesktopConnectionCatalogStoreProtectionError)(error) &&
@@ -569,7 +591,7 @@ export const make = Effect.gen(function* () {
             }),
         ),
       )).replace(/-/g, "");
-      const backupPath = `${catalogPath}.recovery-${suffix}.bak`;
+      const backupPath = `${catalogPath}.recovery-${yield* Clock.currentTimeMillis}-${suffix}.bak`;
       yield* fileSystem.copyFile(catalogPath, backupPath).pipe(
         Effect.mapError(
           (cause) =>
@@ -614,7 +636,41 @@ export const make = Effect.gen(function* () {
   });
 
   return DesktopConnectionCatalogStore.of({
-    get: lock.withPermits(1)(operations.get),
+    get: lock.withPermits(1)(
+      Effect.gen(function* () {
+        const recovery = yield* (
+          Option.isSome(keyRecovery) ? keyRecovery.value.inspect : Effect.succeed(undefined)
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new DesktopConnectionCatalogStoreProtectionError({
+                operation: "check-encryption-availability",
+                catalogPath,
+                cause,
+              }),
+          ),
+        );
+        if (recovery?.pendingLogin && recovery.unreadableStores.includes("catalog")) {
+          const backup = yield* operations.recover;
+          if (Option.isSome(keyRecovery) && keyRecovery.value.markCatalogReset !== undefined)
+            yield* keyRecovery.value.markCatalogReset.pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DesktopConnectionCatalogStoreProtectionError({
+                    operation: "check-encryption-availability",
+                    catalogPath,
+                    cause,
+                  }),
+              ),
+            );
+          if (backup !== null)
+            yield* Effect.logInfo(
+              "Saved connections were backed up and reset. SSH, direct and relay connections may need to be added again.",
+            );
+        }
+        return yield* operations.get;
+      }),
+    ),
     set: (catalog) => lock.withPermits(1)(operations.set(catalog)),
     clear: lock.withPermits(1)(operations.clear),
     recover: lock.withPermits(1)(operations.recover),

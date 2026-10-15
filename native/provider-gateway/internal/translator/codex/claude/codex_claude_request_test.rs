@@ -30,6 +30,26 @@ fn maps_system_reminders_tools_web_search_and_policy_fields() {
 }
 
 #[test]
+fn maximum_claude_effort_uses_the_responses_level() {
+    for thinking_type in ["adaptive", "auto"] {
+        for (effort, expected) in [("max", "xhigh"), ("MAX", "xhigh"), ("high", "high")] {
+            let request = json!({
+                "messages": [{"role": "user", "content": "Hi"}],
+                "thinking": {"type": thinking_type},
+                "output_config": {"effort": effort}
+            });
+            let output: Value = serde_json::from_slice(&convert_claude_request_to_codex(
+                "grok-4.7",
+                &serde_json::to_vec(&request).unwrap(),
+                false,
+            ))
+            .unwrap();
+            assert_eq!(output["reasoning"]["effort"], expected);
+        }
+    }
+}
+
+#[test]
 fn preserves_order_signature_and_shortens_matching_call_ids() {
     let signature = gpt_signature();
     let long_id = format!("toolu_{}", "a".repeat(70));
@@ -74,6 +94,36 @@ fn non_string_tool_name_is_normalized_without_panicking() {
     .unwrap();
     assert_eq!(output["tools"][0]["name"], "42");
     assert_eq!(output["tools"][0]["parameters"]["properties"], json!({}));
+}
+
+#[test]
+fn twenty_claude_tool_results_replay_valid_responses_arguments() {
+    let mut messages = Vec::new();
+    for index in 1..=20 {
+        let call_id = format!("toolu_{index}");
+        let arguments = json!({"command":format!("printf 'PROXY_MATRIX_{index:02}\\n'"),"description":"quote \" and Unicode ß"});
+        messages.push(json!({"role":"assistant","content":[{"type":"tool_use","id":call_id,"name":"Bash","input":arguments}]}));
+        messages.push(json!({"role":"user","content":[{"type":"tool_result","tool_use_id":call_id,"content":format!("PROXY_MATRIX_{index:02}\n")}]}));
+    }
+    let request = serde_json::to_vec(&json!({"messages":messages})).unwrap();
+    let output: Value = serde_json::from_slice(&convert_claude_request_to_codex(
+        "claude-opus-5-5",
+        &request,
+        true,
+    ))
+    .unwrap();
+    let input = output["input"].as_array().unwrap();
+    assert_eq!(input.len(), 40);
+    for (index, pair) in input.chunks_exact(2).enumerate() {
+        assert_eq!(pair[0]["type"], "function_call");
+        let arguments = pair[0]["arguments"]
+            .as_str()
+            .expect("Responses function-call arguments must be JSON text");
+        let decoded: Value = serde_json::from_str(arguments).unwrap();
+        assert_eq!(decoded, messages[index * 2]["content"][0]["input"]);
+        assert_eq!(pair[1]["type"], "function_call_output");
+        assert_eq!(pair[1]["call_id"], pair[0]["call_id"]);
+    }
 }
 
 fn gpt_signature() -> String {

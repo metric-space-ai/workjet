@@ -165,9 +165,6 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
         ) : null}
       </div>
       <p className="text-sm text-foreground/90">{activeQuestion.question}</p>
-      {activeQuestion.multiSelect ? (
-        <p className="mt-1 text-secondary-label text-xs">Select one or more options.</p>
-      ) : null}
       <div className="mt-3 space-y-1.5">
         {activeQuestion.options.map((option, index) => {
           const isOptimisticallySelected =

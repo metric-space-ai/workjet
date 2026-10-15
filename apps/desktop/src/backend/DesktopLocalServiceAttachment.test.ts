@@ -285,11 +285,11 @@ it.effect("requires both an affirmative migration button and stopped-runtime con
               assert.equal(options.defaultId, 0);
               assert.equal(options.cancelId, 0);
               assert.equal(options.checkboxChecked, false);
-              assert.include(options.detail, "/existing-profile");
+              // D44: keine Profilpfade im nativen Dialog.
+              assert.notInclude(options.detail ?? "", "/");
               return Effect.succeed({ response, checkboxChecked });
             },
           },
-          "/existing-profile",
         );
         assert.equal(consent, response === 1 && checkboxChecked);
       }

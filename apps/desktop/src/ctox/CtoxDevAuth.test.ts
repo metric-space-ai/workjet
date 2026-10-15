@@ -433,7 +433,7 @@ describe("CtoxDevAuth", () => {
 
         assert.deepEqual(harness.createOptions, [
           {
-            title: "Sign in to CTOX",
+            title: "Bei ctox.dev anmelden",
             width: 1_080,
             height: 780,
             show: true,

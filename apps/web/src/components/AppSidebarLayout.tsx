@@ -54,6 +54,7 @@ import { useSharedWorkjetHeader } from "./WorkjetHeaderSlots";
 import { BusinessOsCodeScopeSynchronizer } from "../businessOsCodeScope";
 import { WorkjetProjectRegistrySynchronizer } from "../workjetProjectRegistry";
 import { DesktopTrayProjects } from "./desktop/DesktopTrayProjects";
+import { handleDesktopMenuFeedback } from "./desktop/desktopMenuFeedback";
 import { synchronizeActiveWorkjetMode } from "../activeWorkjetScope";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
@@ -238,6 +239,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
     }
 
     const unsubscribe = onMenuAction((action) => {
+      if (handleDesktopMenuFeedback(action, window.desktopBridge)) return;
       if (action === "open-settings") {
         const isSettingsRoute = /^\/settings(\/|$)/.test(pathname);
         if (!isSettingsRoute) {

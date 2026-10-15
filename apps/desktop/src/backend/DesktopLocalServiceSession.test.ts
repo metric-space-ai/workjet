@@ -92,7 +92,6 @@ it.effect(
                 return Effect.succeed({ response, checkboxChecked });
               },
             },
-            target,
           );
           assert.equal(consent, response === 1 && checkboxChecked);
         }

@@ -133,9 +133,11 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   });
   const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
   if (!wasQuitting) {
+    // Einzige native Box (die App hat kein Fenster): deutsch, kurz, ohne
+    // Stacktrace oder Pfade; Stufe und Details stehen im Protokoll.
     yield* electronDialog.showErrorBox(
-      "Workjet failed to start",
-      `Stage: ${stage}\n${message}${detail}`,
+      "Workjet startet nicht",
+      "Workjet bitte neu öffnen. Details stehen im Protokoll.",
     );
   }
   yield* shutdown.request;

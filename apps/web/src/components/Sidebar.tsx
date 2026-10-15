@@ -243,14 +243,16 @@ function sidebarActionLabel(action: keyof typeof SIDEBAR_ACTIONS): string {
   return SIDEBAR_ACTIONS[action][workjetUiLanguage() === "en" ? "en" : "de"];
 }
 
-/** One error toast for every sidebar action: "<Action> failed" plus the reason. */
-function sidebarFailureToast(action: keyof typeof SIDEBAR_ACTIONS, error: unknown, stacked = true) {
+/** One error toast for every sidebar action: "<Action> failed", one line, no raw reason. */
+function sidebarFailureToast(
+  action: keyof typeof SIDEBAR_ACTIONS,
+  _error: unknown,
+  stacked = true,
+) {
   const en = workjetUiLanguage() === "en";
   const toast = {
     type: "error" as const,
     title: `${SIDEBAR_ACTIONS[action][en ? "en" : "de"]} ${en ? "failed" : "fehlgeschlagen"}`,
-    description:
-      error instanceof Error ? error.message : en ? "Unknown error" : "Unbekannter Fehler",
   };
   return stacked ? stackedThreadToast(toast) : toast;
 }
@@ -1306,54 +1308,54 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         : "Geweckt"}
                     </span>
                   </button>
-                ) : (
+                ) : props.projectTeam ? null : (
+                  // Team rows carry their state as the dot only; the word would squeeze
+                  // the worker name into mid-word breaks (Audit D56).
                   <span className="text-xs">
-                    {props.projectTeam
-                      ? overviewText[projectOverviewWorkerState(thread)]
-                      : variantAction === "unsettle"
-                        ? settledTimeLabel(thread)
-                        : threadTimeLabel(thread)}
+                    {variantAction === "unsettle"
+                      ? settledTimeLabel(thread)
+                      : threadTimeLabel(thread)}
                   </span>
                 )}
               </span>
               {variantAction === "unsnooze" ? (
                 !props.snoozeSupported ? null : (
-                  <button
+                  <Button
                     type="button"
+                    size="icon-xs"
+                    variant="ghost"
                     aria-label="Jetzt wecken"
+                    title={sidebarActionLabel("wake")}
                     onClick={handleUnsnoozeClick}
-                    className={cn(
-                      "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                    )}
+                    className="ml-1"
                   >
-                    <AlarmClockOffIcon aria-hidden className="mb-px size-3" />
-                    <span>{sidebarActionLabel("wake")}</span>
-                  </button>
+                    <AlarmClockOffIcon aria-hidden className="size-3.5" />
+                  </Button>
                 )
               ) : !props.settlementSupported ? null : variantAction === "unsettle" ? (
-                <button
+                <Button
                   type="button"
+                  size="icon-xs"
+                  variant="ghost"
                   aria-label="Wieder öffnen"
+                  title={sidebarActionLabel("reopen")}
                   onClick={handleUnsettleClick}
-                  className={cn(
-                    "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                  )}
+                  className="ml-1"
                 >
-                  <Undo2Icon aria-hidden className="mb-px size-3.5" />
-                  <span>{sidebarActionLabel("reopen")}</span>
-                </button>
+                  <Undo2Icon aria-hidden className="size-3.5" />
+                </Button>
               ) : (
-                <button
+                <Button
                   type="button"
+                  size="icon-xs"
+                  variant="ghost"
                   aria-label="Erledigen"
+                  title={sidebarActionLabel("settle")}
                   onClick={handleSettleClick}
-                  className={cn(
-                    "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                  )}
+                  className="ml-1"
                 >
-                  <CheckIcon aria-hidden className="size-3" />
-                  <span>{sidebarActionLabel("settle")}</span>
-                </button>
+                  <CheckIcon aria-hidden className="size-3.5" />
+                </Button>
               )}
             </span>
             {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
@@ -1520,15 +1522,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       />
                     ) : null}
                     {props.settlementSupported ? (
-                      <button
+                      <Button
                         type="button"
+                        size="icon-xs"
+                        variant="ghost"
                         aria-label="Erledigen"
+                        title="Erledigen"
                         onClick={handleSettleClick}
-                        className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                        className="-mr-1"
                       >
-                        <CheckIcon className="size-3.5" />
-                        Erledigen
-                      </button>
+                        <CheckIcon aria-hidden className="size-3.5" />
+                      </Button>
                     ) : null}
                   </span>
                 ) : null}
@@ -3186,12 +3190,12 @@ export default function Sidebar() {
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
-            { id: "settle", label: `Erledigen (${count})` },
+            { id: "settle", label: "Erledigen" },
             ...(canSnoozeSelection
               ? [
                   {
                     id: "snooze",
-                    label: `Zurückstellen (${count})`,
+                    label: "Zurückstellen",
                     children: snoozePresets.map((preset) => ({
                       id: `snooze:${preset.id}`,
                       label: `${preset.label} (${preset.whenLabel})`,
@@ -3200,8 +3204,8 @@ export default function Sidebar() {
                 ]
               : []),
             ...(titleRegenerationMenuItem ? [titleRegenerationMenuItem] : []),
-            { id: "mark-unread", label: `Ungelesen (${count})` },
-            { id: "delete", label: `Löschen (${count})`, destructive: true },
+            { id: "mark-unread", label: "Ungelesen" },
+            { id: "delete", label: "Löschen", destructive: true },
           ],
           position,
         ),
@@ -3415,12 +3419,11 @@ export default function Sidebar() {
               }),
             );
             if (result._tag === "Failure") {
-              const error = squashAtomCommandFailure(result);
+              // One line, no raw error text (UI contract §1 Toast).
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Unterhaltung konnte nicht erstellt werden",
-                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
+                  title: "Worker nicht angelegt",
                 }),
               );
             }
@@ -4112,7 +4115,7 @@ export default function Sidebar() {
                     const teamLabel = {
                       supervisor: t("Supervisor", "Supervisor"),
                       parents: t("Persistente Worker", "Persistent workers"),
-                      workers: t("One-shot-Worker", "One-shot workers"),
+                      workers: t("Einmal-Worker", "One-shot workers"),
                     } as const;
                     items.push(
                       <li
@@ -4124,6 +4127,14 @@ export default function Sidebar() {
                     for (const { section } of PROJECT_TEAM_SECTIONS) {
                       const archived = section === "supervisor" ? [] : archivedTeam[section];
                       const showDraft = section === "workers";
+                      // A group header appears only above something: rows, archived rows,
+                      // a draft or the plus to add a persistent worker (Audit A-56).
+                      const hasContent =
+                        team[section].length > 0 ||
+                        archived.length > 0 ||
+                        (showDraft && visibleDraftSessionCount > 0) ||
+                        (section === "parents" && addPersistentWorker !== null);
+                      if (!hasContent) continue;
                       items.push(
                         <li
                           key={`team-${section}-header`}
@@ -4157,7 +4168,7 @@ export default function Sidebar() {
                         );
                       }
                       // Neue Worker entstehen nur hier: ein Plus unter den persistenten
-                      // Workern (Michael, 15.10.); One-shot-Worker spawnt ein Parent.
+                      // Workern (Michael, 15.10.); Einmal-Worker spawnt ein Parent.
                       if (section === "parents" && addPersistentWorker !== null) {
                         items.push(
                           <li key="team-parents-add" className="list-none">

@@ -393,7 +393,8 @@ describe("gallery KPI failures", () => {
       }),
     );
     expect(container.textContent).toContain("Instanz nicht erreichbar");
-    expect(container.textContent).toContain("Letzter Stand:");
+    expect(container.textContent).toContain("Erneut verbinden");
+    expect(container.textContent).not.toContain("Letzter Stand");
     expect(container.textContent).not.toContain("nicht geladen");
     await render(
       gallery({

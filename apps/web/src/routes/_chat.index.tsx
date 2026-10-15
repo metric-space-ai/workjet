@@ -90,6 +90,7 @@ import {
 import { consumeProjectCreateRequest, onProjectCreateRequest } from "../commandPaletteBus";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
+import { Segment } from "../components/ui/segment";
 import { InlinePanel } from "../components/ui/inline-panel";
 import { Input } from "../components/ui/input";
 import {
@@ -625,8 +626,6 @@ export function showsCachedProjectRegistryNotice(registry: {
 export function ProjectGallery({
   projects,
   instanceId,
-  registryStatus,
-  lastUpdatedAt,
   projectsUnavailable,
   createForm,
 }: {
@@ -905,7 +904,6 @@ export function ProjectGallery({
     },
     [instanceId, orderLoaded, showArchived, visibleProjects],
   );
-  const archivedCount = visibleGalleryProjects(projects, true).length;
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
@@ -919,53 +917,22 @@ export function ProjectGallery({
                 : t("Alle Projekte", "All projects")}
             </h1>
             <div className="flex flex-wrap items-center gap-2">
-              <div
-                className="inline-flex gap-1 rounded-md border border-border p-1"
-                role="group"
+              {/* Fixed place, fixed name: the archive is the third view, never a toggle that
+                  renames itself (#596). One segment with a clearly marked active entry (A-43). */}
+              <Segment
                 aria-label={t("Projektansicht", "Project view")}
-              >
-                <Button
-                  size="sm"
-                  variant={view === "gallery" && !showArchived ? "secondary" : "ghost"}
-                  aria-pressed={view === "gallery" && !showArchived}
-                  data-workjet-action="project.view.gallery"
-                  onClick={() => {
-                    setShowArchived(false);
-                    setView("gallery");
-                  }}
-                >
-                  {t("Projekte", "Projects")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant={view === "calendar" && !showArchived ? "secondary" : "ghost"}
-                  aria-pressed={view === "calendar" && !showArchived}
-                  data-workjet-action="project.view.calendar"
-                  onClick={() => {
-                    setShowArchived(false);
-                    setView("calendar");
-                  }}
-                >
-                  {t("Kalender", "Calendar")}
-                </Button>
-                {/* Fixed place, fixed name: the archive is the third view, never a toggle that renames itself (#596). */}
-                <Button
-                  size="sm"
-                  variant={showArchived ? "secondary" : "ghost"}
-                  aria-pressed={showArchived}
-                  data-workjet-action="project.view.archive"
-                  onClick={() => {
-                    // The archive is a list of project cards; it never shows the calendar.
-                    setView("gallery");
-                    setShowArchived(true);
-                  }}
-                >
-                  {t("Archiv", "Archive")}
-                  {archivedCount > 0 ? (
-                    <span className="ms-1 tabular-nums text-muted-foreground">{archivedCount}</span>
-                  ) : null}
-                </Button>
-              </div>
+                value={showArchived ? "archive" : view}
+                options={[
+                  { value: "gallery", label: t("Projekte", "Projects") },
+                  { value: "calendar", label: t("Kalender", "Calendar") },
+                  { value: "archive", label: t("Archiv", "Archive") },
+                ]}
+                onValueChange={(next) => {
+                  // The archive is a list of project cards; it never shows the calendar.
+                  setShowArchived(next === "archive");
+                  setView(next === "calendar" ? "calendar" : "gallery");
+                }}
+              />
             </div>
           </div>
           {needsModelAccount ? (
@@ -997,49 +964,27 @@ export function ProjectGallery({
           {showArchived && visibleProjects.length === 0 ? (
             <div
               role="status"
-              className="flex flex-col items-center gap-3 py-10 text-center text-sm"
+              className="py-10 text-center text-[13.5px] text-muted-foreground"
               data-workjet-archive-empty=""
             >
-              <p>{t("Noch nichts archiviert", "Nothing archived yet")}</p>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Projekte archivierst du über das Menü einer Projektkarte.",
-                  "Archive a project from its card menu.",
-                )}
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                data-workjet-action="project.archive.back"
-                onClick={() => setShowArchived(false)}
-              >
-                {t("Zurück zu Projekten", "Back to projects")}
-              </Button>
+              {t("Noch nichts archiviert", "Nothing archived yet")}
             </div>
           ) : null}
           {projectsUnavailable ? (
             <div
               role="status"
-              className="mb-4 text-xs text-muted-foreground"
+              className="mb-4 flex flex-wrap items-center gap-2 text-[13.5px] text-muted-foreground"
               data-workjet-project-registry-stale=""
             >
-              <span>{registryStatus ?? "Instanz nicht erreichbar"}</span>
-              {lastUpdatedAt !== undefined && (
-                <span>
-                  {" "}
-                  · Letzter Stand:{" "}
-                  {new Date(lastUpdatedAt).toLocaleString(
-                    workjetUiLanguage() === "en" ? "en-US" : "de-DE",
-                    {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    },
-                  )}
-                </span>
-              )}
+              <span>{t("Instanz nicht erreichbar", "Instance unreachable")}</span>
+              <Button
+                size="xs"
+                variant="outline"
+                data-workjet-action="project.registry.retry"
+                onClick={() => refreshWorkjetProjectRegistry(instanceId)}
+              >
+                {t("Erneut verbinden", "Reconnect")}
+              </Button>
             </div>
           ) : null}
           {view === "calendar" ? (
@@ -1482,7 +1427,7 @@ function InlineProjectCreate({
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
         openCreatedProject(instanceId, scopeProjectRef(environmentId, attempt.projectId));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
+      setError(shortCreateError(failure, "Projekt nicht angelegt."));
     } finally {
       setPending(false);
     }
@@ -1541,7 +1486,7 @@ function InlineProjectCreate({
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
         openCreatedProject(instanceId, scopeProjectRef(created.environmentId, created.projectId));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
+      setError(shortCreateError(failure, "Projekt nicht angelegt."));
     } finally {
       setProgress(null);
       setProgressStep(null);
@@ -1555,7 +1500,7 @@ function InlineProjectCreate({
     try {
       await sources.pickFolder();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Ordner nicht gewählt.");
+      setError(shortCreateError(failure, "Ordner nicht gewählt."));
     }
   };
 
@@ -1566,7 +1511,7 @@ function InlineProjectCreate({
       if ((await sources.pickFolder()) === null) cloneTargetPick.current = false;
     } catch (failure) {
       cloneTargetPick.current = false;
-      setError(failure instanceof Error ? failure.message : "Ordner nicht gewählt.");
+      setError(shortCreateError(failure, "Ordner nicht gewählt."));
     }
   };
 
@@ -1582,13 +1527,13 @@ function InlineProjectCreate({
     options.length === 0 ? (
       <ProjectCreateRequirementLine
         text="Keine Instanz verbunden"
-        actionLabel="Einstellungen › Instanzen"
+        actionLabel="Instanz verbinden"
         onAction={() => void navigate({ to: "/settings/business-os" })}
       />
     ) : needsComputer ? (
       <ProjectCreateRequirementLine
         text="Kein Rechner verbunden"
-        actionLabel="Einstellungen › Rechner"
+        actionLabel="Rechner verbinden"
         onAction={() => void navigate({ to: "/settings/computers" })}
       />
     ) : null;
@@ -1690,7 +1635,12 @@ function InlineProjectCreate({
             picking={sources.picking}
           />
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]">
+        <div
+          className={cn(
+            "grid gap-3",
+            options.length > 0 && "sm:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]",
+          )}
+        >
           <label className="grid min-w-0 gap-1 text-[13.5px]">
             Name
             <Input
@@ -1705,30 +1655,40 @@ function InlineProjectCreate({
               }}
             />
           </label>
-          <div className="grid min-w-0 gap-1 text-[13.5px]">
-            <span>Instanz</span>
-            <Select
-              value={instanceId ?? ""}
-              onValueChange={(value) =>
-                setChosenInstanceId(typeof value === "string" && value !== "" ? value : null)
-              }
-            >
-              <SelectTrigger aria-label="Instanz" disabled={options.length === 0}>
-                <SelectValue>{instanceLabel ?? "Keine Instanz verbunden"}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="start" alignItemWithTrigger={false}>
-                {options.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </div>
+          {/* Without an instance only the requirement line speaks (Audit A-65). */}
+          {options.length === 0 ? null : (
+            <div className="grid min-w-0 gap-1 text-[13.5px]">
+              <span>Instanz</span>
+              <Select
+                value={instanceId ?? ""}
+                onValueChange={(value) =>
+                  setChosenInstanceId(typeof value === "string" && value !== "" ? value : null)
+                }
+              >
+                <SelectTrigger aria-label="Instanz" disabled={options.length === 0}>
+                  <SelectValue>{instanceLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="start" alignItemWithTrigger={false}>
+                  {options.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </div>
+          )}
         </div>
       </InlinePanel>
     </div>
   );
+}
+
+/** A create error stays one short line (≤12 words, no raw paths); details never reach the UI. */
+function shortCreateError(failure: unknown, fallback: string): string {
+  const message = failure instanceof Error ? failure.message.trim() : "";
+  if (!message || /[\n/\\{}]/.test(message)) return fallback;
+  return message.split(/\s+/).length <= 12 ? message : fallback;
 }
 
 export const Route = createFileRoute("/_chat/")({

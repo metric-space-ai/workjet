@@ -16,15 +16,16 @@ const PROVIDER_UPDATE_PILL_STYLES = {
     "bg-update-surface text-update-foreground group-has-[button.provider-update-main:hover]/provider-update:bg-update/22",
   success:
     "bg-success/12 text-success group-has-[button.provider-update-main:hover]/provider-update:bg-success/18",
+  // "Update available" is a neutral chip, not an amber status pill (Audit A-63).
   warning:
-    "bg-warning/12 text-warning group-has-[button.provider-update-main:hover]/provider-update:bg-warning/18",
+    "bg-muted text-muted-foreground group-has-[button.provider-update-main:hover]/provider-update:bg-accent",
   error:
     "bg-destructive/12 text-destructive group-has-[button.provider-update-main:hover]/provider-update:bg-destructive/18",
 } as const;
 
 const PROVIDER_UPDATE_PILL_PROGRESS_STYLES = {
   success: "bg-success/18",
-  warning: "bg-warning/14",
+  warning: "bg-accent",
   error: "bg-destructive/14",
 } as const;
 

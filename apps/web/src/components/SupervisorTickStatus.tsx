@@ -50,22 +50,21 @@ export function SupervisorTickStatus(props: {
             : de
               ? `in ${Math.ceil((next - now) / 60000)} min`
               : `in ${Math.ceil((next - now) / 60000)} min`;
-  const lastLabel = props.state?.lastControlAt
-    ? minutesAgo(props.state.lastControlAt)
-    : (text?.controlNone ?? "—");
+  const lastLabel = props.state?.lastControlAt ? minutesAgo(props.state.lastControlAt) : "";
   return (
     <div
       className="mt-2 flex flex-wrap items-center gap-1.5"
       data-workjet-supervisor-tick=""
       role="status"
     >
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground">
-        {text
-          ? projectOverviewFormat(text.controlLast, { time: lastLabel })
-          : de
-            ? `Letzte Kontrolle ${lastLabel}`
-            : `Last check ${lastLabel}`}
-        {" · "}
+      <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
+        {lastLabel
+          ? (text
+              ? projectOverviewFormat(text.controlLast, { time: lastLabel })
+              : de
+                ? `Letzte Kontrolle ${lastLabel}`
+                : `Last check ${lastLabel}`) + " · "
+          : null}
         {text
           ? projectOverviewFormat(text.controlNext, { time: nextLabel })
           : de
@@ -74,8 +73,9 @@ export function SupervisorTickStatus(props: {
       </span>
       {props.state?.outcome === "skipped-busy" && (
         <span
-          className={`inline-flex items-center rounded-full border border-warning/40 px-2.5 py-0.5 text-[11px] ${WORKJET_STATUS_TEXT_CLASS.waiting}`}
+          className={`inline-flex items-center gap-1.5 text-[12px] ${WORKJET_STATUS_TEXT_CLASS.waiting}`}
         >
+          <span aria-hidden="true" className="size-2 rounded-full bg-warning" />
           {text?.controlSkipped ??
             (de ? "Takt übersprungen · Supervisor beschäftigt" : "Tick skipped · supervisor busy")}
         </span>

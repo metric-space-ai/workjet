@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { ChevronUpIcon, RefreshCwIcon } from "lucide-react";
+import { ChevronUpIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import {
   projectKpiPresentation,
   projectKpiPromptInputs,
@@ -14,9 +14,11 @@ export const KPI_PROMPT_MAX = 1_024;
 
 const TEXT = {
   de: {
-    edit: (n: number) => `KPI ${n} bearbeiten`,
+    edit: (n: number) => `Kennzahl ${n} bearbeiten`,
+    title: (n: number) => `Kennzahl ${n}`,
     close: "Schließen",
-    prompt: (n: number) => `Satz für KPI ${n}`,
+    checking: "prüft…",
+    prompt: (n: number) => `Satz für Kennzahl ${n}`,
     placeholder: "Was soll diese Kennzahl messen?",
     save: "Speichern",
     saving: "Speichern …",
@@ -29,9 +31,11 @@ const TEXT = {
     unsaved: "Nicht gespeichert",
   },
   en: {
-    edit: (n: number) => `Edit KPI ${n}`,
+    edit: (n: number) => `Edit metric ${n}`,
+    title: (n: number) => `Metric ${n}`,
     close: "Close",
-    prompt: (n: number) => `Sentence for KPI ${n}`,
+    checking: "checking…",
+    prompt: (n: number) => `Sentence for metric ${n}`,
     placeholder: "What should this metric measure?",
     save: "Save",
     saving: "Saving …",
@@ -127,17 +131,25 @@ export function ProjectKpiTile({
     setBusy(null);
     if (!ok) setError(text.refreshFailed);
   };
-  const status: ReactNode = !record
-    ? "—"
-    : dirty
-      ? text.unsaved
-      : metric?.status === "ready"
-        ? text.ready
-        : metric?.detail || "—";
+  // Status only when something is wrong (Audit A-28); a healthy KPI needs no status line.
+  const status: ReactNode = dirty
+    ? null
+    : metric?.status === "failed" || metric?.status === "missing_source"
+      ? metric.detail
+      : null;
   const shown = metric && !dirty ? metric.value : "—";
-  // Without a value the tile keeps only its sentence as label; no „—“ placeholder.
+  // Without a value a defined KPI shows the stable chip „prüft…“ instead of a bare label
+  // (UI contract §7, Audit A-27); an undefined slot shows nothing.
   const value =
-    shown === "—" ? null : (
+    shown === "—" ? (
+      record ? (
+        <dd className="order-first min-w-0" data-workjet-kpi-status={metric?.status ?? "pending"}>
+          <span className="inline-flex h-7 items-center text-[11px] text-muted-foreground">
+            {text.checking}
+          </span>
+        </dd>
+      ) : null
+    ) : (
       <dd
         className="order-first min-w-0 break-words pe-4 text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]"
         data-workjet-kpi-status={metric?.status ?? "unconfigured"}
@@ -146,11 +158,10 @@ export function ProjectKpiTile({
         {shown}
       </dd>
     );
+  const nearLimit = draft.length >= KPI_PROMPT_MAX * 0.9;
   return (
     <div
-      className={`flex min-w-0 flex-col gap-0.5 rounded-md motion-safe:transition-colors motion-safe:duration-200 ${
-        expanded ? "col-span-3 -mx-1 bg-muted/50 px-1 py-1" : ""
-      }`}
+      className="flex min-w-0 flex-col gap-0.5 rounded-md"
       data-workjet-project-card-slot={position}
       data-workjet-kpi-tile-expanded={expanded ? "" : undefined}
       onKeyDown={(event) => {
@@ -195,74 +206,83 @@ export function ProjectKpiTile({
         )}
       </div>
       {editable && (
+        // Overlay on the project card (its nearest positioned ancestor): the editor never
+        // grows the card or the gallery row (Audit A-30).
         <div
           id={editorId}
-          className={`grid motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-200 motion-safe:ease-out ${
-            expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+          className={`absolute inset-0 z-20 flex flex-col gap-2 overflow-y-auto bg-card p-3 motion-safe:transition-opacity motion-safe:duration-200 ${
+            expanded ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
+          data-workjet-kpi-tile-editor=""
           inert={!expanded}
         >
-          <div className="min-h-0 overflow-hidden">
-            <div className="flex flex-col gap-2 pt-2">
-              <Textarea
-                ref={fieldRef}
-                value={draft}
-                maxLength={KPI_PROMPT_MAX}
-                rows={3}
-                aria-label={text.prompt(position)}
-                placeholder={text.placeholder}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                    event.preventDefault();
-                    void save();
-                  }
-                }}
-              />
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span data-workjet-kpi-tile-status="">
-                  {text.status}: {status}
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-muted-foreground">
+              {text.title(position)}
+            </span>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              onClick={collapse}
+              aria-label={text.close}
+              title={text.close}
+            >
+              <XIcon aria-hidden="true" className="size-3.5" />
+            </Button>
+          </div>
+          <Textarea
+            ref={fieldRef}
+            value={draft}
+            maxLength={KPI_PROMPT_MAX}
+            rows={3}
+            aria-label={text.prompt(position)}
+            placeholder={text.placeholder}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                void save();
+              }
+            }}
+          />
+          {status !== null || nearLimit ? (
+            <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+              {status !== null ? (
+                <span data-workjet-kpi-tile-status="" className="text-destructive-foreground">
+                  {status}
                 </span>
+              ) : null}
+              {nearLimit ? (
                 <span className="ms-auto tabular-nums">
                   {draft.length}/{KPI_PROMPT_MAX}
                 </span>
-              </div>
-              {error && (
-                <p role="alert" className="text-xs text-destructive">
-                  {error}
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="xs" disabled={!dirty || busy !== null} onClick={() => void save()}>
-                  {busy === "save" ? text.saving : text.save}
-                </Button>
-                {onRefresh && record && (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={dirty || busy !== null}
-                    onClick={() => void refresh()}
-                    data-workjet-action={`project.kpis.refresh:${projectId}`}
-                  >
-                    <RefreshCwIcon
-                      aria-hidden="true"
-                      className={`size-3.5 ${busy === "refresh" ? "motion-safe:animate-spin" : ""}`}
-                    />
-                    {busy === "refresh" ? text.refreshing : text.refresh}
-                  </Button>
-                )}
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  className="ms-auto"
-                  onClick={collapse}
-                  aria-label={text.close}
-                >
-                  <ChevronUpIcon aria-hidden="true" className="size-3.5" />
-                  {text.close}
-                </Button>
-              </div>
+              ) : null}
             </div>
+          ) : null}
+          {error && (
+            <p role="alert" className="text-[12px] text-destructive-foreground">
+              {error}
+            </p>
+          )}
+          <div className="mt-auto flex flex-wrap items-center gap-2">
+            <Button size="xs" disabled={!dirty || busy !== null} onClick={() => void save()}>
+              {busy === "save" ? text.saving : text.save}
+            </Button>
+            {onRefresh && record && (
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={dirty || busy !== null}
+                onClick={() => void refresh()}
+                data-workjet-action={`project.kpis.refresh:${projectId}`}
+              >
+                <RefreshCwIcon
+                  aria-hidden="true"
+                  className={`size-3.5 ${busy === "refresh" ? "motion-safe:animate-spin" : ""}`}
+                />
+                {busy === "refresh" ? text.refreshing : text.refresh}
+              </Button>
+            )}
           </div>
         </div>
       )}

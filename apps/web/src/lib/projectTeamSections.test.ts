@@ -84,8 +84,8 @@ const idle = { session: null, hasPendingApprovals: false, hasPendingUserInput: f
 it("uses the exact project labels and includes roleless project chats", () => {
   expect(PROJECT_TEAM_SECTIONS.map((section) => section.label)).toEqual([
     "Supervisor",
-    "Feste Presets",
-    "Einmal-Presets",
+    "Persistente Worker",
+    "Einmal-Worker",
   ]);
   expect(projectTeamSectionOf(plain)).toBe("workers");
 });

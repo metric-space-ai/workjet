@@ -151,7 +151,7 @@ describe("calendar sidebar declutter", () => {
     expect(html).not.toContain("Sitzungen aktualisieren");
     expect(html).not.toContain("Konten abgleichen");
     expect(html).toContain("Aktualisieren");
-    expect(html).toContain('title="Abgeglichen');
+    expect(html).not.toContain("Abgeglichen");
   });
   it("keeps exceptions visible", () => {
     expect(accountCalendarProblem({ ...base, status: "unavailable" })).toBe(

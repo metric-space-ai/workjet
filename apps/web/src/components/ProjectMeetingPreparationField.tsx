@@ -101,7 +101,7 @@ export function MeetingPreparationField({
             options={[
               ...(models.includes(config.model)
                 ? []
-                : [{ value: config.model, label: `${config.model} · Preset fehlt` }]),
+                : [{ value: config.model, label: config.model }]),
               ...models.map((model) => ({ value: model, label: model })),
             ]}
             onValueChange={(model) => {
@@ -112,7 +112,7 @@ export function MeetingPreparationField({
         </label>
       </div>
       <label className="grid min-w-0 gap-1 text-xs">
-        Preset und Kontoroute
+        Preset
         <OptionSelect<string>
           aria-label="Vorbereitungs-Preset"
           className="w-auto min-w-0"
@@ -120,7 +120,7 @@ export function MeetingPreparationField({
           options={[
             { value: "", label: "Passendes Preset" },
             ...(config.workerProfileId && !available.some((p) => p.id === config.workerProfileId)
-              ? [{ value: config.workerProfileId, label: "Gespeichertes Preset fehlt" }]
+              ? [{ value: config.workerProfileId, label: "Gespeichertes Preset" }]
               : []),
             ...available.map((p) => ({ value: p.id, label: `${p.name} · ${p.computerId}` })),
           ]}
@@ -189,7 +189,7 @@ export function MeetingPreparationField({
           (phase === "loading"
             ? loadingSlow
               ? "Presets nicht erreichbar"
-              : "Presets werden geladen …"
+              : ""
             : available.length === 0
               ? "Kein passendes Preset"
               : "")}

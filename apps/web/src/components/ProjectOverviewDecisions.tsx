@@ -149,13 +149,12 @@ export function ProjectOverviewDecisions(props: {
           </Button>
         </div>
       ))}
-      {inputs.length === 0 && approvals.length === 0 && (
-        <p className="text-muted-foreground">
-          {state.status === "live" || state.error._tag === "Some"
-            ? text.unknown
-            : text.decisionUnavailable}
-        </p>
-      )}
+      {inputs.length === 0 &&
+        approvals.length === 0 &&
+        state.status !== "live" &&
+        state.error._tag !== "Some" && (
+          <p className="text-muted-foreground">{text.decisionUnavailable}</p>
+        )}
       <Button type="button" size="xs" variant="outline" onClick={open}>
         {text.details}
       </Button>

@@ -14,7 +14,15 @@ import {
   type ProjectOverviewStatus,
   type ProjectOwnerOverview,
 } from "../projectOverviewModel";
-import { BookmarkIcon, GitPullRequestIcon, MessageSquareIcon, RefreshCwIcon } from "lucide-react";
+import {
+  BookmarkIcon,
+  CalendarIcon,
+  FolderIcon,
+  GitPullRequestIcon,
+  MessageSquareIcon,
+  TriangleAlertIcon,
+  UserRoundIcon,
+} from "lucide-react";
 import {
   ctoxPostContent,
   disruptionContent,
@@ -36,21 +44,23 @@ import {
 } from "./ProjectFeedSettings";
 import { Button } from "./ui/button";
 
-const toneClasses: Record<string, string> = {
-  red: "border-red-500/40 text-red-400",
-  blue: "border-blue-500/40 text-blue-300",
-  amber: "border-amber-500/40 text-amber-400",
-  green: "border-emerald-500/40 text-emerald-400",
-  gray: "border-border text-muted-foreground",
+const toneDotClasses: Record<string, string> = {
+  red: "bg-destructive",
+  blue: "bg-info",
+  amber: "bg-warning",
+  green: "bg-success",
+  gray: "bg-muted-foreground/50",
 };
+/** Status as dot plus word in meta colour; no pill (Audit A-13). */
 function StatusChip(props: { readonly status: ProjectOverviewStatus; readonly label: string }) {
   return (
-    <span
-      className={
-        "inline-block rounded-full border px-2 py-0.5 text-[11px] whitespace-nowrap " +
-        toneClasses[projectOverviewStatusTone(props.status)]
-      }
-    >
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] text-muted-foreground">
+      <span
+        aria-hidden="true"
+        className={
+          "size-2 shrink-0 rounded-full " + toneDotClasses[projectOverviewStatusTone(props.status)]
+        }
+      />
       {props.label}
     </span>
   );
@@ -226,8 +236,6 @@ export function ProjectOverviewView(props: {
   const [tab, setTab] = useState<FeedTab>(prefs.defaultTab);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [marks, toggleMark] = useFeedBookmarks();
-  const countOf = (key: FeedSourceKey) =>
-    allFeed.filter((item) => feedSourceOf(item.kind) === key).length;
   // One row per worker and state: several chats of the same worker in the same state are one entry.
   const liveSeen = new Set<string>();
   const live = sortByAttention(
@@ -265,13 +273,13 @@ export function ProjectOverviewView(props: {
   const sideSection: Record<ProjectOverviewSideSection, ReactNode> = {
     live: (
       <section key="live" className={card} data-workjet-overview-section="live">
-        <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.liveTitle}</h3>
+        <h3 className="mb-2 text-[13.5px] font-bold text-foreground">{text.liveTitle}</h3>
         <ul className="divide-y divide-border/60">
           {live.map(({ thread, state }) => (
             <li key={thread.id}>
               <button
                 type="button"
-                className="flex w-full items-center gap-2 py-2 text-left text-[14px] hover:text-foreground"
+                className="flex w-full items-center gap-2 py-2 text-left text-[13.5px] hover:text-foreground"
                 onClick={() => open(thread)}
                 data-workjet-overview-live={state}
               >
@@ -280,10 +288,10 @@ export function ProjectOverviewView(props: {
                   className={
                     "size-2 shrink-0 rounded-full " +
                     (state === "running"
-                      ? "bg-emerald-400"
+                      ? "bg-success"
                       : state === "disrupted" || state === "stuck"
-                        ? "bg-red-400"
-                        : "bg-amber-400")
+                        ? "bg-destructive"
+                        : "bg-warning")
                   }
                 />
                 <span className="min-w-0 flex-1 break-words font-semibold">
@@ -294,9 +302,9 @@ export function ProjectOverviewView(props: {
                 </span>
                 <span
                   className={
-                    "text-[13px] " +
+                    "text-[13.5px] " +
                     (state === "disrupted" || state === "stuck"
-                      ? "text-red-400"
+                      ? "text-destructive-foreground"
                       : "text-muted-foreground")
                   }
                 >
@@ -310,8 +318,8 @@ export function ProjectOverviewView(props: {
     ),
     goals: (
       <section key="goals" className={card} data-workjet-overview-section="goals">
-        <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.goals}</h3>
-        <ul className="space-y-2 text-[13px]">
+        <h3 className="mb-2 text-[13.5px] font-bold text-foreground">{text.goals}</h3>
+        <ul className="space-y-2 text-[13.5px]">
           {sortedGoalGroups.map((group) => (
             <li key={group.title} className="min-w-0" data-workjet-overview-goal="">
               <p className="line-clamp-2 break-words font-semibold text-foreground">
@@ -328,10 +336,10 @@ export function ProjectOverviewView(props: {
                       className="hover:text-foreground"
                       onClick={() => open(goal.thread!)}
                     >
-                      {goal.owner}
+                      {localizedWorkerName(goal.owner, language)}
                     </button>
                   ) : (
-                    <span>{goal.owner}</span>
+                    <span>{localizedWorkerName(goal.owner, language)}</span>
                   )}
                   <StatusChip status={goal.status} label={goal.state} />
                 </p>
@@ -343,15 +351,10 @@ export function ProjectOverviewView(props: {
     ),
     kpis: (
       <section key="kpis" className={card} data-workjet-overview-section="kpis">
-        <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.metrics}</h3>
-        {missingKpis ? (
-          <Button size="xs" variant="outline" onClick={props.onRecomputeKpis}>
-            <RefreshCwIcon aria-hidden className="size-3.5" />
-            {text.recompute}
-          </Button>
-        ) : (
+        <h3 className="mb-2 text-[13.5px] font-bold text-foreground">{text.metrics}</h3>
+        {missingKpis ? null : (
           <dl
-            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 text-[14px]"
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 text-[13.5px]"
             data-workjet-overview-kpis=""
           >
             {data.kpis
@@ -361,7 +364,7 @@ export function ProjectOverviewView(props: {
                   <dt className="min-w-0 break-words text-muted-foreground">
                     {kpi.label}
                     {kpi.note !== null && (
-                      <span className="block text-[12px] text-amber-400">{kpi.note}</span>
+                      <span className="block text-[12px] text-warning-foreground">{kpi.note}</span>
                     )}
                   </dt>
                   <dd className="text-right font-bold tabular-nums">{kpi.value}</dd>
@@ -374,11 +377,11 @@ export function ProjectOverviewView(props: {
     meeting: (
       <section
         key="meeting"
-        className={card + " flex flex-wrap items-center gap-x-3 gap-y-2"}
+        className={card + " flex flex-col items-start gap-2"}
         data-workjet-overview-section="meeting"
       >
         {data.recurring && weekdayShort !== null ? (
-          <p className="min-w-0 flex-1 text-[14px]">
+          <p className="min-w-0 text-[13.5px]">
             <span className="font-bold text-foreground">{text.nextMeeting}</span>
             {" · "}
             <span className="font-semibold tabular-nums">
@@ -392,7 +395,6 @@ export function ProjectOverviewView(props: {
         {canJoin ? (
           <Button
             size="sm"
-            className="rounded-full"
             onClick={props.onOpenJourFixe}
             data-workjet-action="project.jour-fixe.open"
           >
@@ -405,7 +407,7 @@ export function ProjectOverviewView(props: {
   const sideOrder = projectOverviewSideSections({
     live: live.length > 0,
     goals: sortedGoalGroups.length > 0,
-    kpis: !(missingKpis && !props.onRecomputeKpis),
+    kpis: !missingKpis,
     meeting: data.recurring !== null || canJoin,
   });
   const workerNames = [...data.parents, ...data.workers].map((thread) =>
@@ -417,73 +419,58 @@ export function ProjectOverviewView(props: {
       key: "disruptions",
       group: "CTOX",
       name: de ? "Störungen & Rückfragen" : "Disruptions & questions",
-      badge: "!",
-      badgeColor: "bg-red-600",
-      count: countOf("disruptions"),
+      icon: TriangleAlertIcon,
       chips: [],
     },
     {
       key: "results",
       group: "CTOX",
       name: de ? "Worker-Ergebnisse & Ziele" : "Worker results & goals",
-      badge: "W",
-      badgeColor: "bg-blue-600",
-      count: countOf("results"),
+      icon: UserRoundIcon,
       chips: workerNames.slice(0, 6),
     },
     {
       key: "sessions",
       group: "CTOX",
       name: de ? "Sitzungen" : "Sessions",
-      badge: "S",
-      badgeColor: "bg-teal-600",
-      count: countOf("sessions"),
+      icon: MessageSquareIcon,
       chips: [],
     },
     {
       key: "meeting",
       group: "CTOX",
       name: de ? "Regeltermin & Entscheidungen" : "Standing meeting & decisions",
-      badge: "RT",
-      badgeColor: "bg-violet-600",
-      count: countOf("meeting"),
+      icon: CalendarIcon,
       chips: data.recurring && weekday ? [`${weekday} · ${data.recurring.time}`] : [],
     },
     {
       key: "setup",
       group: "CTOX",
       name: de ? "Projekt-Setup" : "Project setup",
-      badge: "P",
-      badgeColor: "bg-emerald-600",
-      count: countOf("setup"),
+      icon: FolderIcon,
       chips: [],
     },
     {
       key: "prs",
       group: "GitHub",
-      name: de ? "Gemergte Pull Requests" : "Merged pull requests",
-      badge: "GH",
-      badgeColor: "bg-zinc-700",
-      count: countOf("prs"),
+      name: de ? "Zusammengeführte PRs" : "Merged PRs",
+      icon: GitPullRequestIcon,
       chips: repo ? [repo.url.replace(/^https:\/\/github\.com\//, "")] : [],
-      note: repo
-        ? null
-        : de
-          ? "Kein Repository verknüpft – PRs erscheinen, sobald eins verknüpft ist."
-          : "No repository linked – PRs appear once one is linked.",
-      action: props.settingsLinks?.[0]
-        ? { label: de ? "Verknüpfen" : "Link", onClick: props.settingsLinks[0].onClick }
-        : null,
+      note: repo ? null : de ? "Kein Repository" : "No repository",
+      action:
+        !repo && props.settingsLinks?.[0]
+          ? { label: de ? "Verknüpfen" : "Link", onClick: props.settingsLinks[0].onClick }
+          : null,
     },
   ];
   return (
     <main
-      className="relative flex h-full min-h-0 w-full min-w-0 flex-col items-center gap-4 text-[15px] lg:flex-row lg:items-stretch lg:justify-center lg:gap-3 lg:overflow-hidden lg:px-3"
+      className="relative flex h-full min-h-0 w-full min-w-0 flex-col items-center gap-4 text-[13.5px] lg:flex-row lg:items-stretch lg:justify-center lg:gap-3 lg:overflow-hidden lg:px-3"
       data-workjet-project-overview={data.projectId}
       lang={language}
     >
       <div
-        className="flex min-h-[70vh] w-full max-w-[600px] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card lg:my-3 lg:min-h-0 lg:overflow-y-auto"
+        className="flex w-full max-w-[600px] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card lg:my-3 lg:min-h-0 lg:overflow-y-auto"
         data-workjet-overview-column="feed"
       >
         <FeedSection
@@ -502,11 +489,13 @@ export function ProjectOverviewView(props: {
           open={open}
           header={
             <div className="px-4 pt-3 pb-1">
-              <h1 className="break-words text-[20px] font-bold tracking-tight">
+              <h1 className="break-words text-[22px] font-bold tracking-tight">
                 {prefs.title ?? data.title}
               </h1>
               {data.summary !== null && (
-                <p className="mt-0.5 text-[14px] leading-5 text-muted-foreground">{data.summary}</p>
+                <p className="mt-0.5 text-[13.5px] leading-5 text-muted-foreground">
+                  {data.summary}
+                </p>
               )}
               {developerMode && (
                 <SupervisorTickStatus {...data.supervisorTick} language={language} text={text} />
@@ -520,7 +509,7 @@ export function ProjectOverviewView(props: {
                 aria-label={text.needsYou}
                 className="mx-4 my-3 rounded-2xl border border-blue-500/30 bg-blue-500/5 px-4 py-3"
               >
-                <h2 className="mb-2 text-[13px] font-semibold text-muted-foreground">
+                <h2 className="mb-2 text-[13.5px] font-semibold text-muted-foreground">
                   {text.needsYou}
                 </h2>
                 {props.decisions}
@@ -835,8 +824,15 @@ function buildFeed(
   return withPreviews(data, items).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
 
+/** German names for system workers and owners that arrive in English from the data. */
+const GERMAN_SYSTEM_NAMES: readonly (readonly [RegExp, string])[] = [
+  [/^project supervisor$/i, "Projekt-Supervisor"],
+  [/^pr worker$/i, "PR-Worker"],
+  [/^queue$/i, "Warteschlange"],
+];
 function localizedWorkerName(name: string, language: ProjectOverviewLanguage) {
-  return language === "de" && /^project supervisor$/i.test(name) ? "Projekt-Supervisor" : name;
+  if (language !== "de") return name;
+  return GERMAN_SYSTEM_NAMES.find(([pattern]) => pattern.test(name.trim()))?.[1] ?? name;
 }
 
 function relativeTime(at: string, now: number, locale: string) {
@@ -1013,7 +1009,7 @@ function FeedSection(props: {
       {props.decisions}
       <div className="min-h-0 flex-1">
         {groups.length === 0 ? (
-          <p className="px-4 py-8 text-[15px] font-semibold text-muted-foreground">
+          <p className="px-4 py-8 text-[13.5px] font-semibold text-muted-foreground">
             {props.feed.length === 0
               ? text.feedEmpty
               : tab === "saved"
@@ -1127,7 +1123,9 @@ function FeedCard(props: {
   const preview = linked.find((source) => source.type === "pr") ?? linked[0];
   const chips = linked.filter((source) => source !== preview);
   const prUrl = item.url ?? (preview?.type === "pr" ? preview.url : undefined);
-  const image = item.image && !imageFailed ? item.image : null;
+  // PR cards stay one line (#42 Titel · github.com): no OG image, which is mostly the GitHub logo.
+  const isPr = item.kind === "pr" || preview?.type === "pr";
+  const image = item.image && !imageFailed && !isPr ? item.image : null;
   // A preview card appears only with real content: an image, a quote or a linked source.
   const hasCard = image !== null || Boolean(item.excerpt) || Boolean(preview?.url);
   const cardTitle = item.headline ?? preview?.label ?? null;
@@ -1153,8 +1151,8 @@ function FeedCard(props: {
               {sourceHost(preview.url)}
               {item.stats ? (
                 <span className="ml-2 font-mono text-[12px]">
-                  <span className="text-emerald-400">{item.stats.split(" ")[0]}</span>{" "}
-                  <span className="text-red-400">{item.stats.split(" ")[1]}</span>
+                  <span className="text-success-foreground">{item.stats.split(" ")[0]}</span>{" "}
+                  <span className="text-destructive-foreground">{item.stats.split(" ")[1]}</span>
                   {item.stats.split(" ").slice(2).join(" ")
                     ? " " + item.stats.split(" ").slice(2).join(" ")
                     : ""}
@@ -1204,7 +1202,8 @@ function FeedCard(props: {
             {relativeTime(item.at, props.now, props.locale)}
           </time>
           {item.badge ? (
-            <span className="ml-1 rounded-full bg-red-500/15 px-2 py-px text-[11px] font-semibold text-red-400">
+            <span className="ml-1 inline-flex items-center gap-1.5 self-center text-[12px] text-destructive-foreground">
+              <span aria-hidden className="size-2 shrink-0 rounded-full bg-destructive" />
               {item.badge}
             </span>
           ) : null}
@@ -1306,7 +1305,9 @@ function FeedCard(props: {
             aria-label={props.marked ? text.feedMarked : text.feedMark}
             title={props.marked ? text.feedMarked : text.feedMark}
             onClick={props.onToggleMark}
-            className={"ml-auto" + (props.marked ? " text-blue-400" : " text-muted-foreground")}
+            className={
+              "ml-auto" + (props.marked ? " text-info-foreground" : " text-muted-foreground")
+            }
           >
             <BookmarkIcon
               aria-hidden

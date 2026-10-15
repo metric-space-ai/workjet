@@ -37,7 +37,7 @@ describe("Project Supervisor-Preset selection", () => {
         profiles={[profile]}
       />,
     );
-    expect(unavailable).toContain("Preset nicht verfügbar");
+    expect(unavailable).toContain("Presets nicht erreichbar");
     expect(unavailable).not.toContain(profile.modelId);
   });
 
@@ -53,9 +53,8 @@ describe("Project Supervisor-Preset selection", () => {
       />,
     );
     expect(html).toContain("Molecularity supervisor");
-    expect(html).toContain("Konfiguriert ·");
     expect(html).toContain(profile.modelId);
-    expect(html).toContain(profile.computerId);
+    expect(html).not.toContain("Konfiguriert ·");
     expect(html).not.toContain("Executed");
   });
   it("retains a missing saved Luma while a scoped read is unavailable", () => {
@@ -71,7 +70,7 @@ describe("Project Supervisor-Preset selection", () => {
     );
     expect(html).toContain('disabled=""');
     expect(html).toContain(`value="${profile.id}"`);
-    expect(html).toContain("Auswahl bleibt");
+    expect(html).toContain("Presets nicht erreichbar");
     expect(html).not.toContain(profile.modelId);
   });
 });

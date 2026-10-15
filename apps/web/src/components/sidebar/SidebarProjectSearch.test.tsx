@@ -21,7 +21,7 @@ describe("inline file and content search in the sidebar", () => {
     const html = renderToStaticMarkup(
       <SidebarSearchModeSegment mode="files" onModeChange={() => {}} />,
     );
-    expect(html).toContain(">Chats<");
+    expect(html).toContain(">Worker<");
     expect(html).toContain("Dateien");
     expect(html).toContain("Inhalt");
     expect(html).not.toContain('role="dialog"');

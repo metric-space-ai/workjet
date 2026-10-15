@@ -65,7 +65,7 @@ describe("KPI tile on the project card", () => {
     const markup = tile(0, false);
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain("412");
-    expect(markup).toContain("grid-rows-[0fr]");
+    expect(markup).toContain("opacity-0");
     expect(markup).toContain("inert");
     expect(markup).not.toContain("data-workjet-kpi-tile-expanded");
   });
@@ -74,7 +74,9 @@ describe("KPI tile on the project card", () => {
     const markup = tile(1, true);
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain("data-workjet-kpi-tile-expanded");
-    expect(markup).toContain("col-span-3");
+    expect(markup).toContain("absolute inset-0");
+    expect(markup).not.toContain("col-span-3");
+    expect(markup).not.toContain("Status:");
     expect(markup).toContain('maxLength="1024"');
     expect(markup).toContain("Revenue this month");
     expect(markup).toContain('data-workjet-action="project.kpis.refresh:p1"');

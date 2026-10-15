@@ -13,22 +13,34 @@ describe("project budget overview", () => {
   it("always shows a limited or unlimited consumption", () => {
     const view = { totals, cycle, unknown: [], threads: [], limitBillions: 2.3 };
     expect(renderToStaticMarkup(<ProjectTokenBudgetSummary view={view} />)).toContain(
-      "1.8/2.3B (78 %)",
+      "1,8/2,3 Mrd. (78 %)",
     );
     expect(
       renderToStaticMarkup(<ProjectTokenBudgetSummary view={{ ...view, limitBillions: null }} />),
-    ).toContain("1.8B");
+    ).toContain("1,8 Mrd.");
   });
-  it("shows missing usage rather than a false zero", () => {
+  it("shows no value without measured usage and marks partial usage with ≥", () => {
+    expect(
+      renderToStaticMarkup(
+        <ProjectTokenBudgetSummary
+          view={{
+            totals: null,
+            cycle,
+            unknown: ["worker · gpu3"],
+            threads: [],
+            limitBillions: 2.3,
+          }}
+        />,
+      ),
+    ).toBe("");
     const markup = renderToStaticMarkup(
       <ProjectTokenBudgetSummary
-        view={{ totals: null, cycle, unknown: ["worker · gpu3"], threads: [], limitBillions: 2.3 }}
+        view={{ totals, cycle, unknown: ["worker · gpu3"], threads: [], limitBillions: 2.3 }}
       />,
     );
-    expect(markup).toContain("–/2.3B");
-    expect(markup).not.toContain("· ?");
-    expect(markup).toContain("Verbrauch teilweise unbekannt");
-    expect(markup).toContain("worker · gpu3");
+    expect(markup).toContain("≥1,8/2,3 Mrd.");
+    expect(markup).not.toContain("worker · gpu3");
+    expect(markup).not.toContain("–");
   });
   it("renders nothing when neither usage nor a limit is known", () => {
     expect(
@@ -45,7 +57,7 @@ describe("project budget overview", () => {
         view={{ totals, cycle, unknown: [], threads: [], limitBillions: 2 }}
       />,
     );
-    expect(markup).toContain("bg-amber-500/10");
+    expect(markup).toContain("bg-warning-surface");
     expect(markup).not.toContain("disabled");
   });
 });

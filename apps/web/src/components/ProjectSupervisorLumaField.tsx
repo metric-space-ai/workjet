@@ -166,8 +166,8 @@ export function ProjectSupervisorLumaSummaryView({
       {selected
         ? `Konfiguriert · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
         : phase === "loading"
-          ? "Preset wird geladen …"
-          : "Preset nicht verfügbar"}
+          ? ""
+          : "Presets nicht erreichbar"}
     </span>
   );
 }
@@ -195,7 +195,7 @@ export function ProjectSupervisorLumaSelect({
         options={[
           { value: "", label: "Instanz-Standard" },
           ...(value !== null && selected === undefined
-            ? [{ value, label: `Gespeichertes Preset fehlt · ${value}` }]
+            ? [{ value, label: "Gespeichertes Preset" }]
             : []),
           ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
         ]}
@@ -203,14 +203,14 @@ export function ProjectSupervisorLumaSelect({
       />
       <span className="break-words text-xs text-muted-foreground" role="status">
         {phase === "loading"
-          ? "Presets werden geladen …"
+          ? ""
           : phase === "unavailable"
-            ? "Presets nicht verfügbar · Auswahl bleibt"
+            ? "Presets nicht erreichbar"
             : selected
-              ? `Konfiguriert · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId} · ${selected.computerId}`
+              ? `${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
               : value !== null
                 ? "Preset fehlt in dieser Instanz"
-                : "Instanz-Standard"}
+                : ""}
       </span>
     </div>
   );

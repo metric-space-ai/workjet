@@ -40,7 +40,6 @@ export function ProjectCreateSourceSegment(props: {
       aria-label={workjetUiLanguage() === "en" ? "Source" : "Quelle"}
       className="grid w-full grid-cols-3 gap-2"
       size="sm"
-      variant="outline"
       value={[props.value]}
       onValueChange={(value) => {
         const next = PROJECT_CREATE_SOURCES.find((entry) => entry.value === value[0]);
@@ -55,10 +54,11 @@ export function ProjectCreateSourceSegment(props: {
             value={entry.value}
             disabled={props.disabled}
             data-workjet-project-source={entry.value}
+            variant="outline"
             className={SEGMENT_TOGGLE_CLASS}
           >
             <Icon aria-hidden className="size-4" />
-            <span className="text-xs">
+            <span className="text-[12px]">
               {workjetUiLanguage() === "en" ? SOURCE_LABELS_EN[entry.value] : entry.label}
             </span>
           </Toggle>
@@ -230,31 +230,29 @@ export function ProjectCloneFields(props: {
           </div>
         </div>
       </div>
-      {/* One line with one button instead of two folder controls (#507). */}
-      <div
-        className="flex min-w-0 flex-wrap items-center gap-2 text-[13.5px]"
-        data-workjet-clone-destination=""
-      >
-        <span className="min-w-0 truncate text-muted-foreground">
-          {destination !== null
-            ? en
-              ? `Will be cloned to ${destination}`
-              : `Wird geklont nach ${destination}`
-            : en
-              ? "No target folder yet"
-              : "Noch kein Zielordner"}
-        </span>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          aria-expanded={editingTarget || destination === null}
-          data-workjet-action="project.add.clone.change-target"
-          onClick={() => setEditingTarget((open) => !open)}
+      {/* One line with one button instead of two folder controls (#507); the target is a
+          field value, not a sentence (Audit A-66). */}
+      {destination !== null ? (
+        <div
+          className="flex min-w-0 flex-wrap items-center gap-2 text-[13.5px]"
+          data-workjet-clone-destination=""
         >
-          {en ? "Change" : "Ändern"}
-        </Button>
-      </div>
+          <span className="text-muted-foreground">{en ? "Target folder" : "Zielordner"}</span>
+          <span className="min-w-0 truncate" title={destination}>
+            {destination}
+          </span>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            aria-expanded={editingTarget}
+            data-workjet-action="project.add.clone.change-target"
+            onClick={() => setEditingTarget((open) => !open)}
+          >
+            {en ? "Change" : "Ändern"}
+          </Button>
+        </div>
+      ) : null}
       {editingTarget || destination === null ? (
         <div className="grid min-w-0 gap-1 text-[13.5px]">
           {(props.targetFolders?.length ?? 0) > 0 || props.onPickTarget ? (

@@ -19,6 +19,14 @@ function ids(state: ThreadActionMenuState): string[] {
   return buildThreadActionMenuItems(state).map((item) => item.id);
 }
 
+function diagnosticIds(state: ThreadActionMenuState): string[] {
+  return (
+    buildThreadActionMenuItems(state)
+      .find((item) => item.id === "diagnostics")
+      ?.children?.map((child) => child.id) ?? []
+  );
+}
+
 describe("buildThreadActionMenuItems", () => {
   it("hides lifecycle items when the environment lacks the capabilities", () => {
     expect(
@@ -26,15 +34,16 @@ describe("buildThreadActionMenuItems", () => {
         ...baseState,
         supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
       }),
-    ).toEqual(["rename", "mark-unread", "copy-path", "copy-deep-link", "copy-thread-id", "delete"]);
+    ).toEqual(["rename", "mark-unread", "diagnostics", "delete"]);
+    expect(diagnosticIds(baseState)).toEqual(["copy-path", "copy-deep-link", "copy-thread-id"]);
   });
 
   it("includes branch items only for threads with a branch", () => {
     const withBranch = ids({ ...baseState, branch: "feat/menu" });
     expect(withBranch).toContain("new-thread-on-branch");
-    expect(withBranch).toContain("copy-branch");
+    expect(diagnosticIds({ ...baseState, branch: "feat/menu" })).toContain("copy-branch");
     expect(ids(baseState)).not.toContain("new-thread-on-branch");
-    expect(ids(baseState)).not.toContain("copy-branch");
+    expect(diagnosticIds(baseState)).not.toContain("copy-branch");
   });
 
   it("flips lifecycle labels with thread state", () => {

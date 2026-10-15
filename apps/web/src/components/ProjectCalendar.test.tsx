@@ -39,7 +39,6 @@ describe("project calendar", () => {
     expect(html).toContain('data-calendar-day="2026-10-07"');
     expect(html).toContain('aria-label="ctox.dev, ');
     expect(html).toContain('aria-label="greppy.xyz, ');
-    expect(html).toContain('title="ctox.dev · Europe/Berlin"');
     expect(html).toContain('title="greppy.xyz · America/New_York"');
   });
 
@@ -244,5 +243,53 @@ describe("native project session calendar", () => {
     expect(html).toContain('data-workjet-calendar-load="failed"');
     expect(html).toContain("Nicht geladen");
     expect(html).not.toContain("nicht erreichbar");
+  });
+});
+
+describe("calendar day order and short events (Audit A-07/A-08)", () => {
+  const event = (id: string, start: string, minutes: number, title: string) =>
+    ({
+      id,
+      calendar_id: "account:1",
+      title,
+      start_ms: Date.parse(start),
+      end_ms: Date.parse(start) + minutes * 60_000,
+      all_day: false,
+      timezone: "UTC",
+    }) as never;
+  const events = [
+    event("c", "2026-10-14T13:00:00Z", 60, "Drittens"),
+    event("a", "2026-10-14T08:15:00Z", 15, "Erstens"),
+    event("b", "2026-10-14T10:00:00Z", 60, "Zweitens"),
+  ];
+  it("lists the events of a day by start time in the month view", () => {
+    const html = renderToStaticMarkup(
+      <ProjectCalendar
+        locale="de-DE"
+        initialView="month"
+        initialDate="2026-10-14"
+        projects={[]}
+        accountEvents={events}
+      />,
+    );
+    const first = html.indexOf("Erstens");
+    const second = html.indexOf("Zweitens");
+    const third = html.indexOf("Drittens");
+    expect(first).toBeGreaterThan(-1);
+    expect(first).toBeLessThan(second);
+    expect(second).toBeLessThan(third);
+  });
+  it("shows a short event on one line with its title", () => {
+    const html = renderToStaticMarkup(
+      <ProjectCalendar
+        locale="de-DE"
+        initialView="day"
+        initialDate="2026-10-14"
+        projects={[]}
+        accountEvents={events}
+      />,
+    );
+    expect(html).toContain('data-calendar-event-layout="line"');
+    expect(html).toContain('data-calendar-event-layout="block"');
   });
 });

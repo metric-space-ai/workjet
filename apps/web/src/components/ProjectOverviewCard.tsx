@@ -16,7 +16,7 @@ import {
   type ProjectCardConfigurationValues,
 } from "./ProjectOverviewEditor";
 import type { ProjectOverview } from "@workjet/contracts";
-import { CalendarClockIcon, EllipsisIcon, UserRoundIcon } from "lucide-react";
+import { CalendarClockIcon, EllipsisIcon, UserRoundIcon, XIcon } from "lucide-react";
 import {
   resolveProjectPreview,
   type ProjectPreviewRepositoryIdentity,
@@ -165,6 +165,8 @@ export function ProjectOverviewCard({
   const [editing, setEditing] = useState<"exit" | "configure" | null>(null);
   const [failedPreviewImage, setFailedPreviewImage] = useState<string | null>(null);
   const pressedAt = useRef<{ readonly x: number; readonly y: number } | null>(null);
+  /** Which card action failed last, so "Erneut versuchen" repeats exactly that one. */
+  const lastFailed = useRef<"refresh" | "archive">("archive");
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [editingKpi, setEditingKpi] = useState<number | null>(null);
@@ -250,7 +252,10 @@ export function ProjectOverviewCard({
     setArchiveError(null);
     const ok = await onRefreshKpis();
     setRefreshPending(false);
-    if (!ok) setArchiveError(t("Neuberechnung nicht erreichbar.", "Recalculation not reachable."));
+    if (!ok) {
+      lastFailed.current = "refresh";
+      setArchiveError(t("Neuberechnung nicht erreichbar.", "Recalculation not reachable."));
+    }
   };
   const closeEditing = () => setEditing(null);
   // A failed preview (GitHub rate limit, offline) is retried silently; meanwhile the
@@ -302,6 +307,7 @@ export function ProjectOverviewCard({
         throw new Error("project not saved");
       return true;
     } catch {
+      lastFailed.current = "archive";
       setArchiveError(t("Projekt nicht gespeichert.", "Project not saved."));
       return false;
     } finally {
@@ -346,7 +352,14 @@ export function ProjectOverviewCard({
         >
           {slot.label}
         </dt>
-        <dd className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
+        <dd
+          className={
+            // A relative time ("vor 3 Tagen") stays on one line at content size (Audit A-26).
+            slot.kind === "updated"
+              ? "order-first min-w-0 truncate text-[13.5px] leading-7 font-semibold tabular-nums"
+              : "order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]"
+          }
+        >
           {slot.kind === "link" ? (
             <Button
               size="xs"
@@ -368,6 +381,14 @@ export function ProjectOverviewCard({
       </div>,
     ];
   });
+  // ⋯ only when it holds at least one action (Audit A-33).
+  const canRefreshFromMenu = Boolean(onRefreshKpis && scopedKpis && scopedKpis.items.length > 0);
+  const hasMenuEntries =
+    canRefreshFromMenu ||
+    configureCard !== undefined ||
+    Boolean(website && titleIsWebsite) ||
+    Boolean(repository) ||
+    Boolean(onSave && canArchive);
   // The whole card opens the project; its own controls keep their actions, a drag
   // (pointer moved) or a click inside an open editor never opens it.
   const openFromCard = (event: ReactMouseEvent<HTMLElement>) => {
@@ -395,7 +416,7 @@ export function ProjectOverviewCard({
   };
   return (
     <article
-      className="flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-card hover:border-foreground/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="relative flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-card hover:border-foreground/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       data-workjet-project-card={project.key}
       tabIndex={0}
       aria-label={openProjectLabel}
@@ -431,7 +452,9 @@ export function ProjectOverviewCard({
             </button>
           </h2>
           {/* The website is a visible domain link, not an icon explained by a tooltip (#577). */}
-          {website && (
+          {/* A title that already is the domain gets no second domain line (Audit A-25);
+              the website stays one click away in the ⋯ menu. */}
+          {website && !titleIsWebsite && (
             <a
               href={website}
               target="_blank"
@@ -441,17 +464,15 @@ export function ProjectOverviewCard({
                 url: website,
               })}
               data-workjet-action={`project.open.website:${project.key}`}
-              className="block truncate text-xs text-muted-foreground hover:text-foreground"
+              className="block truncate text-[12px] text-muted-foreground hover:text-foreground"
             >
-              {titleIsWebsite
-                ? website.replace(/^https?:\/\//, "").replace(/\/$/, "")
-                : websiteHost}
+              {websiteHost}
             </a>
           )}
         </div>
         {tokenBudget}
         {reorderHandle}
-        {
+        {hasMenuEntries && (
           <Menu>
             <MenuTrigger
               aria-label={t(`Aktionen für ${project.title}`, `Actions for ${project.title}`)}
@@ -468,7 +489,7 @@ export function ProjectOverviewCard({
                 >
                   {refreshPending
                     ? t("Wird berechnet …", "Calculating …")
-                    : t("KPIs neu berechnen", "Recalculate KPIs")}
+                    : t("Kennzahlen neu berechnen", "Recalculate metrics")}
                 </MenuItem>
               )}
               {configureCard && (
@@ -477,6 +498,11 @@ export function ProjectOverviewCard({
                   data-workjet-action={`project.configure.gallery:${project.key}`}
                 >
                   {t("Konfigurieren", "Configure")}
+                </MenuItem>
+              )}
+              {website && titleIsWebsite && (
+                <MenuItem render={<a href={website} target="_blank" rel="noreferrer noopener" />}>
+                  {t("Webseite öffnen", "Open website")}
                 </MenuItem>
               )}
               {repository && (
@@ -505,11 +531,11 @@ export function ProjectOverviewCard({
               )}
             </MenuPopup>
           </Menu>
-        }
+        )}
       </div>
       {editing !== null ? (
         <div
-          className="relative aspect-video overflow-y-auto bg-muted/40"
+          className="relative flex min-h-[calc(var(--spacing)*40)] flex-col bg-muted/40"
           data-workjet-project-card-backface={editing}
           aria-label={
             editing === "exit"
@@ -518,13 +544,15 @@ export function ProjectOverviewCard({
           }
         >
           <Button
-            size="xs"
+            size="icon-xs"
             variant="ghost"
+            aria-label={t("Fertig", "Done")}
+            title={t("Fertig", "Done")}
             onClick={closeEditing}
             data-workjet-action={`project.card.close:${project.key}`}
-            className="absolute top-2 right-2 z-10"
+            className="absolute top-1.5 right-1.5 z-10"
           >
-            {t("Fertig", "Done")}
+            <XIcon aria-hidden className="size-4" />
           </Button>
           {editing === "exit" ? (
             <ProjectExitModelCardPanel
@@ -648,15 +676,18 @@ export function ProjectOverviewCard({
                           {crew.workers}
                         </span>
                         {crew.disrupted > 0 ? (
+                          // Red dot plus number, no pill (Audit A-13).
                           <span
-                            className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-destructive/40 px-1.5 text-[11px] text-destructive tabular-nums"
+                            className="inline-flex shrink-0 items-center gap-1 text-[12px] text-destructive-foreground tabular-nums"
                             data-workjet-project-card-disrupted={crew.disrupted}
+                            aria-label={`${crew.disrupted} ${t("gestört", "disrupted")}`}
+                            title={`${crew.disrupted} ${t("gestört", "disrupted")}`}
                           >
                             <span
                               aria-hidden="true"
-                              className="size-1.5 rounded-full bg-destructive"
+                              className="size-2 rounded-full bg-destructive"
                             />
-                            {`${crew.disrupted} ${t("gestört", "disrupted")}`}
+                            {crew.disrupted}
                           </span>
                         ) : null}
                       </dd>
@@ -712,7 +743,7 @@ export function ProjectOverviewCard({
       {/* mt-auto: the KPI strip sits at the card's foot, so cards of one row stay
           flush (head, KPI strip, actions) with or without a preview image. */}
       {kpisEmpty && onSaveKpis && editingKpi === null ? (
-        <div className="relative mt-auto border-t border-border px-3 py-3">
+        <div className="mt-auto border-t border-border px-3 py-3">
           <div className="flex h-12 items-center" data-workjet-project-card-slots="">
             <Button
               size="sm"
@@ -726,19 +757,30 @@ export function ProjectOverviewCard({
           </div>
         </div>
       ) : kpiSlots.length > 0 ? (
-        <div className="relative mt-auto border-t border-border px-3 py-3">
-          <dl
-            className="relative grid min-w-0 grid-cols-3 gap-2"
-            data-workjet-project-card-slots=""
-          >
+        // Not positioned: an open KPI editor overlays the whole card (Audit A-30).
+        <div className="mt-auto border-t border-border px-3 py-3">
+          <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
             {kpiSlots}
           </dl>
         </div>
       ) : null}
       {archiveError && (
-        <p role="alert" className="px-3 py-2 text-xs text-destructive">
-          {archiveError}
-        </p>
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 px-3 py-2 text-[12px] text-destructive-foreground"
+        >
+          <span>{archiveError}</span>
+          <Button
+            size="xs"
+            variant="outline"
+            data-workjet-action={`project.card.retry:${project.key}`}
+            onClick={() =>
+              void (lastFailed.current === "refresh" ? refreshKpis() : changeArchive())
+            }
+          >
+            {t("Erneut versuchen", "Try again")}
+          </Button>
+        </div>
       )}
     </article>
   );

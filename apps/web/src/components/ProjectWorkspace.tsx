@@ -1,5 +1,6 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { GitPullRequestIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
@@ -8,7 +9,8 @@ import { useProjectOverviewTokenBudgetSource } from "../hooks/useProjectOverview
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
 import { useSupervisorProjectMetadata } from "../hooks/useSupervisorProjectMetadata";
 import { buildProjectOwnerOverview, type ProjectOverviewPr } from "../projectOverviewModel";
-import type { GalleryProject } from "../projectOverview";
+import { resolveGalleryProjectOverview, type GalleryProject } from "../projectOverview";
+import { useGithubMergedPullRequests } from "../hooks/useGithubMergedPullRequests";
 import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
 import { ProjectOverviewView } from "./ProjectOverviewView";
 import { ProjectOverviewDecisions } from "./ProjectOverviewDecisions";
@@ -60,10 +62,24 @@ function ProjectWorkspaceContent({
   useSupervisorProjectMetadata(project);
   const language = useProjectOverviewLanguage();
   const text = PROJECT_OVERVIEW_TEXT[language];
+  const navigate = useNavigate();
+  const settingsLinks = [
+    {
+      label: language === "de" ? "Projekte & Worker" : "Projects & workers",
+      onClick: () => void navigate({ to: "/settings/projects" }),
+    },
+    {
+      label: language === "de" ? "Instanz & Kanäle" : "Instance & channels",
+      onClick: () => void navigate({ to: "/settings/business-os" }),
+    },
+  ];
   const nativeInstance = project.native && project.configuration ? (ctoxInstanceId ?? null) : null;
   const sources = useProjectOverviewSources(nativeInstance, project.id);
   const tokenBudgetSource = useProjectOverviewTokenBudgetSource(project);
   const exit = useProjectExitModel(nativeInstance, project.id, project.configuration?.exitModel);
+  const githubPrs = useGithubMergedPullRequests(
+    resolveGalleryProjectOverview(project).repositoryUrl,
+  );
   const [pullRequests, setPullRequests] = useState<Record<string, ProjectOverviewPr | null>>({});
   const onReadPr = useCallback(
     (key: string, pr: ProjectOverviewPr | null) =>
@@ -79,7 +95,10 @@ function ProjectWorkspaceContent({
     language,
     meeting: sources.meeting,
     kpis: sources.kpis,
-    pullRequests: Object.values(pullRequests).filter((pr): pr is ProjectOverviewPr => pr !== null),
+    pullRequests: [
+      ...Object.values(pullRequests).filter((pr): pr is ProjectOverviewPr => pr !== null),
+      ...githubPrs,
+    ],
     projectTokenBudgetSource: tokenBudgetSource,
   });
   const [editingParent, setEditingParent] = useState(false);
@@ -155,6 +174,16 @@ function ProjectWorkspaceContent({
         onOpenChat={onOpenChat}
         {...(openJourFixe ? { onOpenJourFixe: openJourFixe } : {})}
         connectionError={sources.failed}
+        onRecomputeKpis={sources.reload}
+        feedPosts={sources.feedPosts}
+        settingsLinks={settingsLinks}
+        feedPersistence={{
+          instanceId: nativeInstance,
+          configurationId: project.configuration?.id ?? null,
+          projectTitle: project.title,
+          stored: project.configuration?.feedSettings,
+        }}
+        connectionMessage={sources.failureText}
         actions={
           <>
             {onOpenPullRequests ? (

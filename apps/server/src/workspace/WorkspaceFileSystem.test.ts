@@ -264,5 +264,53 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
         expect(escapedStat).toBeNull();
       }),
     );
+
+    it.effect("rejects writes through a parent symlink outside the workspace", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outsideDir = yield* makeTempDir;
+        yield* fileSystem.symlink(outsideDir, path.join(cwd, "linked"));
+
+        const error = yield* workspaceFileSystem
+          .writeFile({
+            cwd,
+            relativePath: "linked/nested/escape.md",
+            contents: "# nope\n",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+        const escapedDir = yield* fileSystem
+          .stat(path.join(outsideDir, "nested"))
+          .pipe(Effect.orElseSucceed(() => null));
+        expect(escapedDir).toBeNull();
+      }),
+    );
+
+    it.effect("rejects writes through a file symlink outside the workspace", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outsideDir = yield* makeTempDir;
+        yield* writeTextFile(outsideDir, "protected.md", "original\n");
+        yield* fileSystem.symlink(
+          path.join(outsideDir, "protected.md"),
+          path.join(cwd, "linked.md"),
+        );
+
+        const error = yield* workspaceFileSystem
+          .writeFile({ cwd, relativePath: "linked.md", contents: "# nope\n" })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspacePathNotFileError);
+        const contents = yield* fileSystem.readFileString(path.join(outsideDir, "protected.md"));
+        expect(contents).toBe("original\n");
+      }),
+    );
   });
 });

@@ -163,8 +163,36 @@ describe("compact project configuration", () => {
   });
 });
 
+describe("failed card save", () => {
+  it("puts the saved value back and keeps the rejected one for retry", async () => {
+    const { failedCardSave } = await import("./ProjectOverviewEditor");
+    const saved = {
+      title: "kunstmen.com",
+      websiteUrl: null,
+      repositoryUrl: null,
+      jourFixe: { weekday: 2, time: "14:00", timezone: "Europe/Berlin" },
+    };
+    const next = { ...saved, jourFixe: { ...saved.jourFixe, time: "15:30" } };
+    const outcome = failedCardSave(saved, next);
+    expect(outcome.draft.jourFixe?.time).toBe("14:00");
+    expect(outcome.retry.jourFixe?.time).toBe("15:30");
+    expect(outcome.message).toContain("Nicht gespeichert");
+  });
+});
+
+describe("card time options", () => {
+  it("labels times as 24 h in German and follows the English locale", async () => {
+    const { cardTimeOptions } = await import("./ProjectOverviewEditor");
+    const de = cardTimeOptions("14:05", "de-DE");
+    expect(de.find((option) => option.value === "14:00")?.label).toBe("14:00");
+    expect(de.some((option) => option.value === "14:05")).toBe(true);
+    expect(de).toHaveLength(97);
+    expect(cardTimeOptions(null, "en-US").find((o) => o.value === "14:00")?.label).toMatch(/PM/);
+  });
+});
+
 describe("card back configuration editor", () => {
-  it("renders the dense fields with small labels and both buttons", async () => {
+  it("renders labelled fields that save instantly, without Speichern/Abbrechen", async () => {
     const { ProjectCardConfigEditor } = await import("./ProjectOverviewEditor");
     const markup = renderToStaticMarkup(
       <ProjectCardConfigEditor
@@ -183,11 +211,14 @@ describe("card back configuration editor", () => {
     expect(markup).toContain('value="molecularity"');
     expect(markup).toContain('value="https://molecularity.example"');
     expect(markup).toContain('value="https://github.com/metric-space-ai/molecularity"');
-    expect(markup).toContain('value="10:00"');
+    expect(markup).toContain("10:00");
     expect(markup).toContain('data-option="2">Dienstag</span>');
     expect(markup).toContain("Kein Termin");
-    expect(markup).toContain("Speichern");
-    expect(markup).toContain("Abbrechen");
+    expect(markup).not.toContain("Speichern");
+    expect(markup).not.toContain("Abbrechen");
+    expect(markup).not.toContain('type="time"');
+    for (const field of ["-name", "-website", "-repository"])
+      expect(markup).toMatch(new RegExp(`<label for="[^"]*${field}"`));
     expect(markup).not.toContain("KPI");
     expect(markup).not.toContain("Supervisor");
   });

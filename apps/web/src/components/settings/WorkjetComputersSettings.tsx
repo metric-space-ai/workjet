@@ -1,3 +1,5 @@
+import { workjetUiLanguage } from "../../workjetProjectControl";
+import { ProjectFolderSettingRow } from "./SettingsPanels";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ProviderSettingsPanel } from "./ProviderSettingsPanel";
 import type {
@@ -613,9 +615,13 @@ export function WorkjetComputersSettingsView({
     </Chip>
   ) : membershipUnreachable ? (
     <span className="flex items-center gap-1.5">
-      <Chip tone="error" title={membership?.error ?? undefined}>
-        Rechnerliste nicht abrufbar
-      </Chip>
+      <Chip tone="error">Rechnerliste nicht abrufbar</Chip>
+      {/* Grund sichtbar statt nur im Tooltip (verify2 #4). */}
+      {membership?.error ? (
+        <span className="text-xs text-muted-foreground" data-slot="computers-membership-reason">
+          {membership.error}
+        </span>
+      ) : null}
       {onRetryMembership ? (
         <Button size="xs" variant="outline" onClick={onRetryMembership}>
           Erneut versuchen
@@ -1767,6 +1773,9 @@ export function WorkjetComputersSettings({
           ) : null
         }
       />
+      <SettingsSection title={workjetUiLanguage() === "en" ? "This computer" : "Dieser Rechner"}>
+        <ProjectFolderSettingRow />
+      </SettingsSection>
       {/* Coding agents are per machine, so they live on Rechner (#554). */}
       <ProviderSettingsPanel sections="harnesses" embedded />
     </SettingsPageContainer>

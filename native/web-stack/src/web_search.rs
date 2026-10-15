@@ -24,9 +24,13 @@ use url::Url;
 
 use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 
+mod brightdata;
+use brightdata::BrightDataProvider;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ProviderKind {
     Auto,
+    BrightData,
     Google,
     Brave,
     DuckDuckGo,
@@ -46,6 +50,7 @@ impl ProviderKind {
             .as_str()
         {
             "auto" | "" => Self::Auto,
+            "brightdata" | "bright_data" | "brightdata_serp" => Self::BrightData,
             "google"
             | "playwright_google"
             | "google_playwright"
@@ -69,6 +74,7 @@ impl ProviderKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Auto => "auto",
+            Self::BrightData => "brightdata",
             Self::Google => "google",
             Self::Brave => "brave",
             Self::DuckDuckGo => "duckduckgo",
@@ -250,6 +256,9 @@ struct SearchConfig {
     /// Hosts that bypass the SSRF egress guard (operator-configured SearXNG plus
     /// any `CTOX_WEB_EGRESS_ALLOW` entries). See [`crate::egress`].
     egress_allow_hosts: Vec<String>,
+    /// Bright Data SERP endpoint. Always [`brightdata::ENDPOINT`] in
+    /// production; tests point it at a loopback fixture.
+    brightdata_endpoint: String,
 }
 
 impl SearchConfig {
@@ -292,6 +301,7 @@ impl SearchConfig {
                 }
                 hosts
             },
+            brightdata_endpoint: brightdata::ENDPOINT.to_string(),
         }
     }
 }
@@ -2079,7 +2089,17 @@ fn search_with_query_plan(
     let mut executed_queries = Vec::new();
     let mut providers = Vec::new();
     let auto_provider = config.provider == ProviderKind::Auto;
-    let provider_candidates = search_provider_candidates(root, config.provider);
+    // Bright Data is resolved once per search: no key → absent, chain unchanged.
+    let brightdata = if matches!(
+        config.provider,
+        ProviderKind::Auto | ProviderKind::Google | ProviderKind::BrightData
+    ) {
+        BrightDataProvider::from_context(context)
+    } else {
+        None
+    };
+    let provider_candidates =
+        search_provider_candidates(root, config.provider, brightdata.is_some());
     let provider_budget = auto_provider_budget_with_context(context, config.provider);
     let mut provider_cooldown_until = load_provider_cooldowns(root);
     let mut failures = Vec::new();
@@ -2090,22 +2110,36 @@ fn search_with_query_plan(
         let mut accepted_response = None;
         let mut attempted_providers = 0usize;
         for provider in &provider_candidates {
-            if auto_provider {
+            // Bright Data placed in front of another provider always falls
+            // through on failure, also when Google is pinned explicitly.
+            let falls_through = auto_provider
+                || (*provider == ProviderKind::BrightData && provider_candidates.len() > 1);
+            if falls_through {
                 if let Some(until) = provider_cooldown_until.get(provider) {
                     if SystemTime::now() < *until {
                         failures.push(format!("{}: skipped after rate limit", provider.as_str()));
                         continue;
                     }
                 }
+            }
+            // The paid Bright Data route does not consume the scraping
+            // providers' attempt budget, so the existing chain stays intact.
+            if auto_provider && *provider != ProviderKind::BrightData {
                 if attempted_providers >= provider_budget {
                     failures.push(format!("provider budget exhausted for {}", query.text));
                     break;
                 }
                 attempted_providers += 1;
             }
-            let response = match run_search_provider(context, config, &query, *provider) {
+            let response = match run_search_provider(
+                context,
+                config,
+                &query,
+                *provider,
+                brightdata.as_ref(),
+            ) {
                 Ok(response) => response,
-                Err(err) if auto_provider => {
+                Err(err) if falls_through => {
                     if let Some(cooldown_secs) = provider_block_cooldown_secs(&err) {
                         // Persist the cooldown so blocked providers are not
                         // hammered again by every facet in a research run.
@@ -2119,7 +2153,7 @@ fn search_with_query_plan(
                 }
                 Err(err) => return Err(err),
             };
-            if auto_provider && !search_response_quality_ok(&query.text, &response.hits) {
+            if falls_through && !search_response_quality_ok(&query.text, &response.hits) {
                 failures.push(format!(
                     "{}: low relevance for {}",
                     provider.as_str(),
@@ -2196,17 +2230,29 @@ fn search_with_query_plan(
     })
 }
 
-fn search_provider_candidates(root: &Path, provider: ProviderKind) -> Vec<ProviderKind> {
-    if provider != ProviderKind::Auto {
-        return vec![provider];
-    }
+fn search_provider_candidates(
+    root: &Path,
+    provider: ProviderKind,
+    brightdata_configured: bool,
+) -> Vec<ProviderKind> {
     let _ = root;
-    vec![
+    let mut candidates = Vec::new();
+    // With a Bright Data key, Google results come from the SERP API first and
+    // the scraping providers remain the unchanged fallback.
+    if brightdata_configured && matches!(provider, ProviderKind::Auto | ProviderKind::Google) {
+        candidates.push(ProviderKind::BrightData);
+    }
+    if provider != ProviderKind::Auto {
+        candidates.push(provider);
+        return candidates;
+    }
+    candidates.extend([
         ProviderKind::Google,
         ProviderKind::Brave,
         ProviderKind::DuckDuckGo,
         ProviderKind::Bing,
-    ]
+    ]);
+    candidates
 }
 
 #[cfg(test)]
@@ -2259,10 +2305,18 @@ fn run_search_provider(
     config: &SearchConfig,
     query: &SearchQuery,
     provider: ProviderKind,
+    brightdata: Option<&BrightDataProvider>,
 ) -> Result<SearchResponse> {
     let root = context.root;
     match provider {
         ProviderKind::Auto => unreachable!("auto provider must be expanded before execution"),
+        ProviderKind::BrightData => match brightdata {
+            Some(brightdata) => brightdata::brightdata_search(config, brightdata, query),
+            None => bail!(
+                "{} is not configured in the CTOX secret store (scope credentials)",
+                brightdata::SECRET_NAME
+            ),
+        },
         ProviderKind::Google => google_search(root, config, query),
         ProviderKind::Brave => brave_search(config, query),
         ProviderKind::DuckDuckGo => duckduckgo_search(config, query),
@@ -10221,13 +10275,129 @@ mod tests {
     }
 
     #[test]
+    fn brightdata_key_puts_serp_api_first_and_absent_key_keeps_chain() {
+        let root = unique_test_root("provider-cascade-brightdata");
+        assert_eq!(
+            search_provider_candidates(&root, ProviderKind::Auto, true),
+            vec![
+                ProviderKind::BrightData,
+                ProviderKind::Google,
+                ProviderKind::Brave,
+                ProviderKind::DuckDuckGo,
+                ProviderKind::Bing,
+            ]
+        );
+        assert_eq!(
+            search_provider_candidates(&root, ProviderKind::Google, true),
+            vec![ProviderKind::BrightData, ProviderKind::Google]
+        );
+        assert_eq!(
+            search_provider_candidates(&root, ProviderKind::Brave, true),
+            vec![ProviderKind::Brave]
+        );
+        assert!(
+            !search_provider_candidates(&root, ProviderKind::Auto, false)
+                .contains(&ProviderKind::BrightData),
+            "without a key Bright Data must be absent from the chain"
+        );
+        assert_eq!(
+            ProviderKind::from_config_value(Some("brightdata".to_string())),
+            ProviderKind::BrightData
+        );
+        assert_eq!(
+            provider_from_label("brightdata"),
+            Some(ProviderKind::BrightData)
+        );
+    }
+
+    fn brightdata_chain_query() -> SearchQuery {
+        SearchQuery {
+            text: "linkedin Kiesow Brinkmann Einkauf".to_string(),
+            count: 5,
+            offset: 0,
+            language: None,
+            region: Some("DE".to_string()),
+            safe_search: 1,
+        }
+    }
+
+    #[test]
+    fn brightdata_organic_results_answer_auto_search_first() {
+        let root = unique_test_root("brightdata-auto-first");
+        let (endpoint, handle) = brightdata::tests::spawn_serp_fixture(
+            200,
+            r#"{"organic":[{"title":"Dr. Brinkmann - Leiter Einkauf - Kiesow | LinkedIn","link":"https://de.linkedin.com/in/brinkmann-example","description":"Leiter Einkauf bei Kiesow Dr. Brinkmann"}]}"#,
+        );
+        let mut config = brightdata::tests::fixture_config(&endpoint);
+        config.root = root.clone();
+        let store =
+            crate::runtime_config::WorkjetRuntimeConfigStore::new([("BRIGHTDATA_API_KEY", "k")]);
+        let query = brightdata_chain_query();
+        let response = search_with_query_plan(
+            WebStackContext::new(&root, &store),
+            &config,
+            &query,
+            std::slice::from_ref(&query.text),
+        )
+        .expect("brightdata answers first");
+        handle.join().expect("fixture thread");
+        assert_eq!(response.provider, "brightdata");
+        assert_eq!(
+            response.hits[0].url,
+            "https://de.linkedin.com/in/brinkmann-example"
+        );
+        assert!(response.source_failures.is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn brightdata_forbidden_zone_falls_through_to_existing_providers() {
+        let root = unique_test_root("brightdata-fallthrough");
+        // Keep the test offline: the network scrapers sit on cooldown and the
+        // Google browser provider fails fast without Patchright.
+        for provider in [
+            ProviderKind::Brave,
+            ProviderKind::DuckDuckGo,
+            ProviderKind::Bing,
+        ] {
+            persist_provider_cooldown(&root, provider, unix_ts() + 600);
+        }
+        let (endpoint, handle) =
+            brightdata::tests::spawn_serp_fixture(403, r#"{"error":"zone not found"}"#);
+        let mut config = brightdata::tests::fixture_config(&endpoint);
+        config.root = root.clone();
+        let store = crate::runtime_config::WorkjetRuntimeConfigStore::new([(
+            "BRIGHTDATA_API_KEY",
+            "secret-test-key",
+        )]);
+        let query = brightdata_chain_query();
+        let error = search_with_query_plan(
+            WebStackContext::new(&root, &store),
+            &config,
+            &query,
+            std::slice::from_ref(&query.text),
+        )
+        .expect_err("every provider fails offline");
+        handle.join().expect("fixture thread");
+        let text = format!("{error:#}");
+        assert!(
+            text.contains("brightdata: zone ctox_serp unavailable (HTTP 403); google: "),
+            "{text}"
+        );
+        assert!(text.contains("brave: skipped after rate limit"), "{text}");
+        assert!(text.contains("bing: skipped after rate limit"), "{text}");
+        assert!(!text.contains("secret-test-key"), "{text}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn auto_provider_cascade_keeps_google_first_multi_engine_order() {
         // Regression pin for the benchmark-era multi-engine policy: Auto must
         // try Google first, then Brave, DuckDuckGo, and Bing. A silent
         // collapse to a single engine (or a demoted Google adapter) fails
         // this guard.
         let root = unique_test_root("provider-cascade");
-        let candidates = search_provider_candidates(&root, ProviderKind::Auto);
+        let candidates = search_provider_candidates(&root, ProviderKind::Auto, false);
         assert_eq!(
             candidates,
             vec![
@@ -10238,7 +10408,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            search_provider_candidates(&root, ProviderKind::Brave),
+            search_provider_candidates(&root, ProviderKind::Brave, false),
             vec![ProviderKind::Brave],
             "an explicitly pinned provider must not expand into the cascade"
         );
@@ -13621,7 +13791,7 @@ mod tests {
         stream.write_all(&reply.body).expect("fixture body");
     }
 
-    fn test_config(provider: ProviderKind) -> SearchConfig {
+    pub(super) fn test_config(provider: ProviderKind) -> SearchConfig {
         SearchConfig {
             root: std::env::temp_dir().join(format!(
                 "ctox_web_search_config_{}_{}",
@@ -13649,6 +13819,7 @@ mod tests {
             max_page_chars: 8_000,
             max_pdf_pages: 12,
             egress_allow_hosts: Vec::new(),
+            brightdata_endpoint: "http://127.0.0.1:9/brightdata-disabled-in-tests".to_string(),
         }
     }
 

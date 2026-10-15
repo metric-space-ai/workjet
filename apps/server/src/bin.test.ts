@@ -167,6 +167,38 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
   });
 
 it.layer(NodeServices.layer)("bin cli parsing", (it) => {
+  it.effect("requires orchestration read scope for the coding model export", () =>
+    Effect.gen(function* () {
+      const baseDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-model-export-auth-test-"),
+      );
+      yield* withLiveProjectCliServer(baseDir, () =>
+        Effect.gen(function* () {
+          const server = yield* HttpServer.HttpServer;
+          const address = server.address;
+          if (typeof address === "string" || !("port" in address))
+            assert.fail("Expected TCP address");
+          const client = yield* HttpApiClient.make(ProjectCliHttpApi, {
+            baseUrl: `http://127.0.0.1:${address.port}`,
+          });
+          const auth = yield* EnvironmentAuth.EnvironmentAuth;
+          const denied = yield* client.orchestration
+            .codingModels({ headers: {} })
+            .pipe(Effect.flip);
+          assert.equal(denied._tag, "EnvironmentAuthInvalidError");
+          const operator = yield* auth.issueSession({
+            scopes: [AuthOrchestrationOperateScope],
+            label: "model export operate test",
+          });
+          const forbidden = yield* client.orchestration
+            .codingModels({ headers: { authorization: `Bearer ${operator.token}` } })
+            .pipe(Effect.flip);
+          assert.equal(forbidden._tag, "EnvironmentScopeRequiredError");
+          yield* auth.revokeSession(operator.sessionId);
+        }).pipe(Effect.provide(FetchHttpClient.layer)),
+      );
+    }),
+  );
   it.effect("authenticates computer inventory and requires orchestration read scope", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(

@@ -241,6 +241,11 @@ const SIDEBAR_ACTIONS = {
   delete: { en: "Delete", de: "Löschen" },
 } as const;
 
+/** Visible word for a row action (#727: no icon-only, no hover-only controls). */
+function sidebarActionLabel(action: keyof typeof SIDEBAR_ACTIONS): string {
+  return SIDEBAR_ACTIONS[action][workjetUiLanguage() === "en" ? "en" : "de"];
+}
+
 /** One error toast for every sidebar action: "<Action> failed" plus the reason. */
 function sidebarFailureToast(action: keyof typeof SIDEBAR_ACTIONS, error: unknown, stacked = true) {
   const en = workjetUiLanguage() === "en";
@@ -1269,7 +1274,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               <span
                 className={cn(
                   "inline-flex justify-end tabular-nums text-secondary-label transition-opacity",
-                  !isWoke && !props.projectTeam && "group-hover/sidebar-row:opacity-0",
                 )}
               >
                 {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
@@ -1314,12 +1318,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     aria-label="Jetzt wecken"
                     onClick={handleUnsnoozeClick}
                     className={cn(
-                      "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                      isWoke && "group-hover/sidebar-row:static",
-                      props.projectTeam && "relative ml-1",
+                      "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                     )}
                   >
-                    <AlarmClockOffIcon className="mb-px size-3" />
+                    <AlarmClockOffIcon aria-hidden className="mb-px size-3" />
+                    <span>{sidebarActionLabel("wake")}</span>
                   </button>
                 )
               ) : !props.settlementSupported ? null : variantAction === "unsettle" ? (
@@ -1328,12 +1331,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   aria-label="Wieder öffnen"
                   onClick={handleUnsettleClick}
                   className={cn(
-                    "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                    isWoke && "group-hover/sidebar-row:static",
-                    props.projectTeam && "relative ml-1",
+                    "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                   )}
                 >
-                  <Undo2Icon className="mb-px size-3.5" />
+                  <Undo2Icon aria-hidden className="mb-px size-3.5" />
+                  <span>{sidebarActionLabel("reopen")}</span>
                 </button>
               ) : (
                 <button
@@ -1341,12 +1343,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   aria-label="Erledigen"
                   onClick={handleSettleClick}
                   className={cn(
-                    "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                    isWoke && "group-hover/sidebar-row:static",
-                    props.projectTeam && "relative ml-1",
+                    "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                   )}
                 >
-                  <CheckIcon className="size-3" />
+                  <CheckIcon aria-hidden className="size-3" />
+                  <span>{sidebarActionLabel("settle")}</span>
                 </button>
               )}
             </span>
@@ -3566,7 +3567,12 @@ export default function Sidebar() {
         if (target === undefined) {
           toastManager.add({
             type: "warning",
-            title: "Keine Arbeitskopie auf diesem Rechner",
+            title: overviewText.noCheckoutTitle,
+            description: overviewText.noCheckoutDescription,
+            actionProps: {
+              children: overviewText.setUpCheckout,
+              onClick: () => void router.navigate({ to: "/settings/projects" }),
+            },
           });
           return;
         }
@@ -3804,28 +3810,6 @@ export default function Sidebar() {
                       </MenuItem>
                     </MenuPopup>
                   </Menu>
-                  {scopedProjectGroup || selectedWorkjetProject ? (
-                    <SidebarMenuButton
-                      type="button"
-                      size="icon"
-                      className="size-9 text-sidebar-muted-foreground/70 hover:text-sidebar-foreground"
-                      data-workjet-action="project.settings.sidebar"
-                      aria-label={`${overviewText.projectSettingsFor} ${
-                        scopedProjectGroup?.displayName ?? selectedWorkjetProject?.title ?? ""
-                      }`}
-                      onClick={(event) => {
-                        if (scopedProjectGroup) {
-                          void handleProjectSettings(event, scopedProjectGroup);
-                          return;
-                        }
-                        setProjectScopeMenuOpen(false);
-                        if (isMobile) setOpenMobile(false);
-                        void router.navigate({ to: "/settings/projects" });
-                      }}
-                    >
-                      <SettingsIcon aria-hidden className="size-4" />
-                    </SidebarMenuButton>
-                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -3846,8 +3830,38 @@ export default function Sidebar() {
                 <span>{overviewText.overview}</span>
               </SidebarMenuButton>
             ) : null}
+            {scopedProjectGroup || selectedWorkjetProject ? (
+              <SidebarMenuButton
+                type="button"
+                className="text-sidebar-muted-foreground hover:text-sidebar-foreground"
+                data-workjet-action="project.settings.sidebar"
+                aria-label={`${overviewText.projectSettingsFor} ${
+                  scopedProjectGroup?.displayName ?? selectedWorkjetProject?.title ?? ""
+                }`}
+                onClick={(event) => {
+                  if (scopedProjectGroup) {
+                    void handleProjectSettings(event, scopedProjectGroup);
+                    return;
+                  }
+                  setProjectScopeMenuOpen(false);
+                  if (isMobile) setOpenMobile(false);
+                  void router.navigate({ to: "/settings/projects" });
+                }}
+              >
+                <SettingsIcon aria-hidden className="size-4 shrink-0" />
+                <span>{overviewText.projectSettings}</span>
+              </SidebarMenuButton>
+            ) : null}
             <div className="relative flex items-center gap-1">
-              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
+              {/* The whole row opens search, not only the text field. */}
+              <div
+                className="flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                onMouseDown={(event) => {
+                  if (event.target === threadSearchInputRef.current) return;
+                  event.preventDefault();
+                  threadSearchInputRef.current?.focus();
+                }}
+              >
                 <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
                 <Input
                   ref={threadSearchInputRef}
@@ -3899,19 +3913,15 @@ export default function Sidebar() {
                   <TooltipTrigger
                     render={
                       <SidebarMenuButton
-                        size="icon"
                         type="button"
-                        className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                        className="h-8 w-auto gap-1 px-2 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={handleNewThreadClick}
                         aria-label={overviewText.newThread}
                       />
                     }
                   >
-                    <PlusIcon />
-                    <span
-                      className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                      aria-hidden="true"
-                    />
+                    <PlusIcon aria-hidden />
+                    <span className="text-xs">{overviewText.newThreadShort}</span>
                   </TooltipTrigger>
                   <TooltipPopup side="right">
                     {sidebarAvailableProjectCount > 1 ? (
@@ -4467,18 +4477,36 @@ export default function Sidebar() {
                     onClick={() => void router.navigate({ to: "/settings/computers" })}
                   >
                     <ServerIcon aria-hidden className="size-3.5" />
-                    Rechner wählen
+                    {overviewText.chooseComputer}
                   </Button>
                 </>
               ) : workjetProjects.length > 0 && sidebarAvailableProjectCount === 0 ? (
-                <span>Keine Arbeitskopie auf diesem Rechner</span>
+                <>
+                  <span>{overviewText.noCheckoutTitle}</span>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={() => void router.navigate({ to: "/settings/projects" })}
+                  >
+                    {overviewText.setUpCheckout}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => void router.navigate({ to: "/settings/computers" })}
+                  >
+                    <ServerIcon aria-hidden className="size-3.5" />
+                    {overviewText.chooseComputer}
+                  </Button>
+                </>
               ) : selectedWorkjetProject ? (
                 "Noch keine Unterhaltungen"
               ) : scopedProjectGroup ? (
-                "Noch keine Unterhaltungen"
-              ) : (
-                "Kein Projekt gewählt"
-              )}
+                "Noch keine Unterhaltungen" // Leerzustand ohne Satz (Audit F11/F18): ohne gewähltes Projekt
+              ) : // bleibt die Liste einfach leer.
+              null}
             </div>
           ) : null}
         </SidebarGroup>

@@ -1,7 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import { Checkbox } from "./ui/checkbox";
 import { OptionSelect } from "./ui/option-select";
-import { InlineSaveFooter } from "./ui/inline-panel";
 import {
   CtoxWorkjetProjectControlRequest,
   DEFAULT_SUPERVISOR_TICK_CONFIGURATION,
@@ -55,6 +54,90 @@ function editorText(de: string, en: string): string {
   return workjetUiLanguage() === "en" ? en : de;
 }
 
+/** Uhrzeiten im 15-Minuten-Raster, beschriftet nach Sprache (DE 24 h, EN laut Locale). */
+export function cardTimeOptions(
+  current: string | null,
+  locale: string,
+): ReadonlyArray<{ value: string; label: string }> {
+  const values = new Set<string>();
+  for (let minutes = 0; minutes < 24 * 60; minutes += 15)
+    values.add(
+      `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
+    );
+  if (current && /^\d{2}:\d{2}$/.test(current)) values.add(current);
+  const format = new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "UTC",
+    ...(locale.startsWith("de") ? { hourCycle: "h23" as const } : {}),
+  });
+  return [...values].sort().map((value) => {
+    const [hours, minutes] = value.split(":").map(Number);
+    return { value, label: format.format(new Date(Date.UTC(2000, 0, 1, hours, minutes))) };
+  });
+}
+
+function cardTimeLocale(): string {
+  if (workjetUiLanguage() !== "en") return "de-DE";
+  return typeof navigator !== "undefined" && navigator.language.startsWith("en")
+    ? navigator.language
+    : "en-GB";
+}
+
+function normalizedCardValues(
+  values: ProjectCardConfigurationValues,
+): ProjectCardConfigurationValues {
+  return {
+    title: values.title.trim(),
+    websiteUrl: values.websiteUrl?.trim() ? values.websiteUrl.trim() : null,
+    repositoryUrl: values.repositoryUrl?.trim() ? values.repositoryUrl.trim() : null,
+    jourFixe: values.jourFixe,
+  };
+}
+
+function sameCardValues(a: ProjectCardConfigurationValues, b: ProjectCardConfigurationValues) {
+  return JSON.stringify(normalizedCardValues(a)) === JSON.stringify(normalizedCardValues(b));
+}
+
+function cardValidationError(values: ProjectCardConfigurationValues): string | null {
+  for (const url of [values.websiteUrl, values.repositoryUrl])
+    if (url?.trim())
+      try {
+        new URL(url.trim());
+      } catch {
+        return editorText(
+          "Vollständige Adresse mit https:// eintragen.",
+          "Enter a full address with https://.",
+        );
+      }
+  if (values.title.trim() === "") return editorText("Name eintragen.", "Enter a name.");
+  return null;
+}
+
+/** Nach einem abgelehnten Speichern: gespeicherter Stand zurück ins Feld, Wert zum Wiederholen (#736). */
+export function failedCardSave(
+  saved: ProjectCardConfigurationValues,
+  next: ProjectCardConfigurationValues,
+): {
+  readonly draft: ProjectCardConfigurationValues;
+  readonly retry: ProjectCardConfigurationValues;
+  readonly message: string;
+} {
+  return {
+    draft: saved,
+    retry: next,
+    message: editorText(
+      "Nicht gespeichert – Instanz antwortet nicht. Alter Wert steht wieder.",
+      "Not saved – the instance did not respond. The old value is back.",
+    ),
+  };
+}
+
+/**
+ * Rückseite der Galeriekarte: jedes Feld speichert sofort (Text beim Verlassen,
+ * Auswahl beim Wählen), danach „Gespeichert · Rückgängig“ (#728). Kein
+ * Speichern/Abbrechen; „Fertig“ (oder Esc) schließt die Karte.
+ */
 export function ProjectCardConfigEditor({
   title,
   websiteUrl,
@@ -71,126 +154,179 @@ export function ProjectCardConfigEditor({
   /** Nur der Instanz-Pfad (project.configure) trägt den Namen; sonst gesperrt. */
   readonly canEditTitle?: boolean | undefined;
   readonly onSave: (values: ProjectCardConfigurationValues) => Promise<boolean>;
+  /** Schließt die Karte (Fertig/Esc); Änderungen sind dann schon gespeichert. */
   readonly onCancel: () => void;
 }) {
+  const id = useId();
   const [draft, setDraft] = useState<ProjectCardConfigurationValues>(() => ({
     title,
     websiteUrl,
     repositoryUrl,
     jourFixe,
   }));
-  const [state, setState] = useState({ pending: false, message: "" });
+  const [saved, setSaved] = useState<ProjectCardConfigurationValues>(() => ({
+    title,
+    websiteUrl,
+    repositoryUrl,
+    jourFixe,
+  }));
+  const [previous, setPrevious] = useState<ProjectCardConfigurationValues | null>(null);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /** Last change the instance did not take; the fields show the saved state again. */
+  const [failed, setFailed] = useState<ProjectCardConfigurationValues | null>(null);
+
+  // Ein abgelehnter Wert darf nicht im Feld stehen bleiben, als wäre er
+  // gespeichert (#736): Felder zurück auf den gespeicherten Stand, Wiederholen anbieten.
+  const failSave = (next: ProjectCardConfigurationValues) => {
+    const outcome = failedCardSave(saved, next);
+    setDraft(outcome.draft);
+    setFailed(outcome.retry);
+    setMessage(outcome.message);
+  };
+
+  const commit = async (next: ProjectCardConfigurationValues, undo = false) => {
+    if (pending || sameCardValues(next, saved)) return;
+    const invalid = cardValidationError(next);
+    if (invalid !== null) {
+      setError(invalid);
+      return;
+    }
+    setError(null);
+    setPending(true);
+    try {
+      const ok = await onSave(normalizedCardValues(next));
+      if (ok) {
+        setPrevious(undo ? null : saved);
+        setSaved(next);
+        setDraft(next);
+        setMessage(
+          undo ? editorText("Rückgängig gemacht", "Undone") : editorText("Gespeichert", "Saved"),
+        );
+        setFailed(null);
+      } else failSave(next);
+    } catch {
+      failSave(next);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const label = (htmlFor: string, text: string) => (
+    <label htmlFor={htmlFor} className="text-[11px] font-medium text-muted-foreground">
+      {text}
+    </label>
+  );
+
   return (
-    <form
+    <div
       className="flex size-full min-h-0 flex-col"
       data-workjet-project-card-config=""
-      onSubmit={async (event) => {
-        event.preventDefault();
-        if (state.pending) return;
-        for (const url of [draft.websiteUrl, draft.repositoryUrl])
-          if (url)
-            try {
-              new URL(url);
-            } catch {
-              setError("Vollständige Adresse mit https:// eintragen.");
-              return;
-            }
-        if (draft.title.trim() === "") {
-          setError("Name eintragen.");
-          return;
-        }
-        setError(null);
-        setState({ pending: true, message: "" });
-        try {
-          const saved = await onSave({
-            title: draft.title.trim(),
-            websiteUrl: draft.websiteUrl?.trim() ? draft.websiteUrl.trim() : null,
-            repositoryUrl: draft.repositoryUrl?.trim() ? draft.repositoryUrl.trim() : null,
-            jourFixe: draft.jourFixe,
-          });
-          setState({ pending: false, message: saved ? "Gespeichert" : "Nicht gespeichert" });
-          if (saved) onCancel();
-        } catch {
-          setState({ pending: false, message: "Nicht gespeichert" });
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && (event.target as HTMLElement).tagName === "INPUT") {
+          event.preventDefault();
+          void commit(draft);
         }
       }}
     >
-      {/* Dicht: Felder tragen ihre Bezeichnung als Platzhalter; die Knopfzeile
-          bleibt unten stehen, auch wenn der Inhalt intern scrollt. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2">
-        <div className="grid grid-cols-2 gap-1.5 pr-8">
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2 pr-16">
+        <div className="grid grid-cols-2 gap-1.5">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            {label(`${id}-name`, editorText("Name", "Name"))}
+            <Input
+              id={`${id}-name`}
+              aria-label="Projektname"
+              size="sm"
+              maxLength={256}
+              required
+              disabled={!canEditTitle}
+              value={draft.title}
+              onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+              onBlur={() => void commit(draft)}
+            />
+          </div>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            {label(`${id}-website`, editorText("Website", "Website"))}
+            <Input
+              id={`${id}-website`}
+              size="sm"
+              type="url"
+              maxLength={2048}
+              placeholder="https://example.com"
+              value={draft.websiteUrl ?? ""}
+              onChange={(event) => setDraft({ ...draft, websiteUrl: event.target.value || null })}
+              onBlur={() => void commit(draft)}
+            />
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          {label(`${id}-repository`, editorText("Repository", "Repository"))}
           <Input
-            aria-label="Projektname"
-            size="sm"
-            maxLength={256}
-            required
-            placeholder="Name"
-            disabled={state.pending || !canEditTitle}
-            value={draft.title}
-            onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-          />
-          <Input
-            aria-label="Website"
+            id={`${id}-repository`}
             size="sm"
             type="url"
             maxLength={2048}
-            placeholder="https://example.com"
-            disabled={state.pending}
-            value={draft.websiteUrl ?? ""}
-            onChange={(event) => setDraft({ ...draft, websiteUrl: event.target.value || null })}
+            placeholder="https://github.com/owner/repository"
+            value={draft.repositoryUrl ?? ""}
+            onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value || null })}
+            onBlur={() => void commit(draft)}
           />
         </div>
-        <Input
-          aria-label="Repository"
-          size="sm"
-          type="url"
-          maxLength={2048}
-          placeholder="https://github.com/owner/repository"
-          disabled={state.pending}
-          value={draft.repositoryUrl ?? ""}
-          onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value || null })}
-        />
-        <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-1.5">
-          <OptionSelect
-            aria-label="Regeltermin Wochentag"
-            className="w-auto min-w-0"
-            size="sm"
-            disabled={state.pending}
-            value={String(draft.jourFixe?.weekday ?? "none")}
-            options={[
-              { value: "none", label: "Kein Termin" },
-              ...WEEKDAY_LABELS.map((day, index) => ({ value: String(index + 1), label: day })),
-            ]}
-            onValueChange={(next) =>
-              setDraft((current) => ({
-                ...current,
-                jourFixe:
-                  next === "none"
-                    ? null
-                    : {
-                        weekday: Number(next),
-                        time: current.jourFixe?.time ?? "09:00",
-                        timezone: current.jourFixe?.timezone ?? "Europe/Berlin",
-                      },
-              }))
-            }
-          />
-          <Input
-            aria-label="Regeltermin Uhrzeit"
-            size="sm"
-            type="time"
-            required={draft.jourFixe !== null}
-            disabled={state.pending || draft.jourFixe === null}
-            value={draft.jourFixe?.time ?? ""}
-            onChange={(event) =>
-              setDraft((current) =>
-                current.jourFixe === null
-                  ? current
-                  : { ...current, jourFixe: { ...current.jourFixe, time: event.target.value } },
-              )
-            }
-          />
+        <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-1.5">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {editorText("Regeltermin", "Regular meeting")}
+            </span>
+            <OptionSelect
+              aria-label={editorText("Regeltermin Wochentag", "Regular meeting weekday")}
+              className="w-auto min-w-0"
+              size="sm"
+              disabled={pending}
+              value={String(draft.jourFixe?.weekday ?? "none")}
+              options={[
+                { value: "none", label: editorText("Kein Termin", "No meeting") },
+                ...WEEKDAY_LABELS.map((day, index) => ({
+                  value: String(index + 1),
+                  label: workjetUiLanguage() === "en" ? WEEKDAY_LABELS_EN[index]! : day,
+                })),
+              ]}
+              onValueChange={(next) => {
+                const updated: ProjectCardConfigurationValues = {
+                  ...draft,
+                  jourFixe:
+                    next === "none"
+                      ? null
+                      : {
+                          weekday: Number(next),
+                          time: draft.jourFixe?.time ?? "09:00",
+                          timezone: draft.jourFixe?.timezone ?? "Europe/Berlin",
+                        },
+                };
+                setDraft(updated);
+                void commit(updated);
+              }}
+            />
+          </div>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {editorText("Uhrzeit", "Time")}
+            </span>
+            <OptionSelect
+              aria-label={editorText("Regeltermin Uhrzeit", "Regular meeting time")}
+              className="w-auto min-w-0"
+              size="sm"
+              disabled={pending || draft.jourFixe === null}
+              value={draft.jourFixe?.time ?? "09:00"}
+              options={cardTimeOptions(draft.jourFixe?.time ?? null, cardTimeLocale())}
+              onValueChange={(time) => {
+                if (draft.jourFixe === null) return;
+                const updated = { ...draft, jourFixe: { ...draft.jourFixe, time } };
+                setDraft(updated);
+                void commit(updated);
+              }}
+            />
+          </div>
         </div>
         {error !== null && (
           <p role="alert" className="text-xs text-destructive">
@@ -199,25 +335,50 @@ export function ProjectCardConfigEditor({
         )}
       </div>
       <div
-        className="flex flex-none items-center gap-1.5 border-t border-border px-2 py-1.5"
+        className="flex flex-none items-center justify-end gap-2 border-t border-border px-2 py-1.5 text-[11px] text-muted-foreground"
         data-workjet-project-card-config-actions=""
+        role="status"
       >
-        <InlineSaveFooter
-          className="order-last ms-auto"
-          saving={state.pending}
-          cancelDisabled={state.pending}
-          onCancel={onCancel}
-        />
-        <p
-          className="min-w-0 flex-1 truncate text-right text-[11px] text-muted-foreground"
-          role="status"
-        >
-          {state.message}
-        </p>
+        {pending ? editorText("Speichert …", "Saving …") : message}
+        {!pending && failed !== null ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            data-workjet-action="project.card.config.retry"
+            onClick={() => {
+              setDraft(failed);
+              void commit(failed);
+            }}
+          >
+            {editorText("Erneut versuchen", "Retry")}
+          </Button>
+        ) : null}
+        {!pending && failed === null && previous !== null ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            data-workjet-action="project.card.config.undo"
+            onClick={() => void commit(previous, true)}
+          >
+            {editorText("Rückgängig", "Undo")}
+          </Button>
+        ) : null}
       </div>
-    </form>
+    </div>
   );
 }
+
+const WEEKDAY_LABELS_EN = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+] as const;
 
 export type ProjectConfigurationValues = Pick<
   Extract<CtoxWorkjetProjectControlRequest, { readonly action: "project.configure" }>,

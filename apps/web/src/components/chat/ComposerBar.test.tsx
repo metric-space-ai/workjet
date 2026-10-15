@@ -49,7 +49,7 @@ describe("shared composer bar", () => {
     const html = render();
     const labels = [
       'aria-label="Anhang hinzufügen"',
-      ">Luma: keine<",
+      ">Ohne Preset<",
       ">Harness<",
       ">Modell<",
       ">Rechner<",
@@ -66,7 +66,7 @@ describe("shared composer bar", () => {
   it("keeps a chosen Luma in the bar without competing manual controls", () => {
     const html = render(true);
     expect(html).toContain("Selected Luma");
-    expect(html).not.toContain(">Luma: keine<");
+    expect(html).not.toContain(">Ohne Preset<");
     for (const label of ["Harness", "Modell", "Rechner"]) expect(html).not.toContain(`>${label}<`);
     expect(html).toContain('aria-label="Optionen"');
     expect(html).toContain('aria-label="Diktieren"');

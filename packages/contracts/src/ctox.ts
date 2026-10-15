@@ -675,6 +675,39 @@ export const CtoxWorkjetJourFixe = Schema.Struct({
     }),
   ),
 });
+/** Reader settings of the project feed (Übersicht), owned by the CTOX instance per project. */
+export const CTOX_WORKJET_FEED_SOURCE_KEYS = [
+  "disruptions",
+  "results",
+  "sessions",
+  "prs",
+  "meeting",
+  "setup",
+] as const;
+export const CtoxWorkjetFeedSettings = Schema.Struct({
+  /** Thema & Rhythmus */
+  title: Schema.optionalKey(Schema.NullOr(CtoxProjectText(120))),
+  windowDays: Schema.optionalKey(Schema.NullOr(Schema.Literals([1, 7, 30]))),
+  /** Quellen & Accounts */
+  sources: Schema.optionalKey(
+    Schema.Struct({
+      disruptions: Schema.optionalKey(Schema.Boolean),
+      results: Schema.optionalKey(Schema.Boolean),
+      sessions: Schema.optionalKey(Schema.Boolean),
+      prs: Schema.optionalKey(Schema.Boolean),
+      meeting: Schema.optionalKey(Schema.Boolean),
+      setup: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
+  /** Redaktion */
+  defaultTab: Schema.optionalKey(Schema.Literals(["top", "latest"])),
+  body: Schema.optionalKey(Schema.Literals(["short", "full"])),
+  replies: Schema.optionalKey(Schema.Literals(["three", "all"])),
+  /** Zustellung */
+  notifyDisruptions: Schema.optionalKey(Schema.Boolean),
+});
+export type CtoxWorkjetFeedSettings = typeof CtoxWorkjetFeedSettings.Type;
+
 export const CtoxWorkjetProjectConfiguration = Schema.Struct({
   description: Schema.optionalKey(Schema.NullOr(projectInfoText(4_096))),
   repoUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
@@ -682,6 +715,7 @@ export const CtoxWorkjetProjectConfiguration = Schema.Struct({
   supervisorLumaId: Schema.optionalKey(Schema.NullOr(CtoxProjectText(160))),
   info: Schema.optionalKey(Schema.NullOr(CtoxWorkjetProjectInfo)),
   jourFixe: Schema.optionalKey(Schema.NullOr(CtoxWorkjetJourFixe)),
+  feedSettings: Schema.optionalKey(Schema.NullOr(CtoxWorkjetFeedSettings)),
 });
 export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfiguration.Type;
 
@@ -780,6 +814,47 @@ const CtoxWorkjetGalleryOrder = Schema.Struct({
 });
 export type CtoxWorkjetGalleryOrder = typeof CtoxWorkjetGalleryOrder.Type;
 
+/** ctox.workjet.project_feed.v1 (metric-space-ai/ctox#686). */
+const FeedText = (max: number) => Schema.String.check(Schema.isMaxLength(max));
+export const CtoxWorkjetProjectFeedPost = Schema.Struct({
+  post_id: FeedText(64),
+  project_id: FeedText(128),
+  kind: Schema.Literals([
+    "pr_merged",
+    "session_completed",
+    "disruption",
+    "disruption_resolved",
+    "jour_fixe",
+    "goal_changed",
+    "owner_note",
+  ]),
+  author_kind: Schema.Literals(["supervisor", "worker", "owner"]),
+  author_thread: Schema.NullOr(FeedText(128)),
+  author_label: FeedText(64),
+  harness: Schema.NullOr(FeedText(32)),
+  headline: FeedText(140),
+  body: FeedText(600),
+  open_items: Schema.NullOr(Schema.Array(FeedText(140)).check(Schema.isMaxLength(5))),
+  sources: Schema.Array(
+    Schema.Struct({
+      type: Schema.Literals(["pr", "commit", "session", "file", "meeting", "url"]),
+      label: FeedText(80),
+      ref: FeedText(512),
+    }),
+  ).check(Schema.isMaxLength(8)),
+  action: Schema.NullOr(
+    Schema.Struct({
+      type: Schema.Literals(["open_chat", "open_pr", "open_meeting", "retry"]),
+      label_de: FeedText(40),
+      label_en: FeedText(40),
+      ref: FeedText(512),
+    }),
+  ),
+  thread_ref: Schema.NullOr(FeedText(128)),
+  occurred_at_ms: Schema.Int,
+});
+export type CtoxWorkjetProjectFeedPost = typeof CtoxWorkjetProjectFeedPost.Type;
+
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetInstanceGrokRequests,
   ...WorkjetNativeProviderRequests,
@@ -800,6 +875,13 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     action: Schema.Literal("project.kpis.read"),
     commandId: CommandId,
     projectId: ProjectId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.feed.read"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    before_ms: Schema.optional(Schema.Int),
+    limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))),
   }),
   Schema.Struct({
     action: Schema.Literal("project.init"),
@@ -1078,6 +1160,20 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
     operationId: CtoxProjectText(128),
     steps: Schema.Array(CtoxWorkjetProjectInitStep).check(Schema.isMaxLength(12)),
   }),
+  Schema.Struct({
+    action: Schema.Literal("project.feed.read"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.project_feed.v1"),
+    posts: Schema.Array(CtoxWorkjetProjectFeedPost).check(Schema.isMaxLength(50)),
+    next_before_ms: Schema.NullOr(Schema.Int),
+  }).check(
+    Schema.makeFilter((response) =>
+      response.posts.every((post) => post.project_id === response.projectId)
+        ? true
+        : "Feed post belongs to another project.",
+    ),
+  ),
   Schema.Struct({
     action: Schema.Literals(["project.kpis.read", "project.kpis.configure"]),
     commandId: CommandId,

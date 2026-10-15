@@ -9,6 +9,7 @@ import * as Encoding from "effect/Encoding";
 import * as Result from "effect/Result";
 
 const SESSION_COOKIE_NAME = "workjet_session";
+export const DESKTOP_RENDERER_ORIGINS = ["workjet://app", "workjet-dev://app"] as const;
 
 /**
  * Cookies are scoped by host but *not* by port, so any two servers that can be

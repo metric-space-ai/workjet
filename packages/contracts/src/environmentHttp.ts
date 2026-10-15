@@ -44,7 +44,11 @@ import {
 } from "./auth.ts";
 import { AuthSessionId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
-import { WorkjetComputer, WorkjetWorkerProfile } from "./workjet.ts";
+import {
+  WorkjetComputer,
+  WorkjetOfficialCodingModelExport,
+  WorkjetWorkerProfile,
+} from "./workjet.ts";
 
 import {
   ClientOrchestrationCommand,
@@ -581,6 +585,13 @@ const EnvironmentOrchestrationThreadSnapshotQuery = {
 };
 
 export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestration")
+  .add(
+    HttpApiEndpoint.get("codingModels", "/api/workjet/coding-models", {
+      headers: OptionalBearerHeaders,
+      success: WorkjetOfficialCodingModelExport,
+      error: EnvironmentOrchestrationSnapshotErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
   .add(
     HttpApiEndpoint.get("computers", "/api/workjet/computers", {
       headers: OptionalBearerHeaders,

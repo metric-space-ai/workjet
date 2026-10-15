@@ -93,6 +93,27 @@ describe("gateway account health", () => {
     ).toBe(42);
     expect(decodeAccountHealth({})).toBeUndefined();
   });
+  it("preserves model-specific routing failures without treating the whole account as down", () => {
+    const model = {
+      modelId: "gpt-6.1-sol",
+      status: "cooldown",
+      usable: false,
+      cooldownUntilMs: 2000,
+      errorCode: "rate_limit",
+      httpStatus: 429,
+      observedAtMs: 1000,
+    };
+    expect(decodeAccountHealth(status([{ ...account, models: [model] }]))?.[0]?.models).toEqual([
+      model,
+    ]);
+    const ready = decodeAccountHealth(
+      status([{ ...account, models: [{ ...model, status: "ready" }] }]),
+    );
+    expect(ready?.[0]?.models?.[0]?.status).toBe("ready");
+    expect(
+      decodeAccountHealth(status([{ ...account, models: [{ ...model, status: "guess" }] }])),
+    ).toBeUndefined();
+  });
   it("rejects fabricated percentages, invalid timestamps and provider identities", () => {
     for (const patch of [
       { provider: "fake" },

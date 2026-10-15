@@ -11,6 +11,7 @@ import {
   overviewFixture,
   type ExitFixtureState,
 } from "./project-overview.fixture-data";
+import { useGithubMergedPullRequests } from "../hooks/useGithubMergedPullRequests";
 import "../index.css";
 
 type ExitCardShot = "proposal" | "hang" | "value" | "resources" | "researching";
@@ -97,9 +98,31 @@ function OverviewFixture() {
     exitParam === "empty" || exitParam === "missing" || exitParam === "provisional"
       ? exitParam
       : null;
-  const input = overviewFixture(variant);
+  const live = query.get("repo");
+  if (query.get("theme") === "dark") document.documentElement.classList.add("dark");
+  const baseInput = overviewFixture(variant);
+  const input = live
+    ? {
+        ...overviewFixture("empty"),
+        project: {
+          ...baseInput.project,
+          title: live.split("/")[1] ?? live,
+          configuration: {
+            ...baseInput.project.configuration!,
+            title: live,
+            repoUrl: `https://github.com/${live}`,
+          },
+        },
+        now: Date.now(),
+      }
+    : baseInput;
+  const livePrs = useGithubMergedPullRequests(live ? `https://github.com/${live}` : null);
   const [action, setAction] = useState("");
-  const data = buildProjectOwnerOverview({ ...input, language });
+  const data = buildProjectOwnerOverview({
+    ...input,
+    language,
+    ...(live ? { pullRequests: livePrs } : {}),
+  });
   const text = data.text;
   return (
     <div className="min-h-screen bg-background text-foreground">

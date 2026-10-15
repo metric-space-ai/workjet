@@ -252,6 +252,23 @@ it.layer(NodeServices.layer)("supervisor control round admission", (it) => {
         expect((yield* apply(skipped.model, tick(skipped.model))).events).toEqual([]);
       }),
   );
+  it.effect("retries a control round when an earlier start was never adopted", () =>
+    Effect.gen(function* () {
+      const { model } = yield* initial();
+      const first = yield* apply(model, tick(model));
+      expect(
+        first.events.filter((event) => event.type === "thread.turn-start-requested"),
+      ).toHaveLength(1);
+      const nextDue = "2026-10-11T10:00:00.000Z";
+      const recovered = yield* apply(first.model, tick(first.model, nextDue, nextDue));
+      expect(
+        recovered.events.filter((event) => event.type === "thread.turn-start-requested"),
+      ).toHaveLength(1);
+      const config = recovered.model.threads[0]!.workjetConfig;
+      expect(config.schemaVersion === 2 && config.supervisorTick?.outcome).toBe("started");
+      expect(config.schemaVersion === 2 && config.supervisorTick?.lastControlAt).toBe(nextDue);
+    }),
+  );
   it.effect(
     "skips starting, running and pending-approval supervisors, and rechecks configuration after collection",
     () =>

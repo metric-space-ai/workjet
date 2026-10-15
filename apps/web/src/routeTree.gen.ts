@@ -21,6 +21,7 @@ import { Route as SettingsSourceControlRouteImport } from './routes/settings.sou
 import { Route as SettingsPromptsRouteImport } from './routes/settings.prompts'
 import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
+import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsHarnessesRouteImport } from './routes/settings.harnesses'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
@@ -91,6 +92,11 @@ const SettingsProjectsRoute = SettingsProjectsRouteImport.update({
 const SettingsModelsRoute = SettingsModelsRouteImport.update({
   id: '/models',
   path: '/models',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsKeybindingsRoute = SettingsKeybindingsRouteImport.update({
+  id: '/keybindings',
+  path: '/keybindings',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsHarnessesRoute = SettingsHarnessesRouteImport.update({
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/harnesses': typeof SettingsHarnessesRoute
+  '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/prompts': typeof SettingsPromptsRoute
@@ -194,6 +201,7 @@ export interface FileRoutesByTo {
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/harnesses': typeof SettingsHarnessesRoute
+  '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/prompts': typeof SettingsPromptsRoute
@@ -221,6 +229,7 @@ export interface FileRoutesById {
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/harnesses': typeof SettingsHarnessesRoute
+  '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/prompts': typeof SettingsPromptsRoute
@@ -249,6 +258,7 @@ export interface FileRouteTypes {
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/harnesses'
+    | '/settings/keybindings'
     | '/settings/models'
     | '/settings/projects'
     | '/settings/prompts'
@@ -273,6 +283,7 @@ export interface FileRouteTypes {
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/harnesses'
+    | '/settings/keybindings'
     | '/settings/models'
     | '/settings/projects'
     | '/settings/prompts'
@@ -299,6 +310,7 @@ export interface FileRouteTypes {
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/harnesses'
+    | '/settings/keybindings'
     | '/settings/models'
     | '/settings/projects'
     | '/settings/prompts'
@@ -404,6 +416,13 @@ declare module '@tanstack/react-router' {
       path: '/models'
       fullPath: '/settings/models'
       preLoaderRoute: typeof SettingsModelsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/keybindings': {
+      id: '/settings/keybindings'
+      path: '/keybindings'
+      fullPath: '/settings/keybindings'
+      preLoaderRoute: typeof SettingsKeybindingsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/harnesses': {
@@ -528,6 +547,7 @@ interface SettingsRouteChildren {
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHarnessesRoute: typeof SettingsHarnessesRoute
+  SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsProjectsRoute: typeof SettingsProjectsRouteWithChildren
   SettingsPromptsRoute: typeof SettingsPromptsRoute
@@ -545,6 +565,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHarnessesRoute: SettingsHarnessesRoute,
+  SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsProjectsRoute: SettingsProjectsRouteWithChildren,
   SettingsPromptsRoute: SettingsPromptsRoute,

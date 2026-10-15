@@ -13,7 +13,6 @@
  * - `openCommandPalette({ open: "new-thread-in" })` (the `chat.new` shortcut
  *   in multi-project setups) opens the sidebar dropdown „Neue Unterhaltung
  *   in …“, or starts a new thread in the contextual project without one;
- * - `themeEditor.toggle` keeps toggling the theme editor.
  */
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useParams } from "@tanstack/react-router";
@@ -31,7 +30,6 @@ import {
 } from "../commandPaletteBus";
 import { ComposerHandleContext } from "../composerHandleContext";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { useTheme } from "../hooks/useTheme";
 import { resolveShortcutCommand } from "../keybindings";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
@@ -43,7 +41,6 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { selectWorkjetProject } from "../workjetProjectRegistry";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
-import { toggleThemeEditorForTheme } from "./settings/themeEditorStore";
 import { useSidebar } from "./ui/sidebar";
 
 /** Show the project gallery (not a selected project's overview) at "/". */
@@ -55,7 +52,6 @@ export function showProjectGallery(): void {
 
 export function CommandPalette({ children }: { children: ReactNode }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { theme, themeHalves, resolvedTheme } = useTheme();
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
   const navigate = useNavigate();
   const sidebar = useSidebar();
@@ -125,16 +121,6 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           previewOpen,
         },
       });
-      if (command === "themeEditor.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleThemeEditorForTheme({
-          theme,
-          themeHalves,
-          initialAppearance: resolvedTheme,
-        });
-        return;
-      }
       if (command === "commandPalette.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -150,7 +136,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [focusSearch, keybindings, previewOpen, resolvedTheme, terminalOpen, theme, themeHalves]);
+  }, [focusSearch, keybindings, previewOpen, terminalOpen]);
 
   useEffect(
     () =>

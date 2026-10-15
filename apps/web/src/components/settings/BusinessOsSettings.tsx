@@ -7,14 +7,16 @@ import type {
   WorkjetDeviceBindingSummary,
   WorkjetManagedDeviceInviteManualConnectionResult,
 } from "@workjet/contracts";
-import { ChevronRightIcon, CircleAlertIcon, CopyIcon, RefreshCwIcon } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronRightIcon, CopyIcon } from "lucide-react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 import {
   INSTANCES_SETTINGS_PATH,
   instanceAddRequestFromSearch,
+  instanceSetupStore,
+  isInstancesPageRequest,
   registerInstanceSetupNavigator,
   requestInstanceAdd,
 } from "../../instanceSetup";
@@ -22,14 +24,12 @@ import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { InstanceAddInline, SEGMENT_TOGGLE_CLASS } from "../ctox/InstanceAddInline";
 import { InstanceNetworkOverview } from "../ctox/InstanceNetworkOverview";
-import { Banner } from "../ui/banner";
 import { Button } from "../ui/button";
 import { InlinePanel } from "../ui/inline-panel";
 import { QRCodeSvg } from "../ui/qr-code";
 import { Row } from "../ui/row";
 import { Spinner } from "../ui/spinner";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   businessOsDeviceControlErrorMessage,
   createBusinessOsDeviceInvite,
@@ -40,8 +40,10 @@ import {
 } from "./businessOsDeviceControl";
 import { encodeBusinessOsManualCredential } from "./businessOsManualCredential";
 import { formatMobileInviteExpiry } from "./businessOsPairing";
-import { dedupeCtoxInstances, InstancesTable } from "./InstancesTable";
+import { dedupeCtoxInstances } from "./InstancesTable";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { searchableSetting } from "./settingsSearch";
+import { Empty, EmptyHeader, EmptyTitle } from "../ui/empty";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
 const EMPTY_DEVICES: readonly WorkjetDeviceBindingSummary[] = [];
@@ -64,27 +66,6 @@ export function resolveActiveBusinessOsInstanceId(target: CrossModeTarget | null
 
 export function manualConnectionCredentialText(credential: string, visible: boolean): string {
   return visible ? credential : "••••••••••••";
-}
-
-function IconAction({
-  label,
-  onClick,
-  children,
-}: {
-  readonly label: string;
-  readonly onClick: () => void;
-  readonly children: ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={<Button aria-label={label} size="icon-sm" variant="ghost" onClick={onClick} />}
-      >
-        {children}
-      </TooltipTrigger>
-      <TooltipPopup>{label}</TooltipPopup>
-    </Tooltip>
-  );
 }
 
 async function copyValue(value: string, sensitive = false) {
@@ -292,6 +273,27 @@ function DeviceInvitePanel({
   );
 }
 
+/**
+ * Gekoppelte Geräte heißen nach ihrem Namen (#685); ohne Namen nach Gerätetyp
+ * und kurzem Datum, nie „Gerät vom TT.MM.JJJJ, hh:mm“.
+ */
+export function workjetDeviceDisplayName(device: WorkjetDeviceBindingSummary): string {
+  const named = device as WorkjetDeviceBindingSummary & {
+    readonly deviceName?: unknown;
+    readonly displayName?: unknown;
+    readonly label?: unknown;
+  };
+  for (const candidate of [named.deviceName, named.displayName, named.label]) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) return candidate.trim();
+  }
+  const date = new Date(device.pairedAtMillis).toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
+  return `Workjet-App · ${date}`;
+}
+
 function DevicesSection({
   instanceName,
   devices,
@@ -300,16 +302,13 @@ function DevicesSection({
   blockedReason,
   onAddDevice,
   onRevokeDevice,
-  onRetryDevices,
   addingDevice,
   activeInvite,
   onCloseInvite,
   onRenewInvite,
   onLoadManualConnection,
   renewingInvite,
-  defaultOpen = false,
 }: {
-  readonly defaultOpen?: boolean;
   readonly instanceName: string;
   readonly devices: readonly WorkjetDeviceBindingSummary[];
   readonly devicesLoading: boolean;
@@ -317,7 +316,6 @@ function DevicesSection({
   readonly blockedReason: string | null;
   readonly onAddDevice: (() => void) | undefined;
   readonly onRevokeDevice: ((devicePairingId: string) => void) | undefined;
-  readonly onRetryDevices: (() => void) | undefined;
   readonly addingDevice: boolean;
   readonly activeInvite: BusinessOsWebRtcDeviceInvite | null;
   readonly onCloseInvite: (() => void) | undefined;
@@ -328,13 +326,7 @@ function DevicesSection({
   readonly renewingInvite: boolean;
 }) {
   const t = useUiText();
-  // Paired Workjet apps are a rare admin task: closed by default, named for
-  // what they are, with their count, instead of a list of dates (#559 rest).
-  const [openByUser, setOpen] = useState(defaultOpen);
-  // States that need attention open the section by themselves.
-  const open =
-    openByUser || activeInvite !== null || blockedReason !== null || devicesError !== null;
-  // Undo instead of a confirmation (#637).
+  // „Trennen“ wirkt sofort, der Toast bietet „Rückgängig“ (#637, #687).
   const [pendingRevoke, setPendingRevoke] = useState<ReadonlySet<string>>(() => new Set());
   const revokeWithUndo = (devicePairingId: string) => {
     if (onRevokeDevice === undefined) return;
@@ -346,7 +338,7 @@ function DevicesSection({
         return next;
       });
     scheduleUndoableDelete({
-      title: t("Gerät getrennt", "Device disconnected"),
+      title: t("Getrennt", "Disconnected"),
       undoLabel: t("Rückgängig", "Undo"),
       run: () => {
         onRevokeDevice(devicePairingId);
@@ -355,100 +347,63 @@ function DevicesSection({
       onUndo: show,
     });
   };
+  const visibleDevices = devices.filter((device) => !pendingRevoke.has(device.devicePairingId));
+  // Ein Lesefehler wird still wiederholt; bis dahin steht „—“.
+  const devicesUnknown = devicesLoading || devicesError !== null;
   return (
-    <section
-      aria-label={`${t("Gekoppelte Workjet-Apps", "Paired Workjet apps")} · ${instanceName}`}
-      className="space-y-1"
+    <SettingsSection
+      {...searchableSetting("instance-devices")}
+      aria-label={`${searchableSetting("instance-devices").title} · ${instanceName}`}
       data-workjet-instance-devices=""
     >
-      <Button
-        size="sm"
-        variant="ghost"
-        className="-ms-2 text-muted-foreground"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <ChevronRightIcon
-          aria-hidden
-          className={`transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        {t("Gekoppelte Workjet-Apps", "Paired Workjet apps")}
-        {devicesLoading || devicesError !== null ? null : ` (${devices.length})`}
-      </Button>
-      {!open ? null : (
-        <div className="flex flex-col gap-2">
-          {blockedReason !== null ? (
-            <Banner
-              icon={CircleAlertIcon}
-              {...(onRetryDevices === undefined
-                ? {}
-                : { action: { label: "Erneut prüfen", onClick: onRetryDevices } })}
-            >
-              {blockedReason}
-            </Banner>
-          ) : devicesLoading ? (
-            <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
-              <Spinner className="size-3.5" /> Geräte werden geladen …
-            </p>
-          ) : devicesError !== null ? (
-            <Banner
-              icon={CircleAlertIcon}
-              {...(onRetryDevices === undefined
-                ? {}
-                : { action: { label: "Erneut versuchen", onClick: onRetryDevices } })}
-            >
-              <span role="alert">{devicesError}</span>
-            </Banner>
-          ) : devices.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Keine weiteren Geräte</p>
-          ) : (
-            <ul aria-label="Geräte" className="-mx-3 divide-y divide-border/60 sm:-mx-4">
-              {devices
-                .filter((device) => !pendingRevoke.has(device.devicePairingId))
-                .map((device) => (
-                  <li key={device.devicePairingId}>
-                    <Row
-                      name={`Gerät vom ${new Date(device.pairedAtMillis).toLocaleString("de-DE", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}`}
-                      status="ok"
-                      statusLabel="Gekoppelt"
-                      {...(onRevokeDevice === undefined
-                        ? {}
-                        : { onDelete: () => revokeWithUndo(device.devicePairingId) })}
-                      deleteLabel="Trennen"
-                    />
-                  </li>
-                ))}
-            </ul>
-          )}
-          {activeInvite !== null && onCloseInvite !== undefined && onRenewInvite !== undefined ? (
-            <DeviceInvitePanel
-              invite={activeInvite}
-              onClose={onCloseInvite}
-              onRenew={onRenewInvite}
-              onLoadManualConnection={onLoadManualConnection}
-              busy={renewingInvite}
-            />
-          ) : (
-            <Button
-              className="self-start"
-              size="sm"
-              variant="outline"
-              disabled={onAddDevice === undefined || blockedReason !== null || addingDevice}
-              onClick={onAddDevice}
-            >
-              {addingDevice ? <Spinner className="size-3.5" /> : null}
-              {addingDevice ? "QR-Code wird erstellt …" : "Gerät hinzufügen"}
-            </Button>
-          )}
-        </div>
+      {blockedReason !== null ? (
+        <p className="px-3 py-2 text-xs text-muted-foreground sm:px-4" role="status">
+          {blockedReason}
+        </p>
+      ) : devicesUnknown ? (
+        <p className="px-3 py-2 text-[13.5px] text-muted-foreground sm:px-4">—</p>
+      ) : visibleDevices.length === 0 ? null : (
+        <ul aria-label="Geräte" className="divide-y divide-border/60">
+          {visibleDevices.map((device) => (
+            <li key={device.devicePairingId}>
+              <Row
+                name={workjetDeviceDisplayName(device)}
+                status="ok"
+                statusLabel="Gekoppelt"
+                {...(onRevokeDevice === undefined
+                  ? {}
+                  : {
+                      onDelete: () => revokeWithUndo(device.devicePairingId),
+                      undoableDelete: true,
+                    })}
+                deleteLabel="Trennen"
+              />
+            </li>
+          ))}
+        </ul>
       )}
-    </section>
+      <div className="px-3 pt-2 pb-1 sm:px-4">
+        {activeInvite !== null && onCloseInvite !== undefined && onRenewInvite !== undefined ? (
+          <DeviceInvitePanel
+            invite={activeInvite}
+            onClose={onCloseInvite}
+            onRenew={onRenewInvite}
+            onLoadManualConnection={onLoadManualConnection}
+            busy={renewingInvite}
+          />
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={onAddDevice === undefined || blockedReason !== null || addingDevice}
+            onClick={onAddDevice}
+          >
+            {addingDevice ? <Spinner className="size-3.5" /> : null}
+            {addingDevice ? "QR-Code wird erstellt …" : "Gerät hinzufügen"}
+          </Button>
+        )}
+      </div>
+    </SettingsSection>
   );
 }
 
@@ -491,45 +446,31 @@ export function BusinessOsSettingsView({
   activeInstanceId,
   loading = false,
   discoveryFailed = false,
-  refreshDisabled = false,
   devices = EMPTY_DEVICES,
   devicesLoading = false,
   devicesError = null,
   deviceManagementBlockedReason = null,
-  onSelectInstance,
-  onRefresh,
   onAddDevice,
   onRevokeDevice,
-  onRetryDevices,
   addingDevice = false,
   activeInvite = null,
   onCloseInvite,
   onRenewInvite,
   onLoadManualConnection,
   renewingInvite = false,
-  onStateChange,
   addPanel = null,
   network = null,
-  devicesDefaultOpen = false,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
   readonly loading?: boolean;
   readonly discoveryFailed?: boolean;
-  readonly refreshDisabled?: boolean;
   readonly devices?: readonly WorkjetDeviceBindingSummary[];
   readonly devicesLoading?: boolean;
   readonly devicesError?: string | null;
   readonly deviceManagementBlockedReason?: string | null;
-  readonly onSelectInstance?: (instanceId: string) => void | Promise<boolean>;
-  readonly onStateChange?: (
-    instance: CtoxManagedInstance,
-    state: "enabled" | "disabled" | "removed",
-  ) => Promise<string | null>;
-  readonly onRefresh?: () => void;
   readonly onAddDevice?: () => void;
   readonly onRevokeDevice?: (devicePairingId: string) => void;
-  readonly onRetryDevices?: () => void;
   readonly addingDevice?: boolean;
   readonly activeInvite?: BusinessOsWebRtcDeviceInvite | null;
   readonly onCloseInvite?: () => void;
@@ -540,95 +481,45 @@ export function BusinessOsSettingsView({
   readonly addPanel?: ReactNode;
   /** Inhalt des aufklappbaren Abschnitts „Netzwerk“. */
   readonly network?: ReactNode;
-  /** Gekoppelte Workjet-Apps aufgeklappt zeigen (Tests, Deep-Links). */
-  readonly devicesDefaultOpen?: boolean;
 }) {
-  const t = useUiText();
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
-  const visibleCount = instances.filter((instance) => instance.workjetState !== "removed").length;
-  return (
-    <SettingsPageContainer className="gap-5">
-      <SettingsSection
-        title={t("CTOX-Instanzen", "CTOX instances")}
-        headerAction={
-          <IconAction
-            label={t("Aktualisieren", "Refresh")}
-            onClick={() => {
-              if (!refreshDisabled) onRefresh?.();
-            }}
-          >
-            <RefreshCwIcon className={loading ? "animate-spin" : undefined} aria-hidden />
-          </IconAction>
-        }
-      >
-        <p
-          className="px-3 text-xs text-muted-foreground sm:px-4"
-          data-workjet-instance-explainer=""
-        >
-          {t(
-            "Eine Instanz ist dein CTOX-Server: Dort liegen Projekte, Worker und Konten. Workjet arbeitet immer mit einer gewählten Instanz.",
-            "An instance is your CTOX server: it holds projects, workers and accounts. Workjet always works with one selected instance.",
-          )}
-        </p>
-        {loading ? (
-          <p
-            className="flex items-center gap-2 px-3 text-xs text-muted-foreground sm:px-4"
-            role="status"
-          >
-            <Spinner className="size-3.5" />{" "}
-            {t("Instanzen werden geladen …", "Loading instances …")}
-          </p>
-        ) : discoveryFailed ? (
-          <div className="px-3 sm:px-4">
-            <Banner
-              icon={CircleAlertIcon}
-              {...(onRefresh === undefined
-                ? {}
-                : { action: { label: "Erneut versuchen", onClick: onRefresh } })}
-            >
-              <span role="alert">{t("Instanzen nicht erreichbar", "Instances unreachable")}</span>
-            </Banner>
-          </div>
-        ) : visibleCount === 0 ? (
-          <p className="px-3 text-[13.5px] font-medium sm:px-4" role="status">
-            {t("Keine CTOX-Instanz verbunden", "No CTOX instance connected")}
-          </p>
+  // Die Liste aller Instanzen samt Hinzufügen/Trennen lebt im Instanz-Menü der
+  // Titelleiste (#556). Diese Seite zeigt nur die gewählte Instanz.
+  if (selected === null) {
+    return (
+      <SettingsPageContainer className="gap-5">
+        {loading || discoveryFailed ? (
+          <p className="px-3 text-[13.5px] text-muted-foreground sm:px-4">—</p>
         ) : (
-          <InstancesTable
-            instances={instances}
-            activeInstanceId={activeInstanceId}
-            onSelect={onSelectInstance}
-            onStateChange={onStateChange}
-            selectedDetails={
-              selected === null ? null : (
-                <>
-                  <DevicesSection
-                    defaultOpen={devicesDefaultOpen}
-                    instanceName={ctoxInstanceDisplayTitle(selected)}
-                    devices={devices}
-                    devicesLoading={devicesLoading}
-                    devicesError={devicesError}
-                    blockedReason={deviceManagementBlockedReason}
-                    onAddDevice={onAddDevice}
-                    onRevokeDevice={onRevokeDevice}
-                    onRetryDevices={onRetryDevices}
-                    addingDevice={addingDevice}
-                    activeInvite={activeInvite}
-                    onCloseInvite={onCloseInvite}
-                    onRenewInvite={onRenewInvite}
-                    onLoadManualConnection={onLoadManualConnection}
-                    renewingInvite={renewingInvite}
-                  />
-                  {network === null ? null : <NetworkSection>{network}</NetworkSection>}
-                </>
-              )
-            }
-          />
+          <Empty className="py-8">
+            <EmptyHeader>
+              <EmptyTitle className="text-[13.5px]">Keine Instanz gewählt</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         )}
-        {addPanel === null ? null : (
-          <div className="flex flex-col px-3 pt-2 sm:px-4">{addPanel}</div>
-        )}
-      </SettingsSection>
+        {addPanel === null ? null : <div className="flex flex-col px-3 sm:px-4">{addPanel}</div>}
+      </SettingsPageContainer>
+    );
+  }
+  return (
+    <SettingsPageContainer className="gap-5" title={ctoxInstanceDisplayTitle(selected)}>
+      <DevicesSection
+        instanceName={ctoxInstanceDisplayTitle(selected)}
+        devices={devices}
+        devicesLoading={devicesLoading}
+        devicesError={devicesError}
+        blockedReason={deviceManagementBlockedReason}
+        onAddDevice={onAddDevice}
+        onRevokeDevice={onRevokeDevice}
+        addingDevice={addingDevice}
+        activeInvite={activeInvite}
+        onCloseInvite={onCloseInvite}
+        onRenewInvite={onRenewInvite}
+        onLoadManualConnection={onLoadManualConnection}
+        renewingInvite={renewingInvite}
+      />
+      {network === null ? null : <NetworkSection>{network}</NetworkSection>}
+      {addPanel === null ? null : <div className="flex flex-col px-3 sm:px-4">{addPanel}</div>}
     </SettingsPageContainer>
   );
 }
@@ -678,16 +569,22 @@ function useInstanceAddFromLocation() {
 
 export function BusinessOsSettings() {
   useInstanceAddFromLocation();
-  const {
-    bridge,
-    discovery,
-    refresh,
-    refreshing,
-    selectedId: activeInstanceId,
-    select,
-    setInstanceState,
-  } = useCtoxMode();
+  const { bridge, discovery, refresh, selectedId: activeInstanceId, select } = useCtoxMode();
   const instances = useMemo(() => visibleBusinessOsInstances(discovery), [discovery]);
+  const setupRequest = useSyncExternalStore(
+    instanceSetupStore.subscribe,
+    instanceSetupStore.getSnapshot,
+    () => null,
+  );
+  const addRequested = isInstancesPageRequest(setupRequest);
+  const discoveryFailed =
+    bridge !== undefined && discovery !== "loading" && discovery._tag === "failed";
+  // Ausfälle werden still wiederholt, nie als Kasten gemeldet.
+  useEffect(() => {
+    if (!discoveryFailed) return;
+    const timer = window.setTimeout(() => void refresh(), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [discoveryFailed, refresh]);
   const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesError, setDevicesError] = useState<string | null>(null);
@@ -697,19 +594,6 @@ export function BusinessOsSettings() {
   const [renewingInvite, setRenewingInvite] = useState(false);
   const deviceControlAvailable =
     activeInstanceId !== null && bridge?.requestDeviceControl !== undefined;
-
-  const selectInstance = async (instanceId: string) => {
-    const instance = instances.find((candidate) => candidate.id === instanceId);
-    return instance !== undefined && (await select(instance));
-  };
-
-  const changeInstanceState = async (
-    instance: CtoxManagedInstance,
-    state: "enabled" | "disabled" | "removed",
-  ): Promise<string | null> => {
-    const result = await setInstanceState(instance, state);
-    return result.ok ? null : "Änderung nicht gespeichert. Bitte erneut versuchen.";
-  };
 
   useEffect(() => {
     setDevices([]);
@@ -737,6 +621,12 @@ export function BusinessOsSettings() {
       cancelled = true;
     };
   }, [activeInstanceId, bridge, deviceControlAvailable, deviceRefreshKey]);
+
+  useEffect(() => {
+    if (devicesError === null) return;
+    const timer = window.setTimeout(() => setDeviceRefreshKey((key) => key + 1), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [devicesError]);
 
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
   const deviceManagementBlockedReason =
@@ -821,20 +711,13 @@ export function BusinessOsSettings() {
       instances={instances}
       activeInstanceId={activeInstanceId}
       loading={discovery === "loading"}
-      discoveryFailed={
-        bridge !== undefined && discovery !== "loading" && discovery._tag === "failed"
-      }
-      refreshDisabled={bridge === undefined || refreshing}
+      discoveryFailed={discoveryFailed}
       devices={devices}
       devicesLoading={devicesLoading}
       devicesError={devicesError}
       deviceManagementBlockedReason={deviceManagementBlockedReason}
-      onSelectInstance={selectInstance}
-      onStateChange={changeInstanceState}
-      onRefresh={() => void refresh()}
       {...(!deviceControlAvailable ? {} : { onAddDevice: () => void createDeviceInvite() })}
       addingDevice={addingDevice}
-      onRetryDevices={() => setDeviceRefreshKey((key) => key + 1)}
       onRevokeDevice={(devicePairingId) => void revokeDevice(devicePairingId)}
       activeInvite={activeInvite}
       onCloseInvite={closeInvite}
@@ -843,7 +726,7 @@ export function BusinessOsSettings() {
         ? {}
         : { onLoadManualConnection: async () => activeInvite.manualConnection })}
       renewingInvite={renewingInvite}
-      addPanel={<InstanceAddInline />}
+      addPanel={addRequested || activeInstanceId === null ? <InstanceAddInline /> : null}
       network={
         <InstanceNetworkOverview
           variant="section"

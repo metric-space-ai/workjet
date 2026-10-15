@@ -3,48 +3,64 @@ import { describe, expect, it } from "vite-plus/test";
 import appSidebarLayoutSource from "../AppSidebarLayout.tsx?raw";
 import routeTreeSource from "../../routeTree.gen.ts?raw";
 import settingsRouteSource from "../../routes/settings.tsx?raw";
+import appearanceRouteSource from "../../routes/settings.appearance.tsx?raw";
+import projectRouteSource from "../../routes/settings.projects.$projectKey.tsx?raw";
 import sidebarChromeSource from "../sidebar/SidebarChrome.tsx?raw";
-import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
-import { searchSettings } from "./settingsSearch";
+import {
+  DEVELOPER_SETTINGS_NAV_ITEMS,
+  SETTINGS_NAV_ITEMS,
+  settingsNavItems,
+} from "./settingsNavigation";
 
-describe("Workjet settings information architecture", () => {
-  it("puts instances first, keeps Computers, and hides Connections", () => {
-    expect(SETTINGS_NAV_ITEMS[0]).toMatchObject({
-      label: "Instanzen",
-      to: "/settings/business-os",
-    });
-    expect(SETTINGS_NAV_ITEMS).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ label: "Rechner", to: "/settings/computers" }),
-      ]),
-    );
-    expect(SETTINGS_NAV_ITEMS.map((item) => item.label)).not.toContain("Connections");
-    expect(SETTINGS_NAV_ITEMS.map((item) => item.to)).not.toContain("/settings/keybindings");
-    expect(searchSettings("Keybindings")).toEqual([]);
+describe("Workjet settings information architecture (#568)", () => {
+  it("has exactly eight pages, twelve in developer mode", () => {
+    expect(SETTINGS_NAV_ITEMS.map((item) => item.label)).toEqual([
+      "Allgemein",
+      "Instanz",
+      "Rechner",
+      "Modelle",
+      "Lumas",
+      "Projekte",
+      "Sprachausgabe",
+      "Archiv",
+    ]);
+    expect(settingsNavItems(false)).toHaveLength(8);
+    expect(settingsNavItems(true)).toHaveLength(12);
+    expect(DEVELOPER_SETTINGS_NAV_ITEMS.slice(8).map((item) => item.label)).toEqual([
+      "Diagnose",
+      "Harnesses",
+      "Versionsverwaltung",
+      "Tastenkürzel",
+    ]);
+  });
+
+  it("keeps every former page reachable: old routes redirect or are subpages", () => {
+    for (const path of [
+      "/settings/appearance",
+      "/settings/prompts",
+      "/settings/usage",
+      "/settings/business-os",
+      "/settings/harnesses",
+      "/settings/keybindings",
+      "/settings/projects/$projectKey",
+    ]) {
+      expect(routeTreeSource).toContain(`fullPath: '${path}'`);
+    }
+    expect(appearanceRouteSource).toContain('redirect({ to: "/settings/general"');
+    expect(projectRouteSource).toContain("ProjectCardRedirect");
+    expect(settingsRouteSource).toContain('redirect({ to: "/settings/general"');
+    expect(routeTreeSource).not.toContain("fullPath: '/settings/connections'");
   });
 
   it("uses the regular Settings route from either product mode", () => {
     expect(appSidebarLayoutSource).toContain('if (isOnSettings) return "settings"');
     expect(settingsRouteSource).toContain("<SettingsSidebarNav pathname={location.pathname} />");
-    expect(appSidebarLayoutSource).not.toContain("WorkjetDevicePairingDialog");
-    expect(appSidebarLayoutSource).not.toContain("businessOsSettingsRequestKey");
+    expect(settingsRouteSource).toContain("<SettingsCompactNav pathname={location.pathname} />");
   });
 
-  it("redirects the settings root and has no hidden settings routes", () => {
-    expect(settingsRouteSource).toContain('redirect({ to: "/settings/business-os"');
-    expect(routeTreeSource).not.toContain("fullPath: '/settings/connections'");
-    expect(routeTreeSource).not.toContain("fullPath: '/settings/keybindings'");
-  });
-
-  it("has no pages outside Dev, Ops and Settings: /machines is gone, usage is Settings › Verbrauch", () => {
+  it("has no pages outside Dev, Ops and Settings", () => {
     expect(routeTreeSource).not.toContain("fullPath: '/machines'");
     expect(routeTreeSource).not.toContain("fullPath: '/usage'");
-    expect(routeTreeSource).toContain("fullPath: '/settings/usage'");
-    expect(SETTINGS_NAV_ITEMS).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ label: "Verbrauch", to: "/settings/usage" }),
-      ]),
-    );
   });
 
   it("keeps one labelled Settings footer entry and no global Machines navigation", () => {
@@ -54,6 +70,5 @@ describe("Workjet settings information architecture", () => {
     expect(footerSource.split("<SidebarMenuItem").length - 1).toBe(1);
     expect(footerSource).toContain("<span>Einstellungen</span>");
     expect(footerSource).not.toContain('to: "/machines"');
-    expect(footerSource).not.toContain("openWorkjetDevicePairing");
   });
 });

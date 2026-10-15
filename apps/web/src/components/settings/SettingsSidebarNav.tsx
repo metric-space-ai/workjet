@@ -1,22 +1,20 @@
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { SearchIcon, XIcon } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "./settingsInstanceContext";
-import { SETTINGS_NAV_ITEMS, SETTINGS_SECTION_ICONS } from "./settingsNavigation";
+import { useSpeechSupported } from "./speechAvailability";
+import {
+  SETTINGS_SECTION_ICONS,
+  settingsNavItems,
+  type SettingsNavItem,
+} from "./settingsNavigation";
 export { SETTINGS_NAV_ITEMS } from "./settingsNavigation";
 import { Input } from "../ui/input";
 import { Kbd } from "../ui/kbd";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import {
   SidebarContent,
   SidebarFooter,
@@ -24,7 +22,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "../ui/sidebar";
 import {
   WorkjetConnectSidebarAvatar,
@@ -35,19 +32,23 @@ import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
   SETTINGS_SECTION_LABELS,
+  settingsPageForPath,
   type SettingsPath,
   type SettingsSearchItem,
 } from "./settingsSearch";
-
-/** Pages only shown in developer mode (#552). */
-const DEVELOPER_ONLY_PATHS: ReadonlySet<SettingsPath> = new Set(["/settings/diagnostics"]);
+import { cn } from "~/lib/utils";
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];
-  return <Icon className="mt-0.5 size-3.5 shrink-0 text-sidebar-muted-foreground/60" />;
+  return <Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />;
 }
 
-export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+/**
+ * Navigation and search state shared by the wide sidebar and the narrow head.
+ * Search hits never replace the navigation (#603): they list above it, and the
+ * page on the right follows the highlighted hit.
+ */
+function useSettingsNavigation(pathname: string) {
   const { discovery, selectedId } = useCtoxMode();
   const instanceContext = resolveSettingsInstanceContext(
     discovery,
@@ -56,80 +57,29 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   );
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
-  const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
-  const developerMode = useClientSettings().developerMode;
+  const developerMode = useClientSettings((settings) => settings.developerMode);
+  const speechAvailable = useSpeechSupported(selectedId);
+  const items = settingsNavItems(developerMode, { speechAvailable });
   const results = useMemo(
     () =>
-      searchSettings(query).filter((item) => developerMode || !DEVELOPER_ONLY_PATHS.has(item.to)),
-    [developerMode, query],
+      searchSettings(query, { developerMode }).filter(
+        (item) => speechAvailable || item.to !== "/settings/speech",
+      ),
+    [developerMode, query, speechAvailable],
   );
   const isSearching = query.trim().length > 0;
-  const hasResults = results.length > 0;
-
-  useEffect(() => {
-    const result = results[activeResultIndex];
-    if (!result) return;
-    document
-      .getElementById(`settings-search-result-${result.id}`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [activeResultIndex, results]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
-
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable ||
-          // Keep focus inside open dialogs and popups instead of escaping
-          // their focus trap into the sidebar search.
-          target.closest('[role="dialog"], [aria-modal="true"], [data-slot$="popup"]') !== null)
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      if (isMobile) {
-        setOpenMobile(true);
-      } else if (!open) {
-        setOpen(true);
-      }
-      requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      });
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isMobile, open, setOpen, setOpenMobile]);
-
-  const handleSectionClick = useCallback(
-    (to: SettingsPath) => {
-      if (to !== "/settings/business-os" && !instanceContext.canEditInstanceSettings) return;
-      if (isMobile) {
-        setOpenMobile(false);
-      }
-      void navigate({ to, hash: "", replace: true, hashScrollIntoView: false });
-    },
-    [instanceContext.canEditInstanceSettings, isMobile, navigate, setOpenMobile],
+  const activePage = settingsPageForPath(pathname);
+  const isEnabled = useCallback(
+    (to: SettingsPath) => to === "/settings/business-os" || instanceContext.canEditInstanceSettings,
+    [instanceContext.canEditInstanceSettings],
   );
-  const clearSearch = useCallback(() => {
-    setQuery("");
-    setActiveResultIndex(0);
-  }, []);
-  const handleSearchResultClick = useCallback(
+
+  const goToResult = useCallback(
     (item: SettingsSearchItem) => {
-      if (item.to !== "/settings/business-os" && !instanceContext.canEditInstanceSettings) return;
-      clearSearch();
-      if (isMobile) {
-        setOpenMobile(false);
-      }
+      if (!isEnabled(item.to)) return;
       const targetId = item.targetId ?? item.id;
       if (pathname === item.to && currentHash.replace(/^#/, "") === targetId) {
         scrollToSettingsTarget(targetId);
@@ -137,16 +87,39 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       }
       void navigate({ to: item.to, hash: targetId, replace: true, hashScrollIntoView: false });
     },
-    [
-      clearSearch,
-      currentHash,
-      instanceContext.canEditInstanceSettings,
-      isMobile,
-      navigate,
-      pathname,
-      setOpenMobile,
-    ],
+    [currentHash, isEnabled, navigate, pathname],
   );
+
+  // The right side follows the highlighted hit.
+  const activeResult = isSearching ? results[activeResultIndex] : undefined;
+  const lastFollowedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeResult === undefined) {
+      lastFollowedRef.current = null;
+      return;
+    }
+    if (lastFollowedRef.current === activeResult.id) return;
+    lastFollowedRef.current = activeResult.id;
+    goToResult(activeResult);
+    document
+      .getElementById(`settings-search-result-${activeResult.id}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeResult, goToResult]);
+
+  const clearSearch = useCallback(() => {
+    setQuery("");
+    setActiveResultIndex(0);
+  }, []);
+
+  const selectPage = useCallback(
+    (to: SettingsPath) => {
+      if (!isEnabled(to)) return;
+      clearSearch();
+      void navigate({ to, hash: "", replace: true, hashScrollIntoView: false });
+    },
+    [clearSearch, isEnabled, navigate],
+  );
+
   const handleSearchKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Escape" && isSearching) {
@@ -169,144 +142,208 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       if (event.key === "Enter") {
         event.preventDefault();
         const result = results[activeResultIndex];
-        if (result) handleSearchResultClick(result);
+        if (result) {
+          goToResult(result);
+          clearSearch();
+        }
       }
     },
-    [activeResultIndex, clearSearch, handleSearchResultClick, isSearching, results],
+    [activeResultIndex, clearSearch, goToResult, isSearching, results],
   );
 
+  useEffect(() => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable ||
+          // Keep focus inside open dialogs and popups instead of escaping
+          // their focus trap into the settings search.
+          target.closest('[data-slot$="popup"]') !== null)
+      ) {
+        return;
+      }
+      const input = searchInputRef.current;
+      if (input === null || input.offsetParent === null) return;
+      event.preventDefault();
+      input.focus();
+      input.select();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  return {
+    activePage,
+    activeResultIndex,
+    clearSearch,
+    goToResult,
+    handleSearchKeyDown,
+    isEnabled,
+    isSearching,
+    items,
+    query,
+    results,
+    searchInputRef,
+    selectPage,
+    setActiveResultIndex,
+    setQuery,
+  };
+}
+
+type SettingsNavigationState = ReturnType<typeof useSettingsNavigation>;
+
+function SettingsSearchField({
+  nav,
+  className,
+}: {
+  nav: SettingsNavigationState;
+  className?: string;
+}) {
+  const hasResults = nav.results.length > 0;
+  return (
+    <div
+      className={cn(
+        "flex h-8 min-w-0 items-center gap-2 rounded-md border border-border/70 px-2 text-sm",
+        className,
+      )}
+    >
+      <SearchIcon className="size-4 shrink-0 text-muted-foreground/80" />
+      <Input
+        ref={nav.searchInputRef}
+        nativeInput
+        unstyled
+        type="search"
+        value={nav.query}
+        onChange={(event) => {
+          nav.setQuery(event.currentTarget.value);
+          nav.setActiveResultIndex(0);
+        }}
+        onKeyDown={nav.handleSearchKeyDown}
+        placeholder="Suchen"
+        aria-label="Einstellungen suchen"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={nav.isSearching && hasResults}
+        aria-controls={nav.isSearching && hasResults ? "settings-search-results" : undefined}
+        aria-activedescendant={
+          nav.isSearching && nav.results[nav.activeResultIndex]
+            ? `settings-search-result-${nav.results[nav.activeResultIndex]!.id}`
+            : undefined
+        }
+        className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:text-foreground [&_[data-slot=input]]:placeholder:text-muted-foreground"
+      />
+      {nav.isSearching ? (
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="ghost"
+          className="size-5 shrink-0 rounded-sm"
+          aria-label="Suche zurücksetzen"
+          title="Suche zurücksetzen"
+          onClick={() => {
+            nav.clearSearch();
+            nav.searchInputRef.current?.focus();
+          }}
+        >
+          <XIcon className="size-3" />
+        </Button>
+      ) : (
+        <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[11px]">/</Kbd>
+      )}
+    </div>
+  );
+}
+
+function SettingsSearchResults({
+  nav,
+  className,
+}: {
+  nav: SettingsNavigationState;
+  className?: string;
+}) {
+  if (!nav.isSearching) return null;
+  if (nav.results.length === 0) {
+    return (
+      <p role="status" className="px-2 py-2 text-xs text-muted-foreground">
+        Keine Treffer
+      </p>
+    );
+  }
+  return (
+    <div
+      id="settings-search-results"
+      role="listbox"
+      aria-label="Suchergebnisse"
+      data-settings-search-results=""
+      className={cn("flex max-h-72 flex-col gap-px overflow-y-auto", className)}
+    >
+      {nav.results.map((item, index) => {
+        const active = index === nav.activeResultIndex;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            id={`settings-search-result-${item.id}`}
+            role="option"
+            aria-selected={active}
+            tabIndex={-1}
+            disabled={!nav.isEnabled(item.to)}
+            onMouseMove={() => nav.setActiveResultIndex(index)}
+            onClick={() => {
+              nav.goToResult(item);
+              nav.clearSearch();
+            }}
+            className={cn(
+              "flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1.5 text-left outline-none disabled:opacity-50",
+              active ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
+            )}
+          >
+            <SettingsSectionIcon to={item.to} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13.5px] font-medium">{item.title}</span>
+              <span className="block truncate text-[12px] text-muted-foreground">
+                {SETTINGS_SECTION_LABELS[item.to]}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Wide layout: search on top, hits above the always visible page list. */
+export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+  const nav = useSettingsNavigation(pathname);
   return (
     <>
       <SidebarContent className="overflow-x-hidden">
         <SidebarGroup className="gap-2 p-[var(--sidebar-content-inset)]">
-          <div className="flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
-            <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
-            <Input
-              ref={searchInputRef}
-              nativeInput
-              unstyled
-              type="search"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.currentTarget.value);
-                setActiveResultIndex(0);
-              }}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Suchen"
-              aria-label="Einstellungen suchen"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={isSearching && hasResults}
-              aria-controls={isSearching && hasResults ? "settings-search-results" : undefined}
-              aria-activedescendant={
-                isSearching && results[activeResultIndex]
-                  ? `settings-search-result-${results[activeResultIndex].id}`
-                  : undefined
-              }
-              className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
-            />
-            {isSearching ? (
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                aria-label="Suche zurücksetzen"
-                onClick={() => {
-                  clearSearch();
-                  searchInputRef.current?.focus();
-                }}
-              >
-                <XIcon className="size-3" />
-              </Button>
-            ) : (
-              <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[11px]">/</Kbd>
-            )}
-          </div>
-          {isSearching && results.length === 0 ? (
-            <p
-              role="status"
-              className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
-            >
-              Keine Einstellungen gefunden
-            </p>
-          ) : null}
-          <SidebarMenu
-            className="ps-px"
-            id={isSearching && hasResults ? "settings-search-results" : undefined}
-            role={isSearching && hasResults ? "listbox" : undefined}
-            aria-label={isSearching && hasResults ? "Suchergebnisse" : undefined}
-          >
-            {isSearching
-              ? results.map((item, index) => (
-                  <SidebarMenuItem key={item.id} role="presentation">
-                    <SidebarMenuButton
-                      id={`settings-search-result-${item.id}`}
-                      role="option"
-                      aria-selected={index === activeResultIndex}
-                      tabIndex={-1}
-                      size="sm"
-                      isActive={index === activeResultIndex}
-                      className="h-auto min-h-10 items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                      onMouseMove={() => setActiveResultIndex(index)}
-                      onClick={() => handleSearchResultClick(item)}
-                      disabled={
-                        item.to !== "/settings/business-os" &&
-                        !instanceContext.canEditInstanceSettings
-                      }
-                    >
-                      <SettingsSectionIcon to={item.to} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-sidebar-foreground">
-                          {item.title}
-                        </span>
-                        <span className="block truncate text-[11px] text-sidebar-muted-foreground/75">
-                          {SETTINGS_SECTION_LABELS[item.to]}
-                        </span>
-                      </span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))
-              : SETTINGS_NAV_ITEMS.filter(
-                  (item) => developerMode || !DEVELOPER_ONLY_PATHS.has(item.to),
-                ).map((item, index) => {
-                  const Icon = item.icon;
-                  const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);
-                  return (
-                    <Fragment key={item.to}>
-                      {index === 1 && instanceContext.isMultiInstance ? (
-                        <SidebarMenuItem
-                          role="presentation"
-                          className="mt-3 border-t border-sidebar-border pt-3 pb-1"
-                        >
-                          <p
-                            className="px-2 text-[11px] font-medium text-sidebar-muted-foreground"
-                            data-settings-instance-context=""
-                          >
-                            Einstellungen für
-                            <span className="mt-0.5 block truncate text-sm text-sidebar-foreground">
-                              {instanceContext.activeInstanceName ?? "Instanz auswählen"}
-                            </span>
-                          </p>
-                        </SidebarMenuItem>
-                      ) : null}
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          isActive={isActive}
-                          aria-current={isActive ? "page" : undefined}
-                          onClick={() => handleSectionClick(item.to)}
-                          disabled={
-                            item.to !== "/settings/business-os" &&
-                            !instanceContext.canEditInstanceSettings
-                          }
-                        >
-                          <Icon />
-                          <span className="truncate">{item.label}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    </Fragment>
-                  );
-                })}
+          <SettingsSearchField nav={nav} />
+          <SettingsSearchResults nav={nav} className="border-b border-sidebar-border pb-2" />
+          <SidebarMenu className="ps-px" aria-label="Einstellungsseiten">
+            {nav.items.map((item: SettingsNavItem) => {
+              const Icon = item.icon;
+              const isActive = nav.activePage === item.to;
+              return (
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton
+                    isActive={isActive}
+                    aria-current={isActive ? "page" : undefined}
+                    data-settings-nav-item={item.to}
+                    onClick={() => nav.selectPage(item.to)}
+                    disabled={!nav.isEnabled(item.to)}
+                  >
+                    <Icon />
+                    <span className="truncate">{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
@@ -318,5 +355,48 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         </div>
       </SidebarFooter>
     </>
+  );
+}
+
+/** Narrow layout (420 px): one head row with the page list as a select. */
+export function SettingsCompactNav({ pathname }: { pathname: string }) {
+  const nav = useSettingsNavigation(pathname);
+  const current =
+    nav.items.find((item) => {
+      return item.to === nav.activePage;
+    }) ?? null;
+  return (
+    <div
+      className="flex flex-col gap-2 border-b border-border px-3 py-2"
+      data-settings-compact-nav=""
+    >
+      <div className="flex min-w-0 items-center gap-2 pe-11">
+        <Select
+          value={current?.to ?? ""}
+          onValueChange={(value) => {
+            const target = nav.items.find((item) => item.to === value);
+            if (target) nav.selectPage(target.to);
+          }}
+        >
+          <SelectTrigger aria-label="Einstellungsseite" className="w-36 shrink-0">
+            <SelectValue>{current?.label ?? "Einstellungen"}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup>
+            {nav.items.map((item) => (
+              <SelectItem
+                key={item.to}
+                value={item.to}
+                disabled={!nav.isEnabled(item.to)}
+                hideIndicator
+              >
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+        <SettingsSearchField nav={nav} className="flex-1" />
+      </div>
+      <SettingsSearchResults nav={nav} />
+    </div>
   );
 }

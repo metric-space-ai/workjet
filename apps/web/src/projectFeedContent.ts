@@ -73,7 +73,7 @@ export function stepContent(input: {
     body: summary,
     openItems:
       input.goal && !input.goalDone ? [de ? `Ziel: ${input.goal}` : `Goal: ${input.goal}`] : [],
-    sources: [{ type: "session", label: de ? "Session" : "Session" }],
+    sources: [{ type: "session", label: de ? "Sitzung" : "Session" }],
   };
 }
 

@@ -52,7 +52,7 @@ export function SupervisorTickStatus(props: {
               : `in ${Math.ceil((next - now) / 60000)} min`;
   const lastLabel = props.state?.lastControlAt
     ? minutesAgo(props.state.lastControlAt)
-    : (text?.controlNone ?? "—");
+    : "";
   return (
     <div
       className="mt-2 flex flex-wrap items-center gap-1.5"
@@ -60,12 +60,13 @@ export function SupervisorTickStatus(props: {
       role="status"
     >
       <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground">
-        {text
-          ? projectOverviewFormat(text.controlLast, { time: lastLabel })
-          : de
-            ? `Letzte Kontrolle ${lastLabel}`
-            : `Last check ${lastLabel}`}
-        {" · "}
+        {lastLabel
+          ? (text
+              ? projectOverviewFormat(text.controlLast, { time: lastLabel })
+              : de
+                ? `Letzte Kontrolle ${lastLabel}`
+                : `Last check ${lastLabel}`) + " · "
+          : null}
         {text
           ? projectOverviewFormat(text.controlNext, { time: nextLabel })
           : de

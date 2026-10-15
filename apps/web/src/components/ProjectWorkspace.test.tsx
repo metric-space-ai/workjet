@@ -266,7 +266,7 @@ describe("owner project overview", () => {
     expect(data.goals.map((goal) => goal.title)).toEqual(
       meeting.todos.items.map((item) => item.title),
     );
-    expect(data.goals.every((goal) => goal.state === data.text.unknown)).toBe(true);
+    expect(data.goals.every((goal) => goal.state === data.text.waiting)).toBe(true);
     expect(data.kpis.find((kpi) => kpi.id === "tasks")?.value).toBe("—");
   });
   it("rejects another project's meeting and keeps saved persistent goals", () => {

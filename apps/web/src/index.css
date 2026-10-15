@@ -265,6 +265,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(workjet-
   --color-sidebar-row-active: var(--sidebar-row-active);
   --color-sidebar-row-selected: var(--sidebar-row-selected);
   --color-sidebar-border: var(--sidebar-border);
+  /* Active icon tiles in the project nav and the switcher monogram. */
+  --color-sidebar-accent: var(--sidebar-control-surface);
+  --color-sidebar-accent-foreground: var(--sidebar-foreground);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

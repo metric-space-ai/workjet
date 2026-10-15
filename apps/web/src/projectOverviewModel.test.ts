@@ -30,13 +30,7 @@ describe("dense owner overview model", () => {
     const data = buildProjectOwnerOverview(input);
     expect(data.kpis.map((kpi) => kpi.value)).toEqual(["—", "—", "—", "—", "—"]);
     expect(data.summary).toBeNull();
-    expect([
-      data.text.noGoals,
-      data.text.noResults,
-      data.text.noHistory,
-      data.text.noLastMeeting,
-      data.text.noOwnerDecisions,
-    ]).toEqual(["—", "—", "—", "—", "—"]);
+    expect(Object.values(data.text)).not.toContain("—");
   });
   it.each(["de", "en"] as const)("groups setup once alongside progress in %s", (language) => {
     const data = buildProjectOwnerOverview({ ...overviewFixture("full"), language });

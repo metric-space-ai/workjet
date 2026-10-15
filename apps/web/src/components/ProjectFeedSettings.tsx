@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { SlidersHorizontalIcon, Undo2Icon, XIcon } from "lucide-react";
+import { SlidersHorizontalIcon, Undo2Icon, XIcon, type LucideIcon } from "lucide-react";
 import type { CtoxWorkjetFeedSettings, ProjectId } from "@workjet/contracts";
 import { Checkbox } from "./ui/checkbox";
+import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Segment } from "./ui/segment";
 import { configureWorkjetProject } from "../workjetProjectControl";
 import { refreshWorkjetProjectRegistry } from "../workjetProjectRegistry";
 import { newCommandId } from "../lib/utils";
@@ -158,15 +160,13 @@ export type FeedSourceRow = {
   readonly key: FeedSourceKey;
   readonly group: string;
   readonly name: string;
-  readonly badge: string;
-  readonly badgeColor: string;
-  readonly count: number;
+  readonly icon: LucideIcon;
   readonly chips: readonly string[];
   readonly note?: string | null;
   readonly action?: { readonly label: string; readonly onClick: () => void } | null;
 };
 
-type SheetTab = "topic" | "sources" | "editorial" | "delivery";
+type SheetTab = "topic" | "sources" | "delivery";
 
 function RadioRows<T extends string | number | null>(props: {
   readonly name: string;
@@ -176,22 +176,24 @@ function RadioRows<T extends string | number | null>(props: {
   readonly onChange: (value: T, label: string) => void;
 }) {
   return (
-    <fieldset className="mb-4 space-y-1.5">
-      <legend className="mb-1.5 text-[14px] font-bold">{props.legend}</legend>
+    <fieldset className="mb-4 space-y-1">
+      <legend className="mb-1.5 text-[13.5px] font-bold">{props.legend}</legend>
       {props.options.map((option) => (
         <label
           key={String(option.value)}
-          className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2.5 text-[14px]"
+          className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2 text-[13.5px]"
         >
           <input
             type="radio"
             name={props.name}
-            className="size-4 accent-blue-500"
+            className="size-4 accent-primary"
             checked={props.value === option.value}
             onChange={() => props.onChange(option.value, option.label)}
           />
           <span className="font-semibold">{option.label}</span>
-          <span className="text-muted-foreground">{option.hint}</span>
+          {option.hint ? (
+            <span className="text-[12px] text-muted-foreground">{option.hint}</span>
+          ) : null}
         </label>
       ))}
     </fieldset>
@@ -253,30 +255,13 @@ export function FeedSettingsSheet(props: {
           : "All sources off",
     );
   const tabs: readonly { readonly value: SheetTab; readonly label: string }[] = [
-    { value: "topic", label: de ? "Thema & Rhythmus" : "Topic & rhythm" },
-    { value: "sources", label: de ? "Quellen & Accounts" : "Sources & accounts" },
-    { value: "editorial", label: de ? "Redaktion" : "Editorial" },
+    { value: "topic", label: de ? "Thema" : "Topic" },
+    { value: "sources", label: de ? "Quellen" : "Sources" },
     { value: "delivery", label: de ? "Zustellung" : "Delivery" },
   ];
-  const tabClass = (active: boolean) =>
-    "rounded-md px-2.5 py-1.5 text-[13px] font-semibold whitespace-nowrap " +
-    (active ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground");
-  const savedText =
-    props.saved === "saving"
-      ? de
-        ? "Speichert …"
-        : "Saving …"
-      : props.saved === "instance"
-        ? de
-          ? `Gespeichert auf ${props.instanceName ?? "der Instanz"}`
-          : `Saved on ${props.instanceName ?? "the instance"}`
-        : props.saved === "device"
-          ? de
-            ? "Nur auf diesem Gerät gespeichert – der Core der Instanz kennt Feed-Einstellungen noch nicht."
-            : "Saved on this device only – the instance core doesn't know feed settings yet."
-          : de
-            ? "Änderungen gelten sofort und werden gespeichert."
-            : "Changes apply at once and are saved.";
+  // Only a save that did not reach the instance gets a line; everything else saves silently.
+  const deviceOnly = props.saved === "device";
+  const closeLabel = de ? "Schließen" : "Close";
   return (
     <div
       role="region"
@@ -285,30 +270,26 @@ export function FeedSettingsSheet(props: {
       className="flex w-full max-w-[600px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card lg:my-3 lg:w-[480px]"
     >
       <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
-        <h2 className="text-[17px] font-bold">{props.title}</h2>
-        <button
+        <h2 className="min-w-0 truncate text-[13.5px] font-bold">{props.title}</h2>
+        <Button
           type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label={closeLabel}
+          title={closeLabel}
           onClick={props.onClose}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <XIcon aria-hidden className="size-4" />
-          {de ? "Schließen" : "Close"}
-        </button>
+        </Button>
       </header>
-      <div role="tablist" className="mx-5 flex flex-wrap gap-1 rounded-lg border border-border p-1">
-        {tabs.map((entry) => (
-          <button
-            key={entry.value}
-            type="button"
-            role="tab"
-            aria-selected={tab === entry.value}
-            onClick={() => setTab(entry.value)}
-            className={tabClass(tab === entry.value)}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
+      <Segment
+        aria-label={props.title}
+        className="mx-5"
+        fill
+        value={tab}
+        options={tabs}
+        onChange={setTab}
+      />
       <div
         className="min-h-0 flex-1 overflow-y-auto px-5 py-3"
         data-workjet-feed-settings-tab={tab}
@@ -316,7 +297,7 @@ export function FeedSettingsSheet(props: {
         {tab === "topic" ? (
           <>
             <label className="mb-4 block">
-              <span className="mb-1.5 block text-[14px] font-bold">
+              <span className="mb-1.5 block text-[13.5px] font-bold">
                 {de ? "Feed-Titel" : "Feed title"}
               </span>
               <Input
@@ -329,11 +310,6 @@ export function FeedSettingsSheet(props: {
                   if (event.key === "Enter") commitTitle();
                 }}
               />
-              <span className="mt-1 block text-[12px] text-muted-foreground">
-                {de
-                  ? "Leer lassen für den Projektnamen. Gespeichert beim Verlassen des Felds."
-                  : "Leave empty for the project name. Saved when you leave the field."}
-              </span>
             </label>
             <RadioRows
               name="feed-window"
@@ -365,132 +341,20 @@ export function FeedSettingsSheet(props: {
                 set("windowDays", value, `${de ? "Zeitraum" : "Window"}: ${label}`)
               }
             />
-            <section className="rounded-lg bg-muted/40 px-3 py-2.5 text-[14px]">
-              <h3 className="font-bold">{de ? "Rhythmus" : "Rhythm"}</h3>
-              <p className="mt-0.5 text-muted-foreground">
-                {props.meeting
-                  ? (de ? "Regeltermin: " : "Standing meeting: ") + props.meeting
-                  : de
-                    ? "Kein Regeltermin eingestellt."
-                    : "No standing meeting set."}
-              </p>
-              {props.onOpenMeetingSettings ? (
-                <button
-                  type="button"
-                  onClick={props.onOpenMeetingSettings}
-                  className="mt-1.5 rounded-md bg-muted px-2.5 py-1 text-[12px] font-semibold hover:bg-muted/70"
-                >
-                  {de ? "Regeltermin ändern" : "Change meeting"}
-                </button>
-              ) : null}
-            </section>
-          </>
-        ) : tab === "sources" ? (
-          groups.map((group, index) => (
-            <section key={group} className="mb-3">
-              <div className="mb-1.5 flex items-center justify-between">
-                <h3 className="text-[14px] font-bold">{group}</h3>
-                {index === 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => setAll(!allOn)}
-                    className="rounded-md bg-muted px-2.5 py-1 text-[12px] font-semibold text-foreground hover:bg-muted/70"
-                  >
-                    {allOn
-                      ? de
-                        ? "Alle ausschalten"
-                        : "Turn all off"
-                      : de
-                        ? "Alle einschalten"
-                        : "Turn all on"}
-                  </button>
-                ) : null}
-              </div>
-              <ul className="space-y-1.5">
-                {props.rows
-                  .filter((row) => row.group === group)
-                  .map((row) => (
-                    <li
-                      key={row.key}
-                      className="rounded-lg bg-muted/40 px-3 py-2.5"
-                      data-workjet-feed-source={row.key}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Checkbox
-                          id={`feed-source-${row.key}`}
-                          checked={prefs.sources[row.key]}
-                          onCheckedChange={(value) => {
-                            const checked = value === true;
-                            props.onChange(
-                              { ...prefs, sources: { ...prefs.sources, [row.key]: checked } },
-                              `${row.name} ${checked ? (de ? "an" : "on") : de ? "aus" : "off"}`,
-                            );
-                          }}
-                        />
-                        <span
-                          aria-hidden
-                          className={
-                            "flex size-7 shrink-0 items-center justify-center rounded-md text-[11px] font-bold text-white " +
-                            row.badgeColor
-                          }
-                        >
-                          {row.badge}
-                        </span>
-                        <label
-                          htmlFor={`feed-source-${row.key}`}
-                          className="min-w-0 flex-1 text-[14px] font-semibold"
-                        >
-                          {row.name}
-                          <span className="ml-1.5 font-normal text-muted-foreground tabular-nums">
-                            {row.count}
-                          </span>
-                        </label>
-                        {row.action ? (
-                          <button
-                            type="button"
-                            onClick={row.action.onClick}
-                            className="rounded-md bg-muted px-2.5 py-1 text-[12px] font-semibold hover:bg-muted/70"
-                          >
-                            {row.action.label}
-                          </button>
-                        ) : null}
-                      </div>
-                      {row.note ? (
-                        <p className="mt-1 ml-[3.25rem] text-[12px] text-amber-400">{row.note}</p>
-                      ) : null}
-                      {row.chips.length > 0 ? (
-                        <div className="mt-1.5 ml-[3.25rem] flex flex-wrap gap-1">
-                          {row.chips.map((chip) => (
-                            <span
-                              key={chip}
-                              className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[12px] text-blue-300"
-                            >
-                              {chip}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </li>
-                  ))}
-              </ul>
-            </section>
-          ))
-        ) : tab === "editorial" ? (
-          <>
             <RadioRows
               name="feed-default-tab"
-              legend={de ? "Beim Öffnen zeigen" : "Show on open"}
+              legend={de ? "Beim Öffnen" : "On open"}
               value={prefs.defaultTab}
               options={[
                 {
                   value: "top",
-                  label: "Top",
-                  hint: de ? "Störungen und PRs oben" : "Disruptions and PRs first",
+                  label: de ? "Wichtig" : "Top",
+                  hint: de ? "Störungen und PRs oben" : "disruptions and PRs first",
                 },
                 {
                   value: "latest",
-                  label: de ? "Neueste zuerst" : "Newest first",
-                  hint: de ? "streng nach Zeit" : "strictly by time",
+                  label: de ? "Neueste" : "Latest",
+                  hint: de ? "nach Zeit" : "by time",
                 },
               ]}
               onChange={(value, label) => set("defaultTab", value, label)}
@@ -503,112 +367,183 @@ export function FeedSettingsSheet(props: {
                 {
                   value: "short",
                   label: de ? "Gekürzt" : "Short",
-                  hint: de ? "„Mehr anzeigen“ ab 280 Zeichen" : "“Show more” after 280 characters",
+                  hint: de ? "ab 280 Zeichen" : "after 280 characters",
                 },
                 {
                   value: "full",
                   label: de ? "Vollständig" : "Full",
-                  hint: de ? "immer ganzer Text" : "always the whole text",
+                  hint: de ? "ganzer Text" : "whole text",
                 },
               ]}
               onChange={(value, label) => set("body", value, `${de ? "Text" : "Text"}: ${label}`)}
             />
             <RadioRows
               name="feed-replies"
-              legend={de ? "Threads" : "Threads"}
+              legend={de ? "Verlauf" : "History"}
               value={prefs.replies}
               options={[
                 {
                   value: "three",
                   label: de ? "Bis zu 3 Beiträge" : "Up to 3 posts",
-                  hint: de ? "Rest über „Thread anzeigen“" : "rest via “Show thread”",
+                  hint: "",
                 },
                 {
                   value: "all",
                   label: de ? "Alle Beiträge" : "All posts",
-                  hint: de ? "ganzer Thread offen" : "whole thread open",
+                  hint: "",
                 },
               ]}
-              onChange={(value, label) => set("replies", value, `Threads: ${label}`)}
+              onChange={(value, label) => set("replies", value, `${de ? "Verlauf" : "History"}: ${label}`)}
             />
-          </>
-        ) : (
-          <>
-            <section className="mb-3 rounded-lg bg-muted/40 px-3 py-2.5 text-[14px]">
-              <h3 className="font-bold">{de ? "In Workjet" : "In Workjet"}</h3>
-              <p className="mt-0.5 text-muted-foreground">
-                {de
-                  ? "Der Feed erscheint immer in der Übersicht dieses Projekts."
-                  : "The feed always shows in this project's overview."}
-              </p>
-            </section>
-            <div className="mb-3 flex items-start gap-3 rounded-lg bg-muted/40 px-3 py-2.5">
-              <Checkbox
-                id="feed-notify-disruptions"
-                checked={prefs.notifyDisruptions}
-                onCheckedChange={(value) => {
-                  const checked = value === true;
-                  if (
-                    checked &&
-                    typeof Notification !== "undefined" &&
-                    Notification.permission === "default"
-                  )
-                    void Notification.requestPermission();
-                  set(
-                    "notifyDisruptions",
-                    checked,
-                    de
-                      ? `Mitteilung bei Störungen ${checked ? "an" : "aus"}`
-                      : `Disruption alerts ${checked ? "on" : "off"}`,
-                  );
-                }}
-              />
-              <label htmlFor="feed-notify-disruptions" className="text-[14px]">
-                <span className="block font-semibold">
-                  {de
-                    ? "Desktop-Mitteilung bei neuen Störungen"
-                    : "Desktop alert for new disruptions"}
-                </span>
-                <span className="block text-muted-foreground">
-                  {de
-                    ? "Solange Workjet geöffnet ist, auf diesem Rechner."
-                    : "While Workjet is open, on this computer."}
-                </span>
-              </label>
+            <div className="flex flex-wrap items-center gap-2 text-[13.5px]">
+              <span className="font-bold">{de ? "Regeltermin" : "Standing meeting"}</span>
+              {props.meeting ? <span className="text-muted-foreground">{props.meeting}</span> : null}
+              {props.onOpenMeetingSettings ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={props.onOpenMeetingSettings}
+                >
+                  {props.meeting
+                    ? de
+                      ? "Ändern"
+                      : "Change"
+                    : de
+                      ? "Festlegen"
+                      : "Set"}
+                </Button>
+              ) : null}
             </div>
-            <section className="rounded-lg border border-dashed border-border px-3 py-2.5 text-[14px] text-muted-foreground">
-              <h3 className="font-bold text-foreground">
-                {de ? "E-Mail-Zusammenfassung" : "Email digest"}
-              </h3>
-              <p className="mt-0.5">
-                {de
-                  ? "Noch nicht verfügbar: braucht den E-Mail-Kanal der Instanz, der noch nicht verbunden ist."
-                  : "Not available yet: needs the instance's email channel, which isn't connected."}
-              </p>
-            </section>
           </>
+        ) : tab === "sources" ? (
+          groups.map((group, index) => (
+            <section key={group} className="mb-3">
+              <div className="mb-1.5 flex items-center justify-between">
+                <h3 className="text-[13.5px] font-bold">{group}</h3>
+                {index === 0 ? (
+                  <Button type="button" size="xs" variant="outline" onClick={() => setAll(!allOn)}>
+                    {allOn
+                      ? de
+                        ? "Alle ausschalten"
+                        : "Turn all off"
+                      : de
+                        ? "Alle einschalten"
+                        : "Turn all on"}
+                  </Button>
+                ) : null}
+              </div>
+              <ul className="space-y-1">
+                {props.rows
+                  .filter((row) => row.group === group)
+                  .map((row) => {
+                    const Icon = row.icon;
+                    return (
+                      <li
+                        key={row.key}
+                        className="rounded-lg bg-muted/40 px-3 py-2"
+                        data-workjet-feed-source={row.key}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Checkbox
+                            id={`feed-source-${row.key}`}
+                            checked={prefs.sources[row.key]}
+                            onCheckedChange={(value) => {
+                              const checked = value === true;
+                              props.onChange(
+                                { ...prefs, sources: { ...prefs.sources, [row.key]: checked } },
+                                `${row.name} ${checked ? (de ? "an" : "on") : de ? "aus" : "off"}`,
+                              );
+                            }}
+                          />
+                          <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                          <label
+                            htmlFor={`feed-source-${row.key}`}
+                            className="min-w-0 flex-1 text-[13.5px] font-semibold"
+                          >
+                            {row.name}
+                          </label>
+                          {row.note ? (
+                            <span className="text-[12px] text-muted-foreground">{row.note}</span>
+                          ) : null}
+                          {row.action ? (
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="outline"
+                              onClick={row.action.onClick}
+                            >
+                              {row.action.label}
+                            </Button>
+                          ) : null}
+                        </div>
+                        {row.chips.length > 0 ? (
+                          <div className="mt-1.5 ml-[3.25rem] flex flex-wrap gap-1">
+                            {row.chips.map((chip) => (
+                              <span
+                                key={chip}
+                                className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                              >
+                                {chip}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+              </ul>
+            </section>
+          ))
+        ) : (
+          <div className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
+            <Checkbox
+              id="feed-notify-disruptions"
+              checked={prefs.notifyDisruptions}
+              onCheckedChange={(value) => {
+                const checked = value === true;
+                if (
+                  checked &&
+                  typeof Notification !== "undefined" &&
+                  Notification.permission === "default"
+                )
+                  void Notification.requestPermission();
+                set(
+                  "notifyDisruptions",
+                  checked,
+                  de
+                    ? `Mitteilung bei Störungen ${checked ? "an" : "aus"}`
+                    : `Disruption alerts ${checked ? "on" : "off"}`,
+                );
+              }}
+            />
+            <label htmlFor="feed-notify-disruptions" className="text-[13.5px] font-semibold">
+              {de ? "Mitteilung bei Störungen" : "Alert on disruptions"}
+            </label>
+          </div>
         )}
       </div>
-      <footer
-        className="flex min-h-12 items-center justify-between gap-3 border-t border-border px-5 py-2 text-[13px] text-muted-foreground"
-        role="status"
-        data-workjet-feed-settings-saved={props.saved}
-      >
-        <span className={props.saved === "device" ? "text-amber-400" : ""}>
-          {props.undo ? `${props.undo.label} · ` : ""}
-          {savedText}
-        </span>
-        {props.undo ? (
-          <button
-            type="button"
-            onClick={props.onUndo}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-2.5 py-1 font-semibold text-foreground hover:bg-muted/70"
-          >
-            <Undo2Icon aria-hidden className="size-3.5" />
-            {de ? "Rückgängig" : "Undo"}
-          </button>
-        ) : null}
-      </footer>
+      {props.undo || deviceOnly ? (
+        <footer
+          className="flex min-h-11 items-center justify-between gap-3 border-t border-border px-5 py-2 text-[12px] text-muted-foreground"
+          role="status"
+          data-workjet-feed-settings-saved={props.saved}
+        >
+          <span className={deviceOnly ? "text-warning-foreground" : ""}>
+            {props.undo
+              ? props.undo.label
+              : de
+                ? "Nur auf diesem Gerät gespeichert"
+                : "Saved on this device only"}
+          </span>
+          {props.undo ? (
+            <Button type="button" size="xs" variant="outline" onClick={props.onUndo}>
+              <Undo2Icon aria-hidden className="size-3.5" />
+              {de ? "Rückgängig" : "Undo"}
+            </Button>
+          ) : null}
+        </footer>
+      ) : null}
     </div>
   );
 }
@@ -617,15 +552,18 @@ export function FeedSettingsButton(props: {
   readonly language: "de" | "en";
   readonly onClick: () => void;
 }) {
+  const label = props.language === "de" ? "Feed-Einstellungen" : "Feed settings";
   return (
-    <button
+    <Button
       type="button"
+      size="icon-sm"
+      variant="ghost"
+      aria-label={label}
+      title={label}
       onClick={props.onClick}
       data-workjet-action="project.feed.settings"
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
     >
       <SlidersHorizontalIcon aria-hidden className="size-4" />
-      {props.language === "de" ? "Einstellungen" : "Settings"}
-    </button>
+    </Button>
   );
 }

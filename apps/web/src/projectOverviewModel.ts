@@ -295,8 +295,8 @@ export function buildProjectOwnerOverview(input: {
     ? confirmed.items.map((item) => ({
         id: item.id,
         title: item.title,
-        owner: item.owner ?? text.unknown,
-        state: text.unknown,
+        owner: item.owner ?? "",
+        state: text.waiting,
         harness: null,
         status: "waiting",
       }))

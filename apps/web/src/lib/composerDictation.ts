@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import { WorkjetDictationResponse, type WorkjetDictationRequest } from "@workjet/contracts";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "../workjetProjectControl";
 import { newCommandId } from "./utils";
@@ -28,7 +28,11 @@ export class ComposerDictationStream {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let abort: (() => void) | undefined;
     try {
-      const pending = requestWorkjetProjectControl(this.instanceId, input, this.port);
+      const pending = requestWorkjetProjectControlFromExplicitHost(
+        this.instanceId,
+        input,
+        this.port,
+      );
       // An open receipt arriving after cancellation still owns a stream to close.
       if (input.op === "open")
         void pending.then(
@@ -164,7 +168,7 @@ export class ComposerDictationStream {
     const streamId = this.streamId;
     this.streamId = undefined;
     // Cancellation must work after the UI's AbortSignal has been aborted.
-    void requestWorkjetProjectControl(
+    void requestWorkjetProjectControlFromExplicitHost(
       this.instanceId,
       {
         action: "speech.dictation",

@@ -15,12 +15,10 @@ export function useSessionCalendar(instanceId: string | null) {
     );
     reader.current = current;
     void current.refresh();
-    const unsubscribe = window.desktopBridge?.ctox?.onSessionTransferEvent?.((event) => {
-      if (event.instanceId === instanceId) void current.refresh();
-    });
+
     return () => {
       current.dispose();
-      unsubscribe?.();
+
       if (reader.current === current) reader.current = null;
     };
   }, [instanceId]);

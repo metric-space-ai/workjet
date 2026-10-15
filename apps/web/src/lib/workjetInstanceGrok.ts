@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 import { newCommandId } from "./utils";
 import {
   WorkjetProjectControlError,
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "../workjetProjectControl";
 
@@ -27,7 +27,7 @@ export async function requestInstanceGrok(
   let onAbort: (() => void) | undefined;
   let timedOut = false;
   try {
-    const pending = requestWorkjetProjectControl(
+    const pending = requestWorkjetProjectControlFromExplicitHost(
       instanceId,
       { ...input, version: 1, operationId },
       port,

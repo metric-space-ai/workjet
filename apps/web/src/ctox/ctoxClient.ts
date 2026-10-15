@@ -9,6 +9,9 @@ export function createCtoxClient(api: CtoxAppApi): CtoxAppApi {
   return api;
 }
 
+const boundInstances = new Set<string>();
+export const hasCtoxClientBinding = (instanceId: string) => boundInstances.has(instanceId);
+
 const clients = new Map<string, { api: CtoxAppApi }>();
 const scopes = new WeakMap<CtoxAppApi, string>();
 const listeners = new Set<() => void>();
@@ -34,6 +37,7 @@ export function subscribeCtoxClients(listener: () => void): () => void {
 export function bindCtoxClient(instanceId: string, api: CtoxAppApi): () => void {
   if (!instanceId.trim()) throw new Error("invalid_ctox_instance");
   const client = createCtoxClient(api);
+  boundInstances.add(instanceId);
   const scope = scopes.get(client);
   if (scope !== undefined && scope !== instanceId) throw new Error("invalid_ctox_instance_scope");
   scopes.set(client, instanceId);

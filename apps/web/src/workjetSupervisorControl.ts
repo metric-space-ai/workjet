@@ -9,7 +9,7 @@ import {
 import * as Schema from "effect/Schema";
 import { Effect, Random } from "effect";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 
@@ -30,7 +30,11 @@ async function confirmedControl(
   request: CtoxWorkjetProjectControlRequest,
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
-  const result = await requestWorkjetProjectControl(intent.instanceId, request, port);
+  const result = await requestWorkjetProjectControlFromExplicitHost(
+    intent.instanceId,
+    request,
+    port,
+  );
   if (
     result._tag === "completed" &&
     !isWorkjetSupervisorReceiptForRequest(request, result.response)

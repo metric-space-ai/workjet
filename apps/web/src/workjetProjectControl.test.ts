@@ -18,7 +18,13 @@ describe("project instance failure display", () => {
       await expect(
         requestWorkjetProjectControl(
           "managed:fixture",
-          { action: "project.gallery.order.read", commandId: CommandId.make("read") },
+          {
+            action: "project.gallery.order.set",
+            commandId: CommandId.make("read"),
+            operationId: "set-order",
+            expectedRevision: 0,
+            projectIds: [],
+          },
           request,
         ),
       ).resolves.toEqual(failure);
@@ -99,7 +105,7 @@ describe("requestWorkjetProjectControl", () => {
       .mockResolvedValueOnce({
         _tag: "completed",
         response: {
-          action: "project.gallery.order.read",
+          action: "project.gallery.order.set",
           commandId: CommandId.make("read"),
           contract: "ctox.workjet.project_gallery_order.v1",
           order: { revision: 0, projectIds: [] },
@@ -113,14 +119,20 @@ describe("requestWorkjetProjectControl", () => {
     await expect(
       requestWorkjetProjectControl(
         "managed:welsch",
-        { action: "project.gallery.order.read", commandId: CommandId.make("read") },
+        {
+          action: "project.gallery.order.set",
+          commandId: CommandId.make("read"),
+          operationId: "set-order",
+          expectedRevision: 0,
+          projectIds: [],
+        },
         request,
         ensurePooled,
       ),
     ).resolves.toEqual({
       _tag: "completed",
       response: {
-        action: "project.gallery.order.read",
+        action: "project.gallery.order.set",
         commandId: CommandId.make("read"),
         contract: "ctox.workjet.project_gallery_order.v1",
         order: { revision: 0, projectIds: [] },
@@ -129,11 +141,17 @@ describe("requestWorkjetProjectControl", () => {
     expect(ensurePooled).toHaveBeenCalledExactlyOnceWith("managed:welsch");
     expect(request).toHaveBeenCalledTimes(2);
     expect(request).toHaveBeenNthCalledWith(1, "managed:welsch", {
-      action: "project.gallery.order.read",
+      action: "project.gallery.order.set",
+      operationId: "set-order",
+      expectedRevision: 0,
+      projectIds: [],
       commandId: CommandId.make("read"),
     });
     expect(request).toHaveBeenNthCalledWith(2, "managed:welsch", {
-      action: "project.gallery.order.read",
+      action: "project.gallery.order.set",
+      operationId: "set-order",
+      expectedRevision: 0,
+      projectIds: [],
       commandId: CommandId.make("read"),
     });
   });
@@ -150,7 +168,13 @@ describe("requestWorkjetProjectControl", () => {
     await expect(
       requestWorkjetProjectControl(
         "local:workstation",
-        { action: "project.gallery.order.read", commandId: CommandId.make("read") },
+        {
+          action: "project.gallery.order.set",
+          commandId: CommandId.make("read"),
+          operationId: "set-order",
+          expectedRevision: 0,
+          projectIds: [],
+        },
         request,
         ensurePooled,
       ),
@@ -170,7 +194,13 @@ describe("requestWorkjetProjectControl", () => {
     await expect(
       requestWorkjetProjectControl(
         "managed:selected",
-        { action: "project.gallery.order.read", commandId: CommandId.make("read") },
+        {
+          action: "project.gallery.order.set",
+          commandId: CommandId.make("read"),
+          operationId: "set-order",
+          expectedRevision: 0,
+          projectIds: [],
+        },
         request,
         ensurePooled,
       ),
@@ -190,7 +220,13 @@ describe("requestWorkjetProjectControl", () => {
     await expect(
       requestWorkjetProjectControl(
         "managed:welsch",
-        { action: "project.gallery.order.read", commandId: CommandId.make("read") },
+        {
+          action: "project.gallery.order.set",
+          commandId: CommandId.make("read"),
+          operationId: "set-order",
+          expectedRevision: 0,
+          projectIds: [],
+        },
         request,
         ensurePooled,
       ),

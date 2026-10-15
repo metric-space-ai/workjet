@@ -1,165 +1,89 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { CommandId, ProjectId, type CtoxWorkjetProjectControlResult } from "@workjet/contracts";
+import { describe, expect, it, vi } from "vite-plus/test";
+import { CommandId, ProjectId } from "@workjet/contracts";
 import { readGalleryProjectKpis } from "./projectKpiProjection";
+import { createKernel } from "./ctox/kernel/kernel.mjs";
+import { KernelTransport } from "./ctox/kernel/transport.mjs";
+import { bindCtoxClient } from "./ctox/ctoxClient";
 import {
   readWorkjetProjectKpis,
   requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 
-const completed = {
-  _tag: "completed",
-  response: {
-    action: "project.feed.read",
-    commandId: CommandId.make("read"),
-    projectId: ProjectId.make("a"),
-    contract: "ctox.workjet.project_feed.v1",
-    posts: [],
-    next_before_ms: null,
-  },
-} as const;
-afterEach(() => vi.useRealTimers());
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((onResolve, onReject) => {
-    resolve = onResolve;
-    reject = onReject;
+it("reads local gallery order without a desktop read or warmup", async () => {
+  const kernel = createKernel({
+    instanceId: "local-admission",
+    userId: "owner",
+    storage: "memory",
+    dbName: "p11c-admission",
+    multiTab: false,
+    transport: new KernelTransport(),
   });
-  return { promise, resolve, reject };
-}
-
-describe("project control in-flight reads", () => {
-  it("shares identical reads despite property ordering and forgets completed results", async () => {
-    const pending = deferred<CtoxWorkjetProjectControlResult>();
-    const port = vi
-      .fn<WorkjetProjectControlPort>()
-      .mockReturnValueOnce(pending.promise)
-      .mockResolvedValue(completed);
-    const first = requestWorkjetProjectControl(
-      "own",
-      {
-        action: "project.feed.read",
-        commandId: CommandId.make("read"),
-        projectId: ProjectId.make("a"),
-        limit: 30,
-      },
-      port,
-    );
-    const second = requestWorkjetProjectControl(
-      "own",
-      {
-        limit: 30,
-        projectId: ProjectId.make("a"),
-        commandId: CommandId.make("read"),
-        action: "project.feed.read",
-      },
-      port,
-    );
-    expect(second).toBe(first);
-    expect(port).toHaveBeenCalledOnce();
-    pending.resolve(completed);
-    await first;
-    await requestWorkjetProjectControl(
-      "own",
-      {
-        action: "project.feed.read",
-        commandId: CommandId.make("read"),
-        projectId: ProjectId.make("a"),
-        limit: 30,
-      },
-      port,
-    );
-    expect(port).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps instances, parameters, transport and mutations separate", async () => {
-    const pending = deferred<CtoxWorkjetProjectControlResult>();
-    const port = vi.fn<WorkjetProjectControlPort>().mockReturnValue(pending.promise);
-    const other = vi.fn<WorkjetProjectControlPort>().mockReturnValue(pending.promise);
-    const request = {
-      action: "project.feed.read",
-      commandId: CommandId.make("read"),
-      projectId: ProjectId.make("a"),
-      limit: 30,
-    } as const;
-    const write = {
-      action: "project.kpis.configure",
-      projectId: ProjectId.make("a"),
-      commandId: CommandId.make("write"),
-      operationId: "save",
-      expectedRevision: 0,
-      prompts: [],
-    } as const;
-    const reads = [
-      requestWorkjetProjectControl("own", request, port),
-      requestWorkjetProjectControl("other", request, port),
-      requestWorkjetProjectControl("own", { ...request, projectId: ProjectId.make("b") }, port),
-      requestWorkjetProjectControl("own", request, other),
-      requestWorkjetProjectControl("own", write, port),
-      requestWorkjetProjectControl("own", write, port),
-    ];
-    expect(port).toHaveBeenCalledTimes(5);
-    expect(other).toHaveBeenCalledOnce();
-    pending.resolve(completed);
-    await Promise.all(reads);
-  });
-
-  it("clears rejected and failed reads so a retry really reaches the instance", async () => {
-    const pending = deferred<CtoxWorkjetProjectControlResult>();
-    const port = vi
-      .fn<WorkjetProjectControlPort>()
-      .mockReturnValueOnce(pending.promise)
-      .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
-      .mockResolvedValue(completed);
-    const first = requestWorkjetProjectControl(
-      "own",
-      {
-        action: "project.feed.read",
-        commandId: CommandId.make("read"),
-        projectId: ProjectId.make("a"),
-        limit: 30,
-      },
-      port,
-    );
-    const second = requestWorkjetProjectControl(
-      "own",
-      {
-        action: "project.feed.read",
-        commandId: CommandId.make("read"),
-        projectId: ProjectId.make("a"),
-        limit: 30,
-      },
-      port,
-    );
-    const joined = Promise.allSettled([first, second]);
-    pending.reject(new Error("transport closed"));
-    expect((await joined).every((entry) => entry.status === "rejected")).toBe(true);
-    await requestWorkjetProjectControl(
-      "own",
-      {
-        action: "project.feed.read",
-        commandId: CommandId.make("read"),
-        projectId: ProjectId.make("a"),
-        limit: 30,
-      },
-      port,
-    );
-    expect(
-      await requestWorkjetProjectControl(
-        "own",
+  await kernel.ready;
+  const unbind = bindCtoxClient(kernel.instanceId, kernel.appApi("workjet", "test"));
+  const port = vi
+    .fn<WorkjetProjectControlPort>()
+    .mockResolvedValue({ _tag: "failed", code: "guest_failed" });
+  const request = {
+    action: "project.gallery.order.read",
+    commandId: CommandId.make("first"),
+  } as const;
+  const deliver = (revision: number, projectIds: string[]) =>
+    kernel.receivePage({
+      epoch: "1",
+      collection: "workjet_gallery_orders",
+      scope_hash: "local",
+      gen: 1,
+      cursor_to: String(revision),
+      complete: true,
+      docs: [
         {
-          action: "project.feed.read",
-          commandId: CommandId.make("read"),
-          projectId: ProjectId.make("a"),
-          limit: 30,
+          id: "own",
+          seq: String(revision),
+          rev: String(revision),
+          data: { id: "own", owner_user_id: "owner", revision, projectIds },
         },
+        {
+          id: "foreign",
+          seq: String(revision),
+          rev: String(revision),
+          data: { id: "foreign", owner_user_id: "foreign", revision, projectIds: ["private"] },
+        },
+      ],
+    });
+  try {
+    await deliver(1, ["p1"]);
+    const [first, second] = await Promise.all([
+      requestWorkjetProjectControl(kernel.instanceId, request, port),
+      requestWorkjetProjectControl(
+        kernel.instanceId,
+        { ...request, commandId: CommandId.make("second") },
         port,
       ),
-    ).toEqual(completed);
-    expect(port).toHaveBeenCalledTimes(3);
-  });
+    ]);
+    expect(first).toMatchObject({
+      _tag: "completed",
+      response: { commandId: "first", order: { revision: 1, projectIds: ["p1"] } },
+    });
+    expect(second).toMatchObject({
+      _tag: "completed",
+      response: { commandId: "second", order: { projectIds: ["p1"] } },
+    });
+    await deliver(2, ["p2"]);
+    expect(await requestWorkjetProjectControl(kernel.instanceId, request, port)).toMatchObject({
+      _tag: "completed",
+      response: { order: { revision: 2, projectIds: ["p2"] } },
+    });
+    unbind();
+    expect(
+      await requestWorkjetProjectControlFromExplicitHost(kernel.instanceId, request, port),
+    ).toEqual({ _tag: "failed", code: "not_active" });
+    expect(port).not.toHaveBeenCalled();
+  } finally {
+    unbind();
+    await kernel.close();
+  }
 });
 
 describe("local overview KPI admission", () => {

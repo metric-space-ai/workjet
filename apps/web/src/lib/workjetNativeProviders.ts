@@ -11,7 +11,7 @@ import * as Schema from "effect/Schema";
 import { newCommandId } from "./utils";
 import {
   WorkjetProjectControlError,
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "../workjetProjectControl";
 
@@ -62,7 +62,11 @@ export async function requestInstanceProviders(
   let onAbort: (() => void) | undefined;
   try {
     const result = await Promise.race([
-      requestWorkjetProjectControl(instanceId, { ...input, version: 1, operationId }, port),
+      requestWorkjetProjectControlFromExplicitHost(
+        instanceId,
+        { ...input, version: 1, operationId },
+        port,
+      ),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () =>
@@ -129,7 +133,7 @@ export async function checkInstanceModel(
   let onAbort: (() => void) | undefined;
   try {
     const result = await Promise.race([
-      requestWorkjetProjectControl(
+      requestWorkjetProjectControlFromExplicitHost(
         instanceId,
         {
           version: 1,

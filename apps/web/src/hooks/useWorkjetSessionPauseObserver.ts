@@ -17,6 +17,8 @@ import {
   type WorkjetSessionPausePlan,
 } from "../workjetSessionPauseObserver";
 import { usePrimarySettings } from "./useSettings";
+import { useActiveWorkjetScope } from "../activeWorkjetScope";
+import { subscribeCtoxSessionTransferEvents } from "../ctox/sessionTransferData";
 
 export const WORKJET_SESSION_PAUSE_WAIT_MAX_MS = 40_000;
 export const WORKJET_SESSION_STOP_CONFIRM_MAX_MS = 15_000;
@@ -251,17 +253,11 @@ export function useWorkjetSessionPauseObserver(): void {
     [acknowledge, interruptTurn, plan, waitForStillness],
   );
 
+  const { selectedInstanceId } = useActiveWorkjetScope();
   useEffect(() => {
-    const bridge = window.desktopBridge?.ctox;
-    if (bridge?.registerSessionTransferEvents === undefined) return;
-    void bridge.registerSessionTransferEvents(computerIds);
-  }, [computerIds]);
-
-  useEffect(() => {
-    const subscribe = window.desktopBridge?.ctox?.onSessionTransferEvent;
-    if (subscribe === undefined) return;
-    return subscribe(observe);
-  }, [observe]);
+    if (selectedInstanceId === null) return;
+    return subscribeCtoxSessionTransferEvents(selectedInstanceId, computerIds, observe);
+  }, [selectedInstanceId, computerIds, observe]);
 
   useEffect(
     () => () => {

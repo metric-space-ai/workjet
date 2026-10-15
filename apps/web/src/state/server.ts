@@ -1,3 +1,7 @@
+import { ctoxLumaReads } from "../ctox/lumaReadData";
+import { ctoxGatewayReads } from "../ctox/gatewayReadData";
+import { ctoxCalendarReads } from "../ctox/calendarReadData";
+import { ctoxCrossModeReads } from "../ctox/crossModeReadData";
 import {
   DEFAULT_SERVER_SETTINGS,
   type EditorId,
@@ -18,9 +22,16 @@ import { connectionAtomRuntime } from "../connection/runtime";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
 
-export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
+const legacyServerEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
   initialConfigValueAtom: environmentSession.initialConfigValueAtom,
 });
+export const serverEnvironment = {
+  ...legacyServerEnvironment,
+  ...ctoxCrossModeReads,
+  ...ctoxCalendarReads,
+  ...ctoxGatewayReads,
+  ...ctoxLumaReads,
+};
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,

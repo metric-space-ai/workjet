@@ -1,3 +1,4 @@
+import { seedKernelTestShell } from "./kernelTestHost";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { createKernel } from "./kernel/kernel.mjs";
 import { KernelTransport } from "./kernel/transport.mjs";
@@ -40,6 +41,7 @@ async function open(instanceId: string, transport = new KernelTransport()) {
   });
   kernels.push(kernel);
   await kernel.ready;
+  await seedKernelTestShell(kernel);
   releases.push(bindKernelCtoxClient(kernel, "p11-b"));
   return { kernel, api: getCtoxClient(instanceId)! };
 }

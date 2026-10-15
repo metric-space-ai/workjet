@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/metric-space-ai/ctox",
   "pullRequest": 823,
-  "commit": "c5a8f32f7d0b37085c1c57c71990b98ae9ac49a5",
+  "commit": "c707454b0e67ec5ec8881f68dc94813a55b4a2ac",
   "sourceDirectory": "src/apps/business-os/kernel",
   "files": [
     {
@@ -31,8 +31,8 @@
     },
     {
       "path": "fake-core.mjs",
-      "sha256": "22bf58982f5529fb6051014727ec681dd3e1d9f31b4c48da9c7d39b13931f82f",
-      "gitBlob": "2a13adaaa3ccf94c4c676c214d73bdc0d96723ad"
+      "sha256": "12a3e0f364019f57fb2d57d558d67e52cc3e22d3dd4dd165bf0bd0e0ce51d147",
+      "gitBlob": "727001f73431412309a103e1aaf7c7b3a5a8592c"
     },
     {
       "path": "framing.mjs",
@@ -41,8 +41,8 @@
     },
     {
       "path": "index.d.ts",
-      "sha256": "b41cfea566ec8c0003e608b319c97676b6252a467686417960b02a1defd8ddc2",
-      "gitBlob": "013fc5f2f83299e00d4e33f84e5011e945dc61d6"
+      "sha256": "63cca4d4055240f93de1c2d8c60ce7e244f715c5803a5a2f56fda72f71cd2c43",
+      "gitBlob": "a48a69da4e396614f60b52e22b8d88446488d461"
     },
     {
       "path": "index.mjs",
@@ -56,8 +56,8 @@
     },
     {
       "path": "kernel.mjs",
-      "sha256": "ec9c28ad625f4decefc6a038e8d5ab0197fbf064c0d1a2b17aa2c89d67fc4a12",
-      "gitBlob": "5be0908595a7f630327cbc9de8f463b4ad55a37b"
+      "sha256": "da30487b0f9121fcab5dab3c9715a27c9193527f0cb51254e9cc6d6407404cd2",
+      "gitBlob": "1bcf0479db04c565fadb8a6bd1917461c31fe76a"
     },
     {
       "path": "leader.mjs",

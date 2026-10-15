@@ -9,11 +9,16 @@ import type {
   DesktopCtoxBridge,
   CtoxWorkjetProjectKpis,
 } from "@workjet/contracts";
-import { projectControlReadKey } from "@workjet/shared/projectControlRead";
-import { readActiveWorkjetScope } from "./activeWorkjetScope";
 import { newCommandId } from "./lib/utils";
-import { getCtoxClient } from "./ctox/ctoxClient";
+import { getCtoxClient, hasCtoxClientBinding } from "./ctox/ctoxClient";
 import { readLocalWorkjetProjects, readLocalWorkjetKpis } from "./ctox/workjetCollections";
+import {
+  CtoxLocalReadError,
+  isLocalProjectRead,
+  localReadFailure,
+  readLocalProjectControl,
+} from "./ctox/projectReadData";
+import { readLocalProjectFile } from "./ctox/projectFileData";
 
 const decodeFeedPost = Schema.decodeUnknownSync(CtoxWorkjetProjectFeedPost);
 
@@ -172,17 +177,6 @@ async function executeWorkjetProjectControl(
   return port(instanceId, request);
 }
 
-const pendingReads = new WeakMap<
-  WorkjetProjectControlPort,
-  Map<
-    string,
-    {
-      readonly pool: WorkjetProjectPoolPort | undefined;
-      readonly promise: Promise<CtoxWorkjetProjectControlResult>;
-    }
-  >
->();
-
 export function requestWorkjetProjectControl(
   instanceId: string,
   request: CtoxWorkjetProjectControlRequest,
@@ -190,6 +184,26 @@ export function requestWorkjetProjectControl(
   ensurePooled?: WorkjetProjectPoolPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   if (request.action === "project.list") return listWorkjetProjects(instanceId);
+  if (isLocalProjectRead(request)) {
+    const api = getCtoxClient(instanceId);
+    if (api === null) return Promise.resolve({ _tag: "failed", code: "not_active" });
+    if (
+      request.action === "project.presentation.content.read" ||
+      request.action === "project.jour_fixe.narration.read"
+    )
+      return readLocalProjectFile(api, request).then(
+        (response) => ({ _tag: "completed" as const, response }),
+        localReadFailure,
+      );
+    try {
+      return Promise.resolve({
+        _tag: "completed",
+        response: readLocalProjectControl(api, request),
+      });
+    } catch (error) {
+      return Promise.resolve(localReadFailure(error));
+    }
+  }
   if (request.action === "project.kpis.read")
     return readWorkjetProjectKpis(instanceId, request.projectId).then((result) =>
       result._tag === "completed" && result.response.action === "project.kpis.read"
@@ -225,30 +239,31 @@ export function requestWorkjetProjectControl(
       },
     });
   }
-  const legacyPort = port ?? activeDesktopProjectControl();
-  const legacyPool = ensurePooled ?? activeDesktopProjectPool();
-  const readKey = projectControlReadKey(request);
-  if (!legacyPort || readKey === null)
-    return executeWorkjetProjectControl(instanceId, request, legacyPort, legacyPool);
-  const key = JSON.stringify([instanceId, readActiveWorkjetScope().selectionRevision, readKey]);
-  let reads = pendingReads.get(legacyPort);
-  if (!reads) pendingReads.set(legacyPort, (reads = new Map()));
-  const existing = reads.get(key);
-  if (existing && existing.pool === legacyPool) return existing.promise;
-  const currentReads = reads;
-  const entry: {
-    readonly pool: WorkjetProjectPoolPort | undefined;
-    readonly promise: Promise<CtoxWorkjetProjectControlResult>;
-  } = {
-    pool: legacyPool,
-    promise: executeWorkjetProjectControl(instanceId, request, legacyPort, legacyPool).finally(
-      () => {
-        if (currentReads.get(key) === entry) currentReads.delete(key);
-      },
-    ),
-  };
-  reads.set(key, entry);
-  return entry.promise;
+  // No future metadata read may silently reintroduce the invisible guest path.
+  if (request.action.endsWith(".read"))
+    return Promise.resolve(
+      localReadFailure(
+        new CtoxLocalReadError("unavailable", "projection_not_registered", request.action),
+      ),
+    );
+  return executeWorkjetProjectControl(
+    instanceId,
+    request,
+    port ?? activeDesktopProjectControl(),
+    ensurePooled ?? activeDesktopProjectPool(),
+  );
+}
+
+/** Explicit standalone/test-host injection only. Once bound to V4, an instance never falls back. */
+export function requestWorkjetProjectControlFromExplicitHost(
+  instanceId: string,
+  request: CtoxWorkjetProjectControlRequest,
+  port?: WorkjetProjectControlPort,
+  ensurePooled?: WorkjetProjectPoolPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  if (hasCtoxClientBinding(instanceId) || port === undefined)
+    return requestWorkjetProjectControl(instanceId, request);
+  return executeWorkjetProjectControl(instanceId, request, port, ensurePooled);
 }
 
 export async function listWorkjetProjects(

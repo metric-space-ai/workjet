@@ -10,7 +10,7 @@ import {
 import * as Schema from "effect/Schema";
 import { Effect, Random } from "effect";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 import type { WorkjetSupervisorJournalPort } from "./workjetSupervisorControl";
@@ -38,7 +38,11 @@ export async function readWorkjetSupervisorInputCapabilities(
     threadId: scope.threadId,
     includeInput: true,
   };
-  const result = await requestWorkjetProjectControl(scope.instanceId, request, port);
+  const result = await requestWorkjetProjectControlFromExplicitHost(
+    scope.instanceId,
+    request,
+    port,
+  );
   return result._tag === "completed" &&
     !isWorkjetSupervisorReceiptForRequest(request, result.response)
     ? { _tag: "failed", code: "unsupported" }
@@ -103,7 +107,11 @@ export async function submitWorkjetSupervisorInput(
     targetCommandId: intent.targetCommandId,
     body: intent.body,
   };
-  const result = await requestWorkjetProjectControl(intent.instanceId, request, port);
+  const result = await requestWorkjetProjectControlFromExplicitHost(
+    intent.instanceId,
+    request,
+    port,
+  );
   if (result._tag !== "completed") return result;
   if (
     !isWorkjetSupervisorReceiptForRequest(request, result.response) ||

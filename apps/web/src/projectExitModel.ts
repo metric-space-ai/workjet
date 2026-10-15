@@ -7,7 +7,7 @@ import {
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 
@@ -35,7 +35,7 @@ export async function requestProjectExitModel(
   | { readonly _tag: "failed"; readonly message: string; readonly reason: ExitModelFailureReason }
 > {
   try {
-    const result = await requestWorkjetProjectControl(instanceId, request, port);
+    const result = await requestWorkjetProjectControlFromExplicitHost(instanceId, request, port);
     if (result._tag !== "completed") {
       if (result.code === "timeout" || result.diagnostic?.reason === "request_timeout")
         return { _tag: "failed", message: "Bewertung nicht geladen.", reason: "timeout" };

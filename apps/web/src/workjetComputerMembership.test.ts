@@ -1,3 +1,4 @@
+import { seedKernelTestShell } from "./ctox/kernelTestHost";
 import {
   EnvironmentId,
   WorkjetComputerId,
@@ -38,6 +39,7 @@ async function readyStore(
   });
   hosts.set(instanceId, kernel);
   await kernel.ready;
+  await seedKernelTestShell(kernel);
   releases.push(bindKernelCtoxClient(kernel, "p11-b"));
   await kernel.receivePage({
     epoch: "1",

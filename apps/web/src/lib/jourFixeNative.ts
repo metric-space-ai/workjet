@@ -8,7 +8,7 @@ import {
   isWorkjetJourFixeReceiptForRequest,
   isWorkjetJourFixeReadReceiptForRequest,
 } from "@workjet/contracts";
-import { requestWorkjetProjectControl } from "../workjetProjectControl";
+import { requestWorkjetProjectControlFromExplicitHost } from "../workjetProjectControl";
 import {
   JourFixeReadError,
   jourFixeReadDeadline,
@@ -23,7 +23,7 @@ type MutationRequest = Extract<
   CtoxWorkjetProjectControlRequest,
   { operationId: string; meetingId: string; expectedRevision: number }
 >;
-type Control = typeof requestWorkjetProjectControl;
+type Control = typeof requestWorkjetProjectControlFromExplicitHost;
 type PendingMutation = {
   key: string;
   request: MutationRequest;
@@ -93,7 +93,7 @@ export class JourFixeNativeSession {
     readonly instanceId: string,
     readonly projectId: ProjectId,
     private readonly current: () => boolean,
-    private readonly control: Control = requestWorkjetProjectControl,
+    private readonly control: Control = requestWorkjetProjectControlFromExplicitHost,
   ) {}
   close() {
     this.closed = true;

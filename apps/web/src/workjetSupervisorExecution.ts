@@ -7,7 +7,7 @@ import {
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 import type { WorkjetSupervisorJournalPort } from "./workjetSupervisorControl";
@@ -46,7 +46,7 @@ export async function readWorkjetSupervisorExecutionPage(
   let result: CtoxWorkjetProjectControlResult;
   try {
     result = decodeObservation(
-      await requestWorkjetProjectControl(saved.intent.instanceId, request, port),
+      await requestWorkjetProjectControlFromExplicitHost(saved.intent.instanceId, request, port),
     );
   } catch {
     return { _tag: "failed", code: "guest_failed" };

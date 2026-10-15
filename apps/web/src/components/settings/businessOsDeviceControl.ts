@@ -8,6 +8,8 @@ import {
 import * as Schema from "effect/Schema";
 
 import { encodeWorkjetBusinessOsPairingLink } from "./businessOsPairing";
+import { getCtoxClient } from "../../ctox/ctoxClient";
+import { readCtoxDevices } from "../../ctox/deviceData";
 
 export interface BusinessOsWebRtcDeviceInvite {
   readonly inviteId: string;
@@ -52,28 +54,19 @@ async function request(
 }
 
 export async function listBusinessOsDevices(
-  bridge: DesktopCtoxBridge,
+  _bridge: DesktopCtoxBridge,
   instanceId: string,
   businessOsInstanceId: string,
 ): Promise<WorkjetDeviceBindingListResult> {
-  const response = record(await request(bridge, instanceId, { action: "binding.list" }));
-  if (!Array.isArray(response.bindings) || response.bindings.length > 1_000) {
-    throw new Error("invalid_binding_list");
-  }
-  const devices: WorkjetDeviceBindingSummary[] = response.bindings.map((value) => {
-    const binding = record(value);
-    if (
-      typeof binding.id !== "string" ||
-      typeof binding.deviceId !== "string" ||
-      !Number.isSafeInteger(binding.pairedAtMs ?? binding.createdAtMs)
-    ) {
-      throw new Error("invalid_binding");
-    }
+  const api = getCtoxClient(instanceId);
+  if (!api) throw new Error("not_active");
+  const devices: WorkjetDeviceBindingSummary[] = readCtoxDevices(api).map((binding) => {
     return {
       devicePairingId: binding.id,
-      deviceId: binding.deviceId,
+      // V4's canonical device identity is device_pairing_id (§16.43).
+      deviceId: binding.id,
       businessOsInstanceId,
-      pairedAtMillis: Number(binding.pairedAtMs ?? binding.createdAtMs),
+      pairedAtMillis: binding.created_at_ms,
     };
   });
   return { devices };

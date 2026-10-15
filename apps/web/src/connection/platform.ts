@@ -58,6 +58,8 @@ import {
   type DesktopSecondaryBootstrapsRead,
 } from "./desktopLocal";
 import { connectionStorageLayer } from "./storage";
+import { getWorkjetKernelMount } from "../ctox/kernelClient";
+import { readActiveWorkjetScope } from "../activeWorkjetScope";
 
 let nextObservedRpcRequestId = 0;
 
@@ -484,7 +486,10 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
 const platformConnectionSourceLayer = Layer.effect(
   PlatformConnectionSource,
   Effect.gen(function* () {
-    if (isHostedStaticApp()) {
+    if (
+      isHostedStaticApp() ||
+      getWorkjetKernelMount(readActiveWorkjetScope().selectedInstanceId) !== null
+    ) {
       return PlatformConnectionSource.of({
         registrations: Stream.empty,
       });

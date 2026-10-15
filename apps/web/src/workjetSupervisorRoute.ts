@@ -9,7 +9,7 @@ import {
 import * as Schema from "effect/Schema";
 import type { NativeSupervisorScope } from "./nativeSupervisorComposer";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 import { randomUUID } from "./lib/utils";
@@ -38,7 +38,11 @@ export async function readSupervisorRoute(
         projectId: scope.projectId,
         threadId: scope.threadId,
       };
-      const result = await requestWorkjetProjectControl(scope.instanceId, request, port);
+      const result = await requestWorkjetProjectControlFromExplicitHost(
+        scope.instanceId,
+        request,
+        port,
+      );
       if (signal.aborted) return { phase: "unavailable", code: "canceled" };
       if (result._tag !== "completed") {
         if (action === "project.supervisor.route.capabilities.v2" && result.code === "unsupported")

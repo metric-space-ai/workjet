@@ -8,7 +8,7 @@ import type { WorkjetPrivateChatIntent } from "./workjetPrivateChatIntent";
 export { WorkjetPrivateChatIntent, samePrivateChatIntentScope } from "./workjetPrivateChatIntent";
 
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 
@@ -42,7 +42,11 @@ export async function createWorkjetPrivateChat(input: {
   readonly port?: WorkjetProjectControlPort;
 }): Promise<WorkjetThreadCtoxCrewChat> {
   if (!input.isCurrent()) throw new Error("Projekt nicht mehr aktiv.");
-  const result = await requestWorkjetProjectControl(input.instanceId, input.request, input.port);
+  const result = await requestWorkjetProjectControlFromExplicitHost(
+    input.instanceId,
+    input.request,
+    input.port,
+  );
   if (!input.isCurrent()) throw new Error("Projekt wurde zwischenzeitlich gewechselt.");
   if (result._tag !== "completed") throw new Error("CTOX hat den Chat nicht bestätigt.");
   const response = result.response;

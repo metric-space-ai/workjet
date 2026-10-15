@@ -117,7 +117,7 @@ try {
     measurements.push(await page.evaluate(() => globalThis.runKernelReadMeasurement(false)));
   }
   const proof = {
-    kernel: "CTOX#823@c5a8f32f7d0b37085c1c57c71990b98ae9ac49a5",
+    kernel: "CTOX v4/integration@c707454b0e67ec5ec8881f68dc94813a55b4a2ac",
     stub: false,
     provenanceSha256: NodeCrypto.createHash("sha256").update(provenanceBytes).digest("hex"),
     timingBoundary:

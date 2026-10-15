@@ -9,7 +9,7 @@ import {
   type WorkjetCalendarNativeRequest,
 } from "@workjet/contracts";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   describeWorkjetProjectControlFailure,
 } from "../workjetProjectControl";
 
@@ -18,7 +18,7 @@ export class NativeAccountCalendar {
   constructor(
     readonly instanceId: string,
     private readonly current: () => boolean,
-    private readonly control: typeof requestWorkjetProjectControl = requestWorkjetProjectControl,
+    private readonly control: typeof requestWorkjetProjectControlFromExplicitHost = requestWorkjetProjectControlFromExplicitHost,
   ) {}
   private async read(request: WorkjetCalendarNativeRequest) {
     if (!this.current()) throw new Error("Calendar instance changed.");

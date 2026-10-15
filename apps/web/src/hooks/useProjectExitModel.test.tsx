@@ -32,7 +32,11 @@ vi.mock("../lib/utils", async (importOriginal) => {
 });
 vi.mock("../workjetProjectControl", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../workjetProjectControl")>();
-  return { ...actual, requestWorkjetProjectControl: port.request };
+  return {
+    ...actual,
+    requestWorkjetProjectControl: port.request,
+    requestWorkjetProjectControlFromExplicitHost: port.request,
+  };
 });
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();

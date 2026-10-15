@@ -8,7 +8,7 @@ import { newCommandId } from "./utils";
 import type { CtoxWorkjetProjectControlResult } from "@workjet/contracts";
 import {
   describeWorkjetProjectControlFailure,
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "../workjetProjectControl";
 
@@ -37,7 +37,11 @@ async function request(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
   try {
-    const pending = requestWorkjetProjectControl(instanceId, { ...input, commandId }, port);
+    const pending = requestWorkjetProjectControlFromExplicitHost(
+      instanceId,
+      { ...input, commandId },
+      port,
+    );
     const result = await Promise.race([
       pending,
       new Promise<never>((_, reject) => {

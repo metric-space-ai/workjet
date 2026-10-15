@@ -1,3 +1,4 @@
+import { collectionLiveness } from "./liveness";
 import {
   EnvironmentId,
   OrchestrationThread,
@@ -99,7 +100,15 @@ export function useWorkjetThreadState(
     });
     return {
       data: Option.some(data),
-      status: metrics?.link.state === "online" ? "live" : "cached",
+      status: collectionLiveness(metrics, [
+        "workjet_threads",
+        "workjet_thread_messages",
+        "workjet_thread_activities",
+        "workjet_thread_plans",
+        "workjet_thread_checkpoints",
+      ]).allLive
+        ? "live"
+        : "cached",
       error: Option.none(),
       page: Option.none(),
     };

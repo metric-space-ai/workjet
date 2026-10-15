@@ -45,6 +45,7 @@ export async function openStubCtoxClient(
         const value = legacy.metrics.get();
         return {
           ...value,
+          collections: {},
           link: { ...value.link, state: value.link.state === "online" ? "online" : "offline" },
         };
       },

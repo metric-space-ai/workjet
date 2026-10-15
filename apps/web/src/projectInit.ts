@@ -6,7 +6,7 @@
  */
 import { ProjectId, type CtoxWorkjetProjectInitStep } from "@workjet/contracts";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 import { newCommandId } from "./lib/utils";
@@ -97,7 +97,7 @@ export async function requestProjectInit(
 ): Promise<ProjectInitResult> {
   const commandId = newCommandId();
   try {
-    const result = await requestWorkjetProjectControl(
+    const result = await requestWorkjetProjectControlFromExplicitHost(
       instanceId,
       { action: "project.init", commandId, projectId: ProjectId.make(projectId), operationId },
       port,

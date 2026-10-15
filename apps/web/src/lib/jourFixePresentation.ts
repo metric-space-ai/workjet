@@ -8,7 +8,7 @@ import {
 } from "@workjet/contracts";
 import { validateSlideDocument, type SlideDocument } from "@workjet/slide-engine/schema";
 import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
-import { requestWorkjetProjectControl } from "../workjetProjectControl";
+import { requestWorkjetProjectControlFromExplicitHost } from "../workjetProjectControl";
 import { newCommandId } from "./utils";
 import { jourFixeCacheKey, readJourFixeCache, writeJourFixeCache } from "./jourFixeCache";
 
@@ -18,7 +18,7 @@ import {
   jourFixeTransportError,
 } from "./jourFixeReadRetry";
 
-type Control = typeof requestWorkjetProjectControl;
+type Control = typeof requestWorkjetProjectControlFromExplicitHost;
 
 export interface JourFixePresentation {
   readonly manifest: WorkjetPresentationManifest;
@@ -115,7 +115,7 @@ export async function readJourFixePresentation(
   instanceId: string,
   projectId: ProjectId,
   meetingId: string,
-  control: Control = requestWorkjetProjectControl,
+  control: Control = requestWorkjetProjectControlFromExplicitHost,
   signal?: AbortSignal,
 ): Promise<JourFixePresentation | null> {
   const options = { signal, deadline: jourFixeReadDeadline() };
@@ -202,7 +202,7 @@ export async function saveJourFixePresentationCanvas(
   manifest: WorkjetPresentationManifest,
   slideId: string,
   scene: CanvasScene,
-  control: Control = requestWorkjetProjectControl,
+  control: Control = requestWorkjetProjectControlFromExplicitHost,
   operationId?: string,
 ): Promise<JourFixePresentationSave> {
   const sceneJson = JSON.stringify(scene);
@@ -232,7 +232,7 @@ export async function saveJourFixePresentationSlide(
   manifest: WorkjetPresentationManifest,
   slideId: string,
   scene: CanvasScene,
-  control: Control = requestWorkjetProjectControl,
+  control: Control = requestWorkjetProjectControlFromExplicitHost,
 ): Promise<{
   readonly presentation: JourFixePresentation | null;
   readonly reloadError: string | null;

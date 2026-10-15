@@ -1,3 +1,4 @@
+import { seedKernelTestShell } from "./ctox/kernelTestHost";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { createKernel } from "./ctox/kernel/kernel.mjs";
@@ -40,6 +41,7 @@ describe("requestWorkjetSessionControl", () => {
       transport: new KernelTransport(),
     });
     await kernel.ready;
+    await seedKernelTestShell(kernel);
     unbind = bindKernelCtoxClient(kernel, "p11-b");
     await kernel.receivePage({
       epoch: "1",
@@ -152,7 +154,7 @@ describe("requestWorkjetSessionControl", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
-  it("preserves the unmigrated mutation and transfer-status helpers", async () => {
+  it("preserves unmigrated mutations while transfer status never falls back to a guest", async () => {
     const request = vi.fn<WorkjetSessionControlPort>().mockResolvedValue({
       _tag: "completed",
       response: { action: "session.list", sessions: [] },
@@ -197,14 +199,16 @@ describe("requestWorkjetSessionControl", () => {
 
     await createWorkjetSession(instanceId, create, request);
     await startWorkjetSessionTransfer(instanceId, start, request);
-    await readWorkjetSessionTransferStatus(instanceId, status, request);
+    expect(await readWorkjetSessionTransferStatus(instanceId, status, request)).toEqual({
+      _tag: "failed",
+      code: "not_active",
+    });
     await abortWorkjetSessionTransfer(instanceId, abort, request);
     await acknowledgeWorkjetSessionPause(instanceId, acknowledge, request);
 
     expect(request).toHaveBeenNthCalledWith(1, instanceId, create);
     expect(request).toHaveBeenNthCalledWith(2, instanceId, start);
-    expect(request).toHaveBeenNthCalledWith(3, instanceId, status);
-    expect(request).toHaveBeenNthCalledWith(4, instanceId, abort);
-    expect(request).toHaveBeenNthCalledWith(5, instanceId, acknowledge);
+    expect(request).toHaveBeenNthCalledWith(3, instanceId, abort);
+    expect(request).toHaveBeenNthCalledWith(4, instanceId, acknowledge);
   });
 });

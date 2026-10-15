@@ -6,7 +6,7 @@ import {
   type WorkjetJourFixeNarrationReadResponse,
 } from "@workjet/contracts";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "../workjetProjectControl";
 import type { JourFixeSpeechScope } from "./jourFixeSpeech";
@@ -64,7 +64,11 @@ export async function prepareJourFixeNarration(options: JourFixeNarrationOptions
   const invoke = (request: Parameters<WorkjetProjectControlPort>[1]) =>
     retryJourFixeRead(
       async () => {
-        const result = await requestWorkjetProjectControl(scope.instanceId, request, port);
+        const result = await requestWorkjetProjectControlFromExplicitHost(
+          scope.instanceId,
+          request,
+          port,
+        );
         if (result._tag !== "completed") throw jourFixeTransportError(result);
         return result;
       },

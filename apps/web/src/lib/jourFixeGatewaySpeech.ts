@@ -6,7 +6,7 @@ import {
   type WorkjetJourFixeSpeechResponse,
 } from "@workjet/contracts";
 import {
-  requestWorkjetProjectControl,
+  requestWorkjetProjectControlFromExplicitHost,
   type WorkjetProjectControlPort,
 } from "../workjetProjectControl";
 import type { JourFixeSpeechScope } from "./jourFixeSpeech";
@@ -75,7 +75,7 @@ async function request(
   options: JourFixeGatewaySpeechOptions,
   operation: WorkjetJourFixeSpeechRequest,
 ): Promise<WorkjetJourFixeSpeechResponse> {
-  const result = await requestWorkjetProjectControl(
+  const result = await requestWorkjetProjectControlFromExplicitHost(
     options.scope.instanceId,
     operation,
     options.port,

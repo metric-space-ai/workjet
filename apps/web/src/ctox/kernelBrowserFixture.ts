@@ -1,7 +1,9 @@
+import { createKernel } from "./kernel/kernel.mjs";
+import { seedKernelTestShell } from "./kernelTestHost";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
-import { openKernelCtoxClient } from "./kernelClient";
+import { mountWorkjetHost } from "./hostMount";
 import { KernelTransport } from "./kernel/transport.mjs";
 import { useCtoxQuery } from "./hooks";
 import type { WorkjetProjectKpiDocument } from "./workjetCollections";
@@ -59,17 +61,29 @@ function fixtureKpis(n: number) {
 
 /** Browser-only acceptance host: actual kernel + IndexedDB, deliberately disconnected transport. */
 async function runKernelReadMeasurement(seed: boolean) {
+  if (seed) {
+    const preparing = createKernel({
+      instanceId: "p11b-isolated",
+      userId: "fixture-owner",
+      storage: "indexeddb",
+      transport: new KernelTransport(),
+    });
+    await preparing.ready;
+    await seedKernelTestShell(preparing);
+    await preparing.close();
+  }
   const start = performance.now();
-  const host = await openKernelCtoxClient({
+  const kernel = createKernel({
     instanceId: "p11b-isolated",
     userId: "fixture-owner",
-    appVersion: "p11-b-browser",
+    storage: "indexeddb",
     transport: new KernelTransport(),
   });
+  await kernel.ready;
   if (seed) {
     for (const collection of ["workjet_projects", "workjet_project_kpis"]) {
       const sequenceOffset = collection === "workjet_projects" ? 0 : 12;
-      await host.kernel.receivePage({
+      await kernel.receivePage({
         epoch: "1",
         collection,
         scope_hash: "local",
@@ -128,21 +142,29 @@ async function runKernelReadMeasurement(seed: boolean) {
   }
   const container = document.createElement("main");
   document.body.append(container);
-  const root = createRoot(container);
-  flushSync(() => root.render(createElement(LocalReadProbe)));
+  const host = await mountWorkjetHost(container, kernel, {
+    appVersion: "p11-c-browser",
+    module: {
+      mount: () => {
+        const root = createRoot(container);
+        flushSync(() => root.render(createElement(LocalReadProbe)));
+        return { unmount: () => root.unmount() };
+      },
+    },
+  });
   const committedMs = performance.now() - start;
   const result = {
-    storage: host.kernel.storageKind,
-    link: host.api.metrics.get().link.state,
+    storage: kernel.storageKind,
+    link: host.context.api.metrics.get().link.state,
     dataReadyMs,
     committedMs,
     projectCount: container.querySelectorAll("[data-project]").length,
     kpiValueCount: container.querySelectorAll("[data-kpi]").length,
     text: container.textContent,
   };
-  root.unmount();
+  await host.unmount();
   container.remove();
-  await host.close();
+  await kernel.close();
   return result;
 }
 

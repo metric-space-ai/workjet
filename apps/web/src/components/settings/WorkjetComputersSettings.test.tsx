@@ -297,8 +297,9 @@ describe("native computer capabilities", () => {
     );
     expect(markup).toContain("Weitere Aktionen für flashstore24-nas");
     expect(markup).toContain("Weitere Aktionen für computer-local");
-    expect(markup).toContain('aria-label="flashstore24-nas entfernen"');
-    expect(markup).toContain('aria-label="computer-local entfernen"');
+    // Entfernen liegt im ⋯-Menü (Bestätigung inline), kein Papierkorb in der Zeile.
+    expect(markup).not.toContain('aria-label="flashstore24-nas entfernen"');
+    expect(markup).not.toContain('aria-label="computer-local entfernen"');
     // Jede Zeile hat denselben Schalter; der Instanz-Eintrag ohne Workjet-Datensatz
     // zeigt ihn gesperrt.
     expect(markup.match(/role="switch"/g)).toHaveLength(2);
@@ -343,8 +344,9 @@ describe("native computer capabilities", () => {
     const loading = render("loading");
     expect(rowsOf(loading)).toEqual(rowsOf(ready));
     expect(rowsOf(loading)).toHaveLength(2);
-    expect(loading).toContain('data-slot="computers-membership-checking"');
-    expect(ready).not.toContain('data-slot="computers-membership-checking"');
+    // Kein „prüft…“ im Kopf: die Zeilen behalten ihren Stand.
+    expect(loading).not.toContain("prüft…");
+    expect(loading).not.toContain('data-slot="computers-membership-checking"');
   });
 });
 
@@ -402,7 +404,9 @@ describe("current computer settings", () => {
 
   it("shows progress instead of borrowing the primary computer's tool results", () => {
     const markup = renderInspection(remoteComputer, {});
-    expect(markup).toContain('data-slot="computer-tools-checking"');
+    // Der Punkt zeigt die laufende Prüfung, kein Zustandstext.
+    expect(markup).toContain('aria-label="Prüft"');
+    expect(markup).not.toContain("prüft…");
     expect(markup).not.toContain("local-version");
   });
 
@@ -410,9 +414,10 @@ describe("current computer settings", () => {
     const markup = renderInspection(localComputer, {
       [localEnvironmentId]: { snapshot: null, error: "Disconnected" },
     });
-    expect(markup).toContain("Werkzeuge ?");
+    expect(markup).toContain('aria-label="Werkzeuge nicht prüfbar"');
+    expect(markup).not.toContain("Werkzeuge ?");
     expect(markup).not.toContain("local-version");
-    expect(markup).not.toContain('data-slot="computer-tools-checking"');
+    expect(markup).not.toContain('aria-label="Prüft"');
   });
 
   it("selects the local computer among three registered computers", () => {
@@ -670,7 +675,8 @@ describe("unified computer catalog", () => {
         onChange={() => undefined}
       />,
     );
-    expect(markup).toContain('data-slot="computer-tools-checking"');
+    expect(markup).toContain('aria-label="Prüft"');
+    expect(markup).not.toContain("prüft…");
     expect(markup).not.toContain('aria-label="Getrennt"');
   });
   it("shows a connecting computer as connecting and ignores its stale probe error", () => {
@@ -688,9 +694,10 @@ describe("unified computer catalog", () => {
         onChange={() => undefined}
       />,
     );
-    expect(markup).toContain("verbindet…");
+    expect(markup).toContain('aria-label="Verbindet"');
+    expect(markup).not.toContain("verbindet…");
     expect(markup).not.toContain('aria-label="Getrennt"');
-    expect(markup).not.toContain("Werkzeuge ?");
+    expect(markup).not.toContain('aria-label="Werkzeuge nicht prüfbar"');
   });
 });
 

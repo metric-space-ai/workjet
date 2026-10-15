@@ -811,27 +811,30 @@ export function WorkjetComputersSettingsView({
             );
             const checking =
               !environmentsReady || computer.environmentId === pendingConnectionEnvironmentId;
-            const failing =
-              metadata?.status === "unreachable" ||
-              (!disconnected && !connecting && !snapshot && !!inspection?.error);
+            // Kein „prüft…“/„verbindet…“ als Text mehr: der Punkt trägt den Zustand.
+            const unreachable = metadata?.status === "unreachable";
+            const toolsFailed = !disconnected && !connecting && !snapshot && !!inspection?.error;
+            const probing = !disconnected && !connecting && !snapshot && !inspection?.error;
             status =
-              checking || connecting || busyRow
+              checking || connecting || busyRow || probing
                 ? "busy"
-                : failing
+                : unreachable || toolsFailed
                   ? "error"
                   : disconnected
                     ? "off"
                     : "ok";
             statusLabel =
-              checking || busyRow
+              checking || busyRow || probing
                 ? "Prüft"
                 : connecting
                   ? "Verbindet"
-                  : failing
+                  : unreachable
                     ? "Nicht erreichbar"
-                    : disconnected
-                      ? "Getrennt"
-                      : "Verbunden";
+                    : toolsFailed
+                      ? "Werkzeuge nicht prüfbar"
+                      : disconnected
+                        ? "Getrennt"
+                        : "Verbunden";
             meta =
               computer.environmentId === environmentId
                 ? "Dieser Rechner"

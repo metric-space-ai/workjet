@@ -1,6 +1,9 @@
 import * as NodeUtil from "node:util";
 import {
+  canCoordinateWorkjet,
+  workjetParentBindingMatchesTeam,
   CommandId,
+  DEFAULT_RUNTIME_MODE,
   MessageId,
   ThreadId,
   WorkjetDelegationId,
@@ -21,6 +24,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import type { SqlError } from "effect/unstable/sql/SqlError";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -43,7 +47,11 @@ import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
 import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
 import { WorkjetMailboxStore } from "./mailbox/WorkjetMailboxStore.ts";
 import { WorkerDispatchRollback, type WorkerDispatchRecovery } from "./WorkerDispatchRollback.ts";
+import { workerSourceDriver } from "./WorkerSourceNativeProfile.ts";
 import type { OrchestrationDispatchOptions } from "../orchestration/Services/OrchestrationEngine.ts";
+import { makeWorkerOrdinal } from "./WorkerOrdinal.ts";
+import { LocalWorkerWorktree } from "./LocalWorkerWorktree.ts";
+import type { CapturedWorkerWorktree } from "./NativeWorkerWorktreeRemover.ts";
 
 export interface WorkerDispatchInput {
   readonly task: string;
@@ -64,6 +72,8 @@ export interface WorkerDispatchResult {
   readonly computerId?: WorkjetComputerId;
   readonly branch: string;
   readonly worktreePath: string;
+  readonly harness?: RemoteWorkerRequest["harness"];
+  readonly hostname?: string | undefined;
   readonly parent: WorkjetParentThreadReference;
   readonly modelSelection: ModelSelection;
   readonly enabledCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
@@ -71,6 +81,7 @@ export interface WorkerDispatchResult {
 
 export type WorkerDispatchFailureReason =
   | "role-not-authorized"
+  | "execution-policy-invalid"
   | "parent-unavailable"
   | "parent-not-orchestrator"
   | "duplicate-capabilities"
@@ -90,6 +101,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
   {
     reason: Schema.Literals([
       "role-not-authorized",
+      "execution-policy-invalid",
       "parent-unavailable",
       "parent-not-orchestrator",
       "duplicate-capabilities",
@@ -117,10 +129,12 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
     switch (this.reason) {
       case "role-not-authorized":
         return "Worker dispatch is not authorized for this provider session.";
+      case "execution-policy-invalid":
+        return "The execution policy must reference the parent thread's project and saved team membership.";
       case "parent-unavailable":
         return "The parent thread is unavailable for worker dispatch.";
       case "parent-not-orchestrator":
-        return "The parent thread is no longer an orchestrator.";
+        return "Only a Supervisor or Persistent Worker may commission one-shot workers.";
       case "duplicate-capabilities":
         return "Worker capability selections must not contain duplicates.";
       case "capability-escalation":
@@ -128,7 +142,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       case "computer-unavailable":
         return "The selected worker computer is unavailable in native settings.";
       case "worker-profile-unavailable":
-        return "Select one configured Codex worker profile for the target computer with an explicit model and account route.";
+        return "Select one configured worker profile for the target computer with an explicit harness, model and account route.";
       case "remote-dispatch-unavailable":
         return "The registered remote environment connection is unavailable.";
       case "remote-dispatch-pending":
@@ -167,6 +181,10 @@ export class WorkerDispatch extends Context.Service<WorkerDispatch, WorkerDispat
 export interface WorkerDispatchSources {
   readonly randomUUID: Effect.Effect<string>;
   readonly nowIso: Effect.Effect<string>;
+  readonly nextWorkerOrdinal: (
+    parent: WorkjetParentThreadReference,
+    workerId: ThreadId,
+  ) => Effect.Effect<number, SqlError>;
 }
 
 const DEFAULT_TITLE_MAX_LENGTH = 120;
@@ -178,10 +196,9 @@ const DEFAULT_TITLE_MAX_LENGTH = 120;
  */
 export const WORKER_REF_PREFIX = "workjet/worker/";
 
-export const deriveWorkerTitle = (task: string): string => {
-  const normalized = task.trim().replace(/\s+/g, " ");
-  if (normalized.length <= DEFAULT_TITLE_MAX_LENGTH) return normalized;
-  return `${normalized.slice(0, DEFAULT_TITLE_MAX_LENGTH - 3).trimEnd()}...`;
+export const deriveWorkerTitle = (ordinal: number, parentTitle: string, model: string): string => {
+  const parent = parentTitle.trim().replace(/\s+/g, " ").slice(0, DEFAULT_TITLE_MAX_LENGTH);
+  return `[Worker${ordinal}@${parent}]: ${model}`;
 };
 
 const failure = (reason: WorkerDispatchFailureReason, recovery?: Partial<WorkerDispatchRecovery>) =>
@@ -198,6 +215,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const meshIdentity = yield* Effect.serviceOption(WorkjetMeshIdentity);
   const mailbox = yield* Effect.serviceOption(WorkjetMailboxStore);
   const rollback = yield* WorkerDispatchRollback;
+  const localWorktrees = yield* Effect.serviceOption(LocalWorkerWorktree);
   const settings = yield* Effect.serviceOption(ServerSettingsService);
   const lumaConnections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
   const remoteBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
@@ -211,10 +229,6 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   ) => Effect.Effect<WorkerDispatchResult, WorkerDispatchError> = Effect.fn(
     "WorkerDispatch.dispatch",
   )(function* (invocation, input, trustedInitialRequestId) {
-    if (invocation.workjetRole !== "orchestrator") {
-      return yield* failure("role-not-authorized");
-    }
-
     const parentOption = yield* query
       .getThreadDetailById(invocation.threadId)
       .pipe(Effect.mapError(() => failure("parent-unavailable")));
@@ -222,13 +236,31 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     if (!parent || parent.deletedAt !== null || parent.archivedAt != null) {
       return yield* failure("parent-unavailable");
     }
-    if (parent.workjetConfig.role !== "orchestrator") {
+    if (!canCoordinateWorkjet(parent.workjetConfig)) {
       return yield* failure("parent-not-orchestrator");
     }
     const parentTeam =
       parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
     if (parentTeam && parentTeam.role !== "specialist" && parentTeam.role !== "supervisor") {
       return yield* failure("role-not-authorized");
+    }
+    const parentTeamBinding =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.parentTeamBinding : undefined;
+    if (
+      !workjetParentBindingMatchesTeam(parentTeamBinding, parentTeam, parent.projectId, parent.id)
+    ) {
+      return yield* failure("role-not-authorized");
+    }
+    const executionPolicy =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.executionPolicy : undefined;
+    if (
+      executionPolicy !== undefined &&
+      (executionPolicy.projectId !== parent.projectId ||
+        parentTeam === undefined ||
+        parentTeam.projectId !== parent.projectId ||
+        parentTeam.threadId !== parent.id)
+    ) {
+      return yield* failure("execution-policy-invalid");
     }
 
     const requestedCapabilityIds = input.enabledCapabilityIds
@@ -288,13 +320,23 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       computerId ??= configuration.selectedComputerId ?? undefined;
       if (computerId === undefined) {
         const localComputers = configuration.computers.filter(
-          (computer) => computer.environmentId === invocation.environmentId,
+          (computer) =>
+            computer.environmentId === invocation.environmentId &&
+            computer.metadata?.active !== false,
         );
         if (localComputers.length === 1) computerId = localComputers[0]?.id;
+        else if (
+          localComputers.length === 0 &&
+          configuration.computers.some(
+            (computer) => computer.environmentId === invocation.environmentId,
+          )
+        )
+          return yield* failure("computer-unavailable");
       }
       if (computerId !== undefined) {
         const matches = configuration.computers.filter((computer) => computer.id === computerId);
-        if (matches.length !== 1) return yield* failure("computer-unavailable");
+        if (matches.length !== 1 || matches[0]!.metadata?.active === false)
+          return yield* failure("computer-unavailable");
         targetEnvironmentId = matches[0]!.environmentId;
       }
     } else if (computerId !== undefined) {
@@ -307,7 +349,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         configuration?.workerProfiles.filter(
           (profile) =>
             profile.computerId === computerId &&
-            profile.harness === "codex-cli" &&
+            workerSourceDriver(profile.harness) !== undefined &&
             (input.workerProfileId === undefined || profile.id === input.workerProfileId),
         ) ?? [];
       const profile = profiles.length === 1 ? profiles[0] : undefined;
@@ -356,15 +398,16 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           saved.value.request.parent.threadId !== parent.id ||
           saved.value.request.computerId !== computerId ||
           saved.value.request.workerProfileId !== profile.id ||
+          (saved.value.request.harness ?? "codex-cli") !== profile.harness ||
           saved.value.request.llmRouteId !== profile.llmRouteId ||
           saved.value.request.modelSelection.model !== profile.modelId ||
+          !NodeUtil.isDeepStrictEqual(saved.value.request.executionPolicy, executionPolicy) ||
+          !NodeUtil.isDeepStrictEqual(saved.value.request.parentTeamBinding, parentTeamBinding) ||
           saved.value.request.enabledCapabilityIds.some(
             (id) => !profile.capabilityIds.includes(id),
           ) ||
           saved.value.request.targetEnvironmentId !== targetEnvironmentId ||
           saved.value.request.task !== input.task ||
-          (input.title !== undefined &&
-            saved.value.request.title !== (input.title.trim() || deriveWorkerTitle(input.task))) ||
           (input.modelSelection !== undefined &&
             !NodeUtil.isDeepStrictEqual(
               yield* Schema.encodeEffect(ModelSelection)(saved.value.request.modelSelection).pipe(
@@ -406,6 +449,13 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
             maxOutputBytes: 128,
           })
           .pipe(Effect.mapError(() => failure("remote-dispatch-failed")))).stdout.trim();
+        const requestId = trustedInitialRequestId ?? ThreadId.make(yield* sources.randomUUID);
+        const ordinal = yield* sources
+          .nextWorkerOrdinal(
+            { environmentId: invocation.environmentId, threadId: parent.id },
+            requestId,
+          )
+          .pipe(Effect.mapError(() => failure("create-failed")));
         const createdAt = yield* sources.nowIso;
         const { rootPath: _sourcePath, ...repository } = project.repositoryIdentity;
         const remoteUrl = repository.locator.remoteUrl.replace(
@@ -414,13 +464,16 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         );
         request = yield* Schema.decodeUnknownEffect(RemoteWorkerRequest)({
           schemaVersion: 1,
-          requestId: trustedInitialRequestId ?? ThreadId.make(yield* sources.randomUUID),
+          requestId,
           targetEnvironmentId,
           computerId,
           workerProfileId: profile.id,
+          ...(profile.harness === "codex-cli" ? {} : { harness: profile.harness }),
           llmRouteId: profile.llmRouteId,
           parent: { environmentId: invocation.environmentId, threadId: parent.id },
           ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
+          ...(executionPolicy === undefined ? {} : { executionPolicy }),
+          ...(parentTeamBinding === undefined ? {} : { parentTeamBinding }),
           parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
           managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions]
             .filter(Boolean)
@@ -435,9 +488,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           },
           revision,
           task: input.task,
-          title: input.title?.trim() || deriveWorkerTitle(input.task),
+          title: deriveWorkerTitle(ordinal, parent.title, modelSelection.model),
           modelSelection,
-          runtimeMode: parent.runtimeMode,
+          runtimeMode: DEFAULT_RUNTIME_MODE,
           interactionMode: parent.interactionMode,
           enabledCapabilityIds,
           createdAt,
@@ -484,7 +537,10 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     const turnStartCommandId = CommandId.make(yield* sources.randomUUID);
     const messageId = MessageId.make(yield* sources.randomUUID);
     const createdAt = yield* sources.nowIso;
-    const title = input.title?.trim() || deriveWorkerTitle(input.task);
+    const ordinal = yield* sources
+      .nextWorkerOrdinal(parentReference, workerThreadId)
+      .pipe(Effect.mapError(() => failure("create-failed")));
+    const title = deriveWorkerTitle(ordinal, parent.title, modelSelection.model);
     let preparedDelegation: OrchestrationDispatchOptions["workerDelegation"];
     if (parentTeam) {
       if (Option.isNone(snapshotStore) || Option.isNone(meshIdentity)) {
@@ -567,19 +623,65 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       return yield* failure("worktree-failed");
     }
     const workerRefName = `${WORKER_REF_PREFIX}${workerThreadId}`;
-    const workerWorktree = yield* gitWorkflow
-      .createWorktree({
-        cwd: gitCwd,
-        // `path: null` routes the location through WorktreeStorage, keeping the
-        // worker checkout beneath the operator-selected storage root.
-        path: null,
-        refName: parent.branch ?? "HEAD",
-        newRefName: workerRefName,
-      })
-      .pipe(
-        Effect.map((created) => created.worktree),
-        Effect.mapError(() => failure("worktree-failed")),
-      );
+    let workerWorktree: { readonly path: string; readonly refName: string };
+    let custody: CapturedWorkerWorktree | undefined;
+    if (executionPolicy !== undefined) {
+      if (
+        Option.isNone(localWorktrees) ||
+        parentTeam === undefined ||
+        preparedDelegation === undefined
+      )
+        return yield* failure("worktree-failed");
+      const project = yield* query
+        .getProjectShellById(parent.projectId)
+        .pipe(Effect.mapError(() => failure("worktree-failed")));
+      if (
+        Option.isNone(project) ||
+        project.value.repositoryIdentity === undefined ||
+        project.value.repositoryIdentity === null
+      )
+        return yield* failure("worktree-failed");
+      const allocated = yield* localWorktrees.value
+        .allocate({
+          cwd: gitCwd,
+          refName: parent.branch ?? "HEAD",
+          repository: project.value.repositoryIdentity,
+          context: {
+            schemaVersion: 1,
+            environmentId: invocation.environmentId,
+            ...(computerId === undefined ? {} : { computerId }),
+            parentThreadId: parent.id,
+            projectId: parent.projectId,
+            workerThreadId,
+            teamRole: parentTeam.role,
+            teamParentThreadId: parentTeam.parentThreadId,
+            taskDigest: preparedDelegation.delegation.prompt.digest,
+            modelSelection,
+            enabledCapabilityIds,
+            runtimeMode: DEFAULT_RUNTIME_MODE,
+            interactionMode: parent.interactionMode,
+            executionPolicy,
+          },
+        })
+        .pipe(Effect.mapError(() => failure("worktree-failed")));
+      workerWorktree = allocated;
+      custody = allocated.custody;
+      if (workerWorktree.refName !== workerRefName || custody.kind !== "isolated")
+        return yield* failure("worktree-failed");
+    } else {
+      workerWorktree = yield* gitWorkflow
+        .createWorktree({
+          cwd: gitCwd,
+          // Absence of the policy preserves the existing linked checkout.
+          path: null,
+          refName: parent.branch ?? "HEAD",
+          newRefName: workerRefName,
+        })
+        .pipe(
+          Effect.map((created) => created.worktree),
+          Effect.mapError(() => failure("worktree-failed")),
+        );
+    }
     const dispatchedResult = {
       schemaVersion: 1,
       status: "dispatched",
@@ -597,8 +699,11 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         cwd: gitCwd,
         worktreePath: workerWorktree.path,
         branchRef: workerRefName,
+        ...(custody === undefined ? {} : { custody }),
       })
       .pipe(Effect.option);
+    if (custody !== undefined && Option.isNone(preparedRollback))
+      return yield* failure("worktree-failed");
     const requireRejected = Effect.fn("WorkerDispatch.requireRejected")(function* (
       commandId: CommandId,
     ) {
@@ -654,7 +759,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       projectId: parent.projectId,
       title,
       modelSelection,
-      runtimeMode: parent.runtimeMode,
+      runtimeMode: DEFAULT_RUNTIME_MODE,
       interactionMode: parent.interactionMode,
       workjetConfig: {
         schemaVersion: 2,
@@ -663,6 +768,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         managedInstructions: parent.workjetConfig.managedInstructions,
         enabledCapabilityIds,
         capabilityBindings: [],
+        ...(executionPolicy === undefined ? {} : { executionPolicy }),
         ...(parentTeam
           ? {
               team: {
@@ -747,6 +853,10 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
                   worker.branch === workerRefName &&
                   worker.worktreePath === workerWorktree.path &&
                   worker.workjetConfig.schemaVersion === 2 &&
+                  NodeUtil.isDeepStrictEqual(
+                    worker.workjetConfig.executionPolicy,
+                    executionPolicy,
+                  ) &&
                   worker.workjetConfig.role === "worker" &&
                   worker.workjetConfig.parent?.environmentId === invocation.environmentId &&
                   worker.workjetConfig.parent?.threadId === parent.id &&
@@ -785,7 +895,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         text: input.task,
         attachments: [],
       },
-      runtimeMode: parent.runtimeMode,
+      runtimeMode: DEFAULT_RUNTIME_MODE,
       interactionMode: parent.interactionMode,
       createdAt,
     } as const satisfies OrchestrationCommand;
@@ -839,7 +949,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
 
 export const makeWorkerDispatch = Effect.fn("WorkerDispatch.make")(function* () {
   const crypto = yield* Crypto.Crypto;
+  const nextWorkerOrdinal = yield* makeWorkerOrdinal;
   return yield* makeWorkerDispatchWithSources({
+    nextWorkerOrdinal,
     randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),
     nowIso: DateTime.now.pipe(Effect.map(DateTime.formatIso)),
   });

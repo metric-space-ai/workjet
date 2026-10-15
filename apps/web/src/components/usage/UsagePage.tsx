@@ -1,53 +1,60 @@
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import type { UsageProviderKind } from "@workjet/contracts";
-import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CheckIcon, ClockIcon, RefreshCwIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@workjet/shared/usageMerge";
 
-import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
-import {
-  enumerateDays,
-  enumerateHourStarts,
-  formatCount,
-  formatDateTimeShort,
-  formatDayShort,
-  formatHourShort,
-  formatPercent,
-  formatTokens,
-  formatUsd,
-  makeWindow,
-} from "@workjet/shared/usageFormat";
-import { ScrollArea } from "../ui/scroll-area";
-import { SidebarInset } from "../ui/sidebar";
-import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
-import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
+import { enumerateDays, enumerateHourStarts, makeWindow } from "@workjet/shared/usageFormat";
+import { SettingsPageContainer } from "../settings/settingsLayout";
+import { Banner } from "../ui/banner";
+import { Button } from "../ui/button";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
+import {
+  formatUsageCostDe as formatUsageCost,
+  formatUsageDateTime,
+  formatUsageDay,
+  formatUsageHour,
+  formatUsagePercent as formatPercent,
+  formatUsageTokens as formatTokens,
+  formatUsageUsd as formatUsd,
+} from "./usageFormatDe";
 import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
 
 const WINDOW_OPTIONS = [
-  { days: 1, label: "Past 24h" },
-  { days: 7, label: "7 days" },
-  { days: 30, label: "30 days" },
-  { days: 90, label: "90 days" },
+  { days: 1, label: "24 Std." },
+  { days: 7, label: "7 Tage" },
+  { days: 30, label: "30 Tage" },
+  { days: 90, label: "90 Tage" },
 ] as const;
 
+const METRIC_OPTIONS: ReadonlyArray<{ readonly value: UsageChartMetric; readonly label: string }> =
+  [
+    { value: "cost", label: "Kosten" },
+    { value: "tokens", label: "Token" },
+  ];
+
+type Breakdown = "model" | "time";
+
+/** Einstellungen › Verbrauch: Kosten und Token je Harness und Modell. */
 export function UsagePage() {
   const [windowSelection, setWindowSelection] = useState(() => ({
     days: 30,
     window: makeWindow(30),
   }));
   const [metric, setMetric] = useState<UsageChartMetric>("cost");
-  const [breakdown, setBreakdown] = useState<"model" | "time">("model");
+  const [breakdown, setBreakdown] = useState<Breakdown>("model");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
 
-  // Hold the content until every environment is terminal. Rendering merged
-  // totals while devices are still answering makes every number on the page
-  // jump as each one lands.
-  const settling = isPending || isPartial;
+  // Hold the content only until the first environment answers. An unreachable
+  // machine must never hide the data the others already delivered; it stays
+  // visible in the device strip instead.
+  const settling = isPending;
 
   const days = useMemo(
     () => enumerateDays(window.sinceDay, window.untilDay),
@@ -99,343 +106,299 @@ export function UsagePage() {
       setWindowSelection({ days: windowDays, window: nextWindow });
     }
   };
+  const periodLabel = isPast24Hours ? "Stunde" : "Tag";
+  const rangeLabel =
+    isPast24Hours && window.sinceTime !== undefined && window.untilTime !== undefined
+      ? `${formatUsageDateTime(window.sinceTime, window.timeZone)} – ${formatUsageDateTime(window.untilTime, window.timeZone)}`
+      : `${formatUsageDay(window.sinceDay)} – ${formatUsageDay(window.untilDay)}`;
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        {!isElectron && (
-          <header
-            className={cn(
-              "workspace-topbar px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
-              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-          >
-            <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb">
-              <WorkspaceBreadcrumbItem current>Usage</WorkspaceBreadcrumbItem>
-            </WorkspaceBreadcrumb>
-          </header>
-        )}
+    <SettingsPageContainer
+      className="gap-5"
+      title={workjetUiLanguage() === "en" ? "Usage" : "Verbrauch"}
+    >
+      <div className="flex flex-wrap items-center gap-2" data-usage-toolbar="">
+        <ToggleGroup
+          aria-label="Zeitraum"
+          className="shrink-0"
+          size="sm"
+          value={[String(windowDays)]}
+          variant="outline"
+          onValueChange={(value) => {
+            const next = Number(value[0]);
+            if (WINDOW_OPTIONS.some((option) => option.days === next)) selectWindow(next);
+          }}
+        >
+          {WINDOW_OPTIONS.map((option) => (
+            <Toggle key={option.days} value={String(option.days)}>
+              {option.label}
+            </Toggle>
+          ))}
+        </ToggleGroup>
+        <span className="text-xs text-muted-foreground tabular-nums">{rangeLabel}</span>
+        <Button
+          aria-label="Aktualisieren"
+          className="ms-auto"
+          size="icon-sm"
+          variant="outline"
+          onClick={refreshWindow}
+        >
+          <RefreshCwIcon className="size-3.5" />
+        </Button>
+      </div>
 
-        {isElectron && (
-          <div
-            className={cn(
-              "drag-region flex h-[52px] shrink-0 items-center px-5 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
-              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-          >
-            <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb">
-              <WorkspaceBreadcrumbItem current>Usage</WorkspaceBreadcrumbItem>
-            </WorkspaceBreadcrumb>
-          </div>
-        )}
+      {settling ? (
+        <>
+          {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
+          <UsageLoading onRetry={refreshWindow} />
+        </>
+      ) : (
+        <>
+          {isPartial ? <UsageDeviceStrip environments={environments} /> : null}
+          <UsageCoverageNotice
+            environments={environments}
+            duplicateSources={merged.duplicateSources}
+            staleEnvironments={merged.staleEnvironments}
+          />
 
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <p className="text-sm text-muted-foreground">
-                {isPast24Hours && window.sinceTime !== undefined && window.untilTime !== undefined
-                  ? `${formatDateTimeShort(window.sinceTime, window.timeZone)} to ${formatDateTimeShort(window.untilTime, window.timeZone)}`
-                  : `${formatDayShort(window.sinceDay)} to ${formatDayShort(window.untilDay)}`}
-              </p>
-              <div className="flex items-center gap-2">
-                <div className="flex rounded-md border border-border">
-                  {WINDOW_OPTIONS.map((option) => (
-                    <button
-                      key={option.days}
-                      type="button"
-                      aria-pressed={option.days === windowDays}
-                      onClick={() => selectWindow(option.days)}
-                      className={cn(
-                        "relative cursor-pointer px-3 py-1.5 text-xs outline-none first:rounded-s-[calc(var(--radius-md)-1px)] last:rounded-e-[calc(var(--radius-md)-1px)] focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                        option.days === windowDays
-                          ? "bg-muted text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={refreshWindow}
-                  aria-label="Refresh usage"
-                  className="cursor-pointer rounded-md border border-border p-2 text-muted-foreground hover:text-foreground"
-                >
-                  <RefreshCwIcon className="size-3.5" />
-                </button>
+          <section className="grid gap-5 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+            {/* The summary follows the chart toggle, so the headline and the
+                series are always reading the same units. */}
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs text-muted-foreground">
+                  {metric === "cost" ? "API-Kosten" : "Token gesamt"}
+                </span>
+                <span className="text-[22px] font-semibold text-foreground tabular-nums">
+                  {metric === "cost"
+                    ? formatUsageCost(merged.costUsd, merged.costQuality.unpricedShare)
+                    : formatTokens(merged.totalTokens)}
+                </span>
               </div>
+
+              {orderedProviders.map((provider) => {
+                const share = metric === "cost" ? provider.costShare : provider.tokenShare;
+                const unpriced = merged.models.some(
+                  (model) => model.provider === provider.provider && model.unpricedRecords > 0,
+                )
+                  ? 1
+                  : 0;
+                return (
+                  <div key={provider.provider} className="flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-2 text-[13.5px]">
+                      <span className="flex min-w-0 items-center gap-2 text-foreground">
+                        <ProviderMark provider={provider.provider} className="size-4" />
+                        <span className="truncate">{PROVIDER_LABEL[provider.provider]}</span>
+                      </span>
+                      <span className="text-foreground tabular-nums">
+                        {metric === "cost"
+                          ? formatUsageCost(provider.costUsd, unpriced)
+                          : formatTokens(provider.totalTokens)}
+                      </span>
+                    </div>
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full"
+                        style={{
+                          width: `${(share * 100).toFixed(1)}%`,
+                          backgroundColor: PROVIDER_COLOR[provider.provider],
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {metric === "cost"
+                        ? `${formatPercent(share)} · ${formatTokens(provider.totalTokens)} Token`
+                        : `${formatPercent(share)} · ${formatUsageCost(provider.costUsd, unpriced)}`}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
-            {settling ? (
-              <>
-                {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
-                <UsageSkeleton resolution={isPast24Hours ? "hour" : "day"} />
-              </>
-            ) : (
-              <>
-                <UsageCoverageNotice
-                  environments={environments}
-                  duplicateSources={merged.duplicateSources}
-                  staleEnvironments={merged.staleEnvironments}
-                />
+            <div className="flex min-w-0 flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <ToggleGroup
+                  aria-label="Größe"
+                  size="sm"
+                  value={[metric]}
+                  variant="outline"
+                  onValueChange={(value) => {
+                    const next = value[0];
+                    if (next === "cost" || next === "tokens") setMetric(next);
+                  }}
+                >
+                  {METRIC_OPTIONS.map((option) => (
+                    <Toggle key={option.value} value={option.value}>
+                      {option.label}
+                    </Toggle>
+                  ))}
+                </ToggleGroup>
+                <UsageChartLegend />
+              </div>
+              <UsageProviderChart
+                days={days}
+                daily={merged.daily}
+                hours={hours}
+                hourly={merged.hourly}
+                metric={metric}
+                referenceTime={window.untilTime}
+                resolution={isPast24Hours ? "hour" : "day"}
+                timeZone={window.timeZone}
+              />
+            </div>
+          </section>
 
-                {/* Cost first: the financial answer, then the provider split. */}
-                <section className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-                  {/* The summary follows the chart toggle, so the headline and the
-                  series are always reading the same units. */}
-                  <div className="flex flex-col gap-5">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-xs tracking-wide text-muted-foreground uppercase">
-                        {metric === "cost" ? "Raw token cost" : "Processed tokens"}
-                      </span>
-                      <span className="text-4xl font-semibold text-foreground tabular-nums">
-                        {metric === "cost"
-                          ? `${formatUsd(merged.costUsd)}*`
-                          : formatTokens(merged.totalTokens)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {metric === "cost"
-                          ? "* if billed at full API rate"
-                          : `Input, cache reads and output across ${formatCount(merged.sessions)} sessions.`}
-                      </span>
-                    </div>
+          <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-5">
+            <Metric
+              label="Token"
+              value={formatTokens(merged.totalTokens)}
+              detail={`Ø ${formatTokens(periodAverage)} je ${periodLabel}`}
+            />
+            <Metric
+              label="Cache-Lesen"
+              value={formatTokens(merged.cachedInputTokens)}
+              detail={`${formatPercent(cachedShare)} der Eingabe`}
+            />
+            <Metric
+              label="Ohne Cache"
+              value={formatTokens(merged.uncachedInputTokens)}
+              detail={`${formatTokens(merged.cacheCreationTokens)} Cache-Schreiben`}
+            />
+            <Metric
+              label="Ausgabe"
+              value={formatTokens(merged.outputTokens)}
+              detail={`${formatTokens(merged.reasoningTokens)} Denken`}
+            />
+            <Metric
+              label="Cache-Ersparnis"
+              value={formatUsd(merged.costQuality.cacheSavingsUsd)}
+              detail={
+                merged.costUsd > 0
+                  ? `${(merged.costQuality.cacheSavingsUsd / merged.costUsd).toFixed(1).replace(".", ",")}× Kosten`
+                  : "—"
+              }
+            />
+          </section>
 
-                    {orderedProviders.map((provider) => {
-                      const share = metric === "cost" ? provider.costShare : provider.tokenShare;
-                      return (
-                        <div key={provider.provider} className="flex flex-col gap-1.5">
-                          <div className="flex items-baseline justify-between">
-                            <span className="flex items-center gap-2 text-sm text-foreground">
-                              <ProviderMark provider={provider.provider} className="size-4" />
-                              {PROVIDER_LABEL[provider.provider]}
-                            </span>
-                            <span className="text-sm text-foreground tabular-nums">
-                              {metric === "cost"
-                                ? formatUsd(provider.costUsd)
-                                : formatTokens(provider.totalTokens)}
-                            </span>
-                          </div>
-                          <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-                            <div
-                              className="h-full"
-                              style={{
-                                width: `${(share * 100).toFixed(1)}%`,
-                                backgroundColor: PROVIDER_COLOR[provider.provider],
-                              }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {metric === "cost"
-                              ? `${formatPercent(share)} of cost · ${formatTokens(provider.totalTokens)} tokens`
-                              : `${formatPercent(share)} of tokens · ${formatUsd(provider.costUsd)}`}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+          <section className="flex flex-col gap-2">
+            <ToggleGroup
+              aria-label="Aufschlüsselung"
+              size="sm"
+              value={[breakdown]}
+              variant="outline"
+              onValueChange={(value) => {
+                const next = value[0];
+                if (next === "model" || next === "time") setBreakdown(next);
+              }}
+            >
+              <Toggle value="model">Modell</Toggle>
+              <Toggle value="time">{periodLabel}</Toggle>
+            </ToggleGroup>
 
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h2 className="text-sm font-medium text-foreground">
-                        {isPast24Hours ? "Hourly" : "Daily"}{" "}
-                        {metric === "tokens" ? "processed tokens" : "cost"}
-                      </h2>
-                      <div className="flex items-center gap-4">
-                        <div className="flex overflow-hidden rounded-md border border-border">
-                          {(["cost", "tokens"] as const).map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              onClick={() => setMetric(option)}
-                              className={cn(
-                                "cursor-pointer px-2.5 py-1 text-[10px] tracking-wide uppercase",
-                                option === metric
-                                  ? "bg-muted text-foreground"
-                                  : "text-muted-foreground hover:text-foreground",
-                              )}
-                            >
-                              {option}
-                            </button>
-                          ))}
-                        </div>
-                        <UsageChartLegend />
-                      </div>
-                    </div>
-                    <UsageProviderChart
-                      days={days}
-                      daily={merged.daily}
-                      hours={hours}
-                      hourly={merged.hourly}
-                      metric={metric}
-                      referenceTime={window.untilTime}
-                      resolution={isPast24Hours ? "hour" : "day"}
-                      timeZone={window.timeZone}
-                    />
-                  </div>
-                </section>
-
-                <section className="grid grid-cols-2 gap-px border-y border-border bg-border md:grid-cols-5">
-                  <Metric
-                    label="Processed tokens"
-                    value={formatTokens(merged.totalTokens)}
-                    detail={`${formatTokens(periodAverage)} per active ${isPast24Hours ? "hour" : "day"}`}
-                  />
-                  <Metric
-                    label="Cached input"
-                    value={formatTokens(merged.cachedInputTokens)}
-                    detail={`${formatPercent(cachedShare)} of observed input`}
-                  />
-                  <Metric
-                    label="Uncached input"
-                    value={formatTokens(merged.uncachedInputTokens)}
-                    detail={`${formatTokens(merged.cacheCreationTokens)} cache writes`}
-                  />
-                  <Metric
-                    label="Output"
-                    value={formatTokens(merged.outputTokens)}
-                    detail={`includes ${formatTokens(merged.reasoningTokens)} reasoning`}
-                  />
-                  <Metric
-                    label="Cache savings"
-                    value={formatUsd(merged.costQuality.cacheSavingsUsd)}
-                    detail={
-                      merged.costUsd > 0
-                        ? `${(merged.costQuality.cacheSavingsUsd / merged.costUsd).toFixed(1)}x the raw token cost`
-                        : "vs full input rates"
-                    }
-                  />
-                </section>
-
-                <section className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-sm font-medium text-foreground">Breakdown</h2>
-                    <div className="flex overflow-hidden rounded-md border border-border">
-                      {(
-                        [
-                          { value: "model", label: "model" },
-                          { value: "time", label: isPast24Hours ? "hour" : "day" },
-                        ] as const
-                      ).map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setBreakdown(option.value)}
-                          className={cn(
-                            "cursor-pointer px-2.5 py-1 text-[10px] tracking-wide uppercase",
-                            option.value === breakdown
-                              ? "bg-muted text-foreground"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {breakdown === "model" ? (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                          <th className="py-2 font-normal">Model</th>
-                          <th className="py-2 text-right font-normal">Cost</th>
-                          <th className="py-2 text-right font-normal">Share</th>
-                          <th className="py-2 text-right font-normal">Tokens</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {merged.models.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="py-6 text-center text-muted-foreground">
-                              No activity in this window.
-                            </td>
-                          </tr>
-                        ) : (
-                          merged.models.map((model) => (
-                            <tr
-                              key={`${model.provider}:${model.model}`}
-                              className="border-b border-border/50"
-                            >
-                              <td className="py-2 text-foreground">
-                                <span className="flex items-center gap-2">
-                                  <ProviderMark provider={model.provider} className="size-3.5" />
-                                  {model.model}
-                                </span>
-                              </td>
-                              <td className="py-2 text-right text-foreground tabular-nums">
-                                {formatUsd(model.costUsd)}
-                              </td>
-                              <td className="py-2 text-right text-muted-foreground tabular-nums">
-                                {formatPercent(model.costShare)}
-                              </td>
-                              <td className="py-2 text-right text-muted-foreground tabular-nums">
-                                {formatTokens(model.totalTokens)}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+            {breakdown === "model" ? (
+              <table className="w-full text-[13.5px]">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th className="py-1.5 font-normal">Modell</th>
+                    <th className="py-1.5 text-right font-normal">Kosten</th>
+                    <th className="py-1.5 text-right font-normal">Anteil</th>
+                    <th className="py-1.5 text-right font-normal">Token</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {merged.models.length === 0 ? (
+                    <EmptyTableRow colSpan={4} />
                   ) : (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                          <th className="py-2 font-normal">{isPast24Hours ? "Hour" : "Day"}</th>
-                          {PROVIDER_ORDER.map((provider) => (
-                            <th key={provider} className="py-2 text-right font-normal">
-                              {PROVIDER_LABEL[provider]}
-                            </th>
-                          ))}
-                          <th className="py-2 text-right font-normal">Total</th>
-                          <th className="py-2 text-right font-normal">Tokens</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentPeriods.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="py-6 text-center text-muted-foreground">
-                              No activity in this window.
-                            </td>
-                          </tr>
-                        ) : (
-                          recentPeriods.map((period) => (
-                            <tr
-                              key={"hourStart" in period ? period.hourStart : period.day}
-                              className="border-b border-border/50"
-                            >
-                              <td className="py-2 text-foreground">
-                                {"hourStart" in period
-                                  ? formatHourShort(period.hourStart, window.timeZone)
-                                  : formatDayShort(period.day)}
-                              </td>
-                              {PROVIDER_ORDER.map((provider) => (
-                                <td
-                                  key={provider}
-                                  className="py-2 text-right text-muted-foreground tabular-nums"
-                                >
-                                  {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
-                                </td>
-                              ))}
-                              <td className="py-2 text-right text-foreground tabular-nums">
-                                {formatUsd(period.costUsd)}
-                              </td>
-                              <td className="py-2 text-right text-muted-foreground tabular-nums">
-                                {formatTokens(period.totalTokens)}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                    merged.models.map((model) => (
+                      <tr
+                        key={`${model.provider}:${model.model}`}
+                        className="border-b border-border/50"
+                      >
+                        <td className="max-w-0 py-1.5 text-foreground">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <ProviderMark provider={model.provider} className="size-3.5" />
+                            <span className="truncate">{model.model}</span>
+                          </span>
+                        </td>
+                        <td className="py-1.5 text-right text-foreground tabular-nums">
+                          {formatUsageCost(model.costUsd, model.unpricedRecords)}
+                        </td>
+                        <td className="py-1.5 text-right text-muted-foreground tabular-nums">
+                          {formatPercent(model.costShare)}
+                        </td>
+                        <td className="py-1.5 text-right text-muted-foreground tabular-nums">
+                          {formatTokens(model.totalTokens)}
+                        </td>
+                      </tr>
+                    ))
                   )}
-                </section>
-              </>
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-[13.5px]">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th className="py-1.5 font-normal">{periodLabel}</th>
+                    {PROVIDER_ORDER.map((provider) => (
+                      <th
+                        key={provider}
+                        className="hidden py-1.5 text-right font-normal sm:table-cell"
+                      >
+                        {PROVIDER_LABEL[provider]}
+                      </th>
+                    ))}
+                    <th className="py-1.5 text-right font-normal">Gesamt</th>
+                    <th className="py-1.5 text-right font-normal">Token</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentPeriods.length === 0 ? (
+                    <EmptyTableRow colSpan={PROVIDER_ORDER.length + 3} />
+                  ) : (
+                    recentPeriods.map((period) => (
+                      <tr
+                        key={"hourStart" in period ? period.hourStart : period.day}
+                        className="border-b border-border/50"
+                      >
+                        <td className="py-1.5 text-foreground">
+                          {"hourStart" in period
+                            ? formatUsageHour(period.hourStart, window.timeZone)
+                            : formatUsageDay(period.day)}
+                        </td>
+                        {PROVIDER_ORDER.map((provider) => (
+                          <td
+                            key={provider}
+                            className="hidden py-1.5 text-right text-muted-foreground tabular-nums sm:table-cell"
+                          >
+                            {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
+                          </td>
+                        ))}
+                        <td className="py-1.5 text-right text-foreground tabular-nums">
+                          {formatUsd(period.costUsd)}
+                        </td>
+                        <td className="py-1.5 text-right text-muted-foreground tabular-nums">
+                          {formatTokens(period.totalTokens)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             )}
-          </div>
-        </ScrollArea>
-      </div>
-    </SidebarInset>
+          </section>
+        </>
+      )}
+    </SettingsPageContainer>
+  );
+}
+
+function EmptyTableRow({ colSpan }: { readonly colSpan: number }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="py-4 text-center text-muted-foreground">
+        Keine Aktivität
+      </td>
+    </tr>
   );
 }
 
@@ -461,19 +424,18 @@ function Metric({
   readonly detail: string;
 }) {
   return (
-    <div className="flex flex-col gap-0.5 bg-background px-4 py-3">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-lg text-foreground tabular-nums">{value}</span>
-      <span className="text-xs text-muted-foreground">{detail}</span>
+    <div className="flex min-w-0 flex-col gap-0.5 bg-background px-3 py-2">
+      <span className="truncate text-xs text-muted-foreground">{label}</span>
+      <span className="text-[13.5px] font-medium text-foreground tabular-nums">{value}</span>
+      <span className="truncate text-xs text-muted-foreground">{detail}</span>
     </div>
   );
 }
 
 /**
- * Says plainly when the totals are incomplete: an environment that failed, or
- * one whose transcripts another environment already reported. Environments
- * that are still answering never reach this notice; the page shows the
- * loading skeleton until every one is terminal.
+ * Eine Zeile je Lücke in den Summen: Gerät ohne Antwort, Gerät mit älterer
+ * Serverversion, gemeinsam genutztes Transkriptverzeichnis. Geräte, die noch
+ * antworten, erreichen diesen Hinweis nie; bis dahin steht das Skelett.
  */
 function UsageCoverageNotice({
   environments,
@@ -493,20 +455,21 @@ function UsageCoverageNotice({
   }
 
   return (
-    <div className="flex flex-col gap-1 border border-border px-3 py-2 text-xs text-muted-foreground">
+    <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
       {failed.map((environment) => (
-        <span key={environment.label}>{environment.label} could not report usage.</span>
+        <span key={`failed:${environment.environmentId}`} className="flex items-center gap-2">
+          <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-destructive" />
+          {`${environment.label}: keine Antwort`}
+        </span>
       ))}
       {stale.map((environment) => (
-        <span key={environment.label}>
-          {environment.label} runs an older server version and is excluded from totals.
+        <span key={`stale:${environment.environmentId}`} className="flex items-center gap-2">
+          <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
+          {`${environment.label}: alte Version, nicht gezählt`}
         </span>
       ))}
       {duplicateSources.length > 0 ? (
-        <span>
-          Counted once across environments sharing a transcript directory:{" "}
-          {duplicateSources.join(", ")}
-        </span>
+        <span className="truncate">{`Einmal gezählt: ${duplicateSources.join(", ")}`}</span>
       ) : null}
     </div>
   );
@@ -526,7 +489,7 @@ function UsageDeviceStrip({
     (environment) => environment.summary === null && environment.error === null,
   );
   return (
-    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border border-border px-3 py-2 text-xs">
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border border-border px-3 py-2 text-xs">
       {environments.map((environment) => {
         if (environment.summary !== null) {
           return (
@@ -559,57 +522,93 @@ function UsageDeviceStrip({
           </span>
         );
       })}
-      <span className="ms-auto text-muted-foreground">
-        {scanning.length === 1
-          ? "1 device still scanning"
-          : `${scanning.length} devices still scanning`}
-      </span>
+      <span className="ms-auto text-muted-foreground">{`noch ${scanning.length} prüfen`}</span>
     </div>
   );
 }
 
 /** Deterministic bar heights (each unique: they double as keys). */
 const SKELETON_BAR_HEIGHTS = [34, 58, 41, 72, 22, 12, 49, 63, 80, 38, 55, 26, 44, 67];
+const SKELETON_METRIC_LABELS = ["Token", "Cache-Lesen", "Ohne Cache", "Ausgabe", "Cache-Ersparnis"];
+
+/** Nach dieser Zeit endet das Laden sichtbar (UI-Vertrag §1.3). */
+export const USAGE_LOADING_TIMEOUT_MS = 10_000;
+
+/**
+ * Laden mit Ende: höchstens 10 s Platzhalter, danach eine Statuszeile mit
+ * „Erneut versuchen“. Der Klick fragt neu und startet die Frist von vorn.
+ */
+export function UsageLoading({
+  onRetry,
+  timeoutMs = USAGE_LOADING_TIMEOUT_MS,
+}: {
+  readonly onRetry: () => void;
+  readonly timeoutMs?: number;
+}) {
+  const [attempt, setAttempt] = useState(0);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), timeoutMs);
+    return () => clearTimeout(timer);
+  }, [attempt, timeoutMs]);
+  if (slow) {
+    return (
+      <Banner
+        icon={ClockIcon}
+        action={{
+          label: "Erneut versuchen",
+          onClick: () => {
+            onRetry();
+            setSlow(false);
+            setAttempt((value) => value + 1);
+          },
+        }}
+      >
+        Laden dauert länger
+      </Banner>
+    );
+  }
+  return <UsageSkeleton />;
+}
 
 /**
  * Static stand-in with the loaded page's shape: headline, provider split,
  * chart and metrics strip. No shimmer; blocks fill in exactly once when the
  * last device answers.
  */
-function UsageSkeleton({ resolution }: { readonly resolution: "day" | "hour" }) {
+function UsageSkeleton() {
   return (
     <>
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs tracking-wide text-muted-foreground uppercase">
-              Raw token cost
-            </span>
-            <div className="my-1.5 h-8 w-36 rounded-sm bg-muted" />
-            <div className="h-3 w-28 rounded-sm bg-muted" />
+      <section
+        aria-busy="true"
+        aria-label="Verbrauch lädt"
+        className="grid gap-5 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]"
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs text-muted-foreground">API-Kosten</span>
+            <div className="my-1 h-6 w-32 rounded-sm bg-muted" />
           </div>
 
           {PROVIDER_ORDER.map((provider) => (
-            <div key={provider} className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-sm text-foreground">
+            <div key={provider} className="flex flex-col gap-1">
+              <div className="flex items-center justify-between text-[13.5px]">
+                <span className="flex items-center gap-2 text-foreground">
                   <ProviderMark provider={provider} className="size-4" />
                   {PROVIDER_LABEL[provider]}
                 </span>
                 <div className="h-3.5 w-14 rounded-sm bg-muted" />
               </div>
               <div className="h-1 w-full rounded-full bg-muted" />
-              <div className="h-3 w-36 rounded-sm bg-muted" />
+              <div className="h-3 w-28 rounded-sm bg-muted" />
             </div>
           ))}
         </div>
 
-        <div className="flex flex-col gap-3">
-          <h2 className="py-1 text-sm font-medium text-foreground">
-            {resolution === "hour" ? "Hourly" : "Daily"} cost
-          </h2>
-          {/* Mirrors the chart's h-56 body and w-14 axis gutter to avoid a
-              relayout when the real chart swaps in. */}
+        {/* Mirrors the chart's h-56 body and w-14 axis gutter to avoid a
+            relayout when the real chart swaps in. */}
+        <div className="flex flex-col gap-2">
+          <div className="h-7 w-36 rounded-md bg-muted" />
           <div className="flex h-56 items-end gap-1 pl-16">
             {SKELETON_BAR_HEIGHTS.map((height) => (
               <div
@@ -622,16 +621,14 @@ function UsageSkeleton({ resolution }: { readonly resolution: "day" | "hour" }) 
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-px border-y border-border bg-border md:grid-cols-5">
-        {["Processed tokens", "Cached input", "Uncached input", "Output", "Cache savings"].map(
-          (label) => (
-            <div key={label} className="flex flex-col gap-0.5 bg-background px-4 py-3">
-              <span className="text-xs text-muted-foreground">{label}</span>
-              <div className="my-1 h-5 w-16 rounded-sm bg-muted" />
-              <div className="h-3 w-24 rounded-sm bg-muted" />
-            </div>
-          ),
-        )}
+      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-5">
+        {SKELETON_METRIC_LABELS.map((label) => (
+          <div key={label} className="flex flex-col gap-0.5 bg-background px-3 py-2">
+            <span className="text-xs text-muted-foreground">{label}</span>
+            <div className="my-1 h-4 w-16 rounded-sm bg-muted" />
+            <div className="h-3 w-24 rounded-sm bg-muted" />
+          </div>
+        ))}
       </section>
     </>
   );

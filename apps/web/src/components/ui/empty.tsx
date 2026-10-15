@@ -1,12 +1,14 @@
 import { cva, type VariantProps } from "class-variance-authority";
+import { useEffect, useState } from "react";
 
+import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 
 function Empty({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-1 flex-col items-center justify-center gap-6 text-balance p-6 text-center md:p-12",
+        "flex min-w-0 flex-1 flex-col items-center justify-center gap-4 text-balance p-6 text-center",
         className,
       )}
       data-slot="empty"
@@ -85,16 +87,60 @@ function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/**
+ * Nur noch eine Fehler- oder Statuszeile (höchstens 12 Wörter, UI-Vertrag
+ * §2). Absätze sind verboten; der Wächter (uiContract.test.ts) prüft das.
+ */
 function EmptyDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
     <div
-      className={cn(
-        "text-muted-foreground text-sm [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1",
-        className,
-      )}
+      className={cn("text-muted-foreground text-xs [[data-slot=empty-title]+&]:mt-1", className)}
       data-slot="empty-description"
       {...props}
     />
+  );
+}
+
+/**
+ * Ladezustand mit Ende (UI-Vertrag §1.3): nach 10 s ersetzt eine Statuszeile
+ * mit „Erneut versuchen“ den Ladetitel, nie beides zugleich und nie ein
+ * endloses Skeleton.
+ */
+function EmptyLoading({
+  title = "Laden …",
+  slowMessage = "Keine Antwort.",
+  retryLabel = "Erneut versuchen",
+  onRetry,
+  timeoutMs = 10_000,
+  className,
+}: {
+  readonly title?: string;
+  readonly slowMessage?: string;
+  readonly retryLabel?: string;
+  readonly onRetry?: () => void;
+  readonly timeoutMs?: number;
+  readonly className?: string;
+}) {
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), timeoutMs);
+    return () => clearTimeout(timer);
+  }, [timeoutMs]);
+
+  return (
+    <Empty className={className} data-slot="empty-loading">
+      <EmptyHeader>
+        <EmptyTitle role="status">{slow ? slowMessage : title}</EmptyTitle>
+      </EmptyHeader>
+      {slow && onRetry ? (
+        <EmptyContent>
+          <Button variant="outline" onClick={onRetry}>
+            {retryLabel}
+          </Button>
+        </EmptyContent>
+      ) : null}
+    </Empty>
   );
 }
 
@@ -111,4 +157,4 @@ function EmptyContent({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-export { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent, EmptyMedia };
+export { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent, EmptyMedia, EmptyLoading };

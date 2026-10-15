@@ -1,9 +1,8 @@
 /**
  * Model rate lookup and cost arithmetic.
  *
- * Rates come from LiteLLM's `model_prices_and_context_window.json`, the same
- * table `ccusage` prices against. Everything here is pure: fetching and caching
- * the table lives in `UsageService`.
+ * Rates come from the versioned, bundled LiteLLM snapshot. Everything here is
+ * pure; pricing never requires a network connection.
  *
  * @module usagePricing
  */

@@ -10,16 +10,19 @@ import {
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Children, isValidElement, type ReactNode } from "react";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   COMPOSER_COMPUTER_LOCKED_REASON,
   COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT,
   ComposerComputerControlView,
-  ComposerComputerChoiceList,
-  ComposerComputerDetails,
+  ComposerComputerMenuItems,
+  ComposerHarnessMenuItems,
   ComposerManualTargetControlsView,
+  ComposerModelMenuItems,
+  ComposerSystemPromptRow,
+  composerComputerChoices,
   ComposerWorkjetCompactMenuContent,
   ComposerSystemPromptControlView,
   COMPOSER_GATEWAY_PROVIDER_RAIL,
@@ -44,38 +47,37 @@ const computer = (id: string, label: string, environmentId: EnvironmentId): Work
   harnesses: [],
 });
 
-function computerButton(
-  node: ReactNode,
-  label: string,
-): {
-  disabled: boolean | undefined;
-  onClick: (event: { currentTarget: HTMLButtonElement }) => void;
-} {
-  for (const child of Children.toArray(node)) {
-    if (
-      !isValidElement<{
-        children?: ReactNode;
-        "aria-label"?: string;
-        disabled?: boolean;
-        onClick?: (event: { currentTarget: HTMLButtonElement }) => void;
-      }>(child)
-    )
-      continue;
-    if (child.type === "button" && child.props["aria-label"] === label && child.props.onClick) {
-      return { disabled: child.props.disabled, onClick: child.props.onClick };
-    }
-    if (child.props.children) {
-      try {
-        return computerButton(child.props.children, label);
-      } catch {
-        /* Search the next sibling. */
-      }
-    }
-  }
-  throw new Error(`Missing computer button: ${label}`);
+type AnyProps = Readonly<Record<string, unknown>> & { readonly children?: ReactNode };
+
+/** Walks a hook-free element tree; menu primitives need a live Menu root to DOM-render. */
+function flatten(node: ReactNode): Array<ReactElement<AnyProps>> {
+  if (Array.isArray(node)) return node.flatMap(flatten);
+  if (!isValidElement<AnyProps>(node)) return [];
+  return [node, ...flatten(node.props.children)];
 }
 
-describe("computer popup selection and details", () => {
+function textOf(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join(" ");
+  if (isValidElement<AnyProps>(node)) return textOf(node.props.children);
+  return "";
+}
+
+function radioItem(node: ReactNode, value: string): ReactElement<AnyProps> {
+  const found = flatten(node).find(
+    (element) => element.props.value === value && element.props.closeOnClick === true,
+  );
+  if (!found) throw new Error(`Missing menu entry: ${value}`);
+  return found;
+}
+
+function radioGroup(node: ReactNode): ReactElement<AnyProps> {
+  const found = flatten(node).find((element) => typeof element.props.onValueChange === "function");
+  if (!found) throw new Error("Missing radio group");
+  return found;
+}
+
+describe("computer dropdown entries", () => {
   const base = {
     computers: [computer("local", "Local", envA), computer("remote", "Remote", envB)],
     selectedComputerId: "local",
@@ -83,10 +85,40 @@ describe("computer popup selection and details", () => {
     selectableEnvironmentIds: [envA],
     disabledReason: null,
     mismatchNote: null,
-    detailComputerId: null,
   };
 
-  it("keeps a save in progress visible and blocks reopening after a responsive remount", () => {
+  it("lists registered network computers and short connection or checkout states", () => {
+    const tree = ComposerComputerMenuItems({
+      ...base,
+      onSelectComputer: () => undefined,
+      computerAvailability: {
+        local: { status: "Online", reason: null },
+        remote: { status: "Offline", reason: "gpu3 is offline." },
+      },
+      registeredComputers: [
+        {
+          id: "native-gpu1",
+          displayName: "gpu1-a6000",
+          hostingMode: "self_hosted",
+          status: "assigned",
+          capabilities: [],
+          selfHostedColocation: false,
+        },
+      ],
+    });
+    const text = textOf(tree);
+    // German connection words, never online/offline.
+    expect(text).toContain("verbunden");
+    expect(text).toContain("getrennt");
+    expect(text).not.toContain("online");
+    expect(text).not.toContain("offline");
+    expect(text).toContain("gpu1-a6000");
+    // The full reason stays reachable as the entry's tooltip, never as a sentence.
+    expect(radioItem(tree, "remote").props.title).toBe("gpu3 is offline.");
+    expect(radioItem(tree, "remote").props.disabled).toBe(true);
+  });
+
+  it("keeps a save in progress visible and blocks switching", () => {
     const markup = renderToStaticMarkup(
       <ComposerComputerControlView
         {...base}
@@ -95,71 +127,87 @@ describe("computer popup selection and details", () => {
       />,
     );
     expect(markup).toContain('aria-busy="true"');
-    expect(markup).toContain("Saving computer settings");
+    expect(markup).toContain("Speichert");
     expect(markup).toContain("disabled");
   });
 
-  it("opens details for an unavailable target without moving the draft", () => {
+  it("refuses an unavailable target without moving the draft", () => {
     const select = vi.fn();
-    const inspect = vi.fn();
-    const tree = ComposerComputerChoiceList({
-      ...base,
-      onSelectComputer: select,
-      onOpenDetails: inspect,
-    });
-    const trigger = {} as HTMLButtonElement;
-    const unavailable = computerButton(tree, "Use Remote");
-    expect(unavailable.disabled).toBe(true);
-    unavailable.onClick({ currentTarget: trigger });
-    computerButton(tree, "Remote details").onClick({ currentTarget: trigger });
+    const tree = ComposerComputerMenuItems({ ...base, onSelectComputer: select });
+    expect(radioItem(tree, "remote").props.disabled).toBe(true);
+    (radioGroup(tree).props.onValueChange as (value: string) => void)("remote");
     expect(select).not.toHaveBeenCalled();
-    expect(inspect).toHaveBeenCalledExactlyOnceWith("remote", trigger);
+    expect(textOf(tree)).toContain("Projekt fehlt");
   });
 
-  it("prevents selection of every target during a started session while allowing inspection", () => {
+  it("prevents selection of every target during a started session", () => {
     const select = vi.fn();
-    const inspect = vi.fn();
-    const tree = ComposerComputerChoiceList({
+    const tree = ComposerComputerMenuItems({
       ...base,
       selectableEnvironmentIds: [envA, envB],
       disabledReason: COMPOSER_COMPUTER_LOCKED_REASON,
       onSelectComputer: select,
-      onOpenDetails: inspect,
     });
-    for (const label of ["Local", "Remote"]) {
-      const choice = computerButton(tree, `Use ${label}`);
-      expect(choice.disabled).toBe(true);
-      choice.onClick({ currentTarget: {} as HTMLButtonElement });
-      expect(computerButton(tree, `${label} details`).disabled).not.toBe(true);
+    for (const id of ["local", "remote"]) {
+      expect(radioItem(tree, id).props.disabled).toBe(true);
+      (radioGroup(tree).props.onValueChange as (value: string) => void)(id);
     }
     expect(select).not.toHaveBeenCalled();
+    // The reason is the entries' tooltip, never a status sentence in the menu.
+    expect(textOf(tree)).not.toContain(COMPOSER_COMPUTER_LOCKED_REASON);
+    expect(radioItem(tree, "local").props.title).toBe(COMPOSER_COMPUTER_LOCKED_REASON);
   });
 
-  it("moves an available draft only through the explicit selection action", () => {
+  it("moves an available draft through the explicit selection", () => {
     const select = vi.fn();
-    const inspect = vi.fn();
-    const tree = ComposerComputerChoiceList({
+    const tree = ComposerComputerMenuItems({
       ...base,
       selectableEnvironmentIds: [envA, envB],
       onSelectComputer: select,
-      onOpenDetails: inspect,
     });
-    computerButton(tree, "Use Remote").onClick({ currentTarget: {} as HTMLButtonElement });
+    expect(radioGroup(tree).props.value).toBe("local");
+    (radioGroup(tree).props.onValueChange as (value: string) => void)("remote");
     expect(select).toHaveBeenCalledExactlyOnceWith("remote");
-    expect(inspect).not.toHaveBeenCalled();
   });
 
-  it("distinguishes saved harness configuration from verified host readiness", () => {
-    const markup = renderToStaticMarkup(
-      <ComposerComputerDetails
-        computer={{ ...base.computers[0]!, harnesses: [{ harness: "codex-cli", available: true }] }}
-        projectAvailable={false}
-      />,
-    );
-    expect(markup).toContain("Saved configuration");
-    expect(markup).toContain("Enabled");
-    expect(markup).toContain(COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT);
-    expect(markup).not.toContain("Connected");
+  it("opens Settings → Rechner instead of an in-place computer editor", () => {
+    const onAddComputer = vi.fn();
+    const tree = ComposerComputerMenuItems({
+      ...base,
+      onSelectComputer: () => undefined,
+      onAddComputer,
+    });
+    expect(textOf(tree)).toContain("Rechner hinzufügen");
+    const manage = flatten(tree).find((element) => element.props.onClick === onAddComputer);
+    (manage!.props.onClick as () => void)();
+    expect(onAddComputer).toHaveBeenCalledOnce();
+  });
+
+  it("derives a short status for every computer", () => {
+    const choices = composerComputerChoices({
+      ...base,
+      computerAvailability: { local: { status: "Not connected", reason: "Not connected" } },
+    });
+    // Der lokale Rechner ist immer verfügbar, auch wenn eine Abfrage hängt.
+    expect(choices.map((choice) => choice.meta)).toEqual(["verbunden", "Projekt fehlt"]);
+  });
+
+  it("never turns a probe timeout into „nicht verfügbar“", () => {
+    const select = vi.fn();
+    const tree = ComposerComputerMenuItems({
+      ...base,
+      selectableEnvironmentIds: [envA, envB],
+      computerAvailability: {
+        remote: { status: "Offline", reason: "Die Datenabfrage hat zu lange gedauert." },
+      },
+      onSelectComputer: select,
+    });
+    const entry = radioItem(tree, "remote");
+    expect(entry.props.disabled).toBe(false);
+    expect(textOf(tree)).not.toContain("zu lange gedauert");
+    expect(textOf(tree)).not.toContain("nicht verfügbar");
+    (radioGroup(tree).props.onValueChange as (value: string) => void)("remote");
+    expect(select).toHaveBeenCalledExactlyOnceWith("remote");
   });
 });
 
@@ -183,6 +231,7 @@ describe("harness ↔ provider-instance mapping", () => {
     expect(harnessForProviderInstanceId("opencode")).toBe("opencode");
     expect(harnessForProviderInstanceId("grok")).toBe("grok-cli");
     expect(harnessForProviderInstanceId("cursor")).toBe("cursor-agent");
+    expect(harnessForProviderInstanceId("pi", "pi")).toBe("pi-code");
   });
 
   it("maps named profiles by their actual driver and marks that family configured", () => {
@@ -199,8 +248,7 @@ describe("harness ↔ provider-instance mapping", () => {
 
   it("HIDES a harness this build has no instance for, and marks unconfigured ones", () => {
     const options = composerHarnessOptions(new Set(["claudeAgent"]));
-    // pi-code maps to no provider instance — it must not be listed at all.
-    expect(options.some((option) => option.id === "pi-code")).toBe(false);
+    expect(options.find((option) => option.id === "pi-code")?.configured).toBe(false);
     expect(options.find((option) => option.id === "claude-code")?.configured).toBe(true);
     expect(options.find((option) => option.id === "codex-cli")?.configured).toBe(false);
   });
@@ -208,6 +256,20 @@ describe("harness ↔ provider-instance mapping", () => {
 
 describe("gateway models per route", () => {
   const models = [model("m-openai", ["acc-openai"]), model("m-kimi", ["acc-kimi"])];
+
+  it("does not substitute source gateway models for a native-only account", () => {
+    expect(
+      gatewayModelsForRoute(models, {
+        id: WorkjetLlmRouteId.make("native-only"),
+        label: "Native Claude",
+        nativeAccountReference: {
+          accountId: "196a89ba-ee86-4413-885c-04ca60e6f291",
+          holderInstanceId: "322084e5-8239-48d7-b3c5-c5178fbe5822",
+          accountRevision: 3,
+        },
+      }),
+    ).toEqual([]);
+  });
 
   it("narrows the catalog to the selected route's account", () => {
     const scoped = gatewayModelsForRoute(models, route("r1", "OpenAI", "acc-openai"));
@@ -227,7 +289,7 @@ describe("the Computer control", () => {
     computer("c-x", "island", envUnpaired),
   ];
 
-  it("renders as a real select showing the current computer", () => {
+  it("renders as a plain dropdown showing the current computer", () => {
     const markup = renderToStaticMarkup(
       <ComposerComputerControlView
         computers={computers}
@@ -240,7 +302,8 @@ describe("the Computer control", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Computer"');
+    expect(markup).toContain('aria-label="Rechner"');
+    expect(markup).toContain('aria-haspopup="menu"');
     expect(markup).toContain("MacBook");
     expect(markup).not.toContain('data-disabled=""');
   });
@@ -258,8 +321,10 @@ describe("the Computer control", () => {
       />,
     );
 
-    expect(markup).toContain("max-w-52");
+    expect(markup).toContain("max-w-48");
     expect(markup).toContain("min-w-0");
+    expect(markup).toContain("truncate");
+    expect(markup).toContain(`Computer ${"x".repeat(180)}`);
   });
 
   it("separates project availability from device pairing", () => {
@@ -270,12 +335,10 @@ describe("the Computer control", () => {
     // A computer without the project is disabled with the hint, never a
     // silent no-op (the popup renders the project-availability hint).
     expect(isProjectAvailableOnComputer(computers[2]!, envA, selectable)).toBe(false);
-    expect(COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT).toBe(
-      "This project is not available on this computer.",
-    );
+    expect(COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT).toBe("Projekt fehlt auf diesem Rechner");
   });
 
-  it("keeps computer details reachable with the stated selection lock on a started thread", () => {
+  it("keeps the dropdown reachable with the stated selection lock on a started thread", () => {
     const markup = renderToStaticMarkup(
       <ComposerComputerControlView
         computers={computers}
@@ -289,7 +352,7 @@ describe("the Computer control", () => {
     );
 
     expect(markup).toContain(COMPOSER_COMPUTER_LOCKED_REASON);
-    expect(markup).toContain('aria-label="Computer"');
+    expect(markup).toContain('aria-label="Rechner"');
     expect(markup).not.toContain("data-disabled");
   });
 
@@ -343,9 +406,32 @@ describe("the manual target controls", () => {
 
     expect(markup).toContain('aria-label="Harness"');
     expect(markup).not.toContain('aria-label="Provider"');
-    expect(markup).toContain('aria-label="Model"');
+    expect(markup).toContain('aria-label="Modell"');
     expect(markup).toContain("Claude Code");
     expect(markup).toContain("GPT 5.6 Sol");
+    // Plain dropdowns: no explanatory tooltip sentence, no popover form.
+    expect(markup).not.toContain("the agent runtime");
+    expect(markup.match(/aria-haspopup="menu"/g)?.length).toBe(2);
+  });
+
+  it("displays a native-managed route with disabled Harness and Model controls", () => {
+    const reason = "This route is managed by the project's instance.";
+    const markup = renderToStaticMarkup(
+      <ComposerManualTargetControlsView
+        disabledReason={reason}
+        configuredInstanceIds={new Set(["codex"])}
+        selectedHarness="codex-cli"
+        onSelectHarness={vi.fn()}
+        models={[]}
+        modelsUnavailableReason={null}
+        selectedModelId="gpt-6.1-sol"
+        onSelectModel={vi.fn()}
+      />,
+    );
+    expect(markup).toMatch(/<button[^>]*aria-label="Harness"[^>]*(?:disabled|data-disabled)/);
+    expect(markup).toMatch(/<button[^>]*aria-label="Modell"[^>]*disabled/);
+    expect(markup).toContain("gpt-6.1-sol");
+    expect(markup).toContain("This route is managed");
   });
 
   it("presents the native MiniMax catalog without claiming gateway service", () => {
@@ -370,7 +456,6 @@ describe("the manual target controls", () => {
     );
     expect(markup).toContain("MiniMax Code");
     expect(markup).toContain("MiniMax-M3.1-Flash-Preview");
-    expect(markup).toContain("Models reported by this harness on the selected computer.");
     expect(markup).not.toContain("Served by the Workjet gateway");
   });
   it("does not present an unadvertised native model as an available current choice", () => {
@@ -386,7 +471,7 @@ describe("the manual target controls", () => {
         onSelectModel={() => undefined}
       />,
     );
-    expect(markup).toContain("Choose an advertised model");
+    expect(markup).toContain(">Modell<");
     expect(markup).not.toContain(">foreign-model<");
   });
   it("shows the unavailable reason instead of a silent blank model menu", () => {
@@ -402,7 +487,7 @@ describe("the manual target controls", () => {
       />,
     );
 
-    expect(markup).toContain(">Model<");
+    expect(markup).toContain(">Modell<");
   });
 
   it("keeps a long model id inside the bounded composer trigger", () => {
@@ -420,6 +505,102 @@ describe("the manual target controls", () => {
 
     expect(markup).toContain("max-w-56");
     expect(markup).toContain("min-w-0");
+  });
+});
+
+describe("harness and model dropdown entries", () => {
+  it("lists harnesses with a short status and reports the choice", () => {
+    const onSelectHarness = vi.fn();
+    const tree = ComposerHarnessMenuItems({
+      configuredInstanceIds: new Set(["claudeAgent"]),
+      selectedHarness: "claude-code",
+      onSelectHarness,
+    });
+    expect(textOf(tree)).toContain("Claude Code");
+    // Fehlende Installation ist keine Sperre: „nicht installiert“, nie „gesperrt“.
+    expect(textOf(tree)).toContain("nicht installiert");
+    expect(textOf(tree)).not.toContain("gesperrt");
+    const codex = flatten(tree).find(
+      (element) => element.props.disabled === true && textOf(element).includes("Codex CLI"),
+    );
+    expect(codex).toBeDefined();
+    (radioGroup(tree).props.onValueChange as (value: string) => void)("claude-code");
+    expect(onSelectHarness).toHaveBeenCalledWith("claude-code");
+  });
+
+  it("leads a missing harness into the setup path instead of locking it", () => {
+    const onSetupHarness = vi.fn();
+    const tree = ComposerHarnessMenuItems({
+      configuredInstanceIds: new Set(["claudeAgent"]),
+      selectedHarness: "claude-code",
+      onSelectHarness: () => undefined,
+      onSetupHarness,
+    });
+    const entry = flatten(tree).find(
+      (element) =>
+        typeof element.props.onClick === "function" &&
+        textOf(element) === "Codex CLI nicht installiert · Einrichten",
+    );
+    expect(entry?.props.disabled).toBeUndefined();
+    (entry!.props.onClick as () => void)();
+    expect(onSetupHarness).toHaveBeenCalledExactlyOnceWith("codex-cli");
+  });
+
+  it("groups catalog models by provider and offers no typed model ID", () => {
+    const onSelectModel = vi.fn();
+    const tree = ComposerModelMenuItems({
+      models: [
+        { ...model("gpt-5.6-sol", ["acc-openai"]), providers: ["codex"], displayName: "GPT Sol" },
+      ],
+      modelsUnavailableReason: null,
+      selectedModelId: "my-private-model",
+      onSelectModel,
+    });
+    const text = textOf(tree);
+    expect(text).toContain("Codex (OpenAI)");
+    expect(text).toContain("GPT Sol");
+    expect(text).not.toContain("my-private-model");
+    expect(text).not.toContain("eigene ID");
+    expect(text).not.toContain("Eigene Modell-ID");
+    // No raw model ID as a tooltip either.
+    expect(radioItem(tree, "gpt-5.6-sol").props.title).toBeUndefined();
+    (radioGroup(tree).props.onValueChange as (value: string) => void)("gpt-5.6-sol");
+    expect(onSelectModel).toHaveBeenCalledWith("gpt-5.6-sol");
+  });
+
+  it("shows an empty catalog as one simple disabled entry, the reason only as tooltip", () => {
+    const tree = ComposerModelMenuItems({
+      modelSource: "native",
+      models: [],
+      modelsUnavailableReason: "Run mcode login",
+      selectedModelId: "foreign-model",
+      onSelectModel: () => undefined,
+    });
+    const text = textOf(tree);
+    expect(text).toContain("Keine Modelle");
+    expect(text).not.toContain("Run mcode login");
+    expect(text).not.toContain("foreign-model");
+    // The empty entry carries the reason for its tooltip (a disabled MenuItem).
+    const empty = flatten(tree).find((element) => element.props.reason === "Run mcode login");
+    expect(empty).toBeDefined();
+  });
+
+  it("has no inline model-ID input and no raw ID on the model trigger", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerManualTargetControlsView
+        configuredInstanceIds={new Set(["claudeAgent"])}
+        selectedHarness="claude-code"
+        onSelectHarness={() => undefined}
+        models={[{ ...model("gpt-5.6-sol", []), displayName: "GPT Sol" }]}
+        modelsUnavailableReason={null}
+        selectedModelId="gpt-5.6-sol"
+        onSelectModel={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain("data-composer-custom-model-inline");
+    expect(markup).not.toContain('aria-label="Modell-ID"');
+    expect(markup).not.toContain('title="gpt-5.6-sol"');
+    expect(markup).toContain("GPT Sol");
   });
 });
 
@@ -467,7 +648,19 @@ describe("the compact overflow menu", () => {
       }),
     );
     expect(text).toContain("Greppy");
-    expect(text).not.toContain("Greppy — not configured");
+    const greppy = flatten(
+      ComposerWorkjetCompactMenuContent({
+        ...base,
+        selectedWorkerId: null,
+        manualTarget: {
+          ...manualTarget,
+          configuredInstanceIds: new Set(["greppy-fixture"]),
+          configuredDriverKinds: new Set(["greppy"]),
+          selectedHarness: "greppy",
+        },
+      }),
+    ).find((element) => element.props.value === "greppy" && element.props.closeOnClick === true);
+    expect(greppy?.props.disabled ?? false).toBe(false);
   });
 
   it("offers Harness and Model in Manual mode — compact must not lose the new bar (K-A2)", () => {
@@ -480,7 +673,7 @@ describe("the compact overflow menu", () => {
     );
     expect(text).toContain("Harness");
     expect(text).toContain("Claude Code");
-    expect(text).toContain("Model");
+    expect(text).toContain("Modell");
     expect(text).toContain("gpt-5.6-sol");
   });
 
@@ -497,7 +690,7 @@ describe("the compact overflow menu", () => {
 });
 
 describe("the custom system prompt affordance", () => {
-  it("renders as a labelled control", () => {
+  it("renders as a labelled control outside the options menu", () => {
     const markup = renderToStaticMarkup(
       <ComposerSystemPromptControlView
         value=""
@@ -508,7 +701,25 @@ describe("the custom system prompt affordance", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="System prompt"');
+    expect(markup).toContain('aria-label="Systemprompt"');
+    expect(markup).not.toContain("aria-haspopup");
+  });
+
+  it("is an inline row with cancel and apply, not a popover", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerSystemPromptRow
+        value="Bisher"
+        busy={false}
+        disabled={false}
+        draftPending={false}
+        onApply={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+    expect(markup).toContain('data-composer-inline-row="system-prompt"');
+    expect(markup).toContain("Abbrechen");
+    expect(markup).toContain("Übernehmen");
+    expect(markup).toContain("Bisher");
   });
 });
 

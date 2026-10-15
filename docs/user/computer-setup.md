@@ -18,6 +18,10 @@ Closing the Desktop window leaves a managed SSH computer running so its active w
 
 For an already running Workjet host, use **Already running Workjet? → Use a pairing link** in the same add dialog. Installation and repair tools remain under **Advanced setup and repair**.
 
+## Command-line discovery
+
+Use [the computers CLI](computers-cli.md) to list the authenticated server’s saved computer registry and profile metadata as JSON.
+
 ## Adding a project
 
 The folder dialog shows progress while Workjet connects to the selected Business OS, registers the folder, and waits for the confirmed project. If confirmation fails, the dialog shows an error and allows another attempt.

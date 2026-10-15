@@ -5,7 +5,7 @@ import {
   businessSceneDataSchemas,
   isBusinessSceneId,
   type BusinessSceneData,
-} from "./scenes/business-data";
+} from "./scenes/business-data.ts";
 
 export type Scene3dDataIssueCode =
   | "scene3d.missing_data"

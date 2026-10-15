@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { prepareJourFixeNarration } from "./jourFixeNarration";
 import type { WorkjetProjectControlPort } from "../workjetProjectControl";
 import {
@@ -181,4 +181,27 @@ describe("retained Jour fixe narration", () => {
     await expect(read).rejects.toMatchObject({ name: "AbortError" });
     release?.({ _tag: "failed", code: "not_active" });
   });
+});
+
+it("retries the same narration range and publishes only the fully verified recording", async () => {
+  const f = await fixture();
+  vi.useFakeTimers();
+  try {
+    const port = vi
+      .fn()
+      .mockResolvedValueOnce({ _tag: "failed", code: "guest_failed" })
+      .mockImplementation(f.port);
+    const loaded = prepareJourFixeNarration({
+      scope,
+      slideId: "slide",
+      signal: new AbortController().signal,
+      port,
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(new Uint8Array(await (await loaded).arrayBuffer())).toEqual(f.bytes);
+    expect(port).toHaveBeenCalledTimes(2);
+    expect(port.mock.calls[0]![1].offset).toBe(port.mock.calls[1]![1].offset);
+  } finally {
+    vi.useRealTimers();
+  }
 });

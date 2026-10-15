@@ -32,9 +32,7 @@ export function PreviewPanel({
     return (
       <PreviewPanelShell mode={mode}>
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Preview is only available in the Workjet desktop app.
-          </p>
+          <p className="max-w-sm text-sm text-muted-foreground">Nur in der Desktop-App</p>
         </div>
       </PreviewPanelShell>
     );

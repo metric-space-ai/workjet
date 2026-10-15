@@ -1,7 +1,10 @@
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vite-plus/test";
 
-import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import {
+  COMPOSER_OPTIONS_MENU_LABEL,
+  CompactComposerControlsMenuView,
+} from "./CompactComposerControlsMenu";
 import { WorkjetCapabilityMenu } from "./WorkjetCapabilityMenu";
 
 type InspectableElement = ReactElement<
@@ -22,11 +25,20 @@ function containsNode(tree: ReactNode, needle: ReactNode): boolean {
   return containsNode((tree as InspectableElement).props.children, needle);
 }
 
-/** `memo` wraps the component; `.type` is the function it memoizes. */
-const renderMenu = (props: Parameters<typeof CompactComposerControlsMenu>[0]): InspectableElement =>
-  (
-    CompactComposerControlsMenu as unknown as { type: (p: typeof props) => InspectableElement }
-  ).type(props);
+/** The hook-free view; the memo wrapper only owns the inline-row state. */
+const renderMenu = (
+  props: Omit<
+    Parameters<typeof CompactComposerControlsMenuView>[0],
+    "openRow" | "setOpenRow" | "anchor" | "setAnchor"
+  >,
+): InspectableElement =>
+  CompactComposerControlsMenuView({
+    ...props,
+    openRow: null,
+    setOpenRow: () => undefined,
+    anchor: null,
+    setAnchor: () => undefined,
+  }) as InspectableElement;
 
 const baseProps = {
   interactionMode: "default",
@@ -56,10 +68,9 @@ describe("CompactComposerControlsMenu", () => {
 
     expect(containsNode(menu, settingsContent)).toBe(true);
     const text = textContent(menu);
-    expect(text).toContain("Mode");
-    expect(text).toContain("Plan");
-    // "Build" matches the wide toggle now — same state, same word (K-A4).
-    expect(text).toContain("Build");
+    expect(text).toContain("Modus");
+    expect(text).toContain("Planen");
+    expect(text).toContain("Bauen");
     // Permission is ALWAYS full (operator rule): no Access group exists.
     expect(text).not.toContain("Access");
   });
@@ -79,34 +90,81 @@ describe("CompactComposerControlsMenu", () => {
   });
 
   it("keeps System Prompt before Tools in the compact overflow menu", () => {
-    const contextWindowContent = <span data-test-context-window-menu="true">Context</span>;
     const systemPromptContent = <span data-test-system-prompt-menu="true">System prompt</span>;
     const toolsContent = <span data-test-tools-menu="true">Tools</span>;
     const menu = renderMenu({
       ...baseProps,
-      contextWindowMenuContent: contextWindowContent,
       systemPromptMenuContent: systemPromptContent,
       workjetMenuContent: toolsContent,
     });
 
-    expect(containsNode(menu, contextWindowContent)).toBe(true);
     expect(containsNode(menu, systemPromptContent)).toBe(true);
     expect(containsNode(menu, toolsContent)).toBe(true);
-    expect(textContent(menu).indexOf("Context")).toBeLessThan(
-      textContent(menu).indexOf("System prompt"),
-    );
     expect(textContent(menu).indexOf("System prompt")).toBeLessThan(
       textContent(menu).indexOf("Tools"),
     );
+  });
+
+  it("has no slot for a context meter: the menu holds only simple entries", () => {
+    const menu = renderMenu(baseProps);
+    const meters: unknown[] = [];
+    const walk = (node: ReactNode): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!isValidElement(node)) return;
+      const element = node as InspectableElement;
+      if (element.props.role === "meter" || element.props["data-context-window-meter"]) {
+        meters.push(element);
+      }
+      walk(element.props.children);
+    };
+    walk(menu);
+    expect(meters).toEqual([]);
   });
 
   it("omits thread settings when the thread has no server configuration", () => {
     const menu = renderMenu(baseProps);
     const text = textContent(menu);
 
-    expect(text).toContain("Mode");
+    expect(text).toContain("Modus");
     // Permission is ALWAYS full (operator rule): no Access group exists.
     expect(text).not.toContain("Access");
     expect(text).not.toContain("Orchestrator");
+  });
+
+  it("is called Optionen, never Advanced settings", () => {
+    expect(COMPOSER_OPTIONS_MENU_LABEL).toBe("Optionen");
+    const menu = renderMenu(baseProps);
+    const labels: string[] = [];
+    const walk = (node: ReactNode): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!isValidElement(node)) return;
+      const element = node as InspectableElement;
+      for (const value of Object.values(element.props)) {
+        if (isValidElement(value)) walk(value);
+      }
+      if (typeof element.props["aria-label"] === "string") {
+        labels.push(element.props["aria-label"] as string);
+      }
+      walk(element.props.children);
+    };
+    walk(menu);
+    expect(labels).toContain("Optionen");
+    expect(labels.join(" ")).not.toContain("Advanced");
+  });
+
+  it("renders the open system prompt as an inline row outside the menu", () => {
+    const systemPromptContent = <span data-test-system-prompt-row="true">Systemprompt</span>;
+    const menu = CompactComposerControlsMenuView({
+      ...baseProps,
+      systemPromptMenuContent: systemPromptContent,
+      openRow: "system-prompt",
+      setOpenRow: () => undefined,
+      anchor: null,
+      setAnchor: () => undefined,
+    }) as InspectableElement;
+    // Once inside the menu, once in the row slot after the menu.
+    const children = (menu.props.children as ReactNode[]).filter(Boolean);
+    expect(children.length).toBe(2);
+    expect(containsNode(children[1], systemPromptContent)).toBe(true);
   });
 });

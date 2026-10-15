@@ -52,6 +52,32 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
   );
 }
 
+/** Git's own reason, classified with a stable code the client can translate. */
+export function describeCloneFailure(stderr: string): string {
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^(fatal|error|remote):/i.test(line));
+  // Never echo credentials embedded in a URL.
+  const reason = (lines.at(-1) ?? "").replace(/\/\/[^/@\s]+@/g, "//").slice(0, 300);
+  const text = stderr.toLowerCase();
+  const code =
+    /authentication failed|could not read username|permission denied|terminal prompts disabled|403/.test(
+      text,
+    )
+      ? "auth"
+      : /repository .* not found|not found|does not appear to be a git repository/.test(text)
+        ? "not-found"
+        : /already exists and is not an empty directory/.test(text)
+          ? "destination-exists"
+          : /could not resolve host|unable to access|timed out|connection|network|ssl|tls|certificate/.test(
+                text,
+              )
+            ? "network"
+            : "unknown";
+  return `clone-failed:${code}${reason ? ` ${reason}` : ""}`;
+}
+
 function toRepositoryInfo(
   provider: SourceControlProviderKind,
   urls: SourceControlRepositoryCloneUrls,
@@ -203,13 +229,21 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    yield* git.execute({
+    const cloned = yield* git.execute({
       operation: "SourceControlRepositoryService.cloneRepository",
       cwd: preparedDestination.parentPath,
-      args: ["clone", remoteUrl, preparedDestination.directoryName],
+      args: ["clone", "--", remoteUrl, preparedDestination.directoryName],
       timeoutMs: 120_000,
       maxOutputBytes: 256 * 1024,
+      allowNonZeroExit: true,
     });
+    if (cloned.exitCode !== 0) {
+      return yield* new SourceControlRepositoryError({
+        operation: "cloneRepository",
+        provider,
+        detail: describeCloneFailure(cloned.stderr),
+      });
+    }
 
     return {
       cwd: preparedDestination.destinationPath,

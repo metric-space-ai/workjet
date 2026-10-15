@@ -57,7 +57,7 @@ describe("Models account recovery", () => {
       };
       const fresh = modelsAccountHealth({ ...account, provider: "kimi", balance }, 1001);
       expect(fresh.status).toBe("unavailable");
-      expect(fresh.message).toContain("balance is exhausted");
+      expect(fresh.message).toContain("Guthaben aufgebraucht");
       expect(fresh.retryAtMs).toBeNull();
       const stale = modelsAccountHealth({ ...account, provider: "kimi", balance }, 301000);
       expect(stale.balance?.fresh).toBe(false);
@@ -166,11 +166,11 @@ describe("Models account recovery", () => {
         boostPermille: null,
       },
     ];
-    const health = modelsAccountHealth({ ...account, quota }, 2000);
+    const health = modelsAccountHealth({ ...account, provider: "minimax", quota }, 2000);
     expect(health.status).toBe("unknown");
-    expect(health.windows[0]?.remainingPercent).toBe(135);
+    expect(health.windows[0]?.remainingPercent).toBe(90);
     expect(health.windows[1]?.unlimited).toBe(true);
-    expect(health.windows[2]?.label).toContain("MiniMax-M3");
+    expect(health.windows[2]?.tooltip).toContain("MiniMax-M3");
     expect(health.windows).toHaveLength(3);
   });
   it.each([401, 403, 429])("does not offer re-login for a usage-only %s", (httpStatus) => {
@@ -240,7 +240,7 @@ describe("Models account recovery", () => {
       expect(health.retryAtMs).toBe(5000);
       expect(health.message).toContain(`HTTP ${generationHttpStatus}`);
       expect(health.message).not.toContain("Sign-in expired");
-      expect(health.message).not.toContain("Limit reached");
+      expect(health.message).not.toContain("Limit erreicht");
     },
   );
 

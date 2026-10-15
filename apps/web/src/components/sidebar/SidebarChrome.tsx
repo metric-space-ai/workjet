@@ -118,7 +118,7 @@ export function WorkjetProductModeSwitch({
       data-product-mode-switch=""
     >
       <div
-        aria-label="Workjet product mode"
+        aria-label="Workjet-Modus"
         className={cn(
           "flex h-7 min-w-0 flex-1 items-center whitespace-nowrap rounded-md border p-0.5",
           onBackdrop ? "border-white/20 bg-black/10" : "border-sidebar-border bg-sidebar-accent/35",
@@ -161,7 +161,7 @@ export function WorkjetProductModeSwitch({
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <Link
-      aria-label="Go to threads"
+      aria-label="Zu den Unterhaltungen"
       className={cn(
         "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2",
         onBackdrop ? "text-white" : "text-foreground",
@@ -211,7 +211,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={handleSettingsClick}>
             <SettingsIcon />
-            <span>Settings</span>
+            <span>Einstellungen</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

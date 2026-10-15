@@ -43,16 +43,16 @@ const TARGET: CloudLinkTarget = {
   wsBaseUrl: "ws://127.0.0.1:3000",
 };
 
-const relayClientInstallDialog = vi.hoisted(() => ({
+const relayClientInstallPanel = vi.hoisted(() => ({
   requestConfirmation: vi.fn(),
   reportProgress: vi.fn(),
   finish: vi.fn(),
 }));
 
-vi.mock("./relayClientInstallDialog", () => ({
-  requestRelayClientInstallConfirmation: relayClientInstallDialog.requestConfirmation,
-  reportRelayClientInstallProgress: relayClientInstallDialog.reportProgress,
-  finishRelayClientInstall: relayClientInstallDialog.finish,
+vi.mock("./relayClientInstallPanel", () => ({
+  requestRelayClientInstallConfirmation: relayClientInstallPanel.requestConfirmation,
+  reportRelayClientInstallProgress: relayClientInstallPanel.reportProgress,
+  finishRelayClientInstall: relayClientInstallPanel.finish,
 }));
 
 const createProof = vi.fn(() => Effect.succeed("dpop-proof"));
@@ -143,7 +143,7 @@ function bodyText(body: BodyInit | null | undefined): string {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("VITE_WORKJET_RELAY_URL", "https://relay.example.test");
-  relayClientInstallDialog.requestConfirmation.mockResolvedValue(true);
+  relayClientInstallPanel.requestConfirmation.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -328,7 +328,7 @@ describe("web cloud link environment client", () => {
         }),
       );
 
-      expect(relayClientInstallDialog.requestConfirmation).not.toHaveBeenCalled();
+      expect(relayClientInstallPanel.requestConfirmation).not.toHaveBeenCalled();
       expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
         "http://127.0.0.1:3000/api/connect/link-proof",
       );
@@ -409,7 +409,7 @@ describe("web cloud link environment client", () => {
         },
       ).pipe(Effect.flip);
 
-      expect(relayClientInstallDialog.requestConfirmation).not.toHaveBeenCalled();
+      expect(relayClientInstallPanel.requestConfirmation).not.toHaveBeenCalled();
     }),
   );
 

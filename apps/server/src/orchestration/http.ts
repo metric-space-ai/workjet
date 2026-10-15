@@ -2,10 +2,14 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  WorkjetHarness,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { projectThreadDetailSnapshot } from "./ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./Normalizer.ts";
@@ -18,6 +22,15 @@ import {
 } from "../auth/http.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
+import { computerInventory } from "../workjet/computerInventory.ts";
+import { officialCodingModelExport } from "../workjet/OfficialCodingModelExport.ts";
+import {
+  configuredHarnessExecutable,
+  makeChildProcessHarnessProbePort,
+  probeHarnessAvailability,
+} from "../workjet/WorkjetHarnessAvailability.ts";
+import { ProviderGatewayService } from "../providerGateway/ProviderGatewayService.ts";
 
 export const orchestrationHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
@@ -25,8 +38,72 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
   Effect.fnUntraced(function* (handlers) {
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
     const orchestrationEngine = yield* OrchestrationEngineService;
+    const settings = yield* ServerSettingsService;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
     return handlers
+      .handle(
+        "codingModels",
+        Effect.fn("environment.workjet.codingModels")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          const result = Effect.gen(function* () {
+            const gateway = yield* Effect.serviceOption(ProviderGatewayService);
+            if (Option.isNone(gateway)) {
+              return yield* failEnvironmentInternal(
+                "internal_error",
+                new Error("provider gateway unavailable"),
+              );
+            }
+            const providerGateway = gateway.value;
+            const current = yield* settings.getSettings;
+            const catalog = yield* providerGateway.catalog();
+            const health = yield* providerGateway.health();
+            const checks = yield* providerGateway.modelChecks();
+            const accountModels = yield* Effect.forEach(
+              catalog.accounts,
+              (account) => providerGateway.accountModels({ accountId: account.id }),
+              { concurrency: 2 },
+            );
+            const port = makeChildProcessHarnessProbePort(spawner, (harness) =>
+              settings.getSettings.pipe(
+                Effect.map((fresh) => configuredHarnessExecutable(fresh, harness)),
+                Effect.catch(() => Effect.succeed(undefined)),
+              ),
+            );
+            const harnesses = yield* probeHarnessAvailability({
+              port,
+              harnesses: WorkjetHarness.literals.filter((harness) =>
+                current.workjet.workerProfiles.some((profile) => profile.harness === harness),
+              ),
+              nowIso: Effect.map(DateTime.now, DateTime.formatIso),
+            });
+            return officialCodingModelExport({
+              catalog,
+              health,
+              checks,
+              accountModels,
+              workjet: current.workjet,
+              harnesses,
+              observedAtMs: yield* Clock.currentTimeMillis,
+            });
+          });
+          return yield* result.pipe(
+            Effect.catch((cause) => failEnvironmentInternal("internal_error", cause)),
+          );
+        }),
+      )
+      .handle(
+        "computers",
+        Effect.fn("environment.computers.list")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          const current = yield* settings.getSettings.pipe(
+            Effect.catch((cause) => failEnvironmentInternal("internal_error", cause)),
+          );
+          return computerInventory(current.workjet);
+        }),
+      )
       .handle(
         "snapshot",
         Effect.fn("environment.orchestration.snapshot")(function* (args) {

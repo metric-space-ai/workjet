@@ -17,6 +17,7 @@ import {
   EnvironmentId,
   EventId,
   MessageId,
+  ProjectId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -54,6 +55,7 @@ import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts
 import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
 import { makeProviderServiceLive } from "./ProviderService.ts";
+import { readHistoryContinuation } from "../importedHistoryContext.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -248,8 +250,21 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       }),
   );
 
+  const nativeGoalGet = vi.fn(() =>
+    Effect.succeed({ objective: "Verify the approved outcome.", status: "active" as const }),
+  );
+  const nativeGoalSet = vi.fn(
+    (
+      _threadId: ThreadId,
+      _objective: string,
+      _status: "active" | "paused" | "blocked" | "complete",
+    ) => Effect.void,
+  );
   const adapter: ProviderAdapterShape<ProviderAdapterError> = {
     provider,
+    ...(provider === CODEX_DRIVER
+      ? { nativeGoal: { get: nativeGoalGet, set: nativeGoalSet } }
+      : {}),
     capabilities: {
       sessionModelSwitch: "in-session",
     },
@@ -286,6 +301,8 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
 
   return {
     adapter,
+    nativeGoalGet,
+    nativeGoalSet,
     emit,
     updateSession,
     startSession,
@@ -899,6 +916,111 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("rejects autonomous-worktree before any provider launch, including full access", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      for (const [driver, adapter] of [
+        [CODEX_DRIVER, routing.codex],
+        [CLAUDE_AGENT_DRIVER, routing.claude],
+        [CURSOR_DRIVER, routing.cursor],
+      ] as const) {
+        adapter.startSession.mockClear();
+        const threadId = asThreadId(`autonomous-${driver}`);
+        const result = yield* Effect.result(
+          provider.startSession(threadId, {
+            threadId,
+            provider: driver,
+            providerInstanceId: ProviderInstanceId.make(String(driver)),
+            cwd: "/tmp/project",
+            runtimeMode: "full-access",
+            workjetConfig: {
+              ...DEFAULT_WORKJET_THREAD_CONFIG,
+              schemaVersion: 2,
+              executionPolicy: {
+                mode: "autonomous-worktree",
+                projectId: ProjectId.make("policy-project"),
+                revision: 3,
+              },
+            },
+          }),
+        );
+        assert.equal(result._tag, "Failure");
+        if (result._tag === "Failure") {
+          assert.equal(result.failure._tag, "ProviderValidationError");
+          assert.match(String(result.failure), /Full access is not an alternative/);
+        }
+        assert.equal(adapter.startSession.mock.calls.length, 0);
+      }
+    }),
+  );
+
+  it.effect("does not adopt, restart or send from a persisted unsupported policy", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const threadId = asThreadId("autonomous-persisted");
+      routing.codex.startSession.mockClear();
+      routing.codex.sendTurn.mockClear();
+      yield* directory.upsert({
+        threadId,
+        provider: CODEX_DRIVER,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        runtimeMode: "full-access",
+        status: "stopped",
+        resumeCursor: { opaque: "original-session" },
+        runtimePayload: {
+          // An unreadable future schema must not fall back to unrestricted defaults.
+          workjetConfig: {
+            schemaVersion: 999,
+            executionPolicy: { mode: "autonomous-worktree", revision: 3 },
+          },
+        },
+      });
+      const result = yield* Effect.result(provider.sendTurn({ threadId, input: "Continue." }));
+      assert.equal(result._tag, "Failure");
+      assert.equal(routing.codex.startSession.mock.calls.length, 0);
+      assert.equal(routing.codex.sendTurn.mock.calls.length, 0);
+      const replacement = yield* Effect.result(
+        provider.startSession(threadId, {
+          threadId,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "full-access",
+        }),
+      );
+      assert.equal(replacement._tag, "Failure");
+      assert.equal(routing.codex.startSession.mock.calls.length, 0);
+    }),
+  );
+
+  it.effect("native goal inspection and stop never recover a closed Owner session", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("native-goal-no-recovery");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      routing.codex.startSession.mockClear();
+      routing.codex.nativeGoalGet.mockClear();
+      routing.codex.nativeGoalSet.mockClear();
+      yield* routing.codex.stopSession(threadId);
+      assert.isNull(yield* provider.nativeGoal!.get(threadId, { allowRecovery: false }));
+      yield* provider.nativeGoal!.set(threadId, "Retain this objective.", "paused");
+      assert.equal(routing.codex.startSession.mock.calls.length, 0);
+      assert.equal(routing.codex.nativeGoalGet.mock.calls.length, 0);
+      assert.equal(routing.codex.nativeGoalSet.mock.calls.length, 0);
+      assert.deepEqual(yield* provider.nativeGoal!.get(threadId), {
+        objective: "Verify the approved outcome.",
+        status: "active",
+      });
+      assert.equal(routing.codex.startSession.mock.calls.length, 1);
+      assert.equal(routing.codex.nativeGoalGet.mock.calls.length, 1);
+      yield* provider.stopSession({ threadId });
+    }),
+  );
+
   for (const [driver, instanceId, adapter] of [
     [CODEX_DRIVER, codexInstanceId, routing.codex],
     [CLAUDE_AGENT_DRIVER, claudeAgentInstanceId, routing.claude],
@@ -951,31 +1073,31 @@ routing.layer("ProviderServiceLive routing", (it) => {
     );
   }
 
-  it.effect("rejects unsupported imported continuation before sending a turn", () =>
-    Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
-      const threadId = asThreadId("unsupported-imported-context");
-      yield* provider.startSession(threadId, {
-        provider: CURSOR_DRIVER,
-        providerInstanceId: ProviderInstanceId.make("cursor"),
-        threadId,
-        runtimeMode: "full-access",
-      });
-      routing.cursor.sendTurn.mockClear();
-      const error = yield* Effect.flip(
-        provider.sendTurn({
+  it.effect(
+    "continues imported conversation through Cursor with the same portable text framing",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("unsupported-imported-context");
+        yield* provider.startSession(threadId, {
+          provider: CURSOR_DRIVER,
+          providerInstanceId: ProviderInstanceId.make("cursor"),
+          threadId,
+          runtimeMode: "full-access",
+        });
+        routing.cursor.sendTurn.mockClear();
+        yield* provider.sendTurn({
           threadId,
           input: "Continue",
           importedHistory: [
             { id: MessageId.make("source-unsupported"), role: "user", text: "Previous context" },
           ],
-        }),
-      );
-      assert.ok(Schema.is(ProviderAdapterRequestError)(error));
-      assert.ok(error.detail.includes("cannot continue imported conversation history"));
-      assert.equal(routing.cursor.sendTurn.mock.calls.length, 0);
-      yield* provider.stopSession({ threadId });
-    }),
+        });
+        assert.equal(routing.cursor.sendTurn.mock.calls.length, 1);
+        assert.ok(routing.cursor.sendTurn.mock.calls[0]?.[0].input?.includes("Previous context"));
+        yield* provider.stopSession({ threadId });
+        routing.cursor.sendTurn.mockClear();
+      }),
   );
 
   it.effect("condenses oversized imported context instead of refusing the turn", () =>
@@ -1007,6 +1129,42 @@ routing.layer("ProviderServiceLive routing", (it) => {
       assert.ok((sent?.input?.length ?? Infinity) <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
       routing.codex.sendTurn.mockClear();
       yield* provider.stopSession({ threadId });
+    }),
+  );
+
+  it.effect("uses the persisted requested model only when the active adapter omits it", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-optional-session-model");
+      const session = yield* provider.startSession(threadId, {
+        providerInstanceId: codexInstanceId,
+        threadId,
+        modelSelection: { instanceId: codexInstanceId, model: "gpt-5-codex" },
+        runtimeMode: "approval-required",
+      });
+      assert.equal(session.model, undefined);
+      const sessions = yield* provider.listSessions();
+      assert.equal(sessions.find((entry) => entry.threadId === threadId)?.model, "gpt-5-codex");
+
+      routing.codex.listSessions.mockImplementationOnce(() =>
+        Effect.succeed([{ ...session, model: "gpt-5.4" }]),
+      );
+      const reportedSessions = yield* provider.listSessions();
+      assert.equal(reportedSessions.find((entry) => entry.threadId === threadId)?.model, "gpt-5.4");
+      yield* provider.stopSession({ threadId });
+
+      const unselectedThreadId = asThreadId("thread-unknown-session-model");
+      yield* provider.startSession(unselectedThreadId, {
+        providerInstanceId: codexInstanceId,
+        threadId: unselectedThreadId,
+        runtimeMode: "approval-required",
+      });
+      const unselectedSessions = yield* provider.listSessions();
+      assert.equal(
+        unselectedSessions.find((entry) => entry.threadId === unselectedThreadId)?.model,
+        undefined,
+      );
+      yield* provider.stopSession({ threadId: unselectedThreadId });
     }),
   );
 
@@ -1275,13 +1433,21 @@ routing.layer("ProviderServiceLive routing", (it) => {
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
       const mcp = makeCapturingMcpRegistry();
-      const workjetConfig = {
-        schemaVersion: 1,
-        role: "orchestrator",
-        parent: null,
+      const workjetConfig = (threadId: ThreadId): WorkjetThreadConfig => ({
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        schemaVersion: 2,
+        role: "standard",
         managedInstructions: "Use the enabled repository search capability.",
         enabledCapabilityIds: ["greppy"],
-      } as const satisfies WorkjetThreadConfig;
+        team: {
+          role: "supervisor",
+          threadId,
+          projectId: ProjectId.make("mcp-cwd-project"),
+          parentThreadId: null,
+          goal: "Coordinate the retained project conversation.",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      });
 
       yield* McpSessionRegistry.__testing
         .withActive(
@@ -1294,13 +1460,13 @@ routing.layer("ProviderServiceLive routing", (it) => {
               threadId: resumedThread,
               cwd: "/workspace/fresh-effective",
               runtimeMode: "full-access",
-              workjetConfig,
+              workjetConfig: workjetConfig(resumedThread),
             });
             assert.equal(mcp.requests.at(-1)?.cwd, "/workspace/fresh-effective");
             assert.equal(mcp.requests.at(-1)?.threadCapabilityContext.workjetRole, "orchestrator");
             assert.match(
               mcp.requests.at(-1)?.threadCapabilityContext.compiledManagedPrompt ?? "",
-              /## Workjet Role: Orchestrator/,
+              /## Workjet Role: Supervisor/,
             );
             assert.equal(
               McpProviderSession.readMcpProviderSession(resumedThread)?.cwd,
@@ -1326,7 +1492,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
               threadId: adoptedThread,
               cwd: "/workspace/persisted-before-adoption",
               runtimeMode: "full-access",
-              workjetConfig,
+              workjetConfig: workjetConfig(adoptedThread),
             });
             routing.codex.updateSession(adoptedThread, (session) => ({
               ...session,
@@ -1594,6 +1760,52 @@ routing.layer("ProviderServiceLive routing", (it) => {
         runtimeMode: "full-access",
       });
     }),
+  );
+
+  it.effect(
+    "starts fresh without old resume credentials and retains history replay until send succeeds",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+        const threadId = asThreadId("thread-fresh-history");
+        const initial = yield* provider.startSession(threadId, {
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "approval-required",
+        });
+        const historyContinuation = {
+          messageIds: [MessageId.make("earlier-decision")],
+          pending: true,
+        };
+        yield* provider.startSession(threadId, {
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "approval-required",
+          resumePolicy: "fresh",
+          resumeCursor: initial.resumeCursor,
+          historyContinuation,
+        });
+        const freshInput = routing.codex.startSession.mock.calls.at(-1)?.[0];
+        assert.equal(freshInput?.resumeCursor, undefined);
+        assert.equal(freshInput?.resumePolicy, "fresh");
+        routing.codex.sendTurn.mockImplementationOnce(() =>
+          Effect.die(new Error("temporary send failure")),
+        );
+        const request = { threadId, input: "Continue", attachments: [] };
+        const failed = yield* Effect.exit(provider.sendTurn(request));
+        assert.equal(Exit.isFailure(failed), true);
+        const before = Option.getOrThrow(yield* directory.getBinding(threadId));
+        assert.deepEqual(readHistoryContinuation(before.runtimePayload), historyContinuation);
+        yield* provider.sendTurn(request);
+        const after = Option.getOrThrow(yield* directory.getBinding(threadId));
+        assert.deepEqual(readHistoryContinuation(after.runtimePayload), {
+          ...historyContinuation,
+          pending: false,
+        });
+        yield* provider.stopSession({ threadId });
+        routing.codex.sendTurn.mockClear();
+      }),
   );
 
   it.effect("stops stale sessions in other providers after a successful replacement start", () =>

@@ -2,7 +2,6 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   mapAtomCommandResult,
-  settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@workjet/client-runtime/state/runtime";
@@ -13,7 +12,6 @@ import {
   selectProjectGroupingSettings,
 } from "../../logicalProject";
 import type {
-  ContextMenuItem,
   ModelSelection,
   ProjectOverview,
   ProviderDriverKind,
@@ -24,21 +22,13 @@ import type {
 import { resolveEnvModeLabel } from "../BranchToolbar.logic";
 import { createModelSelection } from "@workjet/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@workjet/shared/keybindings";
-import { useCanGoBack, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useAvailableProjectContext } from "../../availableProjects";
-import { recordWorkjetProjectProjection } from "../../workjetProjectRegistry";
 import { syncWorkjetProjectTitle } from "../../workjetProjectRename";
 import { isElectron } from "../../env";
 import {
@@ -50,7 +40,6 @@ import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useWorkjetProjectFileState } from "../../hooks/useWorkjetProjectFileScripts";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { keybindingValueForCommand } from "../../lib/projectScriptKeybindings";
-import { readLocalApi } from "../../localApi";
 import {
   buildProjectScript,
   commandForProjectScript,
@@ -81,44 +70,53 @@ import { ProjectOverviewEditor } from "../ProjectOverviewEditor";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
-  ProjectScriptEditorDialog,
+  ProjectScriptEditor,
   ScriptIcon,
   type NewProjectScriptInput,
   type ProjectScriptEditorRequest,
 } from "../projectScriptEditor";
-import { cn } from "../../lib/utils";
-import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 import { Input } from "../ui/input";
-import {
-  Menu,
-  MenuGroup,
-  MenuGroupLabel,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuTrigger,
-} from "../ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { SidebarInset } from "../ui/sidebar";
+import { Empty, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { useUiText } from "../../hooks/useUiText";
+import { Row } from "../ui/row";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import {
-  WorkspaceBreadcrumb,
-  WorkspaceBreadcrumbItem,
-  WorkspaceBreadcrumbSeparator,
-} from "../WorkspaceBreadcrumb";
 import {
   SettingResetButton,
   SettingsPageContainer,
   SettingsRow,
+  SettingsEmbeddedContext,
   SettingsSection,
+  useSettingsEmbedded,
 } from "./settingsLayout";
-import { ProjectFaviconPickerDialog } from "./ProjectFaviconPickerDialog";
+import { ProjectFaviconPicker } from "./ProjectFaviconPicker";
+import { ProjectSupervisorLumaField } from "../ProjectSupervisorLumaField";
+import type { ProjectConfigurationValues } from "../ProjectOverviewEditor";
+import { buildProjectGallery } from "../../projectOverview";
+import { configureWorkjetProject, workjetUiLanguage } from "../../workjetProjectControl";
+import { useProjectKpiSettings } from "../../hooks/useProjectKpiSettings";
+import {
+  recordWorkjetProjectProjection,
+  refreshWorkjetProjectRegistry,
+  useWorkjetProjectRegistry,
+} from "../../workjetProjectRegistry";
+import { readActiveWorkjetScope, useActiveWorkjetScope } from "../../activeWorkjetScope";
+import { cn, newCommandId } from "../../lib/utils";
+import {
+  INSTANCE_PROJECT_KEY_PREFIX,
+  InstanceProjectDetail,
+  InstanceProjectRow,
+  instanceProjectSettingsKey,
+  useInstanceOnlyProjects,
+} from "./InstanceProjectSettings";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
-  repository: "Group by repository",
-  repository_path: "Group by repository path",
-  separate: "Keep separate",
+  repository: "Nach Repository",
+  repository_path: "Nach Repository-Pfad",
+  separate: "Getrennt",
 };
 
 /** Logical project groups for the settings page, sorted by display name. */
@@ -150,122 +148,142 @@ function memberKey(member: { environmentId: string; id: string }): string {
   return `${member.environmentId}:${member.id}`;
 }
 
-export function ProjectSettingsPage({ projectKey }: { projectKey: string }) {
-  const navigate = useNavigate();
-  const canGoBack = useCanGoBack();
-  const navigateBackWithinApp = useCallback(() => {
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  }, [canGoBack, navigate]);
+/**
+ * Einstellungen › Projekte: every project as one Row. A click on the name
+ * opens Einstellungen › Projekte › <Projekt>.
+ */
+function compareByName(a: { readonly name: string }, b: { readonly name: string }) {
+  return a.name.localeCompare(b.name);
+}
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      const activeElement = document.activeElement;
-      if (activeElement instanceof HTMLElement) {
-        activeElement.blur();
-      }
-      // Same rule as the settings shell: an open inline editor keeps its own
-      // Cancel button, so Escape only leaves a form-free view.
-      if (document.querySelector("[data-settings-inline-editor]") !== null) return;
-      navigateBackWithinApp();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigateBackWithinApp]);
-
+export function ProjectsSettingsList() {
+  const groups = useSettingsProjectGroups();
+  const instanceProjects = useInstanceOnlyProjects().projects;
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
+  const rows = [
+    ...groups.map((group) => ({
+      name: readableProjectName(group.displayName),
+      key: group.projectKey,
+      row: localProjectRow(group, openKey === group.projectKey, toggle),
+    })),
+    ...instanceProjects.map((project) => {
+      const key = instanceProjectSettingsKey(project.id);
+      return {
+        name: project.title,
+        key,
+        row: (
+          <InstanceProjectRow
+            key={project.key}
+            project={project}
+            open={openKey === key}
+            onToggle={() => toggle(key)}
+          />
+        ),
+      };
+    }),
+  ].toSorted(compareByName);
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        {!isElectron && (
-          <header
-            className={cn(
-              "workspace-topbar px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
-              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-          >
-            <ProjectSettingsBreadcrumb projectKey={projectKey} />
-          </header>
-        )}
-        {isElectron && (
-          <div
-            className={cn(
-              "drag-region flex h-[52px] shrink-0 items-center px-5 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
-              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-          >
-            <ProjectSettingsBreadcrumb projectKey={projectKey} />
+    <SettingsPageContainer>
+      <SettingsSection title={workjetUiLanguage() === "en" ? "Projects" : "Projekte"}>
+        {rows.length === 0 ? (
+          <Empty className="py-8">
+            <EmptyHeader>
+              <EmptyTitle className="text-[13.5px]">
+                {workjetUiLanguage() === "en" ? "No projects yet" : "Noch keine Projekte"}
+              </EmptyTitle>
+            </EmptyHeader>
+            <Button size="sm" variant="outline" render={<Link to="/" />}>
+              <PlusIcon className="size-4" />
+              {workjetUiLanguage() === "en" ? "Create project" : "Projekt anlegen"}
+            </Button>
+          </Empty>
+        ) : (
+          <div className="divide-y divide-border/60" data-workjet-settings-projects="">
+            {rows.map((entry) => (
+              <div key={entry.key}>
+                {entry.row}
+                <InlineExpand
+                  hideCollapseControl
+                  label={entry.name}
+                  open={openKey === entry.key}
+                  onOpenChange={(open) => {
+                    if (!open) setOpenKey((current) => (current === entry.key ? null : current));
+                  }}
+                >
+                  {openKey === entry.key ? (
+                    <div className="px-3 sm:px-4" data-workjet-project-settings-inline="">
+                      <SettingsEmbeddedContext.Provider value={{ onClose: () => setOpenKey(null) }}>
+                        <ProjectSettingsPanel projectKey={entry.key} />
+                      </SettingsEmbeddedContext.Provider>
+                    </div>
+                  ) : null}
+                </InlineExpand>
+              </div>
+            ))}
           </div>
         )}
-        <ProjectSettingsPanel projectKey={projectKey} />
-      </div>
-    </SidebarInset>
+      </SettingsSection>
+    </SettingsPageContainer>
   );
 }
 
-function ProjectSettingsBreadcrumb({ projectKey }: { projectKey: string }) {
-  const groups = useSettingsProjectGroups();
-  const navigate = useNavigate();
-  const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
-  const openProjectMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    const api = readLocalApi();
-    if (!api) return;
+/**
+ * Generated folder names ("local-2026-08-25T113531Z-<uuid>", "acceptance-project-cc6e")
+ * are ids, not names: show the readable part (#624).
+ */
+export function readableProjectName(name: string): string {
+  const local = /^local-(\d{4})-(\d{2})-(\d{2})T\d{6}Z-[0-9a-f-]{36}$/i.exec(name);
+  if (local)
+    return workjetUiLanguage() === "en"
+      ? `Project of ${local[1]}-${local[2]}-${local[3]}`
+      : `Projekt vom ${local[3]}.${local[2]}.${local[1]}`;
+  return name.replace(/-[0-9a-f]{4,}$/i, "");
+}
 
-    const rect = event.currentTarget.getBoundingClientRect();
-    const items: ContextMenuItem<string>[] = groups.map((group) => ({
-      id: group.projectKey,
-      label: group.displayName,
-    }));
-    void settlePromise(() =>
-      api.contextMenu.show(items, { x: rect.left, y: rect.bottom + 4 }),
-    ).then((clicked) => {
-      if (clicked._tag === "Failure" || clicked.value === null) return;
-      void navigate({
-        to: "/projects/$projectKey",
-        params: { projectKey: clicked.value },
-        replace: true,
-        hashScrollIntoView: false,
-      });
-    });
-  };
-
+function localProjectRow(
+  group: SidebarProjectSnapshot,
+  open: boolean,
+  toggle: (key: string) => void,
+) {
   return (
-    <WorkspaceBreadcrumb ariaLabel="Project settings breadcrumb">
-      <WorkspaceBreadcrumbItem>
+    <Row
+      name={
         <button
           type="button"
-          onClick={() => void navigate({ to: "/" })}
-          className="cursor-pointer rounded-sm text-left hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          aria-expanded={open}
+          onClick={() => toggle(group.projectKey)}
+          className="flex min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-workjet-action={`project.settings:${group.projectKey}`}
         >
-          Projects
+          {/* Projects live in CTOX, not on a machine: no folder icon that marks
+              local checkouts, so every row looks the same (Michael, 2026-10-13). */}
+          <span className="truncate">{readableProjectName(group.displayName)}</span>
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-180",
+            )}
+          />
         </button>
-      </WorkspaceBreadcrumbItem>
-      <WorkspaceBreadcrumbSeparator />
-      <WorkspaceBreadcrumbItem current>
-        {selected ? (
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-label="Switch project"
-            onClick={openProjectMenu}
-            className="group/project-title inline-flex min-w-0 max-w-64 cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span className="min-w-0 truncate">{selected.displayName}</span>
-            <ChevronDownIcon
-              aria-hidden
-              className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/project-title:opacity-100 group-focus-visible/project-title:opacity-100"
-            />
-          </button>
-        ) : (
-          <span className="truncate text-muted-foreground">Unavailable project</span>
-        )}
-      </WorkspaceBreadcrumbItem>
-    </WorkspaceBreadcrumb>
+      }
+      status="ok"
+      statusLabel={workjetUiLanguage() === "en" ? "Ready here" : "Hier bereit"}
+      meta={
+        workjetUiLanguage() === "en"
+          ? "In CTOX · working copy on this computer"
+          : "In CTOX · Arbeitskopie auf diesem Rechner"
+      }
+      chips={
+        group.memberProjects.length > 1 ? (
+          <span className="rounded-sm border border-border/60 px-1.5 py-px text-[11px] text-muted-foreground">
+            {group.memberProjects.length}{" "}
+            {workjetUiLanguage() === "en" ? "working copies" : "Arbeitskopien"}
+          </span>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -274,9 +292,15 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
   const navigate = useNavigate();
 
   const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
+  const instance = useInstanceOnlyProjects();
+  const instanceProject = projectKey.startsWith(INSTANCE_PROJECT_KEY_PREFIX)
+    ? (instance.projects.find(
+        (project) => project.id === projectKey.slice(INSTANCE_PROJECT_KEY_PREFIX.length),
+      ) ?? null)
+    : null;
 
-  // Remember the members of the last rendered group so a grouping-rule change
-  // (which changes the group key) can follow the project to its new group.
+  // Mitglieder der zuletzt gezeigten Gruppe merken: Ändert sich die
+  // Gruppierungsregel (und damit der Schlüssel), folgt die Seite dem Projekt.
   const lastSelectionRef = useRef<{ key: string; memberKeys: string[] } | null>(null);
   useEffect(() => {
     if (!selected) return;
@@ -297,7 +321,7 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
     );
     if (successor) {
       void navigate({
-        to: "/projects/$projectKey",
+        to: "/settings/projects/$projectKey",
         params: { projectKey: successor.projectKey },
         replace: true,
         hashScrollIntoView: false,
@@ -305,19 +329,34 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
     }
   }, [groups, navigate, projectKey, selected]);
 
+  if (!selected && instanceProject !== null && instance.instanceId !== null)
+    return <InstanceProjectDetail instanceId={instance.instanceId} project={instanceProject} />;
   if (!selected) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
-        {groups.length === 0
-          ? "Add a project from the sidebar to configure it here."
-          : "This project is no longer available."}
-      </div>
+      <Empty className="flex-1">
+        <EmptyHeader>
+          <EmptyTitle className="text-[13.5px]">Projekt nicht gefunden</EmptyTitle>
+        </EmptyHeader>
+        <Button size="sm" variant="outline" render={<Link to="/settings/projects" />}>
+          Alle Projekte
+        </Button>
+      </Empty>
     );
   }
   return <ProjectDetail key={selected.projectKey} group={selected} />;
 }
 
 function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
+  const embedded = useSettingsEmbedded();
+  const t = useUiText();
+  type ProjectTab = "general" | "threads" | "checkout" | "scripts";
+  const projectTabs: ReadonlyArray<readonly [ProjectTab, string]> = [
+    ["general", t("Allgemein", "General")],
+    ["threads", t("Unterhaltungen", "Threads")],
+    ["checkout", t("Arbeitskopie", "Working copy")],
+    ["scripts", t("Skripte", "Scripts")],
+  ];
+  const [tab, setTab] = useState<ProjectTab>("general");
   const navigate = useNavigate();
   const { environments } = useEnvironments();
   const settings = usePrimarySettings();
@@ -338,14 +377,14 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
-      toastManager.add({ type: "success", title: "Path copied", description: path });
+      toastManager.add({ type: "success", title: "Pfad kopiert", description: path });
     },
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy path",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: "Pfad nicht kopiert",
+          description: error instanceof Error ? error.message : "Unbekannter Fehler.",
         }),
       );
     },
@@ -372,7 +411,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       stackedThreadToast({
         type: "error",
         title,
-        description: error instanceof Error ? error.message : "An error occurred.",
+        description: error instanceof Error ? error.message : "Unbekannter Fehler.",
       }),
     );
   }, []);
@@ -394,7 +433,13 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         const result = mapAtomCommandResult(
           await updateProject({
             environmentId: member.environmentId,
-            input: { projectId: member.id, ...input },
+            input: {
+              projectId: member.id,
+              ...input,
+              ...(input.overview
+                ? { expectedTokenBudgetRevision: member.overview?.tokenBudget?.revision ?? 0 }
+                : {}),
+            },
           }),
           () => undefined,
         );
@@ -403,7 +448,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           // write. Name the environment so the user knows where it stopped.
           reportFailure(
             group.memberProjects.length > 1
-              ? `${failureTitle} on ${member.environmentLabel ?? "the current environment"}`
+              ? `${failureTitle} auf ${member.environmentLabel ?? "dieser Umgebung"}`
               : failureTitle,
             result,
           );
@@ -419,7 +464,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     async (nextTitle: string) => {
       const title = nextTitle.trim();
       if (!title) {
-        toastManager.add({ type: "warning", title: "Project title cannot be empty" });
+        toastManager.add({ type: "warning", title: "Projektname fehlt" });
         return;
       }
       if (savingNameRef.current) return;
@@ -438,14 +483,15 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           for (const project of confirmed) recordWorkjetProjectProjection(instanceId, project);
         }
         if (!group.memberProjects.every((member) => member.title === title)) {
-          await updateAllMembers({ title }, "Failed to rename project");
+          await updateAllMembers({ title }, "Projekt nicht umbenannt");
         }
       } catch (error) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to synchronize project name",
-            description: error instanceof Error ? error.message : "Reconnect and retry.",
+            title: "Projektname nicht abgeglichen",
+            description:
+              error instanceof Error ? error.message : "Neu verbinden und erneut versuchen.",
           }),
         );
       } finally {
@@ -481,7 +527,10 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   );
   const setDefaultModel = useCallback(
     (selection: ModelSelection | null) =>
-      void updateAllMembers({ defaultModelSelection: selection }, "Failed to update default model"),
+      void updateAllMembers(
+        { defaultModelSelection: selection },
+        "Standardmodell nicht gespeichert",
+      ),
     [updateAllMembers],
   );
 
@@ -489,15 +538,19 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const storedEnvMode = representative.defaultThreadEnvMode ?? null;
   const setDefaultThreadEnvMode = useCallback(
     (mode: ThreadEnvMode | null) =>
-      void updateAllMembers(
-        { defaultThreadEnvMode: mode },
-        "Failed to update new-thread workspace",
-      ),
+      void updateAllMembers({ defaultThreadEnvMode: mode }, "Arbeitsbereich nicht gespeichert"),
     [updateAllMembers],
   );
 
   // ----- favicon -----
   const [faviconPickerOpen, setFaviconPickerOpen] = useState(false);
+  // Selten gebrauchte Abschnitte sind zugeklappt; immer nur einer offen.
+  const [openSection, setOpenSection] = useState<string | null>(null);
+  const sectionToggle = (key: string) => ({
+    open: openSection === key,
+    onOpenChange: (open: boolean) =>
+      setOpenSection((current) => (open ? key : current === key ? null : current)),
+  });
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
   const savingFaviconRef = useRef(false);
   const setFaviconPath = useCallback(
@@ -506,7 +559,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       savingFaviconRef.current = true;
       setIsSavingFavicon(true);
       try {
-        await updateAllMembers({ faviconPath }, "Failed to update project icon");
+        await updateAllMembers({ faviconPath }, "Projektsymbol nicht gespeichert");
       } finally {
         savingFaviconRef.current = false;
         setIsSavingFavicon(false);
@@ -560,7 +613,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     ): Promise<AtomCommandResult<void, unknown>> => {
       if (savingScriptsRef.current) {
         return AsyncResult.failure(
-          Cause.fail(new Error("Another script change is still saving. Try again.")),
+          Cause.fail(new Error("Eine andere Skriptänderung wird noch gespeichert.")),
         );
       }
       savingScriptsRef.current = true;
@@ -577,7 +630,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           () => undefined,
         );
         if (updateResult._tag === "Failure") {
-          reportFailure("Failed to save scripts", updateResult);
+          reportFailure("Skripte nicht gespeichert", updateResult);
           return updateResult;
         }
 
@@ -606,7 +659,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               () => undefined,
             );
             if (result._tag === "Failure") {
-              reportFailure("Failed to save keybinding", result);
+              reportFailure("Tastenkürzel nicht gespeichert", result);
               return result;
             }
           }
@@ -617,7 +670,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               () => undefined,
             );
             if (result._tag === "Failure") {
-              reportFailure("Failed to remove keybinding", result);
+              reportFailure("Tastenkürzel nicht entfernt", result);
               return result;
             }
           }
@@ -699,7 +752,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         setEditorRequest({
           scriptId: null,
           initial: payload,
-          error: error instanceof Error ? error.message : "Failed to import action.",
+          error: error instanceof Error ? error.message : "Skript nicht übernommen.",
         });
       }
     },
@@ -721,44 +774,17 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     [projectGroupingSettings.sidebarProjectGroupingOverrides, updateClientSettings],
   );
 
+  // Removal asks inline (the button turns into „Entfernen? [Entfernen]
+  // [Abbrechen]“), never through a native or in-app dialog.
+  const [confirmingRemoval, setConfirmingRemoval] = useState<"checkout" | "project" | null>(null);
   const removeMembers = useCallback(
     async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
-      const api = readLocalApi();
-      if (!api) return;
-
+      setConfirmingRemoval(null);
       const memberKeys = new Set(members.map(memberKey));
       const projectThreads = threads.filter((thread) =>
         memberKeys.has(`${thread.environmentId}:${thread.projectId}`),
       );
       const isWholeGroup = members.length === group.memberProjects.length;
-      const singleMember = members.length === 1 ? members[0]! : null;
-      const targetLabel = singleMember?.title ?? group.displayName;
-      const confirmed = await settlePromise(() =>
-        api.dialogs.confirm(
-          [
-            projectThreads.length > 0
-              ? `Remove project "${targetLabel}" and delete its ${projectThreads.length} thread${projectThreads.length === 1 ? "" : "s"}?`
-              : `Remove project "${targetLabel}"?`,
-            ...(singleMember
-              ? [
-                  `Path: ${singleMember.workspaceRoot}`,
-                  ...(singleMember.environmentLabel
-                    ? [`Environment: ${singleMember.environmentLabel}`]
-                    : []),
-                ]
-              : [`This removes ${members.length} grouped project entries.`]),
-            ...(projectThreads.length > 0
-              ? ["This permanently clears conversation history for those threads."]
-              : []),
-            isWholeGroup
-              ? "This removes only the project entries, not the files on disk."
-              : "Other entries in this grouped project are unaffected.",
-            "This action cannot be undone.",
-          ].join("\n"),
-          { variant: "destructive" },
-        ),
-      );
-      if (confirmed._tag === "Failure" || !confirmed.value) return;
 
       const draftStore = useComposerDraftStore.getState();
       for (const member of members) {
@@ -777,7 +803,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           () => undefined,
         );
         if (result._tag === "Failure") {
-          reportFailure(`Failed to remove "${member.title}"`, result);
+          reportFailure(`„${member.title}“ nicht entfernt`, result);
           return;
         }
         const projectRef = scopeProjectRef(member.environmentId, member.id);
@@ -788,20 +814,13 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         draftStore.clearProjectDraftThreadId(projectRef);
       }
 
-      // The project's settings page just deleted itself; there is no projects
-      // listing to fall back to, so leave settings entirely.
+      // The project's settings page just deleted itself; fall back to the
+      // project list in Einstellungen › Projekte.
       if (isWholeGroup) {
-        void navigate({ to: "/", replace: true });
+        void navigate({ to: "/settings/projects", replace: true });
       }
     },
-    [
-      deleteProject,
-      group.displayName,
-      group.memberProjects.length,
-      navigate,
-      reportFailure,
-      threads,
-    ],
+    [deleteProject, group.memberProjects.length, navigate, reportFailure, threads],
   );
 
   const selectedCheckoutThreadCount = threadCountByMember.get(memberKey(selectedCheckout)) ?? 0;
@@ -809,20 +828,88 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     projectGroupingSettings.sidebarProjectGroupingOverrides?.[
       deriveProjectGroupingOverrideKey(selectedCheckout)
     ] ?? "inherit";
-  const selectedCheckoutLabel = selectedCheckout.environmentLabel ?? "This machine";
+  const selectedCheckoutLabel = selectedCheckout.environmentLabel ?? "Dieser Rechner";
 
-  return (
+  // ----- CTOX configuration: Regeltermin, Supervisor (native projects) -----
+  const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
+  const nativeRegistry = useWorkjetProjectRegistry(activeCtoxInstanceId);
+  const allProjects = useProjects();
+  const nativeConfiguration = useMemo(() => {
+    if (activeCtoxInstanceId === null) return undefined;
+    const gallery = buildProjectGallery({
+      projects: allProjects,
+      nativeProjects: nativeRegistry.projects,
+      instanceId: activeCtoxInstanceId,
+      primaryEnvironmentId: representative.environmentId,
+      computers: settings.workjet.computers,
+    });
+    return gallery.find(
+      (project) =>
+        project.configuration !== undefined &&
+        project.local !== null &&
+        group.memberProjects.some(
+          (member) =>
+            member.environmentId === project.local?.environmentId &&
+            member.id === project.local?.id,
+        ),
+    )?.configuration;
+  }, [
+    activeCtoxInstanceId,
+    allProjects,
+    group.memberProjects,
+    nativeRegistry.projects,
+    representative.environmentId,
+    settings.workjet.computers,
+  ]);
+  const saveNativeConfiguration = useCallback(
+    async (values: ProjectConfigurationValues): Promise<boolean> => {
+      if (activeCtoxInstanceId === null || nativeConfiguration === undefined) return false;
+      if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return false;
+      const result = await configureWorkjetProject(activeCtoxInstanceId, {
+        action: "project.configure",
+        commandId: newCommandId(),
+        projectId: nativeConfiguration.id,
+        title: group.displayName,
+        ...values,
+      });
+      if (
+        result._tag !== "completed" ||
+        result.response.action !== "project.configure" ||
+        readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
+      )
+        return false;
+      refreshWorkjetProjectRegistry(activeCtoxInstanceId);
+      return true;
+    },
+    [activeCtoxInstanceId, group.displayName, nativeConfiguration],
+  );
+
+  const projectKpis = useProjectKpiSettings(activeCtoxInstanceId, nativeConfiguration?.id);
+
+  const removeLabel =
+    group.memberProjects.length > 1 ? "Alle Einträge entfernen" : "Projekt entfernen";
+
+  // Regeltermin, budget and KPIs are edited on the project card; embedded settings skip them.
+  const showTab = (id: ProjectTab | "card") => !embedded || (id === "card" ? false : id === tab);
+  const titleIcon = (
+    <ProjectFavicon
+      environmentId={representative.environmentId}
+      cwd={representative.workspaceRoot}
+      faviconPath={faviconPath}
+      className="size-5"
+    />
+  );
+  const content = (
     <>
-      <SettingsPageContainer>
-        <SettingsSection title="Project">
+      {showTab("general") ? (
+        <SettingsSection title={embedded ? "" : t("Projekt", "Project")}>
           <SettingsRow
             title="Name"
-            description="The shared name for this project group in the sidebar and thread lists."
             control={
               <Input
                 key={`${group.projectKey}:${group.displayName}`}
                 className="w-full sm:w-64"
-                aria-label="Project name"
+                aria-label="Projektname"
                 disabled={isSavingName}
                 defaultValue={group.displayName}
                 onBlur={(event) => {
@@ -835,78 +922,103 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             }
           />
           <SettingsRow
-            title="Project icon"
-            description={faviconPath ?? "Automatic"}
+            title="Symbol"
+            status={faviconPath ?? "Automatisch"}
             resetAction={
               faviconPath !== null ? (
                 <SettingResetButton
-                  label="project icon"
+                  label="Projektsymbol"
                   disabled={isSavingFavicon}
                   onClick={() => void setFaviconPath(null)}
                 />
               ) : null
             }
             control={
-              <div className="flex items-center gap-2">
-                <ProjectFavicon
-                  environmentId={representative.environmentId}
-                  cwd={representative.workspaceRoot}
-                  faviconPath={faviconPath}
-                  className="size-6"
-                />
-                <Button
-                  size="xs"
-                  variant="outline"
-                  type="button"
-                  aria-label="Choose a project icon file"
-                  disabled={isSavingFavicon || representative.workspaceRoot === null}
-                  onClick={() => setFaviconPickerOpen(true)}
-                >
-                  Choose file
-                </Button>
-              </div>
+              <Button
+                size="xs"
+                variant="outline"
+                type="button"
+                aria-expanded={faviconPickerOpen}
+                disabled={isSavingFavicon || representative.workspaceRoot === null}
+                onClick={() => setFaviconPickerOpen((open) => !open)}
+              >
+                Datei wählen
+              </Button>
             }
           />
+          <InlineExpand
+            hideCollapseControl
+            label="Symbol"
+            open={faviconPickerOpen && representative.workspaceRoot !== null}
+            onOpenChange={setFaviconPickerOpen}
+          >
+            {faviconPickerOpen && representative.workspaceRoot !== null ? (
+              <div className="px-3 pb-3 sm:px-4">
+                <ProjectFaviconPicker
+                  key={`${representative.environmentId}:${representative.workspaceRoot}`}
+                  cwd={representative.workspaceRoot}
+                  environmentId={representative.environmentId}
+                  onClose={() => setFaviconPickerOpen(false)}
+                  onSelect={(path) => void setFaviconPath(path)}
+                />
+              </div>
+            ) : null}
+          </InlineExpand>
         </SettingsSection>
+      ) : null}
 
-        <SettingsSection title="Project overview">
-          <p className="mb-3 text-sm text-muted-foreground">
-            Choose a website and three fields for this project’s card.
-          </p>
-          <ProjectOverviewEditor
-            key={group.projectKey}
-            overview={representative.overview}
-            onSave={async (overview) => {
-              if (
-                !group.memberProjects.every((member) =>
-                  environments.some(
-                    (environment) =>
-                      environment.environmentId === member.environmentId &&
-                      environment.connection.phase === "connected" &&
-                      environment.serverConfig?.projectOverview === true,
-                  ),
+      {showTab("card") ? (
+        <SettingsSection
+          title={
+            embedded
+              ? ""
+              : t("Regeltermin, Budget und Supervisor", "Regular meeting, budget and supervisor")
+          }
+        >
+          <div className="px-3 py-3 sm:px-4" data-workjet-project-settings-overview="">
+            <ProjectOverviewEditor
+              key={group.projectKey}
+              onCancel={embedded?.onClose}
+              overview={representative.overview}
+              configuration={nativeConfiguration}
+              onSaveConfiguration={nativeConfiguration ? saveNativeConfiguration : undefined}
+              kpis={projectKpis.kpis}
+              onSaveKpis={projectKpis.save}
+              kpisLoadFailed={projectKpis.loadFailed}
+              renderLumaField={(props) => <ProjectSupervisorLumaField {...props} />}
+              onSave={async (overview) => {
+                if (
+                  !group.memberProjects.every((member) =>
+                    environments.some(
+                      (environment) =>
+                        environment.environmentId === member.environmentId &&
+                        environment.connection.phase === "connected" &&
+                        environment.serverConfig?.projectOverview === true,
+                    ),
+                  )
                 )
-              )
-                return false;
-              const result = await updateAllMembers(
-                { overview },
-                "Failed to save project overview",
-              );
-              return result._tag === "Success";
-            }}
-          />
+                  return false;
+                const result = await updateAllMembers(
+                  { overview },
+                  "Projektübersicht nicht gespeichert",
+                );
+                return result._tag === "Success";
+              }}
+            />
+          </div>
         </SettingsSection>
+      ) : null}
 
-        <SettingsSection title="New threads">
+      {showTab("threads") ? (
+        <SettingsSection
+          title={embedded ? "" : t("Neue Unterhaltungen", "New threads")}
+          {...(embedded ? {} : { collapsible: sectionToggle("Neue Unterhaltungen") })}
+        >
           <SettingsRow
-            title="Model"
-            description="New threads in this project start with this model. Applies to every checkout in this group."
+            title="Modell"
             resetAction={
               storedSelection !== null ? (
-                <SettingResetButton
-                  label="project default model"
-                  onClick={() => setDefaultModel(null)}
-                />
+                <SettingResetButton label="Standardmodell" onClick={() => setDefaultModel(null)} />
               ) : null
             }
             control={
@@ -946,17 +1058,16 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   />
                 </div>
               ) : (
-                <span className="text-sm text-muted-foreground">No providers available</span>
+                <span className="text-[13.5px] text-muted-foreground">Kein Anbieter verfügbar</span>
               )
             }
           />
           <SettingsRow
-            title="Workspace"
-            description="Where new threads in this project start. Overrides workjet.json and the global default; applies to every checkout in this group."
+            title="Arbeitsbereich"
             resetAction={
               storedEnvMode !== null ? (
                 <SettingResetButton
-                  label="project workspace default"
+                  label="Arbeitsbereich"
                   onClick={() => setDefaultThreadEnvMode(null)}
                 />
               ) : null
@@ -972,20 +1083,20 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   }
                 }}
               >
-                <SelectTrigger aria-label="New-thread workspace">
+                <SelectTrigger aria-label="Arbeitsbereich neuer Unterhaltungen">
                   <SelectValue>
                     {storedEnvMode === null
                       ? group.memberProjects.length > 1
-                        ? "Default (per checkout)"
-                        : `Default (${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`
+                        ? "Standard (je Arbeitskopie)"
+                        : `Standard (${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`
                       : resolveEnvModeLabel(storedEnvMode)}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
                   <SelectItem value="inherit">
                     {group.memberProjects.length > 1
-                      ? "Default (each checkout's workjet.json or global setting)"
-                      : `Default (${inheritedEnvModeSource}: ${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`}
+                      ? "Standard (je Arbeitskopie)"
+                      : `Standard (${inheritedEnvModeSource === "global" ? "global" : "workjet.json"}: ${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`}
                   </SelectItem>
                   <SelectItem value="worktree">{resolveEnvModeLabel("worktree")}</SelectItem>
                   <SelectItem value="local">{resolveEnvModeLabel("local")}</SelectItem>
@@ -994,38 +1105,43 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             }
           />
         </SettingsSection>
+      ) : null}
 
+      {showTab("checkout") ? (
         <SettingsSection
-          title="Checkout"
+          title={embedded ? "" : t("Arbeitskopie", "Working copy")}
+          {...(embedded ? {} : { collapsible: sectionToggle("Arbeitskopie") })}
           headerAction={
-            <Select
-              value={selectedCheckout.physicalProjectKey}
-              onValueChange={(value) => setSelectedCheckoutKey(String(value))}
-            >
-              <SelectTrigger className="max-w-64" aria-label="Selected checkout">
-                <SelectValue>{selectedCheckoutLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {group.memberProjects.map((member) => (
-                  <SelectItem
-                    key={member.physicalProjectKey}
-                    hideIndicator
-                    value={member.physicalProjectKey}
-                  >
-                    {member.environmentLabel ?? "This machine"} · {member.workspaceRoot}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
+            group.memberProjects.length > 1 ? (
+              <Select
+                value={selectedCheckout.physicalProjectKey}
+                onValueChange={(value) => setSelectedCheckoutKey(String(value))}
+              >
+                <SelectTrigger className="max-w-64" aria-label="Arbeitskopie">
+                  <SelectValue>{selectedCheckoutLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {group.memberProjects.map((member) => (
+                    <SelectItem
+                      key={member.physicalProjectKey}
+                      hideIndicator
+                      value={member.physicalProjectKey}
+                    >
+                      {member.environmentLabel ?? "Dieser Rechner"} · {member.workspaceRoot}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            ) : undefined
           }
         >
           <div className="px-3 py-2 sm:px-4">
-            <div className="flex min-w-0 items-center rounded-lg bg-muted/30 p-1 text-base text-muted-foreground sm:text-sm">
+            <div className="flex min-w-0 items-center rounded-lg bg-muted/30 p-1 text-[13.5px] text-muted-foreground">
               <button
                 disabled={selectedCheckout.workspaceRoot === null}
-                aria-label="Copy checkout path"
+                aria-label="Pfad kopieren"
                 className="group flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left outline-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                title="Copy path"
+                title="Pfad kopieren"
                 type="button"
                 onClick={() =>
                   selectedCheckout.workspaceRoot !== null &&
@@ -1035,20 +1151,19 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                 }
               >
                 <code className="min-w-0 flex-1 truncate font-mono">
-                  {selectedCheckout.workspaceRoot}
+                  {selectedCheckout.workspaceRoot ?? "Ohne Ordner"}
                 </code>
                 <CopyIcon className="size-4 shrink-0 opacity-60 group-hover:opacity-100" />
               </button>
               <div className="shrink-0 border-l border-border/60 px-2 tabular-nums">
                 {selectedCheckoutThreadCount === 1
-                  ? "1 thread"
-                  : `${selectedCheckoutThreadCount} threads`}
+                  ? "1 Unterhaltung"
+                  : `${selectedCheckoutThreadCount} Unterhaltungen`}
               </div>
             </div>
           </div>
           <SettingsRow
-            title="Project grouping"
-            description="How this checkout joins project groups in the sidebar. Changing it can move you to a different project group."
+            title="Gruppierung"
             control={
               <Select
                 value={selectedCheckoutGrouping}
@@ -1063,16 +1178,16 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   }
                 }}
               >
-                <SelectTrigger aria-label={`Grouping rule for ${selectedCheckoutLabel}`}>
+                <SelectTrigger aria-label={`Gruppierung für ${selectedCheckoutLabel}`}>
                   <SelectValue>
                     {selectedCheckoutGrouping === "inherit"
-                      ? `Default (${PROJECT_GROUPING_MODE_LABELS[projectGroupingSettings.sidebarProjectGroupingMode]})`
+                      ? `Standard (${PROJECT_GROUPING_MODE_LABELS[projectGroupingSettings.sidebarProjectGroupingMode]})`
                       : PROJECT_GROUPING_MODE_LABELS[selectedCheckoutGrouping]}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
                   <SelectItem hideIndicator value="inherit">
-                    Use global default
+                    Standard
                   </SelectItem>
                   <SelectItem hideIndicator value="repository">
                     {PROJECT_GROUPING_MODE_LABELS.repository}
@@ -1089,28 +1204,36 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           />
           {group.memberProjects.length > 1 ? (
             <SettingsRow
-              title="Remove checkout"
-              description="Removes this checkout and its threads from the project group. Files on disk are not touched."
+              title="Arbeitskopie entfernen"
               control={
-                <Button
-                  size="xs"
-                  variant="destructive-outline"
-                  onClick={() => void removeMembers([selectedCheckout])}
-                >
-                  <Trash2Icon className="size-3.5" />
-                  Remove checkout
-                </Button>
+                confirmingRemoval === "checkout" ? (
+                  <InlineRemovalConfirm
+                    label="Arbeitskopie entfernen"
+                    onConfirm={() => void removeMembers([selectedCheckout])}
+                    onCancel={() => setConfirmingRemoval(null)}
+                  />
+                ) : (
+                  <Button
+                    size="xs"
+                    variant="destructive-outline"
+                    onClick={() => setConfirmingRemoval("checkout")}
+                  >
+                    <Trash2Icon className="size-3.5" />
+                    Entfernen
+                  </Button>
+                )
               }
             />
           ) : null}
-          <div className="flex min-h-8 flex-col items-start gap-3 px-3 pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4">
-            <div className="min-w-0">
-              <h3 className="text-base font-semibold text-foreground">Actions</h3>
-              <p className="text-pretty text-sm text-muted-foreground">
-                Saved and run only in {selectedCheckoutLabel}.
-              </p>
-            </div>
-            <div className="flex w-full flex-wrap gap-1.5 sm:w-auto sm:shrink-0 sm:justify-end">
+        </SettingsSection>
+      ) : null}
+
+      {showTab("scripts") ? (
+        <SettingsSection
+          title={embedded ? "" : t("Skripte", "Scripts")}
+          {...(embedded ? {} : { collapsible: sectionToggle("Skripte") })}
+          headerAction={
+            <div className="flex flex-wrap gap-1.5">
               {importableScripts.length > 0 ? (
                 <Menu>
                   <MenuTrigger
@@ -1118,17 +1241,10 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                       <Button size="xs" variant="ghost" disabled={isSavingScripts} type="button" />
                     }
                   >
-                    Import scripts
+                    Aus workjet.json
                     <ChevronDownIcon className="size-3.5" />
                   </MenuTrigger>
                   <MenuPopup align="end" className="w-72">
-                    <MenuGroup>
-                      <MenuGroupLabel>Import from workjet.json</MenuGroupLabel>
-                      <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
-                        Add actions declared by this checkout without editing them first.
-                      </p>
-                    </MenuGroup>
-                    <MenuSeparator />
                     {importableScripts.map((fileScript) => (
                       <MenuItem
                         key={`${fileScript.name} ${fileScript.command}`}
@@ -1146,128 +1262,190 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   </MenuPopup>
                 </Menu>
               ) : null}
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={isSavingScripts}
-                onClick={() =>
-                  setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })
-                }
-              >
-                <PlusIcon className="size-3.5" />
-                Add action
-              </Button>
+              {editorRequest === null ? (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={isSavingScripts}
+                  onClick={() =>
+                    setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })
+                  }
+                >
+                  <PlusIcon className="size-3.5" />
+                  Skript hinzufügen
+                </Button>
+              ) : null}
             </div>
-          </div>
-          {scripts.length === 0 ? (
-            <p className="px-3 py-2 text-base text-muted-foreground sm:px-4 sm:text-sm">
-              No actions configured for this checkout.
-            </p>
-          ) : (
-            scripts.map((script) => {
-              const shortcutLabel = shortcutLabelForCommand(
-                keybindings,
-                commandForProjectScript(script.id),
-              );
+          }
+        >
+          {scripts.length === 0 && editorRequest === null ? (
+            <p className="px-3 py-2 text-[13.5px] text-muted-foreground sm:px-4">Keine Skripte</p>
+          ) : null}
+          {scripts.map((script) => {
+            const shortcutLabel = shortcutLabelForCommand(
+              keybindings,
+              commandForProjectScript(script.id),
+            );
+            if (editorRequest?.scriptId === script.id) {
               return (
-                <SettingsRow
-                  key={script.id}
-                  className="group py-2"
-                  title={
-                    <span className="flex min-w-0 items-center gap-2">
-                      <ScriptIcon
-                        icon={script.icon}
-                        className="size-4 shrink-0 text-muted-foreground"
-                      />
-                      <span className="max-w-40 shrink-0 truncate">{script.name}</span>
-                      <code className="min-w-0 flex-1 truncate font-mono font-normal text-muted-foreground">
-                        {script.command}
-                      </code>
-                      {script.runOnWorktreeCreate ? (
-                        <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground">
-                          setup
-                        </span>
-                      ) : null}
-                      {script.previewUrl ? (
-                        <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground max-sm:hidden">
-                          preview · desktop only
-                        </span>
-                      ) : null}
-                    </span>
-                  }
-                  control={
-                    <>
-                      {shortcutLabel ? (
-                        <span className="text-xs text-muted-foreground">{shortcutLabel}</span>
-                      ) : null}
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className="shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-                        aria-label={`Edit ${script.name}`}
-                        disabled={isSavingScripts}
-                        onClick={() =>
-                          setEditorRequest(editorRequestForScript(script, keybindings))
-                        }
-                      >
-                        <SettingsIcon className="size-3.5" />
-                      </Button>
-                    </>
-                  }
-                />
+                <div key={script.id} className="px-3 py-2 sm:px-4">
+                  <ProjectScriptEditor
+                    request={editorRequest}
+                    scripts={scripts}
+                    onSubmit={submitScript}
+                    onDelete={deleteScript}
+                    onClose={() => setEditorRequest(null)}
+                  />
+                </div>
               );
-            })
-          )}
+            }
+            return (
+              <SettingsRow
+                key={script.id}
+                className="group py-2"
+                title={
+                  <span className="flex min-w-0 items-center gap-2">
+                    <ScriptIcon
+                      icon={script.icon}
+                      className="size-4 shrink-0 text-muted-foreground"
+                    />
+                    <span className="max-w-40 shrink-0 truncate">{script.name}</span>
+                    <code className="min-w-0 flex-1 truncate font-mono font-normal text-muted-foreground">
+                      {script.command}
+                    </code>
+                    {script.runOnWorktreeCreate ? (
+                      <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground">
+                        Einrichtung
+                      </span>
+                    ) : null}
+                    {script.previewUrl ? (
+                      <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground max-sm:hidden">
+                        Vorschau
+                      </span>
+                    ) : null}
+                  </span>
+                }
+                control={
+                  <>
+                    {shortcutLabel ? (
+                      <span className="text-xs text-muted-foreground">{shortcutLabel}</span>
+                    ) : null}
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      className="shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+                      aria-label={`${script.name} bearbeiten`}
+                      disabled={isSavingScripts}
+                      onClick={() => setEditorRequest(editorRequestForScript(script, keybindings))}
+                    >
+                      <SettingsIcon className="size-3.5" />
+                    </Button>
+                  </>
+                }
+              />
+            );
+          })}
+          {editorRequest !== null && editorRequest.scriptId === null ? (
+            <div className="px-3 py-2 sm:px-4">
+              <ProjectScriptEditor
+                request={editorRequest}
+                scripts={scripts}
+                onSubmit={submitScript}
+                onDelete={deleteScript}
+                onClose={() => setEditorRequest(null)}
+              />
+            </div>
+          ) : null}
           {workjetFile.status === "invalid" ? (
-            <SettingsRow
-              title="workjet.json is invalid"
-              description="A workjet.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values."
-              className="text-warning"
-            />
+            <SettingsRow title="workjet.json ist ungültig" className="text-warning" />
           ) : null}
         </SettingsSection>
+      ) : null}
 
-        <SettingsSection title="Danger">
+      {showTab("general") ? (
+        <SettingsSection
+          title={embedded ? "" : t("Entfernen", "Remove")}
+          {...(embedded ? {} : { collapsible: sectionToggle("Entfernen") })}
+        >
           <SettingsRow
-            title={
-              group.memberProjects.length > 1 ? "Remove this project everywhere" : "Remove project"
-            }
-            description={
-              group.memberProjects.length > 1
-                ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                : "Deletes the project entry and its threads. Files on disk are not touched."
-            }
+            title={removeLabel}
             control={
-              <Button
-                variant="destructive-outline"
-                onClick={() => void removeMembers(group.memberProjects)}
-              >
-                <Trash2Icon />
-                {group.memberProjects.length > 1 ? "Remove all entries" : "Remove project"}
-              </Button>
+              confirmingRemoval === "project" ? (
+                <InlineRemovalConfirm
+                  label={removeLabel}
+                  onConfirm={() => void removeMembers(group.memberProjects)}
+                  onCancel={() => setConfirmingRemoval(null)}
+                />
+              ) : (
+                <Button
+                  variant="destructive-outline"
+                  onClick={() => setConfirmingRemoval("project")}
+                >
+                  <Trash2Icon />
+                  {removeLabel}
+                </Button>
+              )
             }
           />
         </SettingsSection>
-      </SettingsPageContainer>
-
-      <ProjectScriptEditorDialog
-        request={editorRequest}
-        scripts={scripts}
-        onSubmit={submitScript}
-        onDelete={deleteScript}
-        onClose={() => setEditorRequest(null)}
-      />
-      {representative.workspaceRoot !== null && (
-        <ProjectFaviconPickerDialog
-          key={`${representative.environmentId}:${representative.workspaceRoot}:${faviconPickerOpen}`}
-          cwd={representative.workspaceRoot}
-          environmentId={representative.environmentId}
-          onOpenChange={setFaviconPickerOpen}
-          onSelect={(path) => void setFaviconPath(path)}
-          open={faviconPickerOpen}
-          projectName={group.displayName}
-        />
-      )}
+      ) : null}
     </>
+  );
+  // Embedded in the project list: compact tabs, at most ~30% of the viewport, autosave (#624).
+  if (!embedded) {
+    return (
+      <SettingsPageContainer title={group.displayName} titleIcon={titleIcon}>
+        {content}
+      </SettingsPageContainer>
+    );
+  }
+  return (
+    <div className="space-y-2" data-workjet-project-settings-tabs="">
+      <div role="tablist" className="flex gap-1 border-b border-border/60">
+        {projectTabs.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={cn(
+              "-mb-px border-b-2 px-2.5 py-1.5 text-xs font-medium",
+              tab === id
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" className="max-h-[30vh] overflow-y-auto pr-1">
+        {content}
+      </div>
+    </div>
+  );
+}
+
+/** Inline confirmation in place of a destructive button (never a dialog). */
+function InlineRemovalConfirm({
+  label,
+  onConfirm,
+  onCancel,
+}: {
+  readonly label: string;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5" role="group" data-slot="row-confirm">
+      <span className="text-xs text-muted-foreground">{label}?</span>
+      <Button size="xs" variant="destructive" onClick={onConfirm}>
+        Entfernen
+      </Button>
+      <Button size="xs" variant="outline" onClick={onCancel}>
+        Abbrechen
+      </Button>
+    </div>
   );
 }

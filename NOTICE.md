@@ -48,7 +48,7 @@ policy is [`LICENSE_POLICY.md`](LICENSE_POLICY.md); the per-component provenance
 
 ### `native/provider-gateway-workjet-host`
 
-- Component: `workjet-provider-gateway-host` 0.1.0
+- Component: `workjet-provider-gateway-host` 0.1.3
 - License: `MIT OR AGPL-3.0-only`
 - Redistributed in the desktop artifact: yes
 - Retained license texts: `native/provider-gateway/LICENSE.MIT`, `native/provider-gateway/LICENSE.AGPL-3.0-only`, `native/provider-gateway/LICENSE.upstream`

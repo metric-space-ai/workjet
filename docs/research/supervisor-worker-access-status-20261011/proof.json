@@ -1,0 +1,31 @@
+{
+  "geometry": {
+    "viewport": 420,
+    "scroll": 420,
+    "statusWidth": 362,
+    "statusScroll": 362
+  },
+  "errors": [],
+  "setupErrors": ["Failed to load resource: net::ERR_NETWORK_CHANGED"],
+  "options": [
+    "Choose worker access\u2026",
+    "Project workers \u00b7 bbbbbbbb",
+    "Build workers \u00b7 cccccccc"
+  ],
+  "binding": [
+    {
+      "capabilityId": "ctox-business-os",
+      "target": {
+        "kind": "ctox-connection",
+        "connectionId": "ctox-dev-worker-source:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "instanceId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+      }
+    }
+  ],
+  "bindWrites": 1,
+  "reloadChoiceAbsent": true,
+  "scope": "isolated production worker control and status row; synthetic catalog; mocked save callback",
+  "installedAppAccess": false,
+  "setupErrorCount": 163,
+  "startupRecoveredBySingleReload": true
+}

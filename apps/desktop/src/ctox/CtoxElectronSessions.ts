@@ -3,6 +3,7 @@ import type { CtoxManagedInstance } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import type { Session } from "electron";
@@ -11,6 +12,7 @@ import { session } from "electron";
 import { isLaunchableCtoxLocalDaemon } from "./CtoxLocalDaemonSource.ts";
 import { isLaunchableCtoxSshManagedInstance } from "./CtoxSshManagedSource.ts";
 import { ctoxManagedSessionPartition } from "./CtoxManagedDiscovery.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 
 export const CTOX_CONTROL_PLANE_PARTITION = "persist:workjet-ctox-control-plane";
 
@@ -77,6 +79,7 @@ function installPermissionPolicy(browserSession: Session, account: boolean): voi
 }
 
 export const make = Effect.gen(function* () {
+  const keyRecovery = yield* Effect.serviceOption(DesktopKeyRecovery);
   const sessionsRef = yield* SynchronizedRef.make<ReadonlyMap<string, Session>>(new Map());
 
   const resolve = (
@@ -84,21 +87,33 @@ export const make = Effect.gen(function* () {
     account: boolean,
     operation: "resolve-account" | "resolve-instance",
   ) =>
-    SynchronizedRef.modifyEffect(sessionsRef, (sessions) => {
-      const existing = sessions.get(partition);
-      if (existing !== undefined) return Effect.succeed([existing, sessions] as const);
+    SynchronizedRef.modifyEffect(sessionsRef, (sessions) =>
+      Effect.gen(function* () {
+        const existing = sessions.get(partition);
+        if (existing !== undefined) return [existing, sessions] as const;
 
-      return Effect.try({
-        try: () => {
-          const browserSession = session.fromPartition(partition);
-          installPermissionPolicy(browserSession, account);
-          const next = new Map(sessions);
-          next.set(partition, browserSession);
-          return [browserSession, next] as const;
-        },
-        catch: (cause) => new CtoxElectronSessionOperationError({ operation, cause }),
-      });
-    });
+        if (Option.isSome(keyRecovery) && keyRecovery.value.retirePartition !== undefined) {
+          yield* keyRecovery.value
+            .retirePartition(partition)
+            .pipe(
+              Effect.mapError(
+                (cause) => new CtoxElectronSessionOperationError({ operation, cause }),
+              ),
+            );
+        }
+
+        return yield* Effect.try({
+          try: () => {
+            const browserSession = session.fromPartition(partition);
+            installPermissionPolicy(browserSession, account);
+            const next = new Map(sessions);
+            next.set(partition, browserSession);
+            return [browserSession, next] as const;
+          },
+          catch: (cause) => new CtoxElectronSessionOperationError({ operation, cause }),
+        });
+      }),
+    );
 
   const account = resolve(CTOX_CONTROL_PLANE_PARTITION, true, "resolve-account");
 

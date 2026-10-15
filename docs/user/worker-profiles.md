@@ -1,8 +1,12 @@
 # Choose and edit a worker
 
-A project Supervisor or Parent can dispatch a one-time Luma with a bounded task and its own worktree. The Luma remains linked to the chat that started it and cannot start another worker.
+A project Supervisor or Persistent Worker can commission a One-Shot Worker with a bounded task and its own worktree. The thread’s team role grants coordination rights automatically. A Luma describes its harness, model, computer and task; there is no separate Orchestrator setting.
+
+A One-Shot Worker starts as `[WorkerN@Parent title]: model` and keeps its parent affiliation in the sidebar. When it submits its PR, its title becomes `#PRnumber: model` and Workjet archives it automatically. Its parent receives the PR link and the project PR overview retains the PR. The worker cannot commission children or merge its own PR.
 
 Open the Worker control in the composer to choose a saved worker or Manual. Each worker shows its harness, model and reasoning level before you choose it.
+
+A chosen Luma appears by name in the bar and supplies its harness, model and computer. **Manual** shows separate **Harness**, **Model** and **Computer** controls. Returning to Manual restores its own draft selections.
 
 Use the arrow beside a worker to edit its profile. The editor opens beside the list when there is enough room; in a narrow window it replaces the list temporarily. Click the same worker's arrow again to collapse its editor, or use Back to return to the choices. Collapsing keeps your unfinished draft; reopen the arrow to continue editing. Editing a profile does not select that worker or send a message.
 
@@ -12,4 +16,4 @@ Changes remain a draft until you choose Save worker. Closing the popup or switch
 
 Profile settings are defaults for the worker. Existing chat overrides remain unchanged. Worker editing uses the same active-instance checks as the Settings page. If Workjet cannot resolve the settings owner for the active instance, the editor explains that it is unavailable.
 
-The Worker control is available in the compact composer as well as the full toolbar. Add worker starts a profile draft without starting an agent or provisioning a computer.
+The Worker control remains in the same bar at narrow widths. Add worker starts a profile draft without starting an agent or provisioning a computer.

@@ -7,8 +7,8 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { ArrowLeftIcon, SearchIcon, XIcon } from "lucide-react";
-import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
+import { SearchIcon, XIcon } from "lucide-react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
@@ -30,6 +30,7 @@ import {
   WorkjetConnectSidebarAvatar,
   WorkjetConnectSidebarSignIn,
 } from "../clerk/WorkjetConnectSidebarSignIn";
+import { useClientSettings } from "../../hooks/useSettings";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
@@ -37,6 +38,9 @@ import {
   type SettingsPath,
   type SettingsSearchItem,
 } from "./settingsSearch";
+
+/** Pages only shown in developer mode (#552). */
+const DEVELOPER_ONLY_PATHS: ReadonlySet<SettingsPath> = new Set(["/settings/diagnostics"]);
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];
@@ -52,12 +56,16 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   );
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
-  const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
-  const results = useMemo(() => searchSettings(query), [query]);
+  const developerMode = useClientSettings().developerMode;
+  const results = useMemo(
+    () =>
+      searchSettings(query).filter((item) => developerMode || !DEVELOPER_ONLY_PATHS.has(item.to)),
+    [developerMode, query],
+  );
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
 
@@ -166,16 +174,6 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     },
     [activeResultIndex, clearSearch, handleSearchResultClick, isSearching, results],
   );
-  const handleBackClick = useCallback(() => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  }, [canGoBack, isMobile, navigate, setOpenMobile]);
 
   return (
     <>
@@ -194,8 +192,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 setActiveResultIndex(0);
               }}
               onKeyDown={handleSearchKeyDown}
-              placeholder="Search"
-              aria-label="Search settings"
+              placeholder="Suchen"
+              aria-label="Einstellungen suchen"
               role="combobox"
               aria-autocomplete="list"
               aria-expanded={isSearching && hasResults}
@@ -213,7 +211,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 size="icon-xs"
                 variant="ghost"
                 className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                aria-label="Clear settings search"
+                aria-label="Suche zurücksetzen"
                 onClick={() => {
                   clearSearch();
                   searchInputRef.current?.focus();
@@ -222,7 +220,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 <XIcon className="size-3" />
               </Button>
             ) : (
-              <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">/</Kbd>
+              <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[11px]">/</Kbd>
             )}
           </div>
           {isSearching && results.length === 0 ? (
@@ -230,14 +228,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               role="status"
               className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
             >
-              No settings found
+              Keine Einstellungen gefunden
             </p>
           ) : null}
           <SidebarMenu
             className="ps-px"
             id={isSearching && hasResults ? "settings-search-results" : undefined}
             role={isSearching && hasResults ? "listbox" : undefined}
-            aria-label={isSearching && hasResults ? "Settings search results" : undefined}
+            aria-label={isSearching && hasResults ? "Suchergebnisse" : undefined}
           >
             {isSearching
               ? results.map((item, index) => (
@@ -269,7 +267,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))
-              : SETTINGS_NAV_ITEMS.map((item, index) => {
+              : SETTINGS_NAV_ITEMS.filter(
+                  (item) => developerMode || !DEVELOPER_ONLY_PATHS.has(item.to),
+                ).map((item, index) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);
                   return (
@@ -283,9 +283,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                             className="px-2 text-[11px] font-medium text-sidebar-muted-foreground"
                             data-settings-instance-context=""
                           >
-                            Settings for
+                            Einstellungen für
                             <span className="mt-0.5 block truncate text-sm text-sidebar-foreground">
-                              {instanceContext.activeInstanceName ?? "Select an instance"}
+                              {instanceContext.activeInstanceName ?? "Instanz auswählen"}
                             </span>
                           </p>
                         </SidebarMenuItem>
@@ -313,14 +313,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       <SidebarFooter className="p-[var(--sidebar-content-inset)]">
         <WorkjetConnectSidebarSignIn />
         <div className="flex items-center gap-1">
-          <SidebarMenu className="min-w-0 flex-1">
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleBackClick}>
-                <ArrowLeftIcon />
-                <span>Back</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <div className="min-w-0 flex-1" />
           <WorkjetConnectSidebarAvatar />
         </div>
       </SidebarFooter>

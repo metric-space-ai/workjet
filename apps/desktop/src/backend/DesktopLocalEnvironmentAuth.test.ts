@@ -10,6 +10,7 @@ import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@workjet/contracts";
 
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./DesktopLocalEnvironmentAuth.ts";
+import * as DesktopLocalServiceAttachment from "./DesktopLocalServiceAttachment.ts";
 import * as DesktopLocalServiceSession from "./DesktopLocalServiceSession.ts";
 vi.mock("electron", () => ({ safeStorage: {} }));
 
@@ -138,6 +139,55 @@ describe("DesktopLocalEnvironmentAuth", () => {
       assert.strictEqual(first, "desktop-bearer-token");
       assert.strictEqual(second, "desktop-bearer-token");
       assert.strictEqual(yield* Ref.get(requestCount), 1);
+    }),
+  );
+  it.effect("uses the bootstrap credential when Desktop owns a foreground backend", () =>
+    Effect.gen(function* () {
+      const auth = yield* DesktopLocalEnvironmentAuth.make.pipe(
+        Effect.provideService(DesktopBackendPool.DesktopBackendPool, {
+          list: Effect.succeed([
+            {
+              id: PRIMARY_LOCAL_ENVIRONMENT_ID,
+              currentConfig: Effect.succeed(
+                Option.some({
+                  ...config,
+                  localSession: { baseDir: "/profile", serverVersion: "1.2.3" },
+                }),
+              ),
+            },
+          ]),
+        } as unknown as DesktopBackendPool.DesktopBackendPool["Service"]),
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(
+                  JSON.stringify({
+                    access_token: "foreground-bearer-token",
+                    issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+                    token_type: "Bearer",
+                    expires_in: 3600,
+                    scope: "orchestration:read",
+                  }),
+                  { status: 200, headers: { "content-type": "application/json" } },
+                ),
+              ),
+            ),
+          ),
+        ),
+        Effect.provideService(DesktopLocalServiceSession.DesktopLocalServiceSession, {
+          attach: () => Effect.die("A foreground backend has no service attachment."),
+          get: () => Effect.die("A foreground backend has no installed service session."),
+        }),
+        Effect.provideService(DesktopLocalServiceAttachment.DesktopLocalServiceAttachment, {
+          resolvePort: Effect.succeed(Option.none()),
+          run: () => Effect.die("Auth must not run the backend."),
+          ownsForegroundBackend: Effect.succeed(true),
+        }),
+      );
+      assert.strictEqual(yield* auth.getBearerToken, "foreground-bearer-token");
     }),
   );
 });

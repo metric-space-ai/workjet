@@ -135,3 +135,51 @@ describe("resolveDesktopDeepLinkRedirect", () => {
     assert.isTrue(Option.isNone(resolveDesktopDeepLinkRedirect("https://example.com/")));
   });
 });
+
+describe("workjet://pair (CTOX Business OS Sync QR code)", () => {
+  // base64url of ["w2", …] as produced by CTOX mobile_invites.rs; only its
+  // shape matters here, the importer validates the contents.
+  const payload = "WyJ3MiIsIk9wZXJhdGlvbnMiXQ";
+
+  it("opens Einstellungen › Instanzen with the link prefilled, never importing", () => {
+    const link = Option.getOrThrow(parseDesktopDeepLink(`workjet://pair?payload=${payload}`));
+    assert.equal(link.path, "/index.html");
+    assert.equal(link.search, "");
+    assert.equal(link.hash, `#/settings/business-os?add=link&payload=${payload}`);
+    assert.equal(
+      link.canonicalUrl,
+      `workjet://app/index.html#/settings/business-os?add=link&payload=${payload}`,
+    );
+  });
+
+  it("is not mistaken for the Clerk OAuth callback on the renderer origin", () => {
+    const link = Option.getOrThrow(parseDesktopDeepLink(`workjet://pair/?payload=${payload}`));
+    assert.notEqual(link.path, "/");
+  });
+
+  it("normalizes the dev and legacy schemes onto the renderer origin", () => {
+    assert.equal(
+      Option.getOrThrow(parseDesktopDeepLink(`workjet-dev://pair?payload=${payload}`)).canonicalUrl,
+      `workjet-dev://app/index.html#/settings/business-os?add=link&payload=${payload}`,
+    );
+    assert.deepEqual(
+      resolveDesktopDeepLinkRedirect(`ctox-desktop://pair?payload=${payload}`),
+      Option.some(`workjet://app/index.html#/settings/business-os?add=link&payload=${payload}`),
+    );
+  });
+
+  it.each([
+    "workjet://pair",
+    "workjet://pair?payload=",
+    `workjet://pair?payload=${payload}&payload=${payload}`,
+    `workjet://pair?payload=${payload}&add=manual`,
+    "workjet://pair?payload=a%2Bb",
+    `workjet://pair/extra?payload=${payload}`,
+    `workjet://pair?payload=${payload}#x`,
+    `workjet://pair:1234?payload=${payload}`,
+    `workjet://user@pair?payload=${payload}`,
+    `workjet://pair?payload=${"a".repeat(4097)}`,
+  ])("rejects malformed pair link %s", (raw) => {
+    assert.isTrue(Option.isNone(parseDesktopDeepLink(raw)));
+  });
+});

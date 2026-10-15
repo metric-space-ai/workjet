@@ -11,23 +11,20 @@ import type { WorkjetInstanceGrokResponse } from "@workjet/contracts";
 import {
   requestInstanceGrok,
   grokVerificationLink,
+  describeInstanceGrokFailure,
   type InstanceGrokInput,
 } from "../../lib/workjetInstanceGrok";
 import type { InstanceGrokAccountPresentation } from "./WorkjetModelsProviders";
+import {
+  WorkjetProjectControlError,
+  type WorkjetProjectControlFailure,
+} from "../../workjetProjectControl";
 import { WORKJET_GATEWAY_PROVIDER_ICONS } from "./WorkjetGatewayAccounts";
 import { Button } from "../ui/button";
 
 type Check = NonNullable<WorkjetInstanceGrokResponse["check"]>;
 const columns =
-  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_1.75rem] items-center gap-x-3";
-const remedies: Readonly<Record<NonNullable<Check["errorCode"]>, string>> = {
-  timeout: "The model did not answer within 20 seconds. Retry the check.",
-  missing_credential: "Sign in with your Grok Build subscription.",
-  model_unavailable: "This model is absent from the account's live catalog. Refresh the models.",
-  invalid_response: "The gateway returned no usable answer. Retry the check.",
-  request_failed:
-    "The gateway request failed. Retry; a failed request does not prove an expired login.",
-};
+  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
 
 /** Instance-owned subscription; computer gateway accounts remain separate rows. */
 export function useInstanceGrokAccount(
@@ -38,6 +35,7 @@ export function useInstanceGrokAccount(
   const [checks, setChecks] = useState<Readonly<Record<string, Check>>>({});
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
+  const [connectionFailure, setConnectionFailure] = useState<WorkjetProjectControlFailure>();
   const [confirmRemove, setConfirmRemove] = useState(false);
   const alive = useRef(true);
   const controller = useRef<AbortController | undefined>(undefined);
@@ -62,16 +60,17 @@ export function useInstanceGrokAccount(
       controller.current = active;
       setBusy(input.action === "instance.grok.check" ? input.modelId : input.action);
       setError(undefined);
+      setConnectionFailure(undefined);
       try {
         const result = await requestInstanceGrok(instanceId, input, active.signal);
         if (active.signal.aborted || !alive.current) return undefined;
         apply(result);
         return result;
       } catch (failure) {
-        if (!active.signal.aborted)
-          setError(
-            failure instanceof Error ? failure.message : "Grok control failed. Retry the action.",
-          );
+        if (!active.signal.aborted && alive.current) {
+          if (failure instanceof WorkjetProjectControlError) setConnectionFailure(failure.failure);
+          else setError(failure instanceof Error ? failure.message : "Grok-Aktion fehlgeschlagen.");
+        }
         return undefined;
       } finally {
         if (controller.current === active && !active.signal.aborted) setBusy(undefined);
@@ -116,7 +115,7 @@ export function useInstanceGrokAccount(
         apply(result);
         if (result.login?.phase === "pending") {
           if (Date.now() >= expiresAt) {
-            setError("The sign-in code expired. Start sign-in again.");
+            setError("Anmeldecode abgelaufen. Neu anmelden.");
             void run({ action: "instance.grok.cancel", loginId });
           } else
             timer = setTimeout(() => {
@@ -128,16 +127,12 @@ export function useInstanceGrokAccount(
           // instance must independently advertise it before any request is sent.
           if (result.models.includes("grok-4.7"))
             void run({ action: "instance.grok.check", modelId: "grok-4.7" });
-          else
-            setError(
-              "Sign-in succeeded, but grok-4.7 is absent from this subscription's live catalog. Refresh models.",
-            );
+          else setError("Angemeldet, aber grok-4.7 fehlt im Abo. Modelle neu laden.");
         } else if (result.login?.phase === "failed" || result.login?.phase === "expired") {
-          setError("Sign-in did not complete. Start sign-in again.");
+          setError("Anmeldung nicht abgeschlossen. Neu anmelden.");
         }
       } catch {
-        if (!active.signal.aborted)
-          setError("Could not follow the sign-in. Refresh this account to continue or cancel.");
+        if (!active.signal.aborted) setError("Anmeldung nicht verfolgbar. Konto neu laden.");
       }
     };
     timer = setTimeout(() => {
@@ -173,7 +168,8 @@ export function useInstanceGrokAccount(
   const Icon = WORKJET_GATEWAY_PROVIDER_ICONS.xai;
   const login = state?.login;
   const link = login && grokVerificationLink(login.verificationUri);
-  const lastProblem = state?.check?.status === "error" ? state.check.errorCode : null;
+  const lastProblem =
+    state?.catalogError ?? (state?.check?.status === "error" ? state.check : null);
   const row = (
     <div role="rowgroup" data-account-id="ctox-instance-grok" className="border-b border-border/50">
       <div role="row" className={columns + " min-h-14 py-1.5"}>
@@ -185,7 +181,7 @@ export function useInstanceGrokAccount(
               <Button
                 variant="ghost"
                 size="icon-xs"
-                aria-label={`Add Grok Build account on ${label}`}
+                aria-label={`Grok-Konto auf ${label} hinzufügen`}
                 data-workjet-action="models.instance.xai.add-account"
                 disabled={!!busy || phase === "pending"}
                 onClick={start}
@@ -195,7 +191,8 @@ export function useInstanceGrokAccount(
             )}
           </div>
           <span className="block break-words text-[11px] text-muted-foreground">
-            {label} · {state?.installed ? state.accountLabel : "OAuth subscription"}
+            {label} ·{" "}
+            {state ? (state.installed ? state.accountLabel : "OAuth-Abo") : "Nicht geladen"}
           </span>
         </div>
         <div role="cell" className="flex min-w-0 flex-wrap gap-1">
@@ -216,12 +213,12 @@ export function useInstanceGrokAccount(
                 data-workjet-action={`models.instance.xai.check.${modelId}`}
                 title={
                   running
-                    ? "Checking…"
+                    ? "Prüft …"
                     : check?.status === "ok"
-                      ? `Hi check passed · ${check.latencyMs} ms · ${new Date(check.checkedAt).toLocaleString()}`
-                      : check?.errorCode
-                        ? remedies[check.errorCode]
-                        : "Not checked. Click to check."
+                      ? `Prüfung bestanden · ${check.latencyMs} ms · ${new Date(check.checkedAt).toLocaleString("de-DE")}`
+                      : check?.status === "error"
+                        ? describeInstanceGrokFailure(check)
+                        : "Nicht geprüft"
                 }
               >
                 <span className="min-w-0 whitespace-normal break-all">{modelId}</span>
@@ -236,21 +233,19 @@ export function useInstanceGrokAccount(
                   }
                   aria-label={
                     running
-                      ? "Checking"
+                      ? "Prüft"
                       : check?.status === "ok"
-                        ? "Check passed"
+                        ? "Prüfung bestanden"
                         : check?.status === "error"
-                          ? (check.errorCode ?? "Check failed")
-                          : "Not checked"
+                          ? (check.errorCode ?? "Prüfung fehlgeschlagen")
+                          : "Nicht geprüft"
                   }
                 />
               </button>
             );
           })}
           {state?.installed && state.models.length === 0 && (
-            <span className="text-xs text-muted-foreground">
-              Live models unavailable. Refresh to retry.
-            </span>
+            <span className="text-xs text-muted-foreground">Keine Modelle gemeldet</span>
           )}
           {!state?.installed && phase !== "pending" && (
             <Button
@@ -264,30 +259,29 @@ export function useInstanceGrokAccount(
             </Button>
           )}
         </div>
-        <span
-          role="cell"
-          title="This provider has not reported limits."
-          className="text-xs text-muted-foreground"
-        >
+        <span role="cell" title="Keine Limits gemeldet" className="text-xs text-muted-foreground">
           —
         </span>
         <span
           role="cell"
           title={
-            state?.installed
-              ? "Subscription stored on this CTOX instance."
-              : "No subscription stored."
+            state
+              ? state.installed
+                ? "Abo gespeichert"
+                : "Kein Abo gespeichert"
+              : "Kontostatus nicht verfügbar"
           }
+          aria-label={state ? undefined : "Kontostatus nicht verfügbar"}
           className="text-center text-xs text-muted-foreground"
         >
-          {state?.installed ? "✓" : "—"}
+          {state ? (state.installed ? "✓" : "—") : "◌"}
         </span>
         <div role="cell">
           {state?.installed ? (
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label={`Remove Grok Build account from ${label}`}
+              aria-label={`Grok-Konto von ${label} entfernen`}
               disabled={!!busy}
               onClick={() => setConfirmRemove(true)}
               data-workjet-action="models.instance.xai.remove"
@@ -298,7 +292,7 @@ export function useInstanceGrokAccount(
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label="Refresh Grok account"
+              aria-label="Grok-Konto neu laden"
               disabled={!!busy}
               onClick={() => {
                 void run({ action: "instance.grok.read" });
@@ -312,37 +306,40 @@ export function useInstanceGrokAccount(
       {phase === "pending" && login && (
         <div role="status" className="flex flex-wrap items-center gap-3 py-2 text-xs">
           <span>
-            Enter code <strong className="font-mono select-all">{login.userCode}</strong> to sign in
-            on {label}.
+            Code <strong className="font-mono select-all">{login.userCode}</strong>
           </span>
           {link ? (
-            <a
-              href={link}
-              target="_blank"
-              rel="noreferrer"
-              className="underline"
-              data-workjet-action="models.instance.xai.open-login"
+            <Button
+              size="xs"
+              render={
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-workjet-action="models.instance.xai.open-login"
+                />
+              }
             >
-              Open Grok sign-in
-            </a>
+              Grok-Anmeldung öffnen
+            </Button>
           ) : (
-            <span role="alert">Invalid sign-in URL. Cancel and retry.</span>
+            <span role="alert">Anmeldelink ungültig. Abbrechen und neu starten.</span>
           )}
           <Button
             size="xs"
-            variant="ghost"
+            variant="outline"
             disabled={!!busy}
             onClick={() => {
               void run({ action: "instance.grok.cancel", loginId: login.loginId });
             }}
           >
-            Cancel sign-in
+            Anmeldung abbrechen
           </Button>
         </div>
       )}
       {confirmRemove && (
         <div role="alert" className="flex flex-wrap items-center gap-2 py-2 text-xs">
-          <span>Remove this subscription and its saved check from {label}?</span>
+          <span>Abo von {label} entfernen?</span>
           <Button
             size="xs"
             variant="destructive"
@@ -354,27 +351,28 @@ export function useInstanceGrokAccount(
               });
             }}
           >
-            Remove
+            Entfernen
           </Button>
           <Button
             size="xs"
-            variant="ghost"
+            variant="outline"
             disabled={!!busy}
             onClick={() => setConfirmRemove(false)}
           >
-            Cancel
+            Abbrechen
           </Button>
         </div>
       )}
       {(error || lastProblem) && (
         <p role="alert" className="py-1 text-xs text-destructive">
-          {error ?? (lastProblem && remedies[lastProblem])}
+          {error ?? (lastProblem && describeInstanceGrokFailure(lastProblem))}
         </p>
       )}
     </div>
   );
   return {
-    row,
+    row: connectionFailure ? null : row,
+    connectionFailure,
     label,
     installed: state?.installed ?? false,
     hasModels: !!state?.models.length,

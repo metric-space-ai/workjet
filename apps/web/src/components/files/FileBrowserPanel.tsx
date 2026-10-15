@@ -58,14 +58,16 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
             type="button"
             variant="ghost"
             size="icon-xs"
-            aria-label="Refresh workspace files"
+            aria-label="Dateien aktualisieren"
             onClick={props.onRefresh}
           />
         }
       >
         <RotateCw className={cn(props.isPending && "animate-spin")} />
       </TooltipTrigger>
-      <TooltipPopup>{props.isPending ? "Refreshing…" : "Refresh files"}</TooltipPopup>
+      <TooltipPopup>
+        {props.isPending ? "Wird aktualisiert …" : "Dateien aktualisieren"}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -85,7 +87,7 @@ function FileSearchField(props: {
         size="sm"
         value={props.value}
         aria-label={props.ariaLabel}
-        placeholder="Search files"
+        placeholder="Dateien suchen"
         spellCheck={false}
         onChange={(event) => props.onValueChange(event.target.value)}
         onKeyDown={(event) => {
@@ -153,20 +155,24 @@ export default function FileBrowserPanel({
     try {
       const clicked = await api.contextMenu.show(
         [
-          { id: "copy-mention", label: "Copy mention" },
-          { id: "add-to-chat", label: "Add to chat" },
+          { id: "copy-mention", label: "Erwähnung kopieren" },
+          { id: "add-to-chat", label: "Zum Chat hinzufügen" },
         ],
         position,
       );
       if (clicked === "copy-mention") {
         try {
           await writeTextToClipboard(mention);
-          toastManager.add({ type: "success", title: "Mention copied", description: relativePath });
+          toastManager.add({
+            type: "success",
+            title: "Erwähnung kopiert",
+            description: relativePath,
+          });
         } catch (error) {
           toastManager.add({
             type: "error",
-            title: "Failed to copy mention",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            title: "Kopieren fehlgeschlagen",
+            description: error instanceof Error ? error.message : undefined,
           });
         }
         return;
@@ -176,8 +182,7 @@ export default function FileBrowserPanel({
         if (!composer) {
           toastManager.add({
             type: "error",
-            title: "Unable to add to chat",
-            description: "Open a chat for this project and try again.",
+            title: "Kein Chat geöffnet",
           });
           return;
         }
@@ -185,8 +190,7 @@ export default function FileBrowserPanel({
         if (!inserted) {
           toastManager.add({
             type: "error",
-            title: "Unable to add to chat",
-            description: "The chat isn't ready to accept input right now.",
+            title: "Chat nicht bereit",
           });
         }
       }
@@ -354,7 +358,7 @@ export default function FileBrowserPanel({
         <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={entriesQuery.refresh} />
         <FileSearchField
           name="project-files-search"
-          ariaLabel={`Search ${projectName} files`}
+          ariaLabel={`${projectName}: Dateien suchen`}
           value={search.value}
           onValueChange={handleSearchValueChange}
           onClose={search.close}
@@ -365,7 +369,7 @@ export default function FileBrowserPanel({
       ) : (
         <FileTree
           model={model}
-          aria-label={`${projectName} files`}
+          aria-label={`${projectName}: Dateien`}
           className="min-h-0 flex-1 overflow-hidden"
           style={{
             colorScheme: resolvedTheme,

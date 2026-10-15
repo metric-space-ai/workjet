@@ -1,0 +1,211 @@
+{
+  "harness": "MiniMax Code",
+  "model": "grok-4.7",
+  "workjetThreadId": "7d9d5ece-7378-4ec2-9db8-9bd688735e97",
+  "nativeSessionId": "mvs_d9647377ce554788baa01d098dde1093",
+  "startedAt": "2026-10-10T04:11:31.333Z",
+  "endedAt": "2026-10-10T04:12:45.051Z",
+  "runtimeBuild": {
+    "recordedAt": "2026-10-10T03:43:50.091Z",
+    "native": {
+      "binary": "/Volumes/OneTB/dev-artifacts/workjet/harness-proxy-rc-20261009/cargo-target/debug/workjet-provider-gateway-host",
+      "sha256": "2af374bad09d56f7b3ef730c4b01cc6a7e1daf124b9f707b51e4bbf058c91406",
+      "sourceHead": "6a0940c98"
+    },
+    "server": {
+      "entry": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/runtime/apps/server/dist/bin.mjs",
+      "sha256": "9656e4250cf25db227680f986fc611c69ee4995355a189184740e1d42269c0a2",
+      "sourceHead": "92a24c6a8a60d3ccca29473b293edf643a3e93e8"
+    }
+  },
+  "nativeAcpLog": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/profile/userdata/logs/provider/events.7d9d5ece-7378-4ec2-9db8-9bd688735e97.log",
+  "nativeAcpLogSha256": "6e5810330cf5c5342f4cd686fa56e8f115e10e726d951e7431c8f8102d2527bf",
+  "acceptance": {
+    "passed": true,
+    "successfulSequentialToolCalls": 20,
+    "basis": "twenty native ACP tool updates with exact successful process outputs and strictly ordered start/completion times"
+  },
+  "workjetObservedCompletions": 20,
+  "pairs": [
+    {
+      "number": 1,
+      "callId": "call-613b06b0-6a43-45db-be89-f23b107347df-0",
+      "command": "printf 'PROXY_MATRIX_01\\n'",
+      "output": "PROXY_MATRIX_01\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605519714,
+      "completedAtMs": 1791605519738.0
+    },
+    {
+      "number": 2,
+      "callId": "call-873dc74d-383e-4e26-aa62-603512fe02df-1",
+      "command": "printf 'PROXY_MATRIX_02\\n'",
+      "output": "PROXY_MATRIX_02\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605522425,
+      "completedAtMs": 1791605522437.0
+    },
+    {
+      "number": 3,
+      "callId": "call-9e40a034-bfd3-4603-8b4b-4afc4122b6b9-2",
+      "command": "printf 'PROXY_MATRIX_03\\n'",
+      "output": "PROXY_MATRIX_03\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605523979,
+      "completedAtMs": 1791605523991.0
+    },
+    {
+      "number": 4,
+      "callId": "call-0ce6f5b6-096a-4de8-bfa6-903a6c34f170-3",
+      "command": "printf 'PROXY_MATRIX_04\\n'",
+      "output": "PROXY_MATRIX_04\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605526301,
+      "completedAtMs": 1791605526316.0
+    },
+    {
+      "number": 5,
+      "callId": "call-974b78b5-748b-4ee3-b6e5-fea7c1f1c3d2-4",
+      "command": "printf 'PROXY_MATRIX_05\\n'",
+      "output": "PROXY_MATRIX_05\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605527970,
+      "completedAtMs": 1791605527981.0
+    },
+    {
+      "number": 6,
+      "callId": "call-ed5f4907-db98-4674-abf2-61c4767a1b27-5",
+      "command": "printf 'PROXY_MATRIX_06\\n'",
+      "output": "PROXY_MATRIX_06\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605529973,
+      "completedAtMs": 1791605530027.0
+    },
+    {
+      "number": 7,
+      "callId": "call-ac7e20ef-d7fe-402d-9244-2713b55d8787-6",
+      "command": "printf 'PROXY_MATRIX_07\\n'",
+      "output": "PROXY_MATRIX_07\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605531318,
+      "completedAtMs": 1791605531375.0
+    },
+    {
+      "number": 8,
+      "callId": "call-2057c390-ba0c-4133-a226-d3f3ca15cc06-7",
+      "command": "printf 'PROXY_MATRIX_08\\n'",
+      "output": "PROXY_MATRIX_08\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605533459,
+      "completedAtMs": 1791605533478.0
+    },
+    {
+      "number": 9,
+      "callId": "call-1ee8aae0-63ac-48c0-bba5-21342ade7716-8",
+      "command": "printf 'PROXY_MATRIX_09\\n'",
+      "output": "PROXY_MATRIX_09\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605535127,
+      "completedAtMs": 1791605535144.0
+    },
+    {
+      "number": 10,
+      "callId": "call-5bdc4d8a-feb9-4dbd-b6ef-7df8f57a33bc-9",
+      "command": "printf 'PROXY_MATRIX_10\\n'",
+      "output": "PROXY_MATRIX_10\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605536792,
+      "completedAtMs": 1791605536908.0
+    },
+    {
+      "number": 11,
+      "callId": "call-87e2033e-99b0-4db0-a519-1eeb8486a1cb-10",
+      "command": "printf 'PROXY_MATRIX_11\\n'",
+      "output": "PROXY_MATRIX_11\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605539120,
+      "completedAtMs": 1791605539164.0
+    },
+    {
+      "number": 12,
+      "callId": "call-5e577399-e840-4b30-967b-2136eaa0216a-11",
+      "command": "printf 'PROXY_MATRIX_12\\n'",
+      "output": "PROXY_MATRIX_12\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605541273,
+      "completedAtMs": 1791605541294.0
+    },
+    {
+      "number": 13,
+      "callId": "call-ae05e372-a521-4673-ae7e-99cc51b42c18-12",
+      "command": "printf 'PROXY_MATRIX_13\\n'",
+      "output": "PROXY_MATRIX_13\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605542815,
+      "completedAtMs": 1791605542882.0
+    },
+    {
+      "number": 14,
+      "callId": "call-a7a0a1f7-0571-4d7c-9f0b-e658777eba03-13",
+      "command": "printf 'PROXY_MATRIX_14\\n'",
+      "output": "PROXY_MATRIX_14\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605544916,
+      "completedAtMs": 1791605545302.0
+    },
+    {
+      "number": 15,
+      "callId": "call-102c7f2a-8712-4447-99b3-ba7a43d475b1-14",
+      "command": "printf 'PROXY_MATRIX_15\\n'",
+      "output": "PROXY_MATRIX_15\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605549202,
+      "completedAtMs": 1791605549221.0
+    },
+    {
+      "number": 16,
+      "callId": "call-e316c664-c28c-490b-b812-3413bd05257d-15",
+      "command": "printf 'PROXY_MATRIX_16\\n'",
+      "output": "PROXY_MATRIX_16\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605554175,
+      "completedAtMs": 1791605554189.0
+    },
+    {
+      "number": 17,
+      "callId": "call-b69eb282-2458-4924-a75b-fd29e73c7110-16",
+      "command": "printf 'PROXY_MATRIX_17\\n'",
+      "output": "PROXY_MATRIX_17\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605557113,
+      "completedAtMs": 1791605557135.0
+    },
+    {
+      "number": 18,
+      "callId": "call-acdcb420-73f6-41b6-a8c1-778ae67e665f-17",
+      "command": "printf 'PROXY_MATRIX_18\\n'",
+      "output": "PROXY_MATRIX_18\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605558609,
+      "completedAtMs": 1791605558620.0
+    },
+    {
+      "number": 19,
+      "callId": "call-865c8291-c54a-4956-947f-176b39a04c15-18",
+      "command": "printf 'PROXY_MATRIX_19\\n'",
+      "output": "PROXY_MATRIX_19\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605560174,
+      "completedAtMs": 1791605560183.0
+    },
+    {
+      "number": 20,
+      "callId": "call-e59d33bb-bcb3-482a-85a2-2b51ccfa7e51-19",
+      "command": "printf 'PROXY_MATRIX_20\\n'",
+      "output": "PROXY_MATRIX_20\n",
+      "exitCode": 0,
+      "startedAtMs": 1791605563225,
+      "completedAtMs": 1791605563243.0
+    }
+  ]
+}

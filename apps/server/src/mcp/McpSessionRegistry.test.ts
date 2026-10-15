@@ -1,11 +1,18 @@
 import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@workjet/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { resolveThreadCapabilityContext } from "../workjet/ThreadCapabilityContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
@@ -291,5 +298,82 @@ it.effect("isolates Crew grants from provider config and revokes them on session
         expect(contextReads).toBe(1);
       }),
     );
+  }),
+);
+
+it.effect(
+  "issues the same role-aware tool names to every harness and excludes escalation from One-Shots",
+  () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(() => 1000);
+      for (const harness of [
+        "claudeAgent",
+        "codex",
+        "opencode",
+        "grok",
+        "pi",
+        "cursor",
+        "minimax",
+        "greppy",
+        "ctox",
+      ]) {
+        for (const projectTeamRole of ["supervisor", "specialist", "worker"] as const) {
+          const issued = yield* registry.issue({
+            threadId: ThreadId.make(harness + "-" + projectTeamRole),
+            providerInstanceId: ProviderInstanceId.make(harness),
+            threadCapabilityContext: { ...emptyThreadCapabilityContext, projectTeamRole },
+          });
+          expect(issued.config.requiredWorkjetToolNames).toContain("workjet_worker_kanban");
+          expect(issued.config.requiredWorkjetToolNames).toContain("workjet_update_goal");
+          expect(issued.config.requiredWorkjetToolNames).toContain("workjet_submit_worker");
+          expect(issued.config.requiredWorkjetToolNames?.includes("workjet_escalate")).toBe(
+            projectTeamRole !== "worker",
+          );
+          expect(issued.config.requiredWorkjetToolNames?.includes("workjet_answer_worker")).toBe(
+            projectTeamRole === "supervisor",
+          );
+          const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+          expect((yield* registry.resolve(token))?.projectTeamRole).toBe(projectTeamRole);
+        }
+      }
+    }),
+);
+
+it.effect("delivers the same supervisor delegation prompt to every harness", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1000);
+    const context = resolveThreadCapabilityContext({
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      schemaVersion: 2,
+      role: "orchestrator",
+      team: {
+        projectId: ProjectId.make("project"),
+        threadId: ThreadId.make("supervisor"),
+        role: "supervisor",
+        parentThreadId: null,
+        goal: "Deliver the approved weekly outcome.",
+        createdAt: "2026-10-11T15:00:00.000Z",
+      },
+    });
+    expect(context.compiledManagedPrompt).toMatchSnapshot();
+
+    for (const harness of [
+      "claudeAgent",
+      "codex",
+      "opencode",
+      "grok",
+      "pi",
+      "cursor",
+      "minimax",
+      "greppy",
+      "ctox",
+    ]) {
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make(harness + "-supervisor"),
+        providerInstanceId: ProviderInstanceId.make(harness),
+        threadCapabilityContext: context,
+      });
+      expect(issued.config.compiledManagedPrompt).toBe(context.compiledManagedPrompt);
+    }
   }),
 );

@@ -42,7 +42,7 @@
  * An OS-delivered `ctox-desktop://` link is the other case entirely — any page
  * or document on the machine can trigger one — and it never reaches this
  * function directly: `DesktopDeepLinkRouter` queues it and
- * `DeepLinkConfirmationDialog` asks the user first. Once confirmed, that link
+ * `DeepLinkConfirmationNotice` asks the user first. Once confirmed, that link
  * resolves to a target and lands HERE. The confirmation gate stays where it
  * is; the navigator must never be wired as a second, silent entry point for
  * OS links.

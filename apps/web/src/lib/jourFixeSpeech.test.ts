@@ -212,15 +212,31 @@ describe("Jour fixe speech provider boundary", () => {
     expect(other.events.onPartial).toHaveBeenLastCalledWith(undefined);
     other.session.close();
   });
-  it("rejects non-audio narration and releases a previous blob on slide change", async () => {
+  it("rejects non-audio narration while retaining the last verified recording", async () => {
     const f = fixture();
     await f.session.prepareNarration("slide-a");
     f.provider.prepareNarration = vi.fn(async () => new Blob(["<html>"], { type: "text/html" }));
     await f.session.prepareNarration("slide-b");
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:narration");
-    expect(f.events.onAudio).toHaveBeenLastCalledWith(undefined);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    expect(f.events.onAudio).toHaveBeenLastCalledWith(
+      expect.objectContaining({ slideId: "slide-a", blobUrl: "blob:narration" }),
+    );
     expect(f.events.onError).toHaveBeenCalledOnce();
     expect(URL.createObjectURL).toHaveBeenCalledOnce();
     f.session.close();
   });
+});
+
+it("shares repeated narration requests for one slide while it is being loaded", async () => {
+  const f = fixture();
+  const ready = deferred<Blob>();
+  f.provider.prepareNarration = vi.fn(() => ready.promise);
+  const first = f.session.prepareNarration("slide-a");
+  const second = f.session.prepareNarration("slide-a");
+  expect(second).toBe(first);
+  expect(f.provider.prepareNarration).toHaveBeenCalledOnce();
+  ready.resolve(new Blob(["wav"], { type: "audio/wav" }));
+  await first;
+  expect(URL.createObjectURL).toHaveBeenCalledOnce();
+  f.session.close();
 });

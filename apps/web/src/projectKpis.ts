@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "./workjetProjectControl";
 /** Presentation-only fields from CTOX's workjet-project-kpis-v1 contract (#368).
  * The native service validates source evidence and computes display_value.
  */
@@ -39,6 +40,29 @@ export type SaveProjectKpiPrompts = (
   expectedRevision: number,
 ) => Promise<boolean>;
 
+/** Sichtbarer Kurzstatus je nativem Ergebnisstatus; Rohcodes bleiben in `reasonCode`. */
+const KPI_STATUS_LABELS: Record<
+  "de" | "en",
+  Record<ProjectKpiRecord["result"]["status"], string>
+> = {
+  de: {
+    resolving: "Wird berechnet",
+    ready: "",
+    stale: "Veraltet",
+    missing_source: "Quelle fehlt",
+    failed: "Fehlgeschlagen",
+  },
+  en: {
+    resolving: "Calculating",
+    ready: "",
+    stale: "Stale",
+    missing_source: "Source missing",
+    failed: "Failed",
+  },
+};
+const kpiStatusLabel = (status: ProjectKpiRecord["result"]["status"]) =>
+  KPI_STATUS_LABELS[workjetUiLanguage()][status];
+
 /** An edited sentence or an out-of-scope/old result must never reuse its old value. */
 export function projectKpiPresentation(
   record: ProjectKpiRecord | undefined,
@@ -47,20 +71,27 @@ export function projectKpiPresentation(
   draftPrompt: string | undefined = record?.prompt.prompt,
 ) {
   const fallback = {
-    label: `KPI ${position}`,
+    // No fake "KPI n" label: cards render a skeleton until the real label is known (#470).
+    label: null as string | null,
     value: "—",
     source: "",
     calculatedAt: null as number | null,
+    reasonCode: undefined as string | undefined,
   };
-  if (!record) return { ...fallback, status: "unconfigured", detail: "Not configured" };
+  if (!record) return { ...fallback, status: "unconfigured", detail: "—" };
   if (draftPrompt?.trim() !== record.prompt.prompt.trim())
-    return { ...fallback, status: "changed", detail: "Recalculated after saving" };
+    return {
+      ...fallback,
+      status: "changed",
+      detail: workjetUiLanguage() === "en" ? "Recalculated after saving" : "Nach Speichern neu",
+    };
   const result = record.result;
   if (result.status !== "ready" && result.status !== "stale")
     return {
       ...fallback,
       status: result.status,
-      detail: result.reason_code ?? (result.status === "resolving" ? "Resolving" : result.status),
+      detail: kpiStatusLabel(result.status),
+      reasonCode: result.reason_code,
       message: result.message,
     };
   const snapshot = result.snapshot;
@@ -74,19 +105,25 @@ export function projectKpiPresentation(
     !Number.isFinite(snapshot.freshness.calculated_at_ms) ||
     Math.abs(snapshot.freshness.calculated_at_ms) > 8.64e15
   )
-    return { ...fallback, status: "failed", detail: "invalid_snapshot" };
+    return {
+      ...fallback,
+      status: "failed",
+      detail: kpiStatusLabel("failed"),
+      reasonCode: "invalid_snapshot",
+    };
   const names = {
     native_metric: "CTOX",
     github_metric: "GitHub",
-    connected_metric: "Connected source",
+    connected_metric: workjetUiLanguage() === "en" ? "Connected source" : "Verbundene Quelle",
   };
   return {
-    label: snapshot.label,
+    label: snapshot.label as string | null,
     value: snapshot.display_value,
     source: [...new Set(snapshot.sources.map((source) => names[source.kind]))].join(" + "),
     calculatedAt: snapshot.freshness.calculated_at_ms,
     status: result.status,
-    detail: result.status === "stale" ? (result.reason_code ?? "stale") : "",
+    detail: result.status === "stale" ? kpiStatusLabel("stale") : "",
+    reasonCode: result.reason_code,
     message: result.message,
   };
 }

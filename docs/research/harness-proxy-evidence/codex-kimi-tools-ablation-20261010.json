@@ -1,0 +1,46 @@
+{
+  "recordedAt": "2026-10-10T04:29:23.069Z",
+  "model": "kimi-for-coding",
+  "outcomes": [
+    {
+      "variant": "original",
+      "httpStatus": 502,
+      "upstreamStatus": "400",
+      "errorClass": "network-provider",
+      "error": {
+        "message": "API-key provider upstream rejected the request",
+        "type": "server_error"
+      },
+      "responseBytes": 92,
+      "hasFunctionCall": false
+    },
+    {
+      "variant": "no-tools",
+      "httpStatus": 200,
+      "upstreamStatus": null,
+      "errorClass": null,
+      "responseBytes": 37316,
+      "hasFunctionCall": false
+    },
+    {
+      "variant": "native-functions",
+      "httpStatus": 200,
+      "upstreamStatus": null,
+      "errorClass": null,
+      "responseBytes": 38138,
+      "hasFunctionCall": true
+    },
+    {
+      "variant": "no-web",
+      "httpStatus": 502,
+      "upstreamStatus": "400",
+      "errorClass": "network-provider",
+      "error": {
+        "message": "API-key provider upstream rejected the request",
+        "type": "server_error"
+      },
+      "responseBytes": 92,
+      "hasFunctionCall": false
+    }
+  ]
+}

@@ -46,16 +46,23 @@ describe("compact project configuration", () => {
         onArchive={async () => true}
       />,
     );
-    expect(markup.match(/placeholder="Describe the metric in one sentence"/g)).toHaveLength(3);
-    expect(markup).toContain("KPI prompts need the CTOX KPI service");
+    expect(markup.match(/placeholder="Kennzahl in einem Satz"/g)).toHaveLength(3);
+    expect(markup).not.toContain("KPI-Angaben brauchen");
+    expect(markup).toContain("Git-Quelle");
+    expect(markup).toContain("Webseite");
+    expect(markup).toContain("Token-Budget");
+    expect(markup).toContain("Mrd. Tokens je Regeltermin-Zyklus");
+    expect(markup).toContain("kein Limit");
     expect(markup).not.toContain("Entered metric");
     expect(markup).not.toContain("type</label>");
-    expect(markup).toContain("Jour fixe weekday");
+    expect(markup).toContain("Regeltermin Wochentag");
+    expect(markup).toContain("Regeltermin-Vorbereitung");
+    expect(markup).not.toContain("No meeting");
     expect(markup).toContain('value="13:00"');
     expect(markup).toContain("Keep the goal");
-    expect(markup).toContain("Archive project");
-    expect(markup).toContain("Cancel");
-    expect(markup).toContain("Save project");
+    expect(markup).toContain("Projekt archivieren");
+    expect(markup).toContain("Abbrechen");
+    expect(markup).toContain("Projekt speichern");
   });
   it("renders a native missing source instead of offering an entered value", () => {
     const markup = renderToStaticMarkup(
@@ -77,9 +84,67 @@ describe("compact project configuration", () => {
       />,
     );
     expect(markup).toContain("Count visits this week");
-    expect(markup).toContain("analytics_not_connected");
+    expect(markup).toContain("Quelle fehlt");
+    expect(markup).not.toContain(">analytics_not_connected<");
     expect(markup).not.toContain("KPI prompts need");
-    expect(markup).not.toContain('type="number"');
+    expect(markup.match(/type="number"/g)).toHaveLength(1);
+    expect(markup).toContain("Supervisor-Takt in Minuten");
+  });
+  it("shows the prompt as editable text and the Supervisor-resolved label with its value", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewEditor
+        overview={null}
+        configuration={{ id: ProjectId.make("project"), title: "Project" }}
+        onSave={async () => true}
+        kpis={{
+          project_id: "project",
+          revision: 2,
+          items: [
+            {
+              prompt: { kpi_id: "kpi-1", prompt: "Steam wishlists in total", revision: 2 },
+              result: {
+                status: "ready",
+                snapshot: {
+                  project_id: "project",
+                  kpi_id: "kpi-1",
+                  prompt_revision: 2,
+                  label: "Wishlists",
+                  display_value: "1.204",
+                  unit: "",
+                  sources: [
+                    {
+                      kind: "connected_metric",
+                      project_id: "project",
+                      connection_id: "steam",
+                      metric_key: "wishlists",
+                    },
+                  ],
+                  freshness: { calculated_at_ms: 1, refresh_at_ms: 2, fresh_until_ms: 3 },
+                },
+              },
+            },
+          ],
+        }}
+        onSaveKpis={async () => true}
+      />,
+    );
+    expect(markup.match(/<textarea[^>]*maxLength="1024"/g)).toHaveLength(3);
+    expect(markup).toContain("Steam wishlists in total</textarea>");
+    expect(markup).toContain("Wishlists: </span>");
+    expect(markup).toContain("1.204");
+  });
+  it("says so when the KPIs could not be loaded", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewEditor
+        overview={null}
+        configuration={{ id: ProjectId.make("project"), title: "Project" }}
+        onSave={async () => true}
+        onSaveKpis={async () => true}
+        kpisLoadFailed
+      />,
+    );
+    expect(markup).toContain("KPIs konnten nicht von der Instanz geladen werden.");
+    expect(markup.match(/<textarea[^>]*disabled=""/g)).toHaveLength(3);
   });
   it("does not expose KPI configuration for a foreign project", () => {
     const markup = renderToStaticMarkup(
@@ -91,6 +156,86 @@ describe("compact project configuration", () => {
         onSaveKpis={async () => true}
       />,
     );
-    expect(markup).toContain("KPI prompts need the CTOX KPI service");
+    expect(markup).not.toContain("KPI-Angaben brauchen");
+    expect(
+      markup.match(/<textarea[^>]*disabled=""[^>]*placeholder="Kennzahl in einem Satz"/g),
+    ).toHaveLength(3);
+  });
+});
+
+describe("failed card save", () => {
+  it("puts the saved value back and keeps the rejected one for retry", async () => {
+    const { failedCardSave } = await import("./ProjectOverviewEditor");
+    const saved = {
+      title: "kunstmen.com",
+      websiteUrl: null,
+      repositoryUrl: null,
+      jourFixe: { weekday: 2, time: "14:00", timezone: "Europe/Berlin" },
+    };
+    const next = { ...saved, jourFixe: { ...saved.jourFixe, time: "15:30" } };
+    const outcome = failedCardSave(saved, next);
+    expect(outcome.draft.jourFixe?.time).toBe("14:00");
+    expect(outcome.retry.jourFixe?.time).toBe("15:30");
+    expect(outcome.message).toContain("Nicht gespeichert");
+  });
+});
+
+describe("card time options", () => {
+  it("labels times as 24 h in German and follows the English locale", async () => {
+    const { cardTimeOptions } = await import("./ProjectOverviewEditor");
+    const de = cardTimeOptions("14:05", "de-DE");
+    expect(de.find((option) => option.value === "14:00")?.label).toBe("14:00");
+    expect(de.some((option) => option.value === "14:05")).toBe(true);
+    expect(de).toHaveLength(97);
+    expect(cardTimeOptions(null, "en-US").find((o) => o.value === "14:00")?.label).toMatch(/PM/);
+  });
+});
+
+describe("card back configuration editor", () => {
+  it("renders labelled fields that save instantly, without Speichern/Abbrechen", async () => {
+    const { ProjectCardConfigEditor } = await import("./ProjectOverviewEditor");
+    const markup = renderToStaticMarkup(
+      <ProjectCardConfigEditor
+        title="molecularity"
+        websiteUrl="https://molecularity.example"
+        repositoryUrl="https://github.com/metric-space-ai/molecularity"
+        jourFixe={{ weekday: 2, time: "10:00", timezone: "Europe/Berlin" }}
+        canEditTitle
+        onSave={async () => true}
+        onCancel={() => {}}
+      />,
+    );
+    expect(markup).toContain('data-workjet-project-card-config=""');
+    for (const label of ["Name", "Website", "Repository", "Regeltermin", "Uhrzeit"])
+      expect(markup).toContain(label);
+    expect(markup).toContain('value="molecularity"');
+    expect(markup).toContain('value="https://molecularity.example"');
+    expect(markup).toContain('value="https://github.com/metric-space-ai/molecularity"');
+    expect(markup).toContain("10:00");
+    expect(markup).toContain('data-option="2">Dienstag</span>');
+    expect(markup).toContain("Kein Termin");
+    expect(markup).not.toContain("Speichern");
+    expect(markup).not.toContain("Abbrechen");
+    expect(markup).not.toContain('type="time"');
+    for (const field of ["-name", "-website", "-repository"])
+      expect(markup).toMatch(new RegExp(`<label for="[^"]*${field}"`));
+    expect(markup).not.toContain("KPI");
+    expect(markup).not.toContain("Supervisor");
+  });
+  it("locks the name without the instance save path", async () => {
+    const { ProjectCardConfigEditor } = await import("./ProjectOverviewEditor");
+    const markup = renderToStaticMarkup(
+      <ProjectCardConfigEditor
+        title="kunstmen.com"
+        websiteUrl={null}
+        repositoryUrl={null}
+        jourFixe={null}
+        onSave={async () => true}
+        onCancel={() => {}}
+      />,
+    );
+    expect(markup).toContain('aria-label="Projektname"');
+    expect(markup).toContain("disabled");
+    expect(markup).toContain("Kein Termin");
   });
 });

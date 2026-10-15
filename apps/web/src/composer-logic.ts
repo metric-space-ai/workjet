@@ -12,10 +12,11 @@ export interface ComposerTrigger {
 }
 
 export function shouldSubmitComposerOnEnter(input: {
-  isMobileViewport: boolean;
+  isMobileViewport?: boolean;
   shiftKey: boolean;
+  isComposing?: boolean;
 }): boolean {
-  return !input.isMobileViewport && !input.shiftKey;
+  return !input.shiftKey && !input.isComposing;
 }
 
 const isInlineTokenSegment = (

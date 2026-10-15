@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { WorkjetConfiguration } from "./workjet.ts";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import {
@@ -247,6 +248,8 @@ import {
   WorkjetGatewayUsage,
   WorkjetGatewayUsageInput,
   WorkjetGatewayModelDiscovery,
+  WorkjetGatewayAccountModelsInput,
+  WorkjetGatewayAccountModels,
   WorkjetGatewayOauthPollInput,
   WorkjetGatewayOauthPollResult,
   WorkjetGatewayOauthSession,
@@ -456,6 +459,7 @@ export const WS_METHODS = {
   workjetGatewayModelChecks: "workjet.providerGateway.modelChecks",
   workjetGatewayCheckModels: "workjet.providerGateway.checkModels",
   workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
+  workjetGatewayAccountModels: "workjet.providerGateway.accountModels",
   workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
 
   // ADDITIVE one-shot import of the legacy Swift Workjet configuration. The
@@ -632,7 +636,10 @@ export const WsWorkjetLumaUpdateRpc = Rpc.make(WS_METHODS.workjetLumaUpdate, {
 });
 
 export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
-  payload: Schema.Struct({ patch: ServerSettingsPatch }),
+  payload: Schema.Struct({
+    patch: ServerSettingsPatch,
+    expectedWorkjet: Schema.optionalKey(WorkjetConfiguration),
+  }),
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
 });
@@ -884,6 +891,11 @@ export const WsWorkjetGatewayDiscoverModelsRpc = Rpc.make(WS_METHODS.workjetGate
 export const WsWorkjetGatewayModelChecksRpc = Rpc.make(WS_METHODS.workjetGatewayModelChecks, {
   payload: Schema.Struct({}),
   success: WorkjetGatewayModelChecks,
+  error: WorkjetGatewayRpcError,
+});
+export const WsWorkjetGatewayAccountModelsRpc = Rpc.make(WS_METHODS.workjetGatewayAccountModels, {
+  payload: WorkjetGatewayAccountModelsInput,
+  success: WorkjetGatewayAccountModels,
   error: WorkjetGatewayRpcError,
 });
 export const WsWorkjetGatewayCheckModelsRpc = Rpc.make(WS_METHODS.workjetGatewayCheckModels, {
@@ -1638,6 +1650,15 @@ export const WsOrchestrationGetArchivedTeamWorkerDetailRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationGetThreadContinuationRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadContinuation,
+  {
+    payload: OrchestrationRpcSchemas.getThreadContinuation.input,
+    success: OrchestrationRpcSchemas.getThreadContinuation.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationSubscribeShellRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeShell, {
   payload: OrchestrationRpcSchemas.subscribeShell.input,
   success: OrchestrationRpcSchemas.subscribeShell.output,
@@ -1841,6 +1862,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayModelChecksRpc,
   WsWorkjetGatewayCheckModelsRpc,
   WsWorkjetGatewayDiscoverModelsRpc,
+  WsWorkjetGatewayAccountModelsRpc,
   WsWorkjetGatewayUpdateRoutingRpc,
   WsWorkjetLegacyImportInspectRpc,
   WsWorkjetLegacyImportDecideRpc,
@@ -1946,6 +1968,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationSearchThreadsRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationGetArchivedTeamWorkerDetailRpc,
+  WsOrchestrationGetThreadContinuationRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
 );

@@ -8,8 +8,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type { BrowserWindow, Cookie } from "electron";
+import * as NodeCrypto from "node:crypto";
 
 import * as ElectronShell from "../electron/ElectronShell.ts";
+import { currentRecovery, DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
+import { CtoxControlDevice } from "./CtoxControlDevice.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   discoverCtoxManagedInstances,
@@ -32,6 +35,7 @@ export type CtoxDevLoginResult =
   | {
       readonly _tag: "completed";
       readonly via: "url" | "refresh";
+      readonly loginId?: string;
       readonly discovery?: CtoxManagedDiscoveryResult;
     }
   | {
@@ -45,6 +49,7 @@ const CtoxDevAuthOperation = Schema.Literals([
   "logout-cookies",
   "create-login-window",
   "load-login-window",
+  "device-key",
 ]);
 
 export class CtoxDevAuthConfigurationError extends Schema.TaggedErrorClass<CtoxDevAuthConfigurationError>()(
@@ -79,6 +84,8 @@ export class CtoxDevAuth extends Context.Service<
     readonly refresh: Effect.Effect<CtoxManagedDiscoveryResult, CtoxDevAuthOperationError>;
     readonly login: Effect.Effect<CtoxDevLoginResult, CtoxDevAuthOperationError>;
     readonly logout: Effect.Effect<void, CtoxDevAuthOperationError>;
+    readonly deviceStatus?: Effect.Effect<import("@workjet/contracts").CtoxControlDeviceStatus>;
+    readonly resetDevice?: Effect.Effect<void>;
   }
 >()("@workjet/desktop/ctox/CtoxDevAuth") {}
 
@@ -185,6 +192,9 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
 
     const accountUrl = new URL(baseUrl);
     const ctoxSessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+    const deviceOption = yield* Effect.serviceOption(CtoxControlDevice);
+    const device = Option.getOrUndefined(deviceOption);
+    const recovery = Option.getOrUndefined(yield* Effect.serviceOption(DesktopKeyRecovery));
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const electronShell = yield* ElectronShell.ElectronShell;
     const context = yield* Effect.context<never>();
@@ -195,17 +205,83 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
       Effect.mapError(() => new CtoxDevAuthOperationError({ operation: "account-session" })),
     );
 
+    let deviceDiscovery:
+      | { generation: string | undefined; discovery: CtoxManagedDiscoveryResult }
+      | undefined;
+    const recoverWithDevice = Effect.promise(async () => {
+      if (device === undefined || (await device.status()).state !== "active") return undefined;
+
+      const state = recovery === undefined ? undefined : await runPromise(recovery.inspect);
+      if (
+        recovery?.claimDeviceRecovery !== undefined &&
+        !(await runPromise(recovery.claimDeviceRecovery))
+      )
+        return deviceDiscovery?.generation === state?.generation
+          ? deviceDiscovery?.discovery
+          : undefined;
+      const response = await device.recoverOnce(state?.generation);
+      if (response === undefined) return undefined;
+      const discovery = await discoverCtoxManagedInstances({
+        baseUrl,
+        fetchImpl: async () => response.clone(),
+      });
+      if (
+        discovery._tag === "ready" &&
+        discovery.sessionVerified === true &&
+        state?.pendingLogin &&
+        recovery?.restartManagedRepairAfterLogin !== undefined
+      ) {
+        const status = await device?.status();
+        if (status?.state === "active")
+          await runPromise(recovery.restartManagedRepairAfterLogin(`device:${status.createdAt}`));
+      }
+      if (discovery._tag === "ready" && discovery.sessionVerified === true)
+        deviceDiscovery = {
+          generation:
+            recovery === undefined ? undefined : (await runPromise(recovery.inspect))?.generation,
+          discovery,
+        };
+      return discovery;
+    }).pipe(
+      Effect.orElseSucceed(() => undefined),
+      Effect.withSpan("CtoxDevAuth.discovery", { attributes: { authentication: "device_key" } }),
+    );
     const refresh = Effect.gen(function* () {
+      if (
+        (yield* currentRecovery.pipe(Effect.orElseSucceed(() => undefined)))?.pendingLogin === true
+      ) {
+        const restored = yield* recoverWithDevice;
+        if (restored?._tag === "ready") return restored;
+      }
       const browserSession = yield* accountSession;
-      return yield* Effect.promise(() =>
+      const discovery = yield* Effect.promise(() =>
         discoverCtoxManagedInstances({
           baseUrl,
           fetchImpl: (url, init) => browserSession.fetch(url, init),
         }),
+      ).pipe(
+        Effect.withSpan("CtoxDevAuth.discovery", {
+          attributes: { authentication: "account_session" },
+        }),
       );
+      if (discovery._tag === "signed_out") {
+        const restored = yield* recoverWithDevice;
+        if (restored?._tag === "ready") return restored;
+      }
+      if (discovery._tag === "ready" && discovery.sessionVerified === true && device !== undefined)
+        yield* Effect.promise(() =>
+          device.retryEnrollment((url, init) => browserSession.fetch(url, init)),
+        ).pipe(Effect.ignore);
+      return discovery;
     }).pipe(Effect.withSpan("CtoxDevAuth.refresh"));
 
     const logout = Effect.gen(function* () {
+      deviceDiscovery = undefined;
+      if (device !== undefined)
+        yield* Effect.tryPromise({
+          try: () => device.suspend(),
+          catch: () => new CtoxDevAuthOperationError({ operation: "device-key" }),
+        });
       const browserSession = yield* accountSession;
       yield* Effect.tryPromise({
         try: () =>
@@ -246,6 +322,11 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
     }).pipe(Effect.withSpan("CtoxDevAuth.logout"));
 
     const runLogin = Effect.gen(function* () {
+      if (device !== undefined)
+        yield* Effect.tryPromise({
+          try: () => device.suspend(),
+          catch: () => new CtoxDevAuthOperationError({ operation: "device-key" }),
+        });
       yield* accountSession;
       const parent = yield* electronWindow.currentMainOrFirst;
       const loginWindow = yield* electronWindow
@@ -403,9 +484,20 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
     const login = Effect.tryPromise({
       try: () => {
         if (activeLogin !== undefined) return activeLogin;
-        const current = runPromise(runLogin).finally(() => {
-          if (activeLogin === current) activeLogin = undefined;
-        });
+        const current = runPromise(runLogin)
+          .then(async (result) => {
+            if (result._tag === "completed") deviceDiscovery = undefined;
+            if (result._tag === "completed" && device !== undefined) {
+              const session = await runPromise(accountSession);
+              await device.enroll((url, init) => session.fetch(url, init)).catch(() => undefined);
+            }
+            return result._tag === "completed"
+              ? { ...result, loginId: NodeCrypto.randomUUID() }
+              : result;
+          })
+          .finally(() => {
+            if (activeLogin === current) activeLogin = undefined;
+          });
         activeLogin = current;
         return current;
       },
@@ -415,7 +507,30 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
           : new CtoxDevAuthOperationError({ operation: "load-login-window" }),
     });
 
-    return CtoxDevAuth.of({ refresh, login, logout });
+    return CtoxDevAuth.of({
+      refresh,
+      login,
+      logout,
+      deviceStatus: Effect.tryPromise({
+        try: async () =>
+          device === undefined ? { state: "not_configured" as const } : device.status(),
+        catch: () => new CtoxDevAuthOperationError({ operation: "device-key" }),
+      }).pipe(
+        Effect.orElseSucceed(() => ({
+          state: "not_configured" as const,
+          notice: "DEVICE_SERVICE_UNAVAILABLE",
+        })),
+      ),
+      resetDevice: Effect.gen(function* () {
+        if (device === undefined) return;
+        const session = yield* accountSession.pipe(Effect.option);
+        if (Option.isSome(session))
+          yield* Effect.tryPromise({
+            try: () => device.enroll((url, init) => session.value.fetch(url, init), true),
+            catch: () => new CtoxDevAuthOperationError({ operation: "device-key" }),
+          });
+      }).pipe(Effect.orElseSucceed(() => undefined)),
+    });
   }).pipe(Effect.withSpan("CtoxDevAuth.make"));
 
 export const layer = (options: CtoxDevAuthOptions = {}) => Layer.effect(CtoxDevAuth, make(options));

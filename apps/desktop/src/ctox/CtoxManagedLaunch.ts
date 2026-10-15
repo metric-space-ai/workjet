@@ -1,3 +1,4 @@
+import { accessState } from "./CtoxInstancePreferences.ts";
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { BusinessOsInstanceId, type CtoxManagedInstance } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -10,6 +11,10 @@ import type { Session } from "electron";
 import { normalizeCtoxManagedBaseUrl } from "./CtoxManagedDiscovery.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
+import * as Option from "effect/Option";
+import { CtoxControlDevice } from "./CtoxControlDevice.ts";
+import { CtoxControlDeviceError } from "./CtoxControlDeviceClient.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 
 const DEFAULT_CTOX_DEV_BASE_URL = "https://ctox.dev";
 const DESKTOP_CLIENT = "ctox-business-os-desktop";
@@ -47,7 +52,13 @@ const CtoxManagedLaunchOperation = Schema.Literals([
 
 export class CtoxManagedLaunchError extends Schema.TaggedErrorClass<CtoxManagedLaunchError>()(
   "CtoxManagedLaunchError",
-  { operation: CtoxManagedLaunchOperation },
+  {
+    operation: CtoxManagedLaunchOperation,
+    reason: Schema.optionalKey(Schema.Literals(["login_required", "repair_failed", "retryable"])),
+    httpStatus: Schema.optionalKey(
+      Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 })),
+    ),
+  },
 ) {
   override get message(): string {
     return "The managed CTOX launch exchange failed.";
@@ -218,7 +229,7 @@ async function fetchJson(
   try {
     const candidate: unknown = await browserSession.fetch(url, init);
     if (!isResponse(candidate)) return undefined;
-    const payload = await candidate.json();
+    const payload = await candidate.json().catch(() => undefined);
     return { response: candidate, payload };
   } catch {
     return undefined;
@@ -227,14 +238,50 @@ async function fetchJson(
 
 const { logInfo } = makeComponentLogger("ctox-managed-launch");
 
+function exchangeFailure(
+  operation: "launch-token" | "launch-config",
+  exchange: { readonly response: FetchResponse; readonly payload: unknown } | undefined,
+) {
+  const status = exchange?.response.status;
+  return new CtoxManagedLaunchError({
+    operation,
+    reason: requiresLogin(exchange)
+      ? "login_required"
+      : status === undefined || [400, 408, 409, 422, 425, 429].includes(status) || status >= 500
+        ? "retryable"
+        : "repair_failed",
+    ...(status === undefined ? {} : { httpStatus: status }),
+  });
+}
+
+function requiresLogin(
+  exchange: { readonly response: FetchResponse; readonly payload: unknown } | undefined,
+): boolean {
+  return (
+    exchange !== undefined &&
+    (exchange.response.status === 401 ||
+      exchange.response.status === 403 ||
+      (isRecord(exchange.payload) &&
+        typeof exchange.payload.error === "string" &&
+        ["AUTH_REQUIRED", "LOGIN_REQUIRED", "NOT_AUTHENTICATED", "UNAUTHENTICATED"].includes(
+          exchange.payload.error.toUpperCase(),
+        )))
+  );
+}
+
 export const make = (options: CtoxManagedLaunchOptions = {}) =>
   Effect.gen(function* () {
     const baseUrl = normalizeCtoxManagedBaseUrl(options.baseUrl ?? DEFAULT_CTOX_DEV_BASE_URL);
     if (baseUrl === undefined) {
-      return yield* new CtoxManagedLaunchError({ operation: "configuration" });
+      return yield* new CtoxManagedLaunchError({
+        operation: "configuration",
+        reason: "repair_failed",
+      });
     }
     const controlOrigin = new URL(baseUrl).origin;
     const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+    const keyRecovery = Option.getOrUndefined(yield* Effect.serviceOption(DesktopKeyRecovery));
+    const device = Option.getOrUndefined(yield* Effect.serviceOption(CtoxControlDevice));
     const requestTimeoutMs =
       options.requestTimeoutMs !== undefined &&
       Number.isSafeInteger(options.requestTimeoutMs) &&
@@ -242,131 +289,271 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
         ? options.requestTimeoutMs
         : DEFAULT_CTOX_MANAGED_LAUNCH_REQUEST_TIMEOUT_MS;
 
-    const launch = Effect.fn("CtoxManagedLaunch.launch")(function* (
-      descriptor: CtoxManagedInstance,
-    ) {
-      const tenantId = tenantIdOf(descriptor);
-      if (tenantId === undefined || descriptor.status !== "available") {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
-      }
-      const browserSession = yield* sessions.account.pipe(
-        Effect.mapError(() => new CtoxManagedLaunchError({ operation: "account-session" })),
-      );
-
-      const request = (
-        url: string,
-        init: RequestInit,
-        operation: "launch-token" | "launch-config",
-      ) =>
-        Effect.tryPromise({
-          try: (signal) => fetchJson(browserSession, url, { ...init, signal }),
-          catch: () => new CtoxManagedLaunchError({ operation }),
-        }).pipe(
-          Effect.timeout(Duration.millis(requestTimeoutMs)),
-          Effect.mapError(() => new CtoxManagedLaunchError({ operation })),
+    const launch = Effect.fn("CtoxManagedLaunch.launch")(
+      function* (descriptor: CtoxManagedInstance) {
+        const recovery = yield* (keyRecovery?.inspect ?? Effect.succeed(undefined)).pipe(
+          Effect.mapError(
+            () =>
+              new CtoxManagedLaunchError({ operation: "launch-contract", reason: "repair_failed" }),
+          ),
+        );
+        const blocked = recovery?.instanceRepairs?.find(
+          (entry) =>
+            entry.instanceId === descriptor.id &&
+            ["repair_failed", "login_required", "retryable"].includes(entry.state),
+        );
+        if (
+          recovery?.pendingLogin === true &&
+          !recovery.instanceRepairs?.length &&
+          device === undefined
+        )
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "login_required",
+          });
+        if (blocked !== undefined && !(blocked.state === "login_required" && device !== undefined))
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason:
+              blocked.state === "retryable"
+                ? "retryable"
+                : blocked.state === "login_required"
+                  ? "login_required"
+                  : "repair_failed",
+          });
+        if ((yield* accessState(descriptor.id)) !== "enabled")
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "repair_failed",
+          });
+        const tenantId = tenantIdOf(descriptor);
+        if (tenantId === undefined || descriptor.status !== "available") {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "repair_failed",
+          });
+        }
+        const browserSession = yield* sessions.account.pipe(
+          Effect.mapError(
+            () => new CtoxManagedLaunchError({ operation: "account-session", reason: "retryable" }),
+          ),
         );
 
-      const token = yield* request(
-        `${baseUrl}/api/desktop/launch-token`,
-        {
-          method: "POST",
-          credentials: "include",
-          cache: "no-store",
-          headers: {
-            "content-type": "application/json",
-            "x-ctox-desktop-client": DESKTOP_CLIENT,
+        const request = (
+          url: string,
+          init: RequestInit,
+          operation: "launch-token" | "launch-config",
+        ) =>
+          Effect.tryPromise({
+            try: (signal) => fetchJson(browserSession, url, { ...init, signal }),
+            catch: () => new CtoxManagedLaunchError({ operation, reason: "retryable" }),
+          }).pipe(
+            Effect.timeout(Duration.millis(requestTimeoutMs)),
+            Effect.mapError(() => new CtoxManagedLaunchError({ operation, reason: "retryable" })),
+          );
+
+        let token = yield* request(
+          `${baseUrl}/api/desktop/launch-token`,
+          {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-ctox-desktop-client": DESKTOP_CLIENT,
+            },
+            body: encodeUnknownJson({ tenantId }),
           },
-          body: encodeUnknownJson({ tenantId }),
-        },
-        "launch-token",
-      );
-      if (token === undefined || !token.response.ok || !isRecord(token.payload)) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
-      }
+          "launch-token",
+        );
+        if (device !== undefined && requiresLogin(token)) {
+          token = yield* Effect.tryPromise({
+            try: async () => {
+              const response = await device.request("/api/desktop/launch-token", {
+                method: "POST",
+                body: encodeUnknownJson({ tenantId }),
+              });
+              return { response, payload: await response.json().catch(() => undefined) };
+            },
+            catch: (error) =>
+              new CtoxManagedLaunchError({
+                operation: "launch-token",
+                // A revoked tenant scope is final even when it arrives as 403.
+                reason:
+                  error instanceof CtoxControlDeviceError &&
+                  (error.httpStatus === 404 ||
+                    ["DEVICE_SCOPE_DENIED", "DEVICE_TENANT_DENIED"].includes(error.code))
+                    ? "repair_failed"
+                    : error instanceof CtoxControlDeviceError &&
+                        ([401, 403].includes(error.httpStatus ?? 0) ||
+                          ["DEVICE_AUTH_REQUIRED", "DEVICE_FRESH_LOGIN_REQUIRED"].includes(
+                            error.code,
+                          ))
+                      ? "login_required"
+                      : "retryable",
+                ...(error instanceof CtoxControlDeviceError && error.httpStatus !== undefined
+                  ? { httpStatus: error.httpStatus }
+                  : {}),
+              }),
+          });
+        }
+        if (requiresLogin(token))
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-token",
+            reason: "login_required",
+            ...(token === undefined ? {} : { httpStatus: token.response.status }),
+          });
+        if (token === undefined || !token.response.ok || !isRecord(token.payload)) {
+          return yield* exchangeFailure("launch-token", token);
+        }
 
-      const rawLaunchConfigUrl = token.payload.launchConfigUrl;
-      if (typeof rawLaunchConfigUrl !== "string") {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
-      }
-      let launchConfigUrl: URL;
-      try {
-        launchConfigUrl = new URL(rawLaunchConfigUrl);
-      } catch {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
-      }
-      if (
-        launchConfigUrl.origin !== controlOrigin ||
-        launchConfigUrl.username !== "" ||
-        launchConfigUrl.password !== ""
-      ) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
-      }
+        const rawLaunchConfigUrl = token.payload.launchConfigUrl;
+        if (typeof rawLaunchConfigUrl !== "string") {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-token",
+            reason: "repair_failed",
+            httpStatus: token.response.status,
+          });
+        }
+        let launchConfigUrl: URL;
+        try {
+          launchConfigUrl = new URL(rawLaunchConfigUrl);
+        } catch {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-token",
+            reason: "repair_failed",
+            httpStatus: token.response.status,
+          });
+        }
+        if (
+          launchConfigUrl.origin !== controlOrigin ||
+          launchConfigUrl.username !== "" ||
+          launchConfigUrl.password !== ""
+        ) {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-token",
+            reason: "repair_failed",
+            httpStatus: token.response.status,
+          });
+        }
 
-      const exchange = yield* request(
-        launchConfigUrl.href,
-        {
-          method: "POST",
-          credentials: "include",
-          cache: "no-store",
-          headers: { "x-ctox-desktop-client": DESKTOP_CLIENT },
-        },
-        "launch-config",
-      );
-      if (exchange === undefined || !exchange.response.ok || !isRecord(exchange.payload)) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-config" });
-      }
+        const exchange = yield* request(
+          launchConfigUrl.href,
+          {
+            method: "POST",
+            credentials: "include",
+            cache: "no-store",
+            headers: { "x-ctox-desktop-client": DESKTOP_CLIENT },
+          },
+          "launch-config",
+        );
+        if (requiresLogin(exchange))
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-config",
+            reason: "login_required",
+            ...(exchange === undefined ? {} : { httpStatus: exchange.response.status }),
+          });
+        if (exchange === undefined || !exchange.response.ok || !isRecord(exchange.payload)) {
+          return yield* exchangeFailure("launch-config", exchange);
+        }
 
-      const serverLaunchUrl = safeLaunchUrl(exchange.payload.launchUrl);
-      if (serverLaunchUrl === undefined || !isRecord(exchange.payload.pairingConfig)) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
-      }
-      const pairingConfig = forceWebRtc(exchange.payload.pairingConfig);
-      if (pairingConfig === undefined) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
-      }
+        const serverLaunchUrl = safeLaunchUrl(exchange.payload.launchUrl);
+        if (serverLaunchUrl === undefined || !isRecord(exchange.payload.pairingConfig)) {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "repair_failed",
+            httpStatus: exchange.response.status,
+          });
+        }
+        const pairingConfig = forceWebRtc(exchange.payload.pairingConfig);
+        if (pairingConfig === undefined) {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "repair_failed",
+            httpStatus: exchange.response.status,
+          });
+        }
 
-      const selectedConfig = containsRedactedPairingSecret(pairingConfig)
-        ? packedConfigFromLaunchUrl(serverLaunchUrl)
-        : pairingConfig;
-      if (selectedConfig === undefined) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
-      }
-      const webRtcConfig = forceWebRtc(selectedConfig);
-      if (webRtcConfig === undefined) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
-      }
-      // Redacted contract trace: origin+path only, never query or secrets.
-      // The server names its own launch surface here; when the desktop's
-      // canonical path drifts from the deploy (e.g. a retired /business-os/),
-      // this line is the evidence.
-      yield* logInfo("managed launch contract", {
-        serverLaunchOrigin: serverLaunchUrl.origin,
-        serverLaunchPath: serverLaunchUrl.pathname,
-        pairingRedacted: containsRedactedPairingSecret(pairingConfig),
-      });
-      if (!isTrustedManagedLaunchTarget(serverLaunchUrl, controlOrigin)) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
-      }
-      const launchUrl = buildCanonicalLaunchUrl(
-        serverLaunchUrl,
-        withManagedDesktopInstance(webRtcConfig, descriptor),
-      );
-      if (launchUrl === undefined) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
-      }
-      return { launchUrl, launchOrigin: serverLaunchUrl.origin };
-    });
+        const selectedConfig = containsRedactedPairingSecret(pairingConfig)
+          ? packedConfigFromLaunchUrl(serverLaunchUrl)
+          : pairingConfig;
+        if (selectedConfig === undefined) {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "repair_failed",
+            httpStatus: exchange.response.status,
+          });
+        }
+        const webRtcConfig = forceWebRtc(selectedConfig);
+        if (webRtcConfig === undefined) {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "repair_failed",
+            httpStatus: exchange.response.status,
+          });
+        }
+        // Redacted contract trace: origin+path only, never query or secrets.
+        // The server names its own launch surface here; when the desktop's
+        // canonical path drifts from the deploy (e.g. a retired /business-os/),
+        // this line is the evidence.
+        yield* logInfo("managed launch contract", {
+          serverLaunchOrigin: serverLaunchUrl.origin,
+          serverLaunchPath: serverLaunchUrl.pathname,
+          pairingRedacted: containsRedactedPairingSecret(pairingConfig),
+        });
+        if (!isTrustedManagedLaunchTarget(serverLaunchUrl, controlOrigin)) {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "repair_failed",
+            httpStatus: exchange.response.status,
+          });
+        }
+        const launchUrl = buildCanonicalLaunchUrl(
+          serverLaunchUrl,
+          withManagedDesktopInstance(webRtcConfig, descriptor),
+        );
+        if (launchUrl === undefined) {
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "repair_failed",
+            httpStatus: exchange.response.status,
+          });
+        }
+        return { launchUrl, launchOrigin: serverLaunchUrl.origin };
+      },
+      (effect, descriptor) =>
+        effect.pipe(
+          Effect.tapError(
+            (error) =>
+              keyRecovery
+                ?.noteManagedLaunchFailure?.(descriptor.id, {
+                  failureClass: error.reason ?? "repair_failed",
+                  operation: error.operation,
+                  ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus }),
+                })
+                .pipe(Effect.ignore) ?? Effect.void,
+          ),
+        ),
+    );
 
     const resolveBusinessOsInstanceId = Effect.fn("CtoxManagedLaunch.resolveBusinessOsInstanceId")(
       function* (descriptor: CtoxManagedInstance) {
         const resolved = yield* launch(descriptor);
         const config = packedConfigFromLaunchUrl(new URL(resolved.launchUrl));
         if (config === undefined) {
-          return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
+          return yield* new CtoxManagedLaunchError({
+            operation: "launch-contract",
+            reason: "repair_failed",
+          });
         }
         return yield* Schema.decodeUnknownEffect(BusinessOsInstanceId)(
           authorityIdFromConfig(config),
-        ).pipe(Effect.mapError(() => new CtoxManagedLaunchError({ operation: "launch-contract" })));
+        ).pipe(
+          Effect.mapError(
+            () =>
+              new CtoxManagedLaunchError({ operation: "launch-contract", reason: "repair_failed" }),
+          ),
+        );
       },
     );
 

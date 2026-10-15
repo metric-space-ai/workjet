@@ -32,7 +32,7 @@ export class PullRequestLinkOpenError extends Schema.TaggedErrorClass<PullReques
 
   override get message(): string {
     return this.targetOrigin === null
-      ? "Unable to open pull request link."
+      ? "Pull Request nicht geöffnet"
       : `Unable to open pull request link at ${this.targetOrigin}.`;
   }
 }
@@ -240,6 +240,9 @@ export function useOpenChangeRequestLink(
           state: "all",
           repository: parsed.repository,
           number: parsed.number,
+          // Im Projekt geöffnet: die Liste ist auf das Projekt eingeschränkt, der Kopf nennt es.
+          projectId: project.id,
+          environmentId: project.environmentId,
           selectedProjectId: project.id,
           // Named so the page opens the right one of two servers holding this project.
           selectedEnvironmentId: project.environmentId,
@@ -271,7 +274,7 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
       if (!api) {
         toastManager.add({
           type: "error",
-          title: "Link opening is unavailable.",
+          title: "Link öffnen nicht verfügbar",
         });
         return false;
       }
@@ -281,8 +284,8 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Unable to open pull request link",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            title: "Pull Request nicht geöffnet",
+            description: error instanceof Error ? error.message : undefined,
           }),
         );
       });

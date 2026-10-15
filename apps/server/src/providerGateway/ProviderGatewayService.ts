@@ -18,6 +18,8 @@ import {
   type WorkjetGatewayUsage,
   type WorkjetGatewayUsageInput,
   type WorkjetGatewayModelDiscovery,
+  type WorkjetGatewayAccountModelsInput,
+  type WorkjetGatewayAccountModels,
   type WorkjetGatewayOauthPollInput,
   type WorkjetGatewayOauthPollResult,
   type WorkjetGatewayOauthSession,
@@ -124,6 +126,11 @@ export interface GatewayHostProcess {
 
 export interface ProviderGatewayPlatform {
   readonly publicModelCatalog?: () => Promise<unknown>;
+  readonly discoverCodexModels?: (
+    accessToken: string,
+    idToken: string,
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyArray<string> | undefined>;
   readonly discoverClaudeModels?: (
     accessToken: string,
     signal?: AbortSignal,
@@ -133,6 +140,16 @@ export interface ProviderGatewayPlatform {
     preferredBaseUrl?: string,
     signal?: AbortSignal,
   ) => Promise<KimiConnection | undefined>;
+  readonly discoverKimiModels?: (
+    apiKey: string,
+    preferredBaseUrl: string,
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyArray<string> | undefined>;
+  readonly discoverZaiModels?: (
+    apiKey: string,
+    preferredBaseUrl: string,
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyArray<string> | undefined>;
   readonly discoverApiKeyModels?: (
     provider: "minimax" | "xai",
     apiKey: string,
@@ -273,6 +290,9 @@ export interface ProviderGatewayServiceShape {
     WorkjetGatewayModelDiscovery,
     WorkjetGatewayOperationError
   >;
+  readonly accountModels: (
+    input: WorkjetGatewayAccountModelsInput,
+  ) => Effect.Effect<WorkjetGatewayAccountModels, WorkjetGatewayOperationError>;
   /** Edits the host-wide selection strategy and per-account pool membership. */
   readonly updateRouting: (
     input: WorkjetGatewayUpdateRoutingInput,
@@ -1255,7 +1275,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             throw safeError("invalid-configuration");
           });
       } catch (error) {
-        for (const name of attempted.reverse()) {
+        for (const name of attempted.toReversed()) {
           const previous = previousSecrets.get(name)!;
           await runPromise(
             Option.isSome(previous) ? secrets.set(name, previous.value) : secrets.remove(name),
@@ -1734,6 +1754,128 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         });
       }
       return { schemaVersion: 1, observedAtMs, providers };
+    };
+
+    /** Read-only live metadata; stale account or credential completions are discarded. */
+    const runAccountModels = async (
+      input: WorkjetGatewayAccountModelsInput,
+    ): Promise<WorkjetGatewayAccountModels> => {
+      requireManagement();
+      const unavailable = (
+        reason: NonNullable<WorkjetGatewayAccountModels["reason"]>,
+      ): WorkjetGatewayAccountModels => ({
+        accountId: input.accountId,
+        checkedAtMs: Math.max(0, Math.trunc(platform.now())),
+        state: "unavailable",
+        reason,
+        modelIds: [],
+      });
+      const configuration = await loadConfiguration();
+      const account = configuration.accounts.find((candidate) => candidate.id === input.accountId);
+      if (account === undefined) return unavailable("account-unavailable");
+      if (!account.enabled) return unavailable("account-disabled");
+      const apiKeyList =
+        isApiKeyAccount(account) &&
+        (account.provider === "minimax" || account.provider === "xai") &&
+        platform.discoverApiKeyModels !== undefined;
+      const claudeList =
+        account.provider === "claude" && platform.discoverClaudeModels !== undefined;
+      const codexList = account.provider === "codex" && platform.discoverCodexModels !== undefined;
+      const kimiList =
+        isApiKeyAccount(account) &&
+        account.provider === "kimi" &&
+        account.upstreamBaseUrl !== undefined &&
+        platform.discoverKimiModels !== undefined;
+      const zaiList =
+        isApiKeyAccount(account) &&
+        account.provider === "zai" &&
+        account.upstreamBaseUrl !== undefined &&
+        platform.discoverZaiModels !== undefined;
+      if (!apiKeyList && !claudeList && !codexList && !kimiList && !zaiList)
+        return unavailable("provider-unsupported");
+      const secretReference =
+        account.provider === "claude" || account.provider === "codex"
+          ? account.accessTokenSecret
+          : isApiKeyAccount(account)
+            ? account.apiKeySecret
+            : undefined;
+      if (secretReference === undefined) return unavailable("provider-unsupported");
+      const readToken = async () => {
+        const secret = await runPromise(secrets.get(secretStoreName(secretReference)));
+        return Option.isSome(secret) ? new TextDecoder().decode(secret.value) : undefined;
+      };
+      const acceptableOAuthToken = (value: string | undefined) =>
+        value !== undefined &&
+        value.trim().length > 0 &&
+        value.length <= 16 * 1024 &&
+        !/[\x00-\x1f\x7f]/.test(value);
+      const token = await readToken();
+      if (
+        token === undefined ||
+        (account.provider === "claude" || account.provider === "codex"
+          ? !acceptableOAuthToken(token)
+          : !isAcceptableApiKey(token))
+      )
+        return unavailable("catalog-unavailable");
+      const readIdToken = async () => {
+        if (account.provider !== "codex") return undefined;
+        const secret = await runPromise(secrets.get(secretStoreName(account.idTokenSecret)));
+        return Option.isSome(secret) ? new TextDecoder().decode(secret.value) : undefined;
+      };
+      const idToken = codexList ? await readIdToken() : undefined;
+      if (codexList && !acceptableOAuthToken(idToken)) return unavailable("catalog-unavailable");
+      const apiKeyConnection =
+        apiKeyList && (account.provider === "minimax" || account.provider === "xai")
+          ? await platform.discoverApiKeyModels!(
+              account.provider,
+              token,
+              account.upstreamBaseUrl,
+              AbortSignal.timeout(8_000),
+            ).catch(() => undefined)
+          : undefined;
+      const models = claudeList
+        ? await platform.discoverClaudeModels!(token, AbortSignal.timeout(8_000)).catch(
+            () => undefined,
+          )
+        : codexList && idToken !== undefined
+          ? await platform.discoverCodexModels!(token, idToken, AbortSignal.timeout(8_000)).catch(
+              () => undefined,
+            )
+          : kimiList && account.provider === "kimi"
+            ? await platform.discoverKimiModels!(
+                token,
+                account.upstreamBaseUrl!,
+                AbortSignal.timeout(8_000),
+              ).catch(() => undefined)
+            : zaiList && account.provider === "zai"
+              ? await platform.discoverZaiModels!(
+                  token,
+                  account.upstreamBaseUrl!,
+                  AbortSignal.timeout(8_000),
+                ).catch(() => undefined)
+              : apiKeyList && (account.provider === "minimax" || account.provider === "xai")
+                ? account.upstreamBaseUrl === undefined ||
+                  apiKeyConnection?.upstreamBaseUrl === account.upstreamBaseUrl
+                  ? apiKeyConnection?.models
+                  : undefined
+                : undefined;
+      const current = (await loadConfiguration()).accounts.find(
+        (candidate) => candidate.id === input.accountId,
+      );
+      if (
+        JSON.stringify(current) !== JSON.stringify(account) ||
+        (await readToken()) !== token ||
+        (codexList && (await readIdToken()) !== idToken)
+      )
+        return unavailable("account-changed");
+      if (models === undefined || models.length === 0) return unavailable("catalog-unavailable");
+      return {
+        accountId: input.accountId,
+        checkedAtMs: Math.max(0, Math.trunc(platform.now())),
+        state: "observed",
+        reason: null,
+        modelIds: [...new Set(models)],
+      };
     };
 
     /** User edits and legacy repairs share the account's authenticated model evidence. */
@@ -2305,6 +2447,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           try: runDiscoverModels,
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("management-unavailable"),
+        }),
+      accountModels: (input) =>
+        Effect.tryPromise({
+          try: () => runAccountModels(input),
+          catch: () => safeError("management-unavailable"),
         }),
       updateRouting: (input) =>
         grantsMutex.withPermits(1)(

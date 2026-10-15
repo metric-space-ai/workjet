@@ -10,8 +10,7 @@
  * table the server disagrees with.
  *
  * Read-only on purpose: the gateway's `routes` are configuration the settings
- * surface has no editor for yet, and inventing one in the same slice that
- * introduced resolution would ship an editor with no verified write path.
+ * surface has no editor for yet.
  *
  * @module components/settings/WorkjetGatewayModelRoutes
  */
@@ -24,24 +23,39 @@ import {
 import { SettingsRow } from "./settingsLayout";
 import { WORKJET_GATEWAY_PROVIDER_LABELS } from "./WorkjetGatewayAccounts";
 
-/** One line of prose per outcome, so the row says what happens, not just what failed. */
-export function workjetGatewayModelRouteDescription(entry: WorkjetGatewayModelRoute): string {
+const ROUTE_REASON_LABELS: Readonly<Record<string, string>> = {
+  "model-unrouted": "Keine Route",
+  "route-ambiguous": "Route mehrdeutig",
+  "model-ambiguous": "Modell mehrdeutig",
+  "model-unspecified": "Kein Modell gewählt",
+  "catalog-empty": "Kein Modell im Katalog",
+};
+
+/**
+ * One short line per outcome. Routes and pools are named by their label, never
+ * by their raw id; the id appears only when the catalog cannot resolve it.
+ */
+export function workjetGatewayModelRouteDescription(
+  entry: WorkjetGatewayModelRoute,
+  catalog: WorkjetGatewayCatalog | null = null,
+): string {
   if (entry.outcome === "resolved") {
     const provider = WORKJET_GATEWAY_PROVIDER_LABELS[entry.provider];
+    const routeLabel =
+      catalog?.routes.find((route) => route.id === entry.routeId)?.label ?? entry.routeId;
+    const poolLabel =
+      catalog?.pools.find((pool) => pool.id === entry.poolId)?.label ?? entry.poolId;
     const source =
       entry.via === "route"
-        ? `route ${entry.routeId}`
+        ? `Route ${routeLabel}`
         : entry.via === "pool"
-          ? `pool ${entry.poolId}`
-          : "the accounts that list it";
-    // When the pool IS the source, naming it twice ("· pool X — resolved from
-    // pool X") says nothing new; the suffix earns its place only when the pool
-    // came in through a route.
-    const poolSuffix =
-      entry.poolId === null || entry.via === "pool" ? "" : ` · pool ${entry.poolId}`;
-    return `Served by ${provider}${poolSuffix} — resolved from ${source}.`;
+          ? `Pool ${poolLabel}`
+          : "Konten";
+    // When the pool IS the source, naming it twice says nothing new.
+    const poolSuffix = entry.poolId === null || entry.via === "pool" ? "" : ` · Pool ${poolLabel}`;
+    return `${provider} · ${source}${poolSuffix}`;
   }
-  return entry.detail;
+  return ROUTE_REASON_LABELS[entry.reason] ?? "—";
 }
 
 export function WorkjetGatewayModelRoutes({
@@ -53,25 +67,27 @@ export function WorkjetGatewayModelRoutes({
 
   return (
     <>
-      <SettingsRow
-        title="Gateway model routing"
-        description="Which Workjet gateway upstream serves each model, resolved exactly as a routed session resolves it at start. Routes are configured on the gateway; this view is read-only."
-      />
+      <SettingsRow title="Modell-Routing" />
       {table.length === 0 ? (
         <SettingsRow
-          title="No models yet"
-          description="No Workjet gateway account declares a model, so a routed session falls back to the gateway's default provider."
+          title="Keine Modelle"
+          status={<span className="text-muted-foreground">Standardanbieter des Gateways</span>}
         />
       ) : (
         table.map((entry) => (
           <SettingsRow
             key={entry.model ?? "unspecified"}
-            title={entry.model ?? "No model selected"}
-            description={workjetGatewayModelRouteDescription(entry)}
+            title={entry.model ?? "Kein Modell"}
             status={
-              entry.outcome === "failed" ? (
-                <span className="text-xs font-medium text-destructive">{entry.reason}</span>
-              ) : null
+              <span
+                className={
+                  entry.outcome === "failed"
+                    ? "text-xs font-medium text-destructive"
+                    : "text-muted-foreground"
+                }
+              >
+                {workjetGatewayModelRouteDescription(entry, catalog)}
+              </span>
             }
           />
         ))

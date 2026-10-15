@@ -109,36 +109,34 @@ const render = (overrides: Partial<WorkjetGatewayPoolsSectionState> = {}) =>
 
 describe("gateway pool ages", () => {
   it("ages a reading rather than presenting it as live", () => {
-    expect(gatewayObservedAgeLabel(NOW_MS, NOW_MS)).toBe("checked just now");
-    expect(gatewayObservedAgeLabel(NOW_MS - 12_000, NOW_MS)).toBe("checked 12s ago");
-    expect(gatewayObservedAgeLabel(NOW_MS - 3_600_000, NOW_MS)).toBe("checked 1h ago");
-    expect(gatewayObservedAgeLabel(NOW_MS - 90 * 60_000, NOW_MS)).toBe("checked 1h ago");
-    expect(gatewayObservedAgeLabel(NOW_MS - 3 * 86_400_000, NOW_MS)).toBe("checked 3d ago");
+    expect(gatewayObservedAgeLabel(NOW_MS, NOW_MS)).toBe("gerade geprüft");
+    expect(gatewayObservedAgeLabel(NOW_MS - 12_000, NOW_MS)).toBe("vor 12 s geprüft");
+    expect(gatewayObservedAgeLabel(NOW_MS - 3_600_000, NOW_MS)).toBe("vor 1 h geprüft");
+    expect(gatewayObservedAgeLabel(NOW_MS - 90 * 60_000, NOW_MS)).toBe("vor 1 h geprüft");
+    expect(gatewayObservedAgeLabel(NOW_MS - 3 * 86_400_000, NOW_MS)).toBe("vor 3 d geprüft");
   });
 
   it("does not claim an age it cannot compute", () => {
-    expect(gatewayObservedAgeLabel(Number.NaN, NOW_MS)).toBe("check time unknown");
+    expect(gatewayObservedAgeLabel(Number.NaN, NOW_MS)).toBe("Prüfzeit unbekannt");
   });
 });
 
 describe("gateway pool semantics copy", () => {
   it("tells an OAuth pool that priority gates before anything else", () => {
     const description = gatewayPoolBehaviourDescription(CATALOG.providerPools[0]!);
-    expect(description).toContain("highest priority");
-    expect(description).toContain("Weights are not used");
+    expect(description).toContain("Nur höchste Priorität");
+    expect(description).toContain("Ohne Gewichte");
   });
 
   it("tells an API-key pool that neither weight nor strategy is read", () => {
     const description = gatewayPoolBehaviourDescription(CATALOG.providerPools[1]!);
-    expect(description).toContain("does not read weights or the selection strategy");
+    expect(description).toContain("ohne Gewichte und Strategie");
   });
 
   it("distinguishes held back from disabled", () => {
-    expect(gatewayPoolMemberStateLabel(member("a"))).toBe("In rotation");
-    expect(gatewayPoolMemberStateLabel(member("a", { selectable: false }))).toBe(
-      "Held back by priority",
-    );
-    expect(gatewayPoolMemberStateLabel({ ...member("a"), enabled: false })).toBe("Disabled");
+    expect(gatewayPoolMemberStateLabel(member("a"))).toBe("In Rotation");
+    expect(gatewayPoolMemberStateLabel(member("a", { selectable: false }))).toBe("Zurückgestellt");
+    expect(gatewayPoolMemberStateLabel({ ...member("a"), enabled: false })).toBe("Deaktiviert");
   });
 });
 
@@ -188,9 +186,9 @@ describe("model ids for a provider the gateway has no catalog for", () => {
     // already knows, and the two would drift apart silently.
     const markup = render();
 
-    expect(markup).toContain("Model ids this account serves");
+    expect(markup).toContain("ohne Liste keine Antwort");
     // Claude has a catalog in the fixture, Z.ai does not: exactly one field.
-    expect(markup.split("Model ids this account serves").length - 1).toBe(1);
+    expect(markup.split('id="workjet-gateway-models-').length - 1).toBe(1);
   });
 });
 
@@ -200,8 +198,8 @@ describe("WorkjetGatewayPoolsSectionView", () => {
     expect(markup).toContain("Claude");
     expect(markup).toContain("Z.ai (GLM)");
     expect(markup).toContain("claude-a");
-    expect(markup).toContain("In rotation");
-    expect(markup).toContain("Held back");
+    expect(markup).toContain("In Rotation");
+    expect(markup).toContain("Zurückgestellt");
   });
 
   // The same five providers used to be listed four times over — once as
@@ -212,14 +210,14 @@ describe("WorkjetGatewayPoolsSectionView", () => {
     const markup = render();
     const claudeAt = markup.indexOf("Claude");
     const zaiAt = markup.indexOf("Z.ai (GLM)");
-    const enabledAt = markup.indexOf("of 2 enabled");
+    const enabledAt = markup.indexOf("von 2 aktiv");
 
     expect(enabledAt).toBeGreaterThan(claudeAt);
     expect(enabledAt).toBeLessThan(zaiAt);
-    expect(markup).toContain("1 catalog model");
-    expect(markup).toContain("1 account pattern");
-    expect(markup).toContain("Explain gateway model counts");
-    expect(markup).toContain("no gateway catalog");
+    expect(markup).toContain("1 Katalogmodell");
+    expect(markup).toContain("1 Kontomuster");
+    expect(markup).toContain("Zählweise der Modelle");
+    expect(markup).toContain("kein Katalog");
   });
 
   it("offers a weight field only where the gateway reads weights", () => {
@@ -242,23 +240,23 @@ describe("WorkjetGatewayPoolsSectionView", () => {
     expect(weighted).toContain("workjet-gateway-pool-claude-a-weight");
   });
 
-  it("says once, not per provider, where the figures come from", () => {
+  it("states the reading age once for the section, without explanatory prose", () => {
     const markup = render();
-    expect(markup).toContain("does not ask the provider");
+    expect(markup).not.toContain("does not ask the provider");
     // Said once for the section rather than repeated under every provider.
-    expect(markup.split("does not ask the provider").length - 1).toBe(1);
+    expect(markup.split(">Stand<").length - 1).toBe(1);
   });
 
   it("surfaces a failed save and a missing reading without inventing either", () => {
     const failed = render({ routing: { status: "failed", message: "Nope." } });
-    expect(failed).toContain("Pools not saved");
+    expect(failed).toContain("Nicht gespeichert");
     expect(failed).toContain("Nope.");
 
     // With no reading at all a provider row simply carries no figures; it
     // must not invent them.
     const missing = render({ health: null, models: null });
-    expect(missing).not.toContain("of 2 enabled");
-    expect(missing).not.toContain("no gateway catalog");
+    expect(missing).not.toContain("von 2 aktiv");
+    expect(missing).not.toContain("kein Katalog");
 
     const errored = render({ healthError: "Health broke.", modelsError: "Models broke." });
     expect(errored).toContain("Health broke.");
@@ -266,7 +264,7 @@ describe("WorkjetGatewayPoolsSectionView", () => {
 
   it("says a gateway with no accounts has no pools instead of rendering nothing", () => {
     const markup = render({ catalog: { ...CATALOG, providerPools: [] } });
-    expect(markup).toContain("A pool appears for each provider once it has an account.");
+    expect(markup).toContain("Keine Pools");
   });
 
   it("disables every control while a save is in flight or editing is not allowed", () => {
@@ -274,7 +272,7 @@ describe("WorkjetGatewayPoolsSectionView", () => {
       const markup = render(overrides);
       expect(markup).toContain("disabled");
       // The save button cannot be pressed while nothing is dirty either.
-      expect(markup).toContain("Save pools");
+      expect(markup).toContain("Speichern");
     }
   });
 });

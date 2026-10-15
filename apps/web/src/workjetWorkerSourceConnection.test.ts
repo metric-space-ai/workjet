@@ -15,7 +15,12 @@ import {
   workerSourceConnectionForEnrollment,
   workerSourceIsBound,
   workerSourceProvisionRequest,
+  workerSourceBindingFailure,
 } from "./workjetWorkerSourceConnection";
+import {
+  bindWorkjetSupervisor,
+  readWorkjetSupervisorTurnCapabilities,
+} from "./workjetSupervisorControl";
 
 const environmentId = EnvironmentId.make("worker-source-environment");
 const tenant = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -31,6 +36,54 @@ const connection: WorkjetConnectionSummary = {
 };
 
 describe("native supervisor worker source connection", () => {
+  it("keeps project-control timeouts separate from token-specific worker-source bindings", async () => {
+    const calls: string[] = [];
+    const port = async (instanceId: string) => {
+      calls.push(instanceId);
+      return { _tag: "failed" as const, code: "timeout" as const };
+    };
+    const scope = {
+      instanceId: selected,
+      projectId: ProjectId.make("molecularity"),
+      threadId: ThreadId.make("existing-supervisor"),
+    };
+    const before = withWorkerSourceConnection(DEFAULT_WORKJET_THREAD_CONFIG, selected, connection)!;
+    const rotated = withWorkerSourceConnection(before, selected, {
+      ...connection,
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+      ),
+    })!;
+    expect(rotated).not.toEqual(before);
+    expect(await bindWorkjetSupervisor(scope, CommandId.make("bind-after-rotation"), port)).toEqual(
+      { _tag: "failed", code: "timeout" },
+    );
+    expect(
+      await readWorkjetSupervisorTurnCapabilities(
+        scope,
+        CommandId.make("capabilities-after-rotation"),
+        port,
+      ),
+    ).toEqual({ _tag: "failed", code: "timeout" });
+    expect(calls).toEqual([selected, selected]);
+  });
+
+  it("preserves typed config-save rejections and offers retries only for transient failures", () => {
+    expect(
+      workerSourceBindingFailure({
+        _tag: "OrchestrationDispatchCommandError",
+        cause: {
+          _tag: "OrchestrationCommandInvariantError",
+          detail: "Keep the original Supervisor receipt when retaining a previous task.",
+        },
+      }),
+    ).toEqual({
+      message: "Keep the original Supervisor receipt when retaining a previous task.",
+      retryable: false,
+    });
+    expect(workerSourceBindingFailure(new Error("server disconnected")).retryable).toBe(true);
+  });
+
   it("uses the existing worker-source provisioner with the selected environment and tenant", () => {
     expect(workerSourceProvisionRequest(environmentId, selected)).toEqual({
       environmentId,

@@ -42,16 +42,16 @@ export async function enrollOperationalComputer(
   isCurrent: () => boolean,
   onSshKeyReady?: (key: CtoxWorkjetComputerSshKey) => void,
 ): Promise<CtoxWorkjetComputerProjection> {
-  if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
+  if (!isCurrent()) throw new Error("Instanz gewechselt. Rechner erneut hinzufügen.");
   const { capabilityConfig, endpoint } = enrollment;
   if (
     enrollment.preserveOperationalCapabilities &&
     (enrollment.agentless || capabilityConfig.length > 0 || endpoint !== null)
   ) {
-    throw new Error("Keep saved capabilities or replace them, without combining both.");
+    throw new Error("Gespeicherte Rollen behalten oder ersetzen, nicht beides.");
   }
   if (endpoint?.createNativeKey && endpoint.connection.protocol !== "ssh") {
-    throw new Error("SSH key creation requires an SSH endpoint.");
+    throw new Error("SSH-Schlüssel braucht einen SSH-Zugang.");
   }
   const requiresEndpoint = capabilityConfig.some((capability) => capability.kind !== "gpu");
   if (
@@ -61,17 +61,17 @@ export async function enrollOperationalComputer(
       capabilityConfig.length !== 1 ||
       capabilityConfig[0]?.kind !== "storage")
   ) {
-    throw new Error("A storage-only computer needs one storage capability.");
+    throw new Error("Reiner Speicher-Rechner braucht eine Speicherrolle.");
   }
   if (requiresEndpoint !== (endpoint !== null)) {
-    throw new Error("Choose an endpoint for the build or storage capability.");
+    throw new Error("Zugang für Build oder Speicher wählen.");
   }
   for (const capability of capabilityConfig) {
     if (
       capability.kind === "build" &&
       (endpoint?.connection.protocol !== "ssh" || capability.ssh_endpoint_ref !== endpoint.ref)
     ) {
-      throw new Error("Build computers require their assigned SSH endpoint.");
+      throw new Error("Build-Rechner braucht seinen SSH-Zugang.");
     }
     if (
       capability.kind === "storage" &&
@@ -79,7 +79,7 @@ export async function enrollOperationalComputer(
         capability.endpoint_ref !== endpoint.ref ||
         capability.protocol !== endpoint.connection.protocol)
     ) {
-      throw new Error("Storage needs its assigned endpoint and protocol.");
+      throw new Error("Speicher braucht Zugang und Protokoll.");
     }
   }
   const assignment = await control({
@@ -93,7 +93,7 @@ export async function enrollOperationalComputer(
     agentless: enrollment.agentless,
     selfHostedColocation: false,
   });
-  if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
+  if (!isCurrent()) throw new Error("Instanz gewechselt. Rechner erneut hinzufügen.");
   if (
     assignment._tag !== "completed" ||
     assignment.response.action !== "computer.assign" ||
@@ -106,7 +106,7 @@ export async function enrollOperationalComputer(
         assignment.response.computer.capabilities.includes(capability.kind),
     )
   ) {
-    throw new Error("The Business OS did not confirm this computer.");
+    throw new Error("Instanz hat den Rechner nicht bestätigt.");
   }
   let sshKey: CtoxWorkjetComputerSshKey | undefined;
   if (endpoint !== null) {
@@ -117,13 +117,13 @@ export async function enrollOperationalComputer(
         commandId: newCommandId(),
         computerId: enrollment.computerId,
       });
-      if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
+      if (!isCurrent()) throw new Error("Instanz gewechselt. Rechner erneut hinzufügen.");
       if (
         result._tag !== "completed" ||
         result.response.action !== "computer.ssh_key.ensure" ||
         result.response.computerId !== enrollment.computerId
       ) {
-        throw new Error("Computer registered; its SSH key still needs confirmation. Retry.");
+        throw new Error("Rechner angelegt, SSH-Schlüssel noch unbestätigt. Erneut versuchen.");
       }
       const response = result.response;
       sshKey = {
@@ -144,7 +144,7 @@ export async function enrollOperationalComputer(
       endpointRef: endpoint.ref,
       connection,
     });
-    if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
+    if (!isCurrent()) throw new Error("Instanz gewechselt. Rechner erneut hinzufügen.");
     if (
       result._tag !== "completed" ||
       result.response.action !== "computer.endpoint.upsert" ||
@@ -152,7 +152,7 @@ export async function enrollOperationalComputer(
       result.response.endpointRef !== endpoint.ref ||
       !result.response.enabled
     ) {
-      throw new Error("Computer registered; its access endpoint still needs confirmation. Retry.");
+      throw new Error("Rechner angelegt, Zugang noch unbestätigt. Erneut versuchen.");
     }
   }
   if (sshKey) onSshKeyReady?.(sshKey);

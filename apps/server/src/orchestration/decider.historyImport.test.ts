@@ -1,5 +1,6 @@
 import {
   CommandId,
+  EnvironmentId,
   DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
   ProjectId,
@@ -15,6 +16,7 @@ import * as Effect from "effect/Effect";
 import { decideOrchestrationCommand } from "./decider.ts";
 
 const NOW = "2026-08-25T12:00:00.000Z";
+const COPY_AT = "2026-08-25T12:03:00.000Z";
 const THREAD_ID = ThreadId.make("thread-1");
 const MESSAGE_ID = MessageId.make("message-1");
 const readModel: OrchestrationReadModel = {
@@ -101,6 +103,215 @@ const freshReadModel: OrchestrationReadModel = {
   ],
 };
 it.layer(NodeServices.layer)("static history import decider", (it) => {
+  it.effect("switching back appends only the completed common transcript's new messages", () =>
+    Effect.gen(function* () {
+      const existing = bootstrapCommand.messages.slice(0, 1).map((message) => ({
+        id: message.messageId,
+        role: message.role,
+        text: message.text,
+        attachments: [],
+        turnId: null,
+        streaming: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      }));
+      const result = yield* decideOrchestrationCommand({
+        readModel: { ...readModel, threads: [{ ...readModel.threads[0]!, messages: existing }] },
+        command: {
+          type: "thread.continuation.import",
+          commandId: CommandId.make("switch-back"),
+          threadId: THREAD_ID,
+          createThread: bootstrapCommand.bootstrap!.createThread,
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          messages: bootstrapCommand.messages,
+          createdAt: COPY_AT,
+        },
+      });
+      const events = Array.isArray(result) ? result : [result];
+      expect(
+        events
+          .filter((event) => event.type === "thread.message-sent")
+          .map((event) => event.payload.messageId),
+      ).toEqual([MessageId.make("reply-1")]);
+      expect(events.at(-1)).toMatchObject({
+        payload: {
+          activity: {
+            payload: {
+              historyContinuation: {
+                messageIds: bootstrapCommand.messages.map((message) => message.messageId),
+              },
+            },
+          },
+        },
+      });
+    }),
+  );
+
+  it.effect(
+    "rejects a busy destination, a missing checkout, and a newer destination transcript",
+    () =>
+      Effect.gen(function* () {
+        const command = {
+          type: "thread.continuation.import" as const,
+          commandId: CommandId.make("unsafe-switch"),
+          threadId: THREAD_ID,
+          createThread: bootstrapCommand.bootstrap!.createThread,
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          messages: bootstrapCommand.messages,
+          createdAt: COPY_AT,
+        };
+        const thread = readModel.threads[0]!;
+        const busy = {
+          ...thread,
+          session: {
+            threadId: THREAD_ID,
+            status: "running" as const,
+            providerName: "codex" as const,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "approval-required" as const,
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: NOW,
+          },
+        };
+        const cases = [
+          { model: { ...readModel, threads: [busy] }, reason: "Finish the destination turn" },
+          {
+            model: {
+              ...freshReadModel,
+              projects: [{ ...freshReadModel.projects[0]!, workspaceRoot: null }],
+            },
+            reason: "needs its own checkout",
+          },
+          {
+            model: {
+              ...readModel,
+              threads: [
+                {
+                  ...thread,
+                  messages: Array.from({ length: 3 }, (_, index) => ({
+                    id: MessageId.make(`newer-${index}`),
+                    role: "user" as const,
+                    text: "Destination message",
+                    attachments: [],
+                    turnId: null,
+                    streaming: false,
+                    createdAt: NOW,
+                    updatedAt: NOW,
+                  })),
+                },
+              ],
+            },
+            reason: "newer conversation history",
+          },
+        ];
+        for (const { model, reason } of cases) {
+          const failure = yield* decideOrchestrationCommand({ readModel: model, command }).pipe(
+            Effect.flip,
+          );
+          expect(failure).toMatchObject({
+            _tag: "OrchestrationCommandInvariantError",
+            detail: expect.stringContaining(reason),
+          });
+        }
+      }),
+  );
+
+  it.effect("copies a complete transcript atomically across multiple import batches", () =>
+    Effect.gen(function* () {
+      const messages = Array.from({ length: 450 }, (_, index) => ({
+        messageId: MessageId.make(`copied-${index}`),
+        role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+        text: `Recorded decision ${index}`,
+        createdAt: NOW,
+      }));
+      const result = yield* decideOrchestrationCommand({
+        readModel: freshReadModel,
+        command: {
+          type: "thread.continuation.import",
+          commandId: CommandId.make("computer-copy"),
+          threadId: THREAD_ID,
+          createThread: bootstrapCommand.bootstrap!.createThread,
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          messages,
+          createdAt: NOW,
+        },
+      });
+      const events = Array.isArray(result) ? result : [result];
+      expect(
+        events
+          .filter((event) => event.type === "thread.message-sent")
+          .map((event) => event.payload.messageId),
+      ).toEqual(messages.map((message) => message.messageId));
+      expect(events.at(-1)).toMatchObject({
+        type: "thread.activity-appended",
+        payload: {
+          activity: {
+            kind: "provider.history.transfer",
+            payload: {
+              historyContinuation: {
+                pending: true,
+                messageIds: messages.map((message) => message.messageId),
+              },
+            },
+          },
+        },
+      });
+      expect(
+        events.some(
+          (event) =>
+            event.type === "thread.turn-start-requested" || event.type === "thread.session-set",
+        ),
+      ).toBe(false);
+    }),
+  );
+
+  it.effect("rejects conflicting destination history without emitting replacement events", () =>
+    Effect.gen(function* () {
+      const target = {
+        ...readModel,
+        threads: [
+          {
+            ...readModel.threads[0]!,
+            messages: [
+              {
+                id: MESSAGE_ID,
+                role: "user" as const,
+                text: "Newer destination decision",
+                attachments: [],
+                turnId: null,
+                streaming: false,
+                createdAt: NOW,
+                updatedAt: NOW,
+              },
+            ],
+          },
+        ],
+      };
+      const failure = yield* decideOrchestrationCommand({
+        readModel: target,
+        command: {
+          type: "thread.continuation.import",
+          commandId: CommandId.make("conflicting-copy"),
+          threadId: THREAD_ID,
+          createThread: bootstrapCommand.bootstrap!.createThread,
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          messages: bootstrapCommand.messages,
+          createdAt: COPY_AT,
+        },
+      }).pipe(Effect.flip);
+      expect(failure).toMatchObject({
+        _tag: "OrchestrationCommandInvariantError",
+        detail: expect.stringContaining("conflicting conversation history"),
+      });
+      expect(target.threads[0]!.messages[0]!.text).toBe("Newer destination decision");
+    }),
+  );
+
   it.effect("emits messages without starting a provider turn or session", () =>
     Effect.gen(function* () {
       const result = yield* decideOrchestrationCommand({
@@ -261,7 +472,7 @@ it.layer(NodeServices.layer)("static history import decider", (it) => {
           commandId: CommandId.make("next-archive-batch"),
           threadId: THREAD_ID,
           messages: bootstrapCommand.messages,
-          createdAt: NOW,
+          createdAt: COPY_AT,
         },
         readModel: saved,
       });

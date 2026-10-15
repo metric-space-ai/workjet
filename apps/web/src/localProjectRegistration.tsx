@@ -5,8 +5,16 @@ import {
   readActiveWorkjetScope,
   subscribeActiveWorkjetHostContext,
 } from "./activeWorkjetScope";
-import { useProjects } from "./state/entities";
-import { usePrimaryEnvironmentId } from "./state/environments";
+import { useProjects, useThreadShells } from "./state/entities";
+import { useEnvironments, usePrimaryEnvironmentId } from "./state/environments";
+import { threadEnvironment } from "./state/threads";
+import { scopeProjectRef } from "@workjet/client-runtime/environment";
+import { CommandId } from "@workjet/contracts";
+import { findProjectSupervisor, projectSupervisorThreadInput } from "./lib/projectSupervisor";
+import { resolveProjectTeamModelSelection } from "./providerInstances";
+import { bindWorkjetSupervisor } from "./workjetSupervisorControl";
+import { pendingProjectInit, requestProjectInit } from "./projectInit";
+import { newThreadId } from "~/lib/utils";
 import { projectEnvironment } from "./state/projects";
 import { useAtomCommand } from "./state/use-atom-command";
 import {
@@ -19,7 +27,45 @@ import {
   useWorkjetProjectRegistry,
 } from "./workjetProjectRegistry";
 import { Button } from "./components/ui/button";
+import { useCtoxInstanceState } from "./components/ctox/CtoxModeShell";
+import { useProjectOverviewLanguage } from "./hooks/useProjectOverviewLanguage";
 import { usePrimarySettings } from "./hooks/useSettings";
+import { tokenBudgetCalendarUpdates } from "./projectTokenBudgetSource";
+
+/** The registry refreshes from the calendar/sync source even while settings are closed. */
+export function ProjectTokenBudgetSourceSynchronizer() {
+  const projects = useProjects();
+  const computers = usePrimarySettings((settings) => settings.workjet.computers);
+  const { selectedInstanceId } = useActiveWorkjetScope();
+  const registry = useWorkjetProjectRegistry(selectedInstanceId);
+  const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const pending = useRef(new Set<string>());
+  useEffect(() => {
+    if (
+      selectedInstanceId === null ||
+      registry.phase !== "ready" ||
+      registry.refreshFailed ||
+      registry.sourceConfirmed !== true
+    )
+      return;
+    for (const update of tokenBudgetCalendarUpdates({
+      instanceId: selectedInstanceId,
+      nativeProjects: registry.projects,
+      projects,
+      computers,
+    })) {
+      const key = `${update.environmentId}:${update.input.projectId}`;
+      if (pending.current.has(key)) continue;
+      pending.current.add(key);
+      void updateProject(update)
+        .catch(() => {
+          // A rejected revision is retried from the next confirmed source/model refresh.
+        })
+        .finally(() => pending.current.delete(key));
+    }
+  }, [projects, computers, selectedInstanceId, registry, updateProject]);
+  return null;
+}
 
 const RETRY_EVENT = "workjet:retry-local-project-registration";
 
@@ -36,6 +82,13 @@ export function LocalProjectRegistrationSynchronizer() {
   const { selectedInstanceId, selectionRevision } = useActiveWorkjetScope();
   const registry = useWorkjetProjectRegistry(selectedInstanceId);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  const threads = useThreadShells();
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const { environments } = useEnvironments();
+  const environmentsRef = useRef(environments);
+  environmentsRef.current = environments;
   const attempted = useRef(new Set<string>());
   const inFlight = useRef(false);
   const mounted = useRef(false);
@@ -82,6 +135,65 @@ export function LocalProjectRegistrationSynchronizer() {
     if (!project || !intent) return;
     attempted.current.add(intent.commandId);
     inFlight.current = true;
+    // One-click onboarding: create and bind the Projekt-Supervisor now, exactly
+    // as first open does, then re-call project.init so CTOX admits the exit
+    // research and the project-init turn without the project being opened.
+    const setUpSupervisorForOnboarding = async (instanceId: string, nativeProjectId: string) => {
+      const operationId = pendingProjectInit(instanceId, nativeProjectId);
+      if (operationId === null) return;
+      let threadId = findProjectSupervisor(
+        threadsRef.current,
+        scopeProjectRef(project.environmentId, project.id),
+      )?.id;
+      if (!threadId) {
+        const modelSelection = resolveProjectTeamModelSelection(
+          environmentsRef.current.find((e) => e.environmentId === project.environmentId)
+            ?.serverConfig?.providers ?? [],
+          project.defaultModelSelection,
+        );
+        if (modelSelection === null) return;
+        const created = newThreadId();
+        const result = await createThread({
+          environmentId: project.environmentId,
+          input: projectSupervisorThreadInput({
+            threadId: created,
+            projectId: project.id,
+            title: project.title,
+            modelSelection,
+            createdAt: new Date().toISOString(),
+          }),
+        });
+        if (result._tag !== "Success") return;
+        threadId = created;
+      }
+      const bound = await bindWorkjetSupervisor(
+        { instanceId, projectId: nativeProjectId as never, threadId: threadId as never },
+        CommandId.make(`supervisor-setup:${nativeProjectId}:${threadId}`),
+      );
+      if (bound._tag === "completed")
+        await requestProjectInit(instanceId, nativeProjectId, operationId);
+    };
+    // Opening a project that already exists in CTOX only mirrors it locally. It
+    // must not write to the instance: no project.create, no new supervisor.
+    const alreadyNative =
+      registry.phase === "ready" && registry.projects.some((native) => native.id === project.id);
+    if (alreadyNative) {
+      void updateProject({
+        environmentId: project.environmentId,
+        input: {
+          projectId: project.id,
+          ctoxRegistration: {
+            instanceId: intent.instanceId,
+            commandId: intent.commandId,
+            status: "confirmed",
+          },
+        },
+      }).finally(() => {
+        inFlight.current = false;
+        if (mounted.current) setGeneration((value) => value + 1);
+      });
+      return;
+    }
     void (async () => {
       try {
         const workingCopy =
@@ -132,6 +244,8 @@ export function LocalProjectRegistrationSynchronizer() {
           environmentId: project.environmentId,
           input: { projectId: project.id, ctoxRegistration: next },
         });
+        if (outcome._tag === "visible")
+          await setUpSupervisorForOnboarding(intent.instanceId, outcome.project.id);
       } finally {
         inFlight.current = false;
         if (mounted.current) setGeneration((value) => value + 1);
@@ -145,6 +259,7 @@ export function LocalProjectRegistrationSynchronizer() {
     localEnvironmentId,
     projects,
     registry.phase,
+    registry.projects,
     selectedInstanceId,
     selectionRevision,
     updateProject,
@@ -155,9 +270,27 @@ export function LocalProjectRegistrationSynchronizer() {
 export function ProjectNativeSyncStatus({
   project,
 }: {
-  readonly project: OrchestrationProjectShell | null;
+  readonly project: Pick<OrchestrationProjectShell, "ctoxRegistration"> | null;
 }) {
   const intent = project?.ctoxRegistration;
+  const state = useCtoxInstanceState(intent?.instanceId ?? null);
+  const language = useProjectOverviewLanguage();
+  if (intent && (state === "disabled" || state === "removed"))
+    return (
+      <div
+        role="status"
+        data-workjet-project-instance-state={state}
+        className="border-b border-border px-4 py-2 text-sm text-muted-foreground"
+      >
+        {language === "de"
+          ? state === "disabled"
+            ? "Instanz deaktiviert. Das Projekt und sein Verlauf bleiben gespeichert."
+            : "Instanz entfernt. Das Projekt und sein Verlauf bleiben gespeichert."
+          : state === "disabled"
+            ? "Instance disabled. The project and its history stay saved."
+            : "Instance removed. The project and its history stay saved."}
+      </div>
+    );
   if (!intent || intent.status === "confirmed") return null;
   return (
     <div
@@ -165,12 +298,12 @@ export function ProjectNativeSyncStatus({
       data-workjet-project-sync="pending"
       className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-sm text-muted-foreground"
     >
-      <span>Project saved locally · CTOX synchronization pending.</span>
+      <span>Lokal gespeichert · CTOX-Abgleich ausstehend</span>
       {intent.lastFailure ? (
         <span>{workjetProjectCreationFailureMessage(intent.lastFailure)}</span>
       ) : null}
       <Button variant="outline" size="xs" onClick={requestLocalProjectRegistrationRetry}>
-        Retry sync
+        Erneut versuchen
       </Button>
     </div>
   );

@@ -80,6 +80,10 @@ export type UsageTokenTotals = typeof UsageTokenTotals.Type;
  * to `costUsd`.
  */
 export const UsageBucket = Schema.Struct({
+  sourceKey: Schema.optional(TrimmedNonEmptyString),
+  projectId: Schema.optional(TrimmedNonEmptyString),
+  threadId: Schema.optional(TrimmedNonEmptyString),
+  role: Schema.optional(Schema.String),
   day: UsageDay,
   hourStart: Schema.optional(TrimmedNonEmptyString),
   provider: UsageProviderKind,
@@ -161,6 +165,8 @@ export const UsagePricing = Schema.Struct({
 export type UsagePricing = typeof UsagePricing.Type;
 
 export const UsageSummaryInput = Schema.Struct({
+  /** Project-scoped reads use the same parsed records, deduplication and versioned rates. */
+  projectId: Schema.optional(TrimmedNonEmptyString),
   /** Inclusive first day of the window, in `timeZone`. */
   sinceDay: UsageDay,
   /** Inclusive last day of the window, in `timeZone`. */
@@ -186,6 +192,17 @@ export const UsageSummary = Schema.Struct({
   sinceDay: UsageDay,
   untilDay: UsageDay,
   buckets: Schema.Array(UsageBucket),
+  projectThreads: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        projectId: TrimmedNonEmptyString,
+        threadId: TrimmedNonEmptyString,
+        title: Schema.String,
+        role: Schema.String,
+        status: Schema.Literals(["measured", "unknown", "no-turns"]),
+      }),
+    ),
+  ),
   sources: Schema.Array(UsageSource),
   pricing: UsagePricing,
   /** Wall-clock cost of the scan, surfaced in diagnostics. */

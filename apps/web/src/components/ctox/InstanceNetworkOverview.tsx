@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { PlusIcon, XIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { NetworkDiagram } from "./NetworkDiagram";
 import type {
   CtoxInstanceAppsResult,
@@ -12,17 +13,19 @@ import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { createComputerMembershipStore } from "../../workjetComputerMembership";
-import { openInstanceSetup } from "../../instanceSetup";
+import {
+  COMPUTERS_SETTINGS_PATH,
+  openInstanceRePair,
+  openInstanceSetup,
+} from "../../instanceSetup";
 import { Button } from "../ui/button";
-import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { workjetHarnessDisplayLabel } from "../settings/WorkjetWorkerEditor";
-import { WorkjetComputersSettings } from "../settings/WorkjetComputersSettings";
 import { listBusinessOsDevices } from "../settings/businessOsDeviceControl";
 import { canActivateCtoxInstance, useCtoxMode } from "./CtoxModeShell";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 
 export function instanceHostLabel(instance: CtoxManagedInstance): string {
-  if (instance.source === "local_daemon") return "Dieser Computer";
+  if (instance.source === "local_daemon") return "Dieser Rechner";
   if (instance.domain) return instance.domain;
   if (instance.source === "ctox_dev") return "Verwaltet bei ctox.dev";
   if (instance.source === "ssh_managed") return "SSH-Rechner · Hostname noch nicht gemeldet";
@@ -39,8 +42,7 @@ function ComputerHarnesses({ environmentId }: { readonly environmentId: Environm
   const query = useEnvironmentQuery(
     serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
-  if (query.error || !query.data)
-    return <p className="mt-2 text-xs text-muted-foreground">Harnesses: noch nicht geprüft</p>;
+  if (query.error || !query.data) return <p className="mt-2 text-xs text-muted-foreground">—</p>;
   return (
     <div className="mt-2 space-y-1 text-xs">
       {query.data.harnesses.map((harness) => (
@@ -49,7 +51,6 @@ function ComputerHarnesses({ environmentId }: { readonly environmentId: Environm
           {harness.availability === "available" ? "Einsatzbereit" : "Nicht einsatzbereit"}
         </p>
       ))}
-      <p className="pt-1 text-muted-foreground">Laufende Harness-Aufgaben: noch nicht gemeldet</p>
     </div>
   );
 }
@@ -62,6 +63,7 @@ function InstanceNode({
   readonly onSelect: (instance: CtoxManagedInstance) => void;
 }) {
   const { bridge, appRailVersion } = useCtoxMode();
+  const navigate = useNavigate();
   const [membershipStore] = useState(createComputerMembershipStore);
   const membership = useSyncExternalStore(
     membershipStore.subscribe,
@@ -70,9 +72,7 @@ function InstanceNode({
   );
   const [apps, setApps] = useState<CtoxInstanceAppsResult | null>(null);
   const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[] | null>(null);
-  const [configure, setConfigure] = useState(false);
   const [inspected, setInspected] = useState<string | null>(null);
-  const [setupBusy, setSetupBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const { environments } = useEnvironments();
   const computers = usePrimarySettings((settings) => settings.workjet.computers);
@@ -160,10 +160,26 @@ function InstanceNode({
         <Button
           size="sm"
           variant="outline"
-          disabled={!available}
-          onClick={() => onSelect(instance)}
+          disabled={
+            !available &&
+            !(
+              (instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
+              instance.status === "error"
+            )
+          }
+          onClick={() =>
+            (instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
+            instance.status === "error"
+              ? openInstanceRePair(instance)
+              : onSelect(instance)
+          }
         >
-          {available ? "Instanz auswählen" : "Nicht erreichbar"}
+          {(instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
+          instance.status === "error"
+            ? "Neu koppeln"
+            : available
+              ? "Instanz auswählen"
+              : "Nicht erreichbar"}
         </Button>
       </header>
       <div className="network-instance-body">
@@ -176,7 +192,7 @@ function InstanceNode({
           selected={inspected}
           onInspect={setInspected}
           canAdd={available}
-          onAdd={() => setConfigure(true)}
+          onAdd={() => void navigate({ to: COMPUTERS_SETTINGS_PATH })}
         />
         {inspected !== null && (
           <aside className="network-inspector" aria-label="Knotendetails">
@@ -185,8 +201,8 @@ function InstanceNode({
                 {inspected === "master"
                   ? "Zentralrechner"
                   : inspected === "clients"
-                    ? "App-Clients"
-                    : "Satellit"}
+                    ? "Geräte"
+                    : "Rechner"}
               </h3>
               <Button
                 size="icon-sm"
@@ -200,13 +216,7 @@ function InstanceNode({
             {inspected === "clients" ? (
               <>
                 <div className="network-inspector-name">Desktop &amp; Mobil</div>
-                <p>
-                  {devices === null
-                    ? "Geräte wurden noch nicht bestätigt."
-                    : `${devices.length} registrierte Geräte.`}
-                </p>
-                <h4>Aktuell verbunden</h4>
-                <p>Benutzer und Live-Präsenz werden von dieser Instanz noch nicht gemeldet.</p>
+                <p>{devices === null ? "—" : `${devices.length} Geräte`}</p>
               </>
             ) : (
               <>
@@ -215,34 +225,20 @@ function InstanceNode({
                     ? (host?.displayName ?? instanceHostLabel(instance))
                     : satelliteNodes?.find((node) => node.id === inspected)?.name}
                 </div>
-                <p>
-                  {inspectedConnected
-                    ? "Mit dieser App verbunden"
-                    : "Computerverbindung nicht bestätigt"}
-                </p>
-                {inspected === "master" && (
-                  <>
-                    <h4>CTOX-Instanz</h4>
-                    <p>Gemeinsamer Sync · Projekte · Aufgaben</p>
-                    <p>Ops / Business OS · {instanceAppsLabel(apps)}</p>
-                  </>
-                )}
+                <p>{inspectedConnected ? "Verbunden" : "Nicht bestätigt"}</p>
+                {inspected === "master" && <p>{instanceAppsLabel(apps)}</p>}
                 <h4>Harnesses</h4>
                 {inspectedConnected && inspectedComputer ? (
                   <ComputerHarnesses environmentId={inspectedComputer.environmentId} />
                 ) : (
-                  <p>Verfügbarkeit noch nicht geprüft.</p>
+                  <p>—</p>
                 )}
               </>
             )}
             <h4>Netzwerk</h4>
-            <p>
-              {assigned === null
-                ? "Computerzuordnung noch nicht bestätigt."
-                : `${satelliteNodes?.length ?? 0} Satelliten zugeordnet.`}
-            </p>
+            <p>{assigned === null ? "—" : `${satelliteNodes?.length ?? 0} Rechner`}</p>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               className="mt-4"
               onClick={() => setRevision((value) => value + 1)}
@@ -252,43 +248,28 @@ function InstanceNode({
           </aside>
         )}
       </div>
-      <Dialog
-        open={configure}
-        onOpenChange={(open) => {
-          if (!setupBusy) setConfigure(open);
-        }}
-      >
-        <DialogPopup className="max-h-[85dvh] sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Computer für {ctoxInstanceDisplayTitle(instance)}</DialogTitle>
-          </DialogHeader>
-          <DialogPanel>
-            <WorkjetComputersSettings
-              instanceId={instance.id}
-              setupOnly
-              onBusyChange={setSetupBusy}
-              onCompleted={() => {
-                setConfigure(false);
-                setRevision((value) => value + 1);
-              }}
-            />
-          </DialogPanel>
-        </DialogPopup>
-      </Dialog>
     </article>
   );
 }
 
+/**
+ * Netzwerk-Topologie je Instanz. In Einstellungen › Instanzen ist sie ein
+ * aufklappbarer Abschnitt (`variant="section"`): ohne eigenen Hinzufügen-
+ * Knopf, denn die Seite hat ihr Inline-Panel. Rechner kommen aus
+ * Einstellungen › Rechner, nie aus einem Dialog.
+ */
 export function InstanceNetworkOverview({
   instances,
   onSelect,
+  variant = "home",
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly onSelect: (instance: CtoxManagedInstance) => void;
+  readonly variant?: "home" | "section";
 }) {
   return (
-    <section aria-label="Dein Workjet-Netzwerk">
-      {instances.length === 0 ? (
+    <section aria-label="Netzwerk" data-workjet-network-variant={variant}>
+      {instances.length === 0 && variant === "section" ? null : instances.length === 0 ? (
         <NetworkDiagram
           name="Erstes Netzwerk"
           host=""
@@ -305,10 +286,10 @@ export function InstanceNetworkOverview({
           <InstanceNode key={instance.id} instance={instance} onSelect={onSelect} />
         ))
       )}
-      {instances.length > 0 && (
+      {instances.length > 0 && variant === "home" && (
         <button type="button" className="network-new-instance" onClick={() => openInstanceSetup()}>
           <PlusIcon size={18} />
-          Weitere Instanz hinzufügen
+          Instanz hinzufügen
         </button>
       )}
     </section>

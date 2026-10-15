@@ -1,4 +1,5 @@
 import {
+  workjetExecutionRole,
   WorkjetGitBranchName,
   WorkjetMailboxError,
   WORKJET_HANDOFF_LIST_MAX,
@@ -222,7 +223,7 @@ export const makeWorkjetMailboxRpcHandlers = (
         Option.match(option, {
           onNone: () => Effect.fail(failure("unauthorized")),
           onSome: (thread) => {
-            const role = thread.workjetConfig.role;
+            const role = workjetExecutionRole(thread.workjetConfig);
             return thread.deletedAt !== null ||
               (role !== "orchestrator" && role !== "worker") ||
               !input.allow.includes(role)

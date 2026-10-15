@@ -1,6 +1,12 @@
+import { Fragment } from "react";
+import { workjetUiLanguage } from "../../workjetProjectControl";
+import { InstanceProviderSection } from "./InstanceProviderSection";
+import { useInstanceProviders } from "./useInstanceProviders";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@workjet/client-runtime/connection";
 import { safeErrorLogAttributes } from "@workjet/client-runtime/errors";
+import { ChevronDownIcon } from "lucide-react";
+import { Switch } from "../ui/switch";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -31,12 +37,17 @@ import {
   RefreshCwIcon,
   TerminalIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
 import { usePrimarySessionState } from "../../environments/primary";
-import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import {
+  useClientSettings,
+  useEnvironmentSettings,
+  useUpdateEnvironmentSettings,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
@@ -49,7 +60,6 @@ import { useEnvironmentQuery } from "../../state/query";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useEnvironmentSessionState } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { getRelativeTimeState } from "../../timestampFormat";
 import {
   ConnectionStatusDot,
   connectionPhaseDotClassName,
@@ -72,7 +82,8 @@ import {
 } from "../ui/number-field";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { AddProviderInstancePanel } from "./AddProviderInstancePanel";
+import { providerCheckedAgeLabel } from "./providerStatus";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
@@ -84,7 +95,6 @@ import {
   PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
 } from "./SettingsPanels.logic";
 import {
-  PolicyTooltip,
   SettingResetButton,
   SettingsPageContainer,
   SettingsRow,
@@ -94,7 +104,6 @@ import {
 import { WorkjetModelsProviders } from "./WorkjetModelsProviders";
 import { useInstanceGrokAccount } from "./useInstanceGrokAccount";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
-import { WorkjetModelsUsage } from "./WorkjetModelsUsage";
 import { SessionImportSection } from "./SessionImportSection";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import {
@@ -155,27 +164,61 @@ export function shouldAutoRefreshProviders(
 
 function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
   useRelativeTimeTick();
-  const lastCheckedRelative = getRelativeTimeState(lastCheckedAt);
-
-  if (lastCheckedRelative.status === "missing") {
-    return null;
-  }
-
-  if (lastCheckedRelative.status === "invalid") {
-    return <span className="text-[11px] text-muted-foreground/50">Checked unavailable</span>;
-  }
-
+  if (lastCheckedAt === null) return null;
+  const label = providerCheckedAgeLabel(lastCheckedAt);
   return (
     <span className="text-[11px] text-muted-foreground/60">
-      {lastCheckedRelative.suffix ? (
-        <>
-          Checked <span className="font-mono tabular-nums">{lastCheckedRelative.value}</span>{" "}
-          {lastCheckedRelative.suffix}
-        </>
-      ) : (
-        <>Checked {lastCheckedRelative.value}</>
-      )}
+      {label.charAt(0).toUpperCase() + label.slice(1)}
     </span>
+  );
+}
+
+/** Ein Laden endet (UI-Vertrag §1.3): nach 10 s Statuszeile mit Wiederholen. */
+export const PROVIDER_LOADING_TIMEOUT_MS = 10_000;
+
+/** „Rechner hinzufügen“ führt auf Einstellungen › Rechner. */
+function AddComputerLinkButton() {
+  return (
+    <Button size="sm" render={<Link to="/settings/computers" />}>
+      Rechner hinzufügen
+    </Button>
+  );
+}
+
+function LoadingStatusRow({
+  title,
+  slowStatus,
+  onRetry,
+  slowAction,
+}: {
+  readonly title: string;
+  readonly slowStatus: string;
+  readonly onRetry: () => void;
+  /** Zweiter Knopf neben „Erneut versuchen“, sobald das Laden endet. */
+  readonly slowAction?: ReactNode;
+}) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), PROVIDER_LOADING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <SettingsRow
+      title={slow ? slowStatus : title}
+      control={
+        slow ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={onRetry}>
+              <RefreshCwIcon className="size-3.5" />
+              Erneut versuchen
+            </Button>
+            {slowAction}
+          </span>
+        ) : (
+          <LoaderIcon className="size-4 animate-spin text-muted-foreground" aria-hidden />
+        )
+      }
+    />
   );
 }
 
@@ -188,38 +231,40 @@ function providerEnvironmentIcon(environment: EnvironmentPresentation) {
 }
 
 function providerEnvironmentDetail(environment: EnvironmentPresentation): string {
-  if (environment.entry.target._tag === "PrimaryConnectionTarget") return "Primary device";
+  if (environment.entry.target._tag === "PrimaryConnectionTarget") return "Dieser Rechner";
   if (environment.relayManaged) return "Workjet Connect";
   if (environment.entry.target._tag === "SshConnectionTarget") return "SSH";
-  if (isDesktopLocalConnectionTarget(environment.entry.target)) return "Local device";
-  return environment.displayUrl ?? "Remote device";
+  if (isDesktopLocalConnectionTarget(environment.entry.target)) return "Lokaler Rechner";
+  return "Entfernter Rechner";
 }
 
 function EnvironmentUnavailableRow({
   environment,
   access,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly access: Exclude<ProviderEnvironmentAccess, { kind: "editable" | "read-only" }>;
+  readonly onRetry: () => void;
 }) {
-  const isLoading = access.kind === "loading";
-  const title = isLoading
-    ? "Loading provider settings"
-    : access.kind === "error"
-      ? "Could not connect to this device"
-      : "Provider settings are unavailable";
-  const description = isLoading
-    ? access.reason === "permissions"
-      ? "Checking what this session is allowed to change."
-      : `Waiting for ${environment.label}'s configuration.`
-    : connectionStatusText(environment.connection);
-  // No spinner: this state can persist indefinitely for a wedged device, and a
-  // continuously repainting animation would run the whole time.
   return (
     // Titled like the section it stands in for, so the placeholder never
     // reads as a different page than the loaded state.
-    <SettingsSection title="Harness runtimes">
-      <SettingsRow title={title} description={description} />
+    <SettingsSection title={codingAgentsTitle()}>
+      {access.kind === "loading" ? (
+        // A wedged device can keep this state forever, so the load ends after
+        // 10 s with a status line and a retry instead of spinning on.
+        <LoadingStatusRow
+          title={`${environment.label} wird geladen`}
+          slowStatus="Keine Antwort vom Rechner"
+          onRetry={onRetry}
+        />
+      ) : (
+        <SettingsRow
+          title={access.kind === "error" ? "Keine Verbindung" : "Nicht verfügbar"}
+          status={connectionStatusText(environment.connection)}
+        />
+      )}
     </SettingsSection>
   );
 }
@@ -239,10 +284,18 @@ function EnvironmentUnavailableRow({
  */
 export type ProviderSettingsSections = "harnesses" | "models";
 
+/** „Harnesses“ was unclear (#554); the section is named for what it holds. */
+function codingAgentsTitle(): string {
+  return workjetUiLanguage() === "en" ? "Coding agents" : "Coding-Agenten";
+}
+
 export function ProviderSettingsPanel({
   sections = "harnesses",
+  embedded = false,
 }: {
   readonly sections?: ProviderSettingsSections;
+  /** Rendered inside another page (Rechner) instead of as its own page. */
+  readonly embedded?: boolean;
 } = {}) {
   const { environments, isReady } = useBusinessOsScopedEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -265,25 +318,39 @@ export function ProviderSettingsPanel({
     options.find((environment) => environment.environmentId === effectiveEnvironmentId) ?? null;
   const onlyPrimaryDevice =
     options.length === 1 && options[0]?.entry.target._tag === "PrimaryConnectionTarget";
+  // Retry for a load that never ends: there is no refetch for the catalog, so
+  // the retry re-mounts the device-dependent part of the page.
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  // The catalog hydrates asynchronously, so an empty list before it is ready
+  // means "not loaded yet", not "nothing is connected".
+  const devicesLoading = options.length === 0 && !isReady;
+  // One block per state (grok-p1-046): loading and an empty catalog each say
+  // so once — on the models page inside the model section itself, on the
+  // harnesses page here — and the picker only appears when there is something
+  // to pick.
+  const showDevicePicker = options.length > 0 && !onlyPrimaryDevice;
 
+  const Container = embedded ? Fragment : SettingsPageContainer;
   return (
-    <SettingsPageContainer
-      {...(sections === "models" ? { className: "mx-0 max-w-[75rem] gap-8" } : {})}
-    >
-      {!onlyPrimaryDevice ? (
-        <SettingsSection title="Environments">
-          {options.length === 0 ? (
-            // The catalog hydrates asynchronously, so an empty list before it is
-            // ready means "not loaded yet", not "nothing is connected".
-            <SettingsRow
-              title={isReady ? "No connected devices" : "Loading devices"}
-              description={
-                isReady
-                  ? "Connect an execution environment before configuring providers."
-                  : "Reading connected execution environments."
-              }
-            />
-          ) : (
+    <Container>
+      {devicesLoading && sections === "harnesses" ? (
+        <SettingsSection title={codingAgentsTitle()}>
+          <LoadingStatusRow
+            key={loadAttempt}
+            title="Rechner werden geladen"
+            slowStatus="Rechner nicht geladen"
+            onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
+          />
+        </SettingsSection>
+      ) : null}
+      {!devicesLoading && options.length === 0 && sections === "harnesses" ? (
+        <SettingsSection title={codingAgentsTitle()}>
+          <SettingsRow title="Kein Rechner" control={<AddComputerLinkButton />} />
+        </SettingsSection>
+      ) : null}
+      {showDevicePicker ? (
+        <SettingsSection title="Rechner">
+          {
             <div className="grid gap-1 sm:grid-cols-2">
               {options.map((environment) => {
                 const Icon = providerEnvironmentIcon(environment);
@@ -324,39 +391,53 @@ export function ProviderSettingsPanel({
                 );
               })}
             </div>
-          )}
+          }
         </SettingsSection>
       ) : null}
 
       {sections === "harnesses" && selectedEnvironment ? (
         <SelectedEnvironmentProviderSettings
-          key={selectedEnvironment.environmentId}
+          key={`${selectedEnvironment.environmentId}:${loadAttempt}`}
           environment={selectedEnvironment}
+          onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
         />
       ) : null}
 
       {sections === "models" ? (
-        <WorkjetGatewayAccountsSection environmentId={effectiveEnvironmentId} />
+        <WorkjetGatewayAccountsSection
+          environmentId={effectiveEnvironmentId}
+          devicesLoading={devicesLoading}
+        />
       ) : null}
-    </SettingsPageContainer>
+    </Container>
   );
 }
 
 export function WorkjetGatewayAccountsSection({
   environmentId,
+  devicesLoading = false,
 }: {
   readonly environmentId: EnvironmentId | null;
+  /** The device catalog has not hydrated yet: "no Code computer" is not known. */
+  readonly devicesLoading?: boolean;
 }) {
   const { selectedId } = useCtoxMode();
+  const [loadAttempt, setLoadAttempt] = useState(0);
   if (environmentId === null && selectedId)
     return <InstanceOnlyModels key={selectedId} instanceId={selectedId} />;
   if (environmentId === null) {
     return (
-      <SettingsSection title="Model access">
-        <SettingsRow
-          title="No Code computer assigned"
-          description="Assign a Code computer to the active Business OS before configuring models. Data from another instance is never used as a fallback."
-        />
+      <SettingsSection title="Modelle">
+        {devicesLoading ? (
+          <LoadingStatusRow
+            key={loadAttempt}
+            title="Rechner werden geladen"
+            slowStatus="Rechner nicht geladen"
+            onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
+          />
+        ) : (
+          <SettingsRow title="Kein Code-Rechner" control={<AddComputerLinkButton />} />
+        )}
       </SettingsSection>
     );
   }
@@ -377,7 +458,7 @@ function ScopedWorkjetGatewayAccountsSection({
       ) : (
         <WorkjetModelsProviders {...gateway} />
       )}
-      <WorkjetModelsUsage environmentId={environmentId} />
+      {/* Verbrauch has its own page (Einstellungen › Verbrauch); no second copy here. */}
     </>
   );
 }
@@ -388,32 +469,33 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find((item) => item.id === instanceId)
       : undefined;
-  const label = instance?.displayName ?? "CTOX instance";
+  const label = instance?.displayName ?? "Instanz";
   const grok = useInstanceGrokAccount(instanceId, label);
+  const providers = useInstanceProviders(instanceId);
   return (
-    <section aria-label="LLM providers" className="space-y-3">
+    <section aria-label="Modellkonten" className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">LLM providers</h2>
+        <h2 className="text-[13.5px] font-semibold">Modellkonten</h2>
         <Button size="sm" disabled={grok.checking || grok.installed} onClick={grok.start}>
           <PlusIcon className="size-3.5" />
-          Add Grok Build account on {label}
+          Grok-Konto hinzufügen
         </Button>
       </div>
       <div className="overflow-x-auto">
-        <div role="table" aria-label="LLM provider accounts" className="min-w-[34rem]">
+        <div role="table" aria-label="Modellkonten" className="min-w-[34rem]">
           <div
             role="row"
-            className="grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_1.75rem] items-center gap-x-3 border-b border-border py-2 text-[11px] text-muted-foreground"
+            className="grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3 border-b border-border py-2 text-[11px] text-muted-foreground"
           >
-            <span role="columnheader">Provider / account</span>
-            <span role="columnheader">Models</span>
+            <span role="columnheader">Anbieter / Konto</span>
+            <span role="columnheader">Modelle</span>
             <span role="columnheader">Limits</span>
-            <span role="columnheader">Active</span>
+            <span role="columnheader">Aktiv</span>
             <span role="columnheader" className="sr-only">
-              Actions
+              Aktionen
             </span>
           </div>
-          {grok.row}
+          <InstanceProviderSection label={label} grok={grok} providers={providers} />
         </div>
       </div>
     </section>
@@ -432,32 +514,51 @@ function InstanceGatewayModels({
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find((item) => item.id === instanceId)
       : undefined;
-  const label = instance?.displayName ?? "CTOX instance";
+  const label = instance?.displayName ?? "Instanz";
   const instanceGrok = useInstanceGrokAccount(instanceId, label);
-  return <WorkjetModelsProviders {...gateway} instanceGrok={instanceGrok} />;
+  const providers = useInstanceProviders(instanceId);
+  return (
+    <WorkjetModelsProviders
+      {...gateway}
+      instanceGrok={instanceGrok}
+      nativeProviderRows={
+        <InstanceProviderSection label={label} grok={instanceGrok} providers={providers} />
+      }
+    />
+  );
 }
 
 function SelectedEnvironmentProviderSettings({
   environment,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly onRetry: () => void;
 }) {
   const isPrimary = environment.entry.target._tag === "PrimaryConnectionTarget";
   if (isPrimary) {
     // The desktop app owns its primary server outright; a browser session
     // checks the scopes its cookie session was granted.
     if (isElectron) {
-      return <AccessGatedProviderSettings environment={environment} operateAccess="granted" />;
+      return (
+        <AccessGatedProviderSettings
+          environment={environment}
+          operateAccess="granted"
+          onRetry={onRetry}
+        />
+      );
     }
-    return <PrimarySessionGatedProviderSettings environment={environment} />;
+    return <PrimarySessionGatedProviderSettings environment={environment} onRetry={onRetry} />;
   }
-  return <RemoteSessionGatedProviderSettings environment={environment} />;
+  return <RemoteSessionGatedProviderSettings environment={environment} onRetry={onRetry} />;
 }
 
 function PrimarySessionGatedProviderSettings({
   environment,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly onRetry: () => void;
 }) {
   const primarySessionState = usePrimarySessionState();
   const operateAccess = resolvePrimaryOperateAccess({
@@ -467,13 +568,21 @@ function PrimarySessionGatedProviderSettings({
     isPending: primarySessionState.isPending,
     hasError: primarySessionState.error !== null,
   });
-  return <AccessGatedProviderSettings environment={environment} operateAccess={operateAccess} />;
+  return (
+    <AccessGatedProviderSettings
+      environment={environment}
+      operateAccess={operateAccess}
+      onRetry={onRetry}
+    />
+  );
 }
 
 function RemoteSessionGatedProviderSettings({
   environment,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly onRetry: () => void;
 }) {
   const sessionState = useEnvironmentSessionState(environment.environmentId);
   const operateAccess = resolveRemoteOperateAccess({
@@ -481,15 +590,23 @@ function RemoteSessionGatedProviderSettings({
     isPending: sessionState.isPending,
     hasError: sessionState.hasError,
   });
-  return <AccessGatedProviderSettings environment={environment} operateAccess={operateAccess} />;
+  return (
+    <AccessGatedProviderSettings
+      environment={environment}
+      operateAccess={operateAccess}
+      onRetry={onRetry}
+    />
+  );
 }
 
 function AccessGatedProviderSettings({
   environment,
   operateAccess,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly operateAccess: ProviderOperateAccess;
+  readonly onRetry: () => void;
 }) {
   const access = classifyProviderEnvironmentAccess({
     connectionPhase: environment.connection.phase,
@@ -497,7 +614,9 @@ function AccessGatedProviderSettings({
     operateAccess,
   });
   if (access.kind !== "editable" && access.kind !== "read-only") {
-    return <EnvironmentUnavailableRow environment={environment} access={access} />;
+    return (
+      <EnvironmentUnavailableRow environment={environment} access={access} onRetry={onRetry} />
+    );
   }
   return (
     <EnvironmentProviderSettings
@@ -523,14 +642,13 @@ export function EnvironmentProviderSettings({
    */
   readonly readOnly?: boolean;
 }) {
+  const developerMode = useClientSettings((settings) => settings.developerMode);
+  const sessionImportVisible = developerMode;
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
-  // Live Workjet harness probe of the selected environment. Pi Code has no
-  // chat driver (no instance card), but it IS a harness runtime — Workjet
-  // workers run on it — so the page reports its real installed state instead
-  // of omitting it (operator: "pi code fehlt bei den harnesses").
+  // Report Pi's installed state before the operator adds a chat instance.
   const workjetHarnessProbe = useEnvironmentQuery(
     serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
@@ -543,11 +661,13 @@ export function EnvironmentProviderSettings({
     reportFailure: false,
   });
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
-  const [isAddInstanceDialogOpen, setIsAddInstanceDialogOpen] = useState(false);
+  const [isAddInstancePanelOpen, setIsAddInstancePanelOpen] = useState(false);
+  const [showNotInstalled, setShowNotInstalled] = useState(false);
   const [updatingProviderDrivers, setUpdatingProviderDrivers] = useState<
     ReadonlySet<ProviderDriverKind>
   >(() => new Set());
-  const [openInstanceDetails, setOpenInstanceDetails] = useState<Record<string, boolean>>({});
+  // Immer nur eine Harness-Karte offen.
+  const [openInstanceId, setOpenInstanceId] = useState<string | null>(null);
   const refreshingRef = useRef(false);
   const updatingDriversRef = useRef<Set<ProviderDriverKind>>(new Set());
 
@@ -640,11 +760,8 @@ export function EnvironmentProviderSettings({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: `Could not update ${PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver}`,
-            description:
-              error instanceof Error
-                ? error.message
-                : "The provider update command could not be started.",
+            title: `${PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver}: Update fehlgeschlagen`,
+            ...(error instanceof Error ? { description: error.message } : {}),
           }),
         );
       }
@@ -834,13 +951,148 @@ export function EnvironmentProviderSettings({
     });
   };
 
+  // Installed agents first; the rest collapse under one „Nicht installiert (n)“
+  // instead of repeating „Nicht installiert · Nicht im PATH“ on every row.
+  const isRowNotInstalled = (row: InstanceRow) =>
+    serverProviders.find((candidate) => candidate.instanceId === row.instanceId)?.installed ===
+    false;
+  const installedRows = rows.filter((row) => !isRowNotInstalled(row));
+  const notInstalledRows = rows.filter(isRowNotInstalled);
+  const piNotInstalled =
+    !serverProviders.some((provider) => provider.driver === "pi") &&
+    piCodeProbe?.availability !== "available";
+  const notInstalledCount = notInstalledRows.length + (piNotInstalled ? 1 : 0);
+  const showPiCodeRow =
+    !serverProviders.some((provider) => provider.driver === "pi") &&
+    (showNotInstalled || piCodeProbe?.availability === "available");
+  const renderProviderRow = (row: InstanceRow) => {
+    const driverOption = getDriverOption(row.driver);
+    const liveProvider = serverProviders.find(
+      (candidate) => candidate.instanceId === row.instanceId,
+    );
+    const updateCandidate = liveProvider
+      ? providerUpdateCandidateByInstanceId.get(liveProvider.instanceId)
+      : undefined;
+    const isDriverUpdateRunning =
+      updateCandidate !== undefined &&
+      (updatingProviderDrivers.has(updateCandidate.driver) ||
+        serverProviders.some(
+          (provider) =>
+            provider.driver === updateCandidate.driver && isProviderUpdateActive(provider),
+        ));
+    const showInlineUpdateButton =
+      updateCandidate !== undefined &&
+      hasOneClickUpdateProviderCandidate(updateCandidate, serverProviders);
+    const canRunInlineUpdate =
+      updateCandidate !== undefined &&
+      canOneClickUpdateProviderCandidate(updateCandidate, serverProviders) &&
+      !updatingProviderDrivers.has(updateCandidate.driver);
+    const modelPreferences = settings.providerModelPreferences?.[row.instanceId] ?? {
+      hiddenModels: [],
+      modelOrder: [],
+    };
+    const favoriteModels = Arr.filterMap(settings.favorites ?? [], (favorite) =>
+      favorite.provider === row.instanceId ? Result.succeed(favorite.model) : Result.failVoid,
+    );
+    const resetLabel = driverOption?.label ?? String(row.driver);
+    const headerAction =
+      row.isDefault && row.isDirty ? (
+        <SettingResetButton
+          label={`${resetLabel}-Einstellungen`}
+          onClick={() => resetDefaultInstance(row.driver)}
+        />
+      ) : null;
+    return (
+      <ProviderInstanceCard
+        key={row.instanceId}
+        instanceId={row.instanceId}
+        instance={row.instance}
+        driverOption={driverOption}
+        liveProvider={liveProvider}
+        // This list IS the harness runtimes section, so every card here
+        // describes a CLI runtime and never a login. LLM account state
+        // lives on Settings → Models.
+        runtimeOnly
+        isExpanded={openInstanceId === row.instanceId}
+        onExpandedChange={(open) =>
+          setOpenInstanceId((current) =>
+            open ? row.instanceId : current === row.instanceId ? null : current,
+          )
+        }
+        onUpdate={(next) => {
+          const wasEnabled = row.instance.enabled ?? true;
+          const isDisabling = next.enabled === false && wasEnabled;
+          const shouldClearTextGen = isDisabling && textGenInstanceId === row.instanceId;
+          if (shouldClearTextGen) {
+            updateProviderInstance(row, next, {
+              textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+            });
+          } else {
+            updateProviderInstance(row, next);
+          }
+        }}
+        onDelete={row.isDefault ? undefined : () => deleteProviderInstance(row.instanceId)}
+        headerAction={headerAction}
+        hiddenModels={modelPreferences.hiddenModels}
+        favoriteModels={favoriteModels}
+        modelOrder={modelPreferences.modelOrder}
+        onHiddenModelsChange={(hiddenModels) =>
+          updateProviderModelPreferences(row.instanceId, {
+            ...modelPreferences,
+            hiddenModels,
+          })
+        }
+        onFavoriteModelsChange={(favoriteModels) =>
+          updateProviderFavoriteModels(row.instanceId, favoriteModels)
+        }
+        onModelOrderChange={(modelOrder) =>
+          updateProviderModelPreferences(row.instanceId, {
+            ...modelPreferences,
+            modelOrder,
+          })
+        }
+        onRunUpdate={
+          showInlineUpdateButton && updateCandidate
+            ? () => {
+                if (!canRunInlineUpdate) {
+                  return;
+                }
+                void runProviderUpdate(updateCandidate);
+              }
+            : undefined
+        }
+        onInstallPinnedRuntime={
+          row.driver === "minimax" &&
+          !row.instance.routeViaGateway &&
+          !readOnly &&
+          liveProvider?.versionAdvisory?.updateCommand &&
+          (!liveProvider.installed || liveProvider.version !== "0.6.2")
+            ? () => {
+                void runProviderUpdate({ driver: row.driver, instanceId: row.instanceId });
+              }
+            : undefined
+        }
+        isUpdating={
+          row.driver === "minimax"
+            ? updatingProviderDrivers.has(row.driver) ||
+              serverProviders.some(
+                (provider) => provider.driver === row.driver && isProviderUpdateActive(provider),
+              )
+            : showInlineUpdateButton
+              ? isDriverUpdateRunning
+              : undefined
+        }
+      />
+    );
+  };
+
   return (
     <>
       <SettingsSection
         id={searchableSetting("harnesses").id}
         // Named for what these actually are — harness CLI runtimes — so the
-        // gateway account section below can never read as a rival "providers".
-        title="Harness runtimes"
+        // gateway account section on Modelle can never read as a rival list.
+        title={codingAgentsTitle()}
         headerAction={
           <div className="flex items-center gap-1.5">
             <ProviderLastChecked lastCheckedAt={lastCheckedAt} />
@@ -853,25 +1105,9 @@ export function EnvironmentProviderSettings({
                         size="icon-xs"
                         variant="ghost"
                         className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                        onClick={() => setIsAddInstanceDialogOpen(true)}
-                        aria-label="Add provider instance"
-                      >
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    }
-                  />
-                  <TooltipPopup side="top">Add provider instance</TooltipPopup>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
                         disabled={isRefreshingProviders}
                         onClick={() => void refreshProviders()}
-                        aria-label="Refresh provider status"
+                        aria-label="Neu prüfen"
                       >
                         {isRefreshingProviders ? (
                           <LoaderIcon className="size-3 animate-spin" />
@@ -881,19 +1117,14 @@ export function EnvironmentProviderSettings({
                       </Button>
                     }
                   />
-                  <TooltipPopup side="top">Refresh provider status</TooltipPopup>
+                  <TooltipPopup side="top">Neu prüfen</TooltipPopup>
                 </Tooltip>
               </>
             ) : null}
           </div>
         }
       >
-        {readOnly ? (
-          <SettingsRow
-            title="Limited permissions"
-            description={`This session can view ${environmentLabel}'s providers, but its credential does not allow changing their configuration.`}
-          />
-        ) : null}
+        {readOnly ? <SettingsRow title="Nur Ansicht" status={environmentLabel} /> : null}
         <div
           // `inert` blocks focus and interaction in one attribute, so the
           // read-only view stays byte-for-byte the editable layout without
@@ -902,205 +1133,85 @@ export function EnvironmentProviderSettings({
           aria-disabled={readOnly || undefined}
           className={readOnly ? "space-y-1 opacity-50 select-none" : "space-y-1"}
         >
-          <SettingsRow
-            title={
-              <span className="inline-flex items-center gap-1.5">
-                Health check interval
-                <PolicyTooltip>
-                  This interval is configured here, then the shared Background activity policy
-                  decides whether provider probes may run when the timer fires. Custom intervals
-                  appear as Advanced in General settings.
-                </PolicyTooltip>
-              </span>
-            }
-            description="Refresh provider availability, versions, auth state, and model metadata in the background. Set this to 0 seconds to rely on manual refreshes."
-            resetAction={
-              providerHealthRefreshIntervalSeconds !==
-              defaultProviderHealthRefreshIntervalSeconds ? (
-                <SettingResetButton
-                  label="provider health check interval"
-                  onClick={() =>
-                    updateSettings(
-                      backgroundActivityOverrideSettings(
-                        settings.backgroundActivity,
-                        resolvedBackgroundActivity,
-                        {
-                          providerHealthRefreshInterval: undefined,
-                        },
-                      ),
-                    )
-                  }
-                />
-              ) : null
-            }
-            control={
-              <div className="flex shrink-0 items-center gap-2">
-                <NumberField
-                  value={providerHealthRefreshIntervalSeconds}
-                  min={0}
-                  step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
-                  size="sm"
-                  className="w-32"
-                  onValueChange={(value) =>
-                    updateSettings(
-                      backgroundActivityOverrideSettings(
-                        settings.backgroundActivity,
-                        resolvedBackgroundActivity,
-                        {
-                          providerHealthRefreshInterval: Duration.seconds(
-                            normalizeIntervalSeconds(value),
-                          ),
-                        },
-                      ),
-                    )
-                  }
-                >
-                  <NumberFieldGroup>
-                    <NumberFieldDecrement aria-label="Decrease provider health check interval" />
-                    <NumberFieldInput aria-label="Provider health check interval in seconds" />
-                    <NumberFieldIncrement aria-label="Increase provider health check interval" />
-                  </NumberFieldGroup>
-                </NumberField>
-                <span className="text-xs text-muted-foreground">seconds</span>
-              </div>
-            }
-          />
-
-          {rows.map((row) => {
-            const driverOption = getDriverOption(row.driver);
-            const liveProvider = serverProviders.find(
-              (candidate) => candidate.instanceId === row.instanceId,
-            );
-            const updateCandidate = liveProvider
-              ? providerUpdateCandidateByInstanceId.get(liveProvider.instanceId)
-              : undefined;
-            const isDriverUpdateRunning =
-              updateCandidate !== undefined &&
-              (updatingProviderDrivers.has(updateCandidate.driver) ||
-                serverProviders.some(
-                  (provider) =>
-                    provider.driver === updateCandidate.driver && isProviderUpdateActive(provider),
-                ));
-            const showInlineUpdateButton =
-              updateCandidate !== undefined &&
-              hasOneClickUpdateProviderCandidate(updateCandidate, serverProviders);
-            const canRunInlineUpdate =
-              updateCandidate !== undefined &&
-              canOneClickUpdateProviderCandidate(updateCandidate, serverProviders) &&
-              !updatingProviderDrivers.has(updateCandidate.driver);
-            const modelPreferences = settings.providerModelPreferences?.[row.instanceId] ?? {
-              hiddenModels: [],
-              modelOrder: [],
-            };
-            const favoriteModels = Arr.filterMap(settings.favorites ?? [], (favorite) =>
-              favorite.provider === row.instanceId
-                ? Result.succeed(favorite.model)
-                : Result.failVoid,
-            );
-            const resetLabel = driverOption?.label ?? String(row.driver);
-            const headerAction =
-              row.isDefault && row.isDirty ? (
-                <SettingResetButton
-                  label={`${resetLabel} provider settings`}
-                  onClick={() => resetDefaultInstance(row.driver)}
-                />
-              ) : null;
-            return (
-              <ProviderInstanceCard
-                key={row.instanceId}
-                instanceId={row.instanceId}
-                instance={row.instance}
-                driverOption={driverOption}
-                liveProvider={liveProvider}
-                // This list IS the harness runtimes section, so every card here
-                // describes a CLI runtime and never a login. LLM account state
-                // lives on Settings → Models.
-                runtimeOnly
-                isExpanded={openInstanceDetails[row.instanceId] ?? false}
-                onExpandedChange={(open) =>
-                  setOpenInstanceDetails((existing) => ({
-                    ...existing,
-                    [row.instanceId]: open,
-                  }))
-                }
-                onUpdate={(next) => {
-                  const wasEnabled = row.instance.enabled ?? true;
-                  const isDisabling = next.enabled === false && wasEnabled;
-                  const shouldClearTextGen = isDisabling && textGenInstanceId === row.instanceId;
-                  if (shouldClearTextGen) {
-                    updateProviderInstance(row, next, {
-                      textGenerationModelSelection:
-                        DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-                    });
-                  } else {
-                    updateProviderInstance(row, next);
-                  }
-                }}
-                onDelete={row.isDefault ? undefined : () => deleteProviderInstance(row.instanceId)}
-                headerAction={headerAction}
-                hiddenModels={modelPreferences.hiddenModels}
-                favoriteModels={favoriteModels}
-                modelOrder={modelPreferences.modelOrder}
-                onHiddenModelsChange={(hiddenModels) =>
-                  updateProviderModelPreferences(row.instanceId, {
-                    ...modelPreferences,
-                    hiddenModels,
-                  })
-                }
-                onFavoriteModelsChange={(favoriteModels) =>
-                  updateProviderFavoriteModels(row.instanceId, favoriteModels)
-                }
-                onModelOrderChange={(modelOrder) =>
-                  updateProviderModelPreferences(row.instanceId, {
-                    ...modelPreferences,
-                    modelOrder,
-                  })
-                }
-                onRunUpdate={
-                  showInlineUpdateButton && updateCandidate
-                    ? () => {
-                        if (!canRunInlineUpdate) {
-                          return;
-                        }
-                        void runProviderUpdate(updateCandidate);
-                      }
-                    : undefined
-                }
-                onInstallPinnedRuntime={
-                  row.driver === "minimax" &&
-                  !row.instance.routeViaGateway &&
-                  !readOnly &&
-                  liveProvider?.versionAdvisory?.updateCommand &&
-                  (!liveProvider.installed || liveProvider.version !== "0.6.2")
-                    ? () => {
-                        void runProviderUpdate({ driver: row.driver, instanceId: row.instanceId });
-                      }
-                    : undefined
-                }
-                isUpdating={
-                  row.driver === "minimax"
-                    ? updatingProviderDrivers.has(row.driver) ||
-                      serverProviders.some(
-                        (provider) =>
-                          provider.driver === row.driver && isProviderUpdateActive(provider),
+          {/* Prüfintervall is tuning, not a user setting (#617). */}
+          {developerMode ? (
+            <SettingsRow
+              title="Prüfintervall"
+              resetAction={
+                providerHealthRefreshIntervalSeconds !==
+                defaultProviderHealthRefreshIntervalSeconds ? (
+                  <SettingResetButton
+                    label="Prüfintervall"
+                    onClick={() =>
+                      updateSettings(
+                        backgroundActivityOverrideSettings(
+                          settings.backgroundActivity,
+                          resolvedBackgroundActivity,
+                          {
+                            providerHealthRefreshInterval: undefined,
+                          },
+                        ),
                       )
-                    : showInlineUpdateButton
-                      ? isDriverUpdateRunning
-                      : undefined
-                }
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <div className="flex shrink-0 items-center gap-2">
+                  <NumberField
+                    value={providerHealthRefreshIntervalSeconds}
+                    min={0}
+                    step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
+                    size="sm"
+                    className="w-32"
+                    onValueChange={(value) =>
+                      updateSettings(
+                        backgroundActivityOverrideSettings(
+                          settings.backgroundActivity,
+                          resolvedBackgroundActivity,
+                          {
+                            providerHealthRefreshInterval: Duration.seconds(
+                              normalizeIntervalSeconds(value),
+                            ),
+                          },
+                        ),
+                      )
+                    }
+                  >
+                    <NumberFieldGroup>
+                      <NumberFieldDecrement aria-label="Prüfintervall verringern" />
+                      <NumberFieldInput aria-label="Prüfintervall (Sekunden)" />
+                      <NumberFieldIncrement aria-label="Prüfintervall erhöhen" />
+                    </NumberFieldGroup>
+                  </NumberField>
+                  <span className="text-xs text-muted-foreground">Sekunden</span>
+                </div>
+              }
+            />
+          ) : null}
+
+          {installedRows.map(renderProviderRow)}
+          {notInstalledCount > 0 ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="-ms-1 self-start text-muted-foreground"
+              aria-expanded={showNotInstalled}
+              onClick={() => setShowNotInstalled((value) => !value)}
+              data-workjet-not-installed-toggle=""
+            >
+              <ChevronDownIcon
+                aria-hidden
+                className={cn("size-3.5 transition-transform", !showNotInstalled && "-rotate-90")}
               />
-            );
-          })}
-          {/* Pi Code has no chat-driver instance yet, but it IS a harness
-              runtime this app can run Workjet workers on — so it appears
-              here like the other runtimes: mark, status dot, version, and
-              the same "Installed · checked" line. */}
-          {/* Same silhouette as ProviderInstanceCard's shell — the bordered
-              card broke the list rhythm (Befund F12); missing toggle/chevron
-              stay deliberate, there is no chat driver to configure. */}
-          <div className="rounded-xl transition-colors hover:bg-muted/20">
-            <div className="px-3 py-3 sm:px-4">
-              <div className="flex items-center gap-2">
+              {workjetUiLanguage() === "en" ? "Not installed" : "Nicht installiert"} (
+              {notInstalledCount})
+            </Button>
+          ) : null}
+          {showNotInstalled ? notInstalledRows.map(renderProviderRow) : null}
+          {showPiCodeRow ? (
+            <div className="rounded-lg transition-colors hover:bg-muted/20" data-slot="row">
+              <div className="flex min-w-0 items-center gap-3 px-3 py-2 sm:px-4">
                 <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
                   <PiCodeIcon className="size-4 text-foreground/80" aria-hidden />
                   <span
@@ -1109,57 +1220,77 @@ export function EnvironmentProviderSettings({
                       // Green = probed available, muted = not probed yet,
                       // red = probe answered "not available" — two greys made
                       // failure indistinguishable from unknown (Befund K-B16).
-                      piCodeProbe?.availability === "available"
-                        ? "bg-emerald-500"
-                        : piCodeProbe === null
-                          ? "bg-muted-foreground/40"
-                          : "bg-red-500/80",
+                      piCodeProbe === null || piCodeProbe.availability === "available"
+                        ? "hidden"
+                        : "bg-destructive",
                     )}
                     aria-hidden
                   />
                 </span>
-                <h3 className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
-                  Pi Code
-                </h3>
-                {piCodeProbe?.availability === "available" &&
-                "version" in piCodeProbe &&
-                piCodeProbe.version ? (
-                  <code className="truncate rounded bg-muted/60 px-1 py-0.5 text-[10px] text-muted-foreground">
-                    v{piCodeProbe.version}
-                  </code>
-                ) : null}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h3
+                      className="truncate text-[13.5px] font-medium text-foreground"
+                      data-slot="row-name"
+                    >
+                      Pi Code
+                    </h3>
+                    {piCodeProbe?.availability === "available" &&
+                    "version" in piCodeProbe &&
+                    piCodeProbe.version ? (
+                      <code className="shrink-0 text-xs text-muted-foreground">
+                        v{piCodeProbe.version}
+                      </code>
+                    ) : null}
+                  </div>
+                  <span className="truncate text-xs text-muted-foreground" data-slot="row-meta">
+                    {piCodeProbe === null
+                      ? "Wird geprüft"
+                      : piCodeProbe.availability === "available"
+                        ? "Installiert · nicht eingerichtet"
+                        : "Nicht installiert"}
+                  </span>
+                </div>
+                {/* Same controls as every harness row (#617): the switch sets Pi Code up. */}
+                <div className="flex shrink-0 items-center gap-1" data-slot="row-actions">
+                  <Switch
+                    checked={false}
+                    disabled={readOnly || piCodeProbe?.availability !== "available"}
+                    onCheckedChange={(checked) => {
+                      if (checked) setIsAddInstancePanelOpen(true);
+                    }}
+                    aria-label="Pi Code aktiv"
+                  />
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground"
+                    aria-label="Pi Code Details"
+                    aria-expanded={false}
+                    disabled={readOnly}
+                    onClick={() => setIsAddInstancePanelOpen(true)}
+                  >
+                    <ChevronDownIcon className="size-3.5" />
+                  </Button>
+                </div>
               </div>
-              <p className="mt-0.5 pl-7 text-xs text-muted-foreground">
-                {piCodeProbe === null
-                  ? "Checking…"
-                  : piCodeProbe.availability === "available"
-                    ? "Installed · available to Workjet Lumas"
-                    : "Not installed on this machine"}
-              </p>
             </div>
-          </div>
+          ) : null}
         </div>
+        {!readOnly ? (
+          <AddProviderInstancePanel
+            installedDrivers={new Set(rows.map((row) => row.driver))}
+            open={isAddInstancePanelOpen}
+            environmentId={environmentId}
+            onOpenChange={setIsAddInstancePanelOpen}
+          />
+        ) : null}
       </SettingsSection>
 
-      {readOnly ? (
-        <SettingsSection title="Import sessions">
-          <SettingsRow
-            title="Import unavailable"
-            description="This Code computer does not grant permission to inspect or copy local Codex and Claude Code sessions. No session metadata has been loaded."
-          />
-        </SettingsSection>
-      ) : (
+      {/* Session import is a developer tool until it moves to the project list (#619). */}
+      {readOnly || !sessionImportVisible ? null : (
         <SessionImportSection environmentId={environmentId} readOnly={false} />
       )}
-
-      {isAddInstanceDialogOpen ? (
-        <AddProviderInstanceDialog
-          open
-          environmentId={environmentId}
-          environmentLabel={environmentLabel}
-          onOpenChange={setIsAddInstanceDialogOpen}
-        />
-      ) : null}
     </>
   );
 }

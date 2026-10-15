@@ -59,7 +59,12 @@ describe("native project KPI presentation", () => {
           "project",
           1,
         ),
-      ).toMatchObject({ value: "—", status, detail: "source_unavailable", calculatedAt: null });
+      ).toMatchObject({
+        value: "—",
+        status,
+        reasonCode: "source_unavailable",
+        calculatedAt: null,
+      });
     },
   );
   it("retains a stale snapshot with its native reason", () => {
@@ -72,7 +77,12 @@ describe("native project KPI presentation", () => {
         "project",
         1,
       ),
-    ).toMatchObject({ value: "7", status: "stale", detail: "refresh_pending" });
+    ).toMatchObject({
+      value: "7",
+      status: "stale",
+      detail: "Veraltet",
+      reasonCode: "refresh_pending",
+    });
   });
   it("rejects wrong-project, old-revision, missing-source and invalid-time snapshots", () => {
     const snapshot = record.result.snapshot!;
@@ -90,13 +100,19 @@ describe("native project KPI presentation", () => {
           "project",
           1,
         ),
-      ).toMatchObject({ value: "—", status: "failed", detail: "invalid_snapshot" });
+      ).toMatchObject({
+        value: "—",
+        status: "failed",
+        detail: "Fehlgeschlagen",
+        reasonCode: "invalid_snapshot",
+      });
   });
   it("does not invent a number when no KPI has been configured", () => {
     expect(projectKpiPresentation(undefined, "project", 3)).toMatchObject({
-      label: "KPI 3",
+      label: null,
       value: "—",
       status: "unconfigured",
+      detail: "—",
     });
   });
 });

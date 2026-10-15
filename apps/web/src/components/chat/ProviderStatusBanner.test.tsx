@@ -40,7 +40,7 @@ describe("ProviderStatusBanner", () => {
     );
 
     expect(markup).toContain('role="alert"');
-    expect(markup).toContain('aria-label="Dismiss Codex provider warning"');
+    expect(markup).toContain('aria-label="Codex-Warnung schließen"');
     expect(markup).toContain("absolute top-2 right-2");
   });
 
@@ -61,6 +61,23 @@ describe("ProviderStatusBanner", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Dismiss Codex provider error"');
+    expect(markup).toContain('aria-label="Codex-Fehler schließen"');
+  });
+
+  it("shows a compact 'Harness fehlt' state instead of the raw PATH error", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderStatusBanner
+        status={{
+          ...warningProvider(),
+          status: "error",
+          installed: false,
+          message: "Codex CLI (`codex`) is not installed or not on PATH.",
+        }}
+        onDismiss={() => {}}
+      />,
+    );
+
+    expect(markup).toContain("Harness fehlt: Codex");
+    expect(markup).not.toContain("not on PATH");
   });
 });

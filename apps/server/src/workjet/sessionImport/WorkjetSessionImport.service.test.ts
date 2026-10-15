@@ -7,8 +7,10 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
   ProjectId,
+  ThreadId,
   type OrchestrationCommand,
   type OrchestrationProjectShell,
   type OrchestrationThread,
@@ -35,6 +37,7 @@ const sourceRace = vi.hoisted(() => ({
   afterSourceClose: null as (() => Promise<void>) | null,
   sourceSignal: null as AbortSignal | null,
   archivePath: null as string | null,
+  previewReads: [] as string[],
 }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -42,6 +45,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     ...actual,
     open: async (...args: Parameters<typeof actual.open>) => {
       const handle = await actual.open(...args);
+      if (args[1] === "r" && typeof args[0] === "string" && args[0].endsWith(".jsonl"))
+        sourceRace.previewReads.push(args[0]);
       if (args[0] === sourceRace.path && sourceRace.afterSourceClose) {
         const createStream = handle.createReadStream.bind(handle);
         const close = handle.close.bind(handle);
@@ -203,7 +208,7 @@ const withFixture = <A, E>(
         getShellSnapshot: () =>
           Effect.succeed({
             projects: [...projects.values()],
-            threads: [],
+            threads: [...threads.values()],
             snapshotSequence: 0,
             updatedAt: NOW,
           }),
@@ -263,6 +268,91 @@ const withFixture = <A, E>(
       );
     }),
   );
+describe("session import search inventory", () => {
+  it.effect(
+    "answers cold and repeated searches beyond the preview limit without rescanning transcript content",
+    () =>
+      withFixture(({ root, service }) =>
+        Effect.gen(function* () {
+          const seed = NodePath.join(root, "sessions", "seed.jsonl");
+          const content =
+            transcript("Archive conversation") +
+            encodeJson({ type: "tool_result", payload: "x".repeat(64 * 1024) }) +
+            "\n";
+          yield* Effect.promise(() => NodeFSP.writeFile(seed, content));
+          yield* Effect.forEach(
+            Array.from({ length: 600 }, (_, index) => index),
+            (index) =>
+              Effect.promise(() =>
+                NodeFSP.link(seed, NodePath.join(root, "sessions", `copy-${index}.jsonl`)),
+              ),
+            { concurrency: 2, discard: true },
+          );
+          const invalid = NodePath.join(root, "sessions", "non-conversation.jsonl");
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(invalid, encodeJson({ type: "tool_result" }) + "\n"),
+          );
+          const started = performance.now();
+          expect((yield* service.inspect({ query: "absent title" })).candidates).toEqual([]);
+          const coldMs = performance.now() - started;
+          const reads = sourceRace.previewReads.filter((path) => path.startsWith(root)).length;
+          expect(reads).toBe(602);
+          const warmStarted = performance.now();
+          expect((yield* service.inspect({ query: "another absent title" })).candidates).toEqual(
+            [],
+          );
+          const warmMs = performance.now() - warmStarted;
+          expect(sourceRace.previewReads.filter((path) => path.startsWith(root))).toHaveLength(
+            reads,
+          );
+          yield* Effect.logInfo(
+            `UX-013 602-session search: cold=${coldMs.toFixed(1)}ms warm=${warmMs.toFixed(1)}ms`,
+          );
+          expect(coldMs).toBeLessThan(2_000);
+          expect(warmMs).toBeLessThan(2_000);
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(invalid, transcript("Newly recorded conversation")),
+          );
+          const updated = yield* service.inspect({ query: "newly recorded" });
+          expect(updated.candidates.map(({ title }) => title)).toEqual([
+            "Newly recorded conversation",
+          ]);
+          expect(updated.candidates[0]?.previewMessages?.[0]?.text).toBe(
+            "Newly recorded conversation",
+          );
+          expect(sourceRace.previewReads.filter((path) => path.startsWith(root))).toHaveLength(
+            reads + 1,
+          );
+        }),
+      ),
+  );
+
+  it.effect(
+    "shares preview reads between overlapping searches and preserves their independent results",
+    () =>
+      withFixture(({ root, service }) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(root, "sessions", "one.jsonl"),
+              transcript("Shared archive"),
+            ),
+          );
+          const before = sourceRace.previewReads.filter((path) => path.startsWith(root)).length;
+          const results = yield* Effect.all(
+            [service.inspect({ query: "Shared" }), service.inspect({ query: "missing" })],
+            { concurrency: 2 },
+          );
+          expect(results[0]?.candidates.map(({ title }) => title)).toEqual(["Shared archive"]);
+          expect(results[1]?.candidates).toEqual([]);
+          expect(sourceRace.previewReads.filter((path) => path.startsWith(root))).toHaveLength(
+            before + 1,
+          );
+        }),
+      ),
+  );
+});
+
 describe("existing imported thread names", () => {
   it.effect(
     "repairs an automatic title, respects a local rename, and leaves history receipts intact",
@@ -352,6 +442,126 @@ describe("legacy provider session titles", () => {
 });
 
 describe("project-directed static session imports", () => {
+  it.effect("inherits the target project's default and retained supervisor policy", () =>
+    withFixture(({ root, service, threads, commands }) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            NodePath.join(root, "sessions", "policy.jsonl"),
+            transcript("Project policy import"),
+          ),
+        );
+        const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+        yield* service.importSessions({
+          projectId: ProjectId.make("project-a"),
+          candidateIds: [candidateId],
+        });
+        const first = commands.find((command) => command.type === "thread.history.import");
+        expect(
+          first?.type === "thread.history.import" && first.bootstrap?.createThread.runtimeMode,
+        ).toBe("full-access");
+        const supervisorId = ThreadId.make("project-b-supervisor");
+        const executionPolicy = {
+          mode: "autonomous-worktree" as const,
+          projectId: ProjectId.make("project-b"),
+          revision: 3,
+        };
+        threads.set(supervisorId, {
+          ...threads.values().next().value!,
+          id: supervisorId,
+          projectId: ProjectId.make("project-b"),
+          runtimeMode: "auto",
+          archivedAt: null,
+          deletedAt: null,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            executionPolicy,
+            team: {
+              role: "supervisor",
+              threadId: supervisorId,
+              projectId: ProjectId.make("project-b"),
+              parentThreadId: null,
+              goal: "Own project B",
+              createdAt: NOW,
+            },
+          },
+        });
+        yield* service.importSessions({
+          projectId: ProjectId.make("project-b"),
+          candidateIds: [candidateId],
+        });
+        const second = commands.filter((command) => command.type === "thread.history.import")[1];
+        if (second?.type !== "thread.history.import") throw new Error("import command");
+        expect(second.bootstrap?.createThread.runtimeMode).toBe("full-access");
+        expect(second.bootstrap?.createThread.workjetConfig).toEqual({
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          executionPolicy,
+        });
+        expect(second.bootstrap?.createThread.workjetConfig).not.toHaveProperty("team");
+        const count = commands.length;
+        yield* service.importSessions({
+          projectId: ProjectId.make("project-b"),
+          candidateIds: [candidateId],
+        });
+        expect(commands).toHaveLength(count);
+      }),
+    ),
+  );
+
+  for (const [mode, expected] of [
+    ["full-access", "full-access"],
+    ["auto-accept-edits", "full-access"],
+    ["approval-required", "full-access"],
+  ] as const) {
+    it.effect(`defaults an import from ${mode} to ${expected}`, () =>
+      withFixture(({ root, service, threads, commands }) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(root, "sessions", "bounded-policy.jsonl"),
+              transcript("Bounded policy"),
+            ),
+          );
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          yield* service.importSessions({
+            projectId: ProjectId.make("project-a"),
+            candidateIds: [candidateId],
+          });
+          const supervisorId = ThreadId.make("bounded-supervisor");
+          threads.set(supervisorId, {
+            ...threads.values().next().value!,
+            id: supervisorId,
+            projectId: ProjectId.make("project-b"),
+            runtimeMode: mode,
+            archivedAt: null,
+            deletedAt: null,
+            workjetConfig: {
+              ...DEFAULT_WORKJET_THREAD_CONFIG,
+              team: {
+                role: "supervisor",
+                threadId: supervisorId,
+                projectId: ProjectId.make("project-b"),
+                parentThreadId: null,
+                goal: "Own project",
+                createdAt: NOW,
+              },
+            },
+          });
+          yield* service.importSessions({
+            projectId: ProjectId.make("project-b"),
+            candidateIds: [candidateId],
+          });
+          const imported = commands.filter(
+            (command) => command.type === "thread.history.import",
+          )[1];
+          if (imported?.type !== "thread.history.import") throw new Error("import command");
+          expect(imported.bootstrap?.createThread.runtimeMode).toBe(expected);
+          expect(imported.bootstrap?.createThread.worktreePath).toBeNull();
+        }),
+      ),
+    );
+  }
+
   it.effect("assigns a source cwd below an existing project without creating a project", () =>
     withFixture(({ root, service, projects, commands }) =>
       Effect.gen(function* () {

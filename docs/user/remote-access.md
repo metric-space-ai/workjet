@@ -22,6 +22,16 @@ This publishes the server over Tailscale Serve HTTPS (configuring the mapping if
 
 If no server is running, `workjet pair` says so and points you at `workjet serve` or `workjet connect`.
 
+## Project workers on another computer
+
+A saved computer must have a working coding connection before it can run a project
+worker. Reconnect an offline computer in **Settings → Computers**.
+
+The project's worker authorization is checked separately. If its Business OS grant
+is rejected, open the supervisor chat and choose **Erneut verbinden** to authorize
+the project workers again. Workjet stops using the rejected grant; reconnecting
+workers does not change the computer's SSH connection.
+
 ## Recommended Setup
 
 Use a trusted private network that meshes your devices together, such as a tailnet.

@@ -12,13 +12,16 @@ use tokio::sync::mpsc;
 use crate::sdk::cliproxy::auth::Auth;
 use crate::sdk::cliproxy::executor::{Options, Request};
 
+use super::xai_custom_tools::XaiCustomToolAdapter;
 use super::xai_executor::{xai_status_error, XaiHttpRequest, XaiStreamResponse, XaiUpstreamTarget};
 use super::xai_executor_execute::{sanitize_compact_body, XaiExecutionError, XaiExecutor};
 use super::xai_executor_request::{
     apply_xai_chat_headers, prepare_xai_responses_body, xai_chat_base_url, xai_credentials,
     XaiRequestPolicy,
 };
-use super::xai_executor_response::{normalize_sse_stream, InternalXSearchResponseFilter};
+use super::xai_executor_response::{
+    normalize_sse_stream_with_custom_tools, InternalXSearchResponseFilter,
+};
 use super::xai_reasoning_replay::{
     apply_reasoning_replay, cache_reasoning_replay_from_completed, XaiReasoningReplayScope,
     XaiReasoningReplayStore,
@@ -95,6 +98,8 @@ impl XaiExecutor {
             prepared.filter_internal_x_search,
             prepared.client_declared_tools,
             prepared.namespace_tools,
+            prepared.custom_tools,
+            prepared.boxed_functions,
             self.replay_store().cloned(),
             replay_scope,
         ))
@@ -327,6 +332,8 @@ fn process_stream(
     enabled: bool,
     declared: std::collections::BTreeSet<super::xai_executor_request::ClientToolKey>,
     refs: BTreeMap<String, super::xai_executor_request::NamespaceToolRef>,
+    custom_tools: std::collections::BTreeSet<String>,
+    boxed_functions: std::collections::BTreeSet<String>,
     replay_store: Option<Arc<dyn XaiReasoningReplayStore>>,
     replay_scope: Option<XaiReasoningReplayScope>,
 ) -> XaiProcessedStream {
@@ -334,26 +341,49 @@ fn process_stream(
     let (sender, receiver) = mpsc::channel(32);
     tokio::spawn(async move {
         let mut filter = InternalXSearchResponseFilter::new(enabled, declared);
-        while let Some(chunk) = response.next_chunk().await {
-            match chunk {
-                Ok(chunk) => {
-                    for frame in normalize_sse_stream(&chunk, &mut filter, &refs) {
-                        if let (Some(store), Some(scope), Some(data)) = (
-                            replay_store.as_deref(),
-                            replay_scope.as_ref(),
-                            completed_sse_data(&frame),
-                        ) {
-                            cache_reasoning_replay_from_completed(store, Some(scope), data);
-                        }
-                        if sender.send(Ok(frame)).await.is_err() {
-                            return;
-                        }
-                    }
-                }
-                Err(error) => {
+        let mut custom =
+            XaiCustomToolAdapter::new(custom_tools).with_boxed_functions(boxed_functions);
+        let mut decoder = crate::internal::translator::common::SseDecoder::new();
+        let mut terminal = false;
+        loop {
+            let (events, ended) = match response.next_chunk().await {
+                Some(Ok(chunk)) => (decoder.push(&chunk), false),
+                Some(Err(error)) => {
                     let _ = sender.send(Err(XaiExecutionError::Transport(error))).await;
                     return;
                 }
+                None => (decoder.finish(), true),
+            };
+            for event in events {
+                let mut chunk = b"data: ".to_vec();
+                chunk.extend_from_slice(&event.data);
+                chunk.extend_from_slice(b"\n\n");
+                for frame in
+                    normalize_sse_stream_with_custom_tools(&chunk, &mut filter, &refs, &mut custom)
+                {
+                    terminal |= frame.starts_with(b"event: response.completed\n")
+                        || frame.starts_with(b"event: response.incomplete\n")
+                        || frame.starts_with(b"event: response.failed\n");
+                    if let (Some(store), Some(scope), Some(data)) = (
+                        replay_store.as_deref(),
+                        replay_scope.as_ref(),
+                        completed_sse_data(&frame),
+                    ) {
+                        cache_reasoning_replay_from_completed(store, Some(scope), data);
+                    }
+                    if sender.send(Ok(frame)).await.is_err() {
+                        return;
+                    }
+                }
+                if terminal {
+                    return;
+                }
+            }
+            if ended {
+                if !terminal {
+                    let _ = sender.send(Err(XaiExecutionError::MissingCompleted)).await;
+                }
+                return;
             }
         }
     });

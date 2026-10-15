@@ -14,6 +14,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import {
   makeAttachment,
   discoverService,
+  parseServiceMode,
   requestProfileMigrationConsent,
   LocalServiceAttachmentError,
 } from "./DesktopLocalServiceAttachment.ts";
@@ -378,7 +379,18 @@ const makeDiscoveryHarness = Effect.fn("test.desktopServiceDiscovery")(function*
     `${archive}.sha256`,
     `${"a".repeat(64)}  workjet-server-darwin-arm64.tgz\n`,
   );
-  const environment = {
+  const environment: {
+    isDevelopment: boolean;
+    isPackaged: boolean;
+    platform: string;
+    processArch: string;
+    baseDir: string;
+    resourcesPath: string;
+    configuredBackendPort: Option.Option<number>;
+    path: typeof path;
+    serviceMode?: "auto" | "foreground";
+    linuxServiceManagerAvailable?: boolean;
+  } = {
     isDevelopment: false,
     isPackaged: true,
     platform: "darwin",
@@ -389,6 +401,7 @@ const makeDiscoveryHarness = Effect.fn("test.desktopServiceDiscovery")(function*
     path,
   };
   const statusCalls: ReadonlyArray<string>[] = [];
+  const reported = { supported: true, installed: false, current: false };
   const discover = () =>
     discoverService({
       environment,
@@ -396,10 +409,20 @@ const makeDiscoveryHarness = Effect.fn("test.desktopServiceDiscovery")(function*
       status: (args) =>
         Effect.sync(() => {
           statusCalls.push(args);
-          return { supported: true, installed: false, current: false };
+          return { ...reported };
         }),
     });
-  return { discover, environment, fs, path, archive, baseDir, resourcesPath, statusCalls };
+  return {
+    discover,
+    reported,
+    environment,
+    fs,
+    path,
+    archive,
+    baseDir,
+    resourcesPath,
+    statusCalls,
+  };
 });
 
 it.layer(NodeServices.layer)("packaged service discovery and first installation", (it) => {
@@ -636,4 +659,65 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
       assert.include(error.message, "archive or checksum");
     }),
   );
+
+  it.effect("owns a foreground backend when the host cannot run the background service", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDiscoveryHarness();
+      fixture.reported.supported = false;
+      const unsupported = yield* fixture.discover();
+      assert.isTrue(
+        typeof unsupported.selection !== "string" && Option.isNone(unsupported.selection),
+      );
+      assert.deepEqual(unsupported.artifactArgs, []);
+    }),
+  );
+
+  it.effect("owns a foreground backend on Linux without a systemd user manager", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDiscoveryHarness();
+      fixture.environment.platform = "linux";
+      fixture.environment.linuxServiceManagerAvailable = false;
+      // Retained service state cannot be repaired without systemd either.
+      yield* fixture.fs.makeDirectory(fixture.path.join(fixture.baseDir, "runtime"), {
+        recursive: true,
+      });
+      yield* fixture.fs.writeFileString(
+        fixture.path.join(fixture.baseDir, "runtime", "service-state.json"),
+        "{}",
+      );
+      const discovered = yield* fixture.discover();
+      assert.isTrue(
+        typeof discovered.selection !== "string" && Option.isNone(discovered.selection),
+      );
+    }),
+  );
+
+  it.effect("keeps strict checks for an installed service even without a service manager", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDiscoveryHarness();
+      fixture.environment.platform = "linux";
+      fixture.environment.linuxServiceManagerAvailable = false;
+      fixture.reported.installed = true;
+      const error = yield* fixture.discover().pipe(Effect.flip);
+      assert.equal(error._tag, "LocalServiceAttachmentError");
+    }),
+  );
+
+  it.effect("honours an explicit foreground service mode without inspecting the service", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDiscoveryHarness();
+      fixture.environment.serviceMode = "foreground";
+      const discovered = yield* fixture.discover();
+      assert.isTrue(
+        typeof discovered.selection !== "string" && Option.isNone(discovered.selection),
+      );
+      assert.deepEqual(fixture.statusCalls, []);
+    }),
+  );
+
+  it("parses WORKJET_SERVICE_MODE", () => {
+    assert.equal(parseServiceMode(undefined), "auto");
+    assert.equal(parseServiceMode(" Foreground "), "foreground");
+    assert.equal(parseServiceMode("service"), "auto");
+  });
 });

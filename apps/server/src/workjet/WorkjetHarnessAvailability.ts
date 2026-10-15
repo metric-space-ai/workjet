@@ -190,6 +190,19 @@ export function configuredHarnessExecutable(
   settings: Pick<ServerSettings, "providers"> & Partial<Pick<ServerSettings, "providerInstances">>,
   harness: WorkjetHarness,
 ): string | undefined {
+  if (harness === "pi-code") {
+    const canonical = settings.providerInstances?.[ProviderInstanceId.make("pi")];
+    const instances = Object.values(settings.providerInstances ?? {}).filter(
+      (instance) => instance.driver === "pi" && instance.enabled !== false,
+    );
+    const instance =
+      canonical?.driver === "pi" ? canonical : instances.length === 1 ? instances[0] : undefined;
+    if (!instance) return undefined;
+    const decoded = configuredBinaryPath(instance.config);
+    return Option.isSome(decoded) && decoded.value.binaryPath.length > 0
+      ? decoded.value.binaryPath
+      : undefined;
+  }
   const driver =
     harness === "codex-cli"
       ? "codex"

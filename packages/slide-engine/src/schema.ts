@@ -1,14 +1,14 @@
-import "./zod-config";
+import "./zod-config.ts";
 import { z, type ZodIssue } from "zod";
-import { canvasSceneSchema } from "./excalidraw/canvas-schema";
-import { scene3dDataIssue } from "./scene-data";
-import { scene3dSceneIdValues } from "./scenes/scene-ids";
-export { isModellSceneId, modellSceneIdValues, scene3dSceneIdValues } from "./scenes/scene-ids";
-export type { ModellSceneId, Scene3DSceneId } from "./scenes/scene-ids";
-export { BUSINESS_SCENE_DATA_MAX_BYTES, businessSceneDataSchemas, businessSceneIdValues, isBusinessSceneId } from "./scenes/business-data";
-export type { BusinessSceneData, BusinessSceneId, KpiBarsData, TrendData } from "./scenes/business-data";
-export { canvasSceneSchema, canvasElementSchema, canvasEmbedSchema } from "./excalidraw/canvas-schema";
-export type { CanvasScene, CanvasElement, CanvasEmbed } from "./excalidraw/canvas-schema";
+import { canvasSceneSchema } from "./excalidraw/canvas-schema.ts";
+import { scene3dDataIssue } from "./scene-data.ts";
+import { scene3dSceneIdValues } from "./scenes/scene-ids.ts";
+export { isModellSceneId, modellSceneIdValues, scene3dSceneIdValues } from "./scenes/scene-ids.ts";
+export type { ModellSceneId, Scene3DSceneId } from "./scenes/scene-ids.ts";
+export { BUSINESS_SCENE_DATA_MAX_BYTES, businessSceneDataSchemas, businessSceneIdValues, isBusinessSceneId } from "./scenes/business-data.ts";
+export type { BusinessSceneData, BusinessSceneId, KpiBarsData, TrendData } from "./scenes/business-data.ts";
+export { canvasSceneSchema, canvasElementSchema, canvasEmbedSchema } from "./excalidraw/canvas-schema.ts";
+export type { CanvasScene, CanvasElement, CanvasEmbed } from "./excalidraw/canvas-schema.ts";
 
 export const SLIDE_DOCUMENT_SCHEMA_VERSION = "learnordie.slide.v1" as const;
 

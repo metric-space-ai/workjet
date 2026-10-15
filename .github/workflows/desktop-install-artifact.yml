@@ -10,6 +10,8 @@ on:
       - apps/desktop/src/main.ts
       - apps/desktop/src/provisioning/**
       - scripts/build-ssh-server.mjs
+      - scripts/lib/build-linux-ssh-server.ts
+      - scripts/lib/github-ssh-build-receipt.ts
       - .github/workflows/ssh-server-artifacts.yml
 
       - apps/server/**
@@ -87,7 +89,9 @@ jobs:
           # Use the existing unconfigured-build behavior instead of embedding
           # the ambient Actions repository as a nonexistent desktop release feed.
           unset GITHUB_REPOSITORY WORKJET_DESKTOP_UPDATE_REPOSITORY
-          node scripts/build-desktop-artifact.ts --platform mac --arch arm64 --target zip --output-dir "$RUNNER_TEMP/workjet-desktop"
+          node scripts/build-desktop-artifact.ts --platform mac --arch arm64 --target zip --output-dir "$RUNNER_TEMP/workjet-desktop" \
+            --gpu-build-owner "github-actions:${GITHUB_REPOSITORY_ID}:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}" \
+            --prebuilt-linux-ssh-server "$GITHUB_WORKSPACE/apps/desktop/resources/ssh-servers"
       - name: Verify the packaged app signature and executable
         run: |
           mkdir -p "$RUNNER_TEMP/workjet-desktop-verify"

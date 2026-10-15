@@ -14,6 +14,7 @@ import {
 } from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import { readMcpProviderSession } from "../../mcp/McpProviderSession.ts";
 import * as Fiber from "effect/Fiber";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -419,6 +420,15 @@ export const makeCtoxAdapter = (options: {
               "sendTurn",
               "CTOX uses the model configuration of its own instance.",
             );
+          const managedPrompt = readMcpProviderSession(
+            input.threadId,
+          )?.compiledManagedPrompt.trim();
+          const instruction = [managedPrompt, input.input].filter(Boolean).join("\n\n");
+          if (Buffer.byteLength(instruction, "utf8") > 16_000)
+            return yield* failure(
+              "sendTurn",
+              "Native task and role prompt exceed the 16000-byte instruction limit.",
+            );
           entry.submitting = true;
           return yield* Effect.gen(function* () {
             const latest = yield* options.client
@@ -445,7 +455,7 @@ export const makeCtoxAdapter = (options: {
                   ? {
                       project_id: entry.taskScope.project_id,
                       title: projectTitle(input.input!),
-                      instruction: input.input!,
+                      instruction,
                     }
                   : {
                       module_id: entry.taskScope.module_id,
@@ -453,7 +463,7 @@ export const makeCtoxAdapter = (options: {
                         ? {}
                         : { record_id: entry.taskScope.record_id }),
                       title: input.input!.trim().split("\n")[0]!.slice(0, 200),
-                      objective: input.input!,
+                      objective: instruction,
                     },
               )
               .pipe(Effect.mapError(mapFailure("sendTurn")));

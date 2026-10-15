@@ -74,8 +74,8 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
     void operation(runtimeTabId).catch((error) => {
       toastManager.add({
         type: "error",
-        title: "Unable to update popped-out preview",
-        description: error instanceof Error ? error.message : "An error occurred.",
+        title: "Vorschaufenster nicht aktualisiert",
+        description: error instanceof Error ? error.message : "Ein Fehler ist aufgetreten.",
       });
     });
   };
@@ -215,7 +215,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
   return (
     <section
       ref={rootRef}
-      aria-label="Floating browser preview"
+      aria-label="Schwebende Vorschau"
       data-preview-mini-player={tabId}
       className="pointer-events-none absolute select-none"
       style={
@@ -244,8 +244,8 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Open preview in right panel"
-            title="Open in right panel"
+            aria-label="Im Seitenbereich öffnen"
+            title="Im Seitenbereich öffnen"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={openInPanel}
           >
@@ -255,15 +255,9 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             variant={desktopOverlay?.pictureInPicture ? "secondary" : "ghost"}
             size="icon-xs"
             aria-label={
-              desktopOverlay?.pictureInPicture
-                ? "Close popped-out preview"
-                : "Pop preview into separate window"
+              desktopOverlay?.pictureInPicture ? "Fenster schließen" : "In eigenem Fenster"
             }
-            title={
-              desktopOverlay?.pictureInPicture
-                ? "Close separate window"
-                : "Pop into separate window"
-            }
+            title={desktopOverlay?.pictureInPicture ? "Fenster schließen" : "In eigenem Fenster"}
             disabled={!desktopOverlay?.hasWebContents}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={toggleNativePictureInPicture}
@@ -273,8 +267,8 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Close floating preview"
-            title="Close floating preview"
+            aria-label="Vorschau schließen"
+            title="Vorschau schließen"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={close}
           >
@@ -296,13 +290,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
         <div className="pointer-events-none absolute inset-0 z-[31] rounded-xl ring-1 ring-inset ring-border/80" />
         {!desktopOverlay?.hasWebContents ? (
           <div className="pointer-events-none absolute inset-0 z-[32] flex items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
-            Reconnecting preview…
+            Verbindung wird hergestellt …
           </div>
         ) : null}
         <button
           type="button"
-          aria-label="Resize floating preview"
-          title="Resize floating preview"
+          aria-label="Größe ändern"
+          title="Größe ändern"
           className="pointer-events-auto absolute bottom-0 right-0 z-[33] size-5 cursor-nwse-resize rounded-br-xl after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b after:border-r after:border-foreground/45"
           onPointerDown={handleResizePointerDown}
           onPointerMove={handleResizePointerMove}

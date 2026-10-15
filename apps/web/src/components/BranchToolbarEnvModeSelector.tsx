@@ -86,7 +86,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
         variant="ghost"
         size="xs"
         className="min-w-0 shrink font-medium"
-        aria-label="Workspace"
+        aria-label="Arbeitsbereich"
         data-composer-context-control
       >
         {effectiveEnvMode === "worktree" ? (
@@ -110,7 +110,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
       </SelectTrigger>
       <SelectPopup>
         <SelectGroup>
-          <SelectGroupLabel>Workspace</SelectGroupLabel>
+          <SelectGroupLabel>Arbeitsbereich</SelectGroupLabel>
           <SelectItem value="local">
             <span className="inline-flex items-center gap-1.5">
               {activeWorktreePath ? (

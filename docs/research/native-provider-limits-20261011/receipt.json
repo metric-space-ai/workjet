@@ -1,0 +1,65 @@
+{
+  "schema": "workjet.native-limits.synthetic-browser.v1",
+  "head": "4253bd6eba53f7308a0f19830b8ef42e75dce4b2",
+  "fixture": "real NativeProviderRowsView; synthetic metadata, empty model lists, no account secrets",
+  "owner": "01a12b1d-2380-7a70-9159-cca95e86f2e0",
+  "serverPid": 889248,
+  "stopCondition": "finally stops captured Vite child and closes browser",
+  "stories": [
+    {
+      "width": 1440,
+      "mode": "before",
+      "cleanContext": true,
+      "reload": true,
+      "pass": true,
+      "screenshot": "native-limits-before-1440.png"
+    },
+    {
+      "width": 1440,
+      "mode": "after",
+      "documentOverflowPx": 0
+    },
+    {
+      "width": 1440,
+      "mode": "after",
+      "documentOverflowPx": 0
+    },
+    {
+      "width": 1440,
+      "mode": "after",
+      "cleanContext": true,
+      "reload": true,
+      "pass": true,
+      "screenshot": "native-limits-after-1440.png"
+    },
+    {
+      "width": 420,
+      "mode": "before",
+      "cleanContext": true,
+      "reload": true,
+      "pass": true,
+      "screenshot": "native-limits-before-420.png"
+    },
+    {
+      "width": 420,
+      "mode": "after",
+      "documentOverflowPx": 0
+    },
+    {
+      "width": 420,
+      "mode": "after",
+      "documentOverflowPx": 0
+    },
+    {
+      "width": 420,
+      "mode": "after",
+      "cleanContext": true,
+      "reload": true,
+      "pass": true,
+      "screenshot": "native-limits-after-420.png"
+    }
+  ],
+  "consoleErrors": [],
+  "failedRequests": [],
+  "pass": true
+}

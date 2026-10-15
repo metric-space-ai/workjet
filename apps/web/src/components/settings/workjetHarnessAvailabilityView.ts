@@ -45,15 +45,15 @@ export function harnessReasonText(
 ): string {
   switch (reason) {
     case "executable-not-found":
-      return "Not installed, or not on this host's PATH.";
+      return "Nicht installiert oder nicht im PATH.";
     case "not-executable":
-      return "Found, but this server may not execute it. Check its permissions.";
+      return "Gefunden, aber nicht ausführbar. Rechte prüfen.";
     case "timeout":
-      return "Did not answer in time. It may be hanging or waiting for input.";
+      return "Keine Antwort in der Wartezeit.";
     case "probe-failed":
-      return "Ran, but reported a failure.";
+      return "Gestartet, aber Fehler gemeldet.";
     case "unsupported-host":
-      return "Cannot run on this operating system or architecture.";
+      return "Läuft nicht auf diesem System.";
   }
 }
 

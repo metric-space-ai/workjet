@@ -170,7 +170,7 @@ export function PullRequestCodeTab({
   selectedCommitOid,
   onSelectedCommitChange,
   pendingFinding,
-  fixFindingLabel = "Fix in a thread",
+  fixFindingLabel = "In Chat beheben",
   onFixFinding,
   onAskAboutSelection,
   onRefresh,
@@ -649,13 +649,13 @@ export function PullRequestCodeTab({
         >
           {diffQuery.error !== null ? (
             <>
-              <span>The rest of this diff could not be loaded.</span>
+              <span>Rest des Diffs nicht geladen</span>
               <Button size="xs" variant="outline" onClick={() => diffQuery.refresh()}>
-                Retry
+                Erneut versuchen
               </Button>
             </>
           ) : diffQuery.isPending ? (
-            "Loading more files..."
+            "Weitere Dateien laden …"
           ) : null}
         </div>
       ),
@@ -671,7 +671,7 @@ export function PullRequestCodeTab({
         <button
           type="button"
           aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand diff" : "Collapse diff"}
+          aria-label={collapsed ? "Diff aufklappen" : "Diff einklappen"}
           className={cn(
             "mr-1 inline-flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground",
           )}
@@ -781,7 +781,7 @@ export function PullRequestCodeTab({
         fixLabel={fixFindingLabel}
         {...(onFixFinding ? { onFix: () => onFixFinding({ kind: "thread", thread }) } : {})}
         onReply={(body) =>
-          runThreadCommand("Reply could not be posted", () =>
+          runThreadCommand("Antwort nicht gesendet", () =>
             replyToThread({
               environmentId,
               input: { ...reference, threadId: thread.id, body },
@@ -793,7 +793,7 @@ export function PullRequestCodeTab({
           canEditPullRequestComment(detail, { author: comment.author, kind: "review-comment" })
         }
         onEditComment={(commentId, body) =>
-          runThreadCommand("The comment could not be saved", () =>
+          runThreadCommand("Kommentar nicht gespeichert", () =>
             updateComment({
               environmentId,
               input: { ...reference, commentId, kind: "review-comment", body },
@@ -801,7 +801,7 @@ export function PullRequestCodeTab({
           )
         }
         onToggleResolved={() =>
-          void runThreadCommand("The conversation could not be updated", () =>
+          void runThreadCommand("Unterhaltung nicht aktualisiert", () =>
             setThreadResolution({
               environmentId,
               input: { ...reference, threadId: thread.id, resolved: !thread.isResolved },
@@ -845,11 +845,11 @@ export function PullRequestCodeTab({
             kind="draft"
             rangeLabel={`${draft.path}:${draft.line}`}
             text=""
-            submitLabel="Add to review"
+            submitLabel="Zur Prüfung hinzufügen"
             {...(onAskAboutSelection
               ? {
                   secondaryAction: {
-                    label: "Ask",
+                    label: "Fragen",
                     icon: <SparklesIcon className="size-3" />,
                     allowEmpty: true,
                     onAction: (question: string) => askAboutSelection(draft, question),
@@ -904,7 +904,7 @@ export function PullRequestCodeTab({
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Close review"
+              aria-label="Prüfung schließen"
               className="absolute right-2 top-2"
               onClick={() => setReviewOpen(false)}
             >
@@ -931,7 +931,7 @@ export function PullRequestCodeTab({
             <MessageSquareIcon className="size-3.5" />
             Review
             {pendingComments.length > 0 ? (
-              <span className="flex size-4 items-center justify-center rounded-full bg-accent text-[10px] tabular-nums text-accent-foreground">
+              <span className="flex size-4 items-center justify-center rounded-full bg-accent text-[11px] tabular-nums text-accent-foreground">
                 {pendingComments.length}
               </span>
             ) : null}
@@ -952,7 +952,7 @@ export function PullRequestCodeTab({
       onSelectedCommitChange(null);
     }
   }, [commit, onSelectedCommitChange, selectedCommit]);
-  const scopeLabel = selectedCommit ? selectedCommit.messageHeadline : "All commits";
+  const scopeLabel = selectedCommit ? selectedCommit.messageHeadline : "Alle Commits";
   /**
    * The same controls the thread diff panel carries, in the same order, minus the
    * ignore-whitespace toggle: that is `git diff -w` on the server, and no host's pull request
@@ -967,7 +967,7 @@ export function PullRequestCodeTab({
           <DropdownMenu>
             <DropdownMenuTrigger
               className="inline-flex h-6 max-w-64 items-center gap-1 rounded-md bg-accent px-2 text-xs font-medium text-accent-foreground outline-none transition-colors hover:bg-accent/80 focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={`Diff scope: ${scopeLabel}`}
+              aria-label={`Diff-Umfang: ${scopeLabel}`}
             >
               <span className="truncate">{scopeLabel}</span>
               <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
@@ -977,7 +977,7 @@ export function PullRequestCodeTab({
                 className={commit === null ? "bg-foreground/[0.08]" : undefined}
                 onClick={() => onSelectedCommitChange(null)}
               >
-                <span>All commits</span>
+                <span>Alle Commits</span>
               </DropdownMenuItem>
               {orderedCommits.slice(0, visibleCommitCount).map((entry) => (
                 <DropdownMenuItem
@@ -1003,7 +1003,7 @@ export function PullRequestCodeTab({
                   onClick={() => setVisibleCommitCount((count) => count + COMMIT_PAGE_SIZE)}
                 >
                   <span className="text-muted-foreground">
-                    Show more ({orderedCommits.length - visibleCommitCount} left)
+                    Mehr ({orderedCommits.length - visibleCommitCount} weitere)
                   </span>
                 </DropdownMenuItem>
               ) : null}
@@ -1014,34 +1014,29 @@ export function PullRequestCodeTab({
             competed for a strip this narrow and every one of them truncated to nothing. */}
         <PullRequestMetaLine>
           <span className="shrink-0 tabular-nums">
-            {files.length} {files.length === 1 ? "file" : "files"}
+            {files.length} {files.length === 1 ? "Datei" : "Dateien"}
             {nextCursor === null ? "" : "+"}
           </span>
           {withheldContent ? (
             <Tooltip>
               <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
                 <TriangleAlertIcon
-                  aria-label="Some of this diff was not shown"
+                  aria-label="Diff nicht vollständig"
                   className="size-3.5 text-amber-600 dark:text-amber-500"
                 />
               </TooltipTrigger>
-              <TooltipPopup side="bottom">
-                The host withheld part of this diff — a file that cannot be shown inline, or a
-                change too large to display.
-              </TooltipPopup>
+              <TooltipPopup side="bottom">Diff nicht vollständig</TooltipPopup>
             </Tooltip>
           ) : null}
           {commit !== null && review.inlineComment ? (
             <Tooltip>
               <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
                 <MessageSquareOffIcon
-                  aria-label="Line comments are written from the whole change"
+                  aria-label="Zeilenkommentare zur ganzen Änderung"
                   className="size-3.5"
                 />
               </TooltipTrigger>
-              <TooltipPopup side="bottom">
-                A comment is anchored to the whole change, so switch to All commits to write one.
-              </TooltipPopup>
+              <TooltipPopup side="bottom">Zeilenkommentare nur bei „Alle Commits“</TooltipPopup>
             </Tooltip>
           ) : null}
         </PullRequestMetaLine>
@@ -1060,7 +1055,9 @@ export function PullRequestCodeTab({
                   type="button"
                   size="icon-sm"
                   variant="ghost"
-                  aria-label={allFilesCollapsed ? "Expand all files" : "Collapse all files"}
+                  aria-label={
+                    allFilesCollapsed ? "Alle Dateien aufklappen" : "Alle Dateien einklappen"
+                  }
                   onClick={toggleAllFiles}
                 />
               }
@@ -1072,7 +1069,7 @@ export function PullRequestCodeTab({
               )}
             </TooltipTrigger>
             <TooltipPopup side="top">
-              {allFilesCollapsed ? "Expand all files" : "Collapse all files"}
+              {allFilesCollapsed ? "Alle Dateien aufklappen" : "Alle Dateien einklappen"}
             </TooltipPopup>
           </Tooltip>
         ) : null}
@@ -1087,10 +1084,10 @@ export function PullRequestCodeTab({
             }
           }}
         >
-          <Toggle aria-label="Stacked diff view" value="stacked" variant="ghost">
+          <Toggle aria-label="Untereinander" value="stacked" variant="ghost">
             <Rows3Icon className="size-3.5" />
           </Toggle>
-          <Toggle aria-label="Split diff view" value="split" variant="ghost">
+          <Toggle aria-label="Nebeneinander" value="split" variant="ghost">
             <Columns2Icon className="size-3.5" />
           </Toggle>
         </ToggleGroup>
@@ -1098,7 +1095,7 @@ export function PullRequestCodeTab({
           <TooltipTrigger
             render={
               <Toggle
-                aria-label={wordWrap ? "Disable diff line wrapping" : "Enable diff line wrapping"}
+                aria-label={wordWrap ? "Zeilenumbruch aus" : "Zeilenumbruch an"}
                 variant="ghost"
                 size="sm"
                 pressed={wordWrap}
@@ -1111,7 +1108,7 @@ export function PullRequestCodeTab({
             <TextWrapIcon className="size-3.5" />
           </TooltipTrigger>
           <TooltipPopup side="top">
-            {wordWrap ? "Disable line wrapping" : "Enable line wrapping"}
+            {wordWrap ? "Zeilenumbruch aus" : "Zeilenumbruch an"}
           </TooltipPopup>
         </Tooltip>
       </div>
@@ -1135,7 +1132,7 @@ export function PullRequestCodeTab({
   // Under the toolbar rather than in place of it, so choosing a commit does not take the
   // dropdown that was just used off the screen while its diff loads.
   if (diffQuery.isPending && loadedSlices.length === 0) {
-    return withReviewBar(<DiffPanelLoadingState label="Loading pull request diff..." />);
+    return withReviewBar(<DiffPanelLoadingState label="Diff lädt …" />);
   }
 
   // A slice that fails once there are files on screen is reported at the end of them instead:
@@ -1170,9 +1167,7 @@ export function PullRequestCodeTab({
   if (items.length === 0 && nextCursor === null) {
     return withReviewBar(
       <p className="px-4 py-5 text-sm text-muted-foreground">
-        {commit === null
-          ? "This pull request has no file changes."
-          : "This commit has no file changes."}
+        {commit === null ? "Keine Dateiänderungen" : "Keine Dateiänderungen"}
       </p>,
     );
   }
@@ -1222,8 +1217,8 @@ export function PullRequestCodeTab({
                     that has not landed yet, which is not the same as being off the diff. */}
                 <span>
                   {nextCursor === null
-                    ? "Conversations not on the current diff"
-                    : "Conversations not on the diff loaded so far"}
+                    ? "Unterhaltungen außerhalb des Diffs"
+                    : "Unterhaltungen außerhalb des geladenen Diffs"}
                 </span>
                 <ChevronRightIcon
                   aria-hidden
@@ -1234,8 +1229,8 @@ export function PullRequestCodeTab({
                 </span>
                 <span className="sr-only">
                   {orphanThreads.length === 1
-                    ? "1 conversation"
-                    : `${orphanThreads.length} conversations`}
+                    ? "1 Unterhaltung"
+                    : `${orphanThreads.length} Unterhaltungen`}
                 </span>
               </CollapsibleTrigger>
             </h2>
@@ -1252,7 +1247,9 @@ export function PullRequestCodeTab({
                       {threads.map((thread) => (
                         <div key={thread.id}>
                           {thread.line === null ? null : (
-                            <p className="px-3 text-xs text-muted-foreground">Line {thread.line}</p>
+                            <p className="px-3 text-xs text-muted-foreground">
+                              Zeile {thread.line}
+                            </p>
                           )}
                           {renderThreadCard(thread)}
                         </div>

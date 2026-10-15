@@ -1,5 +1,4 @@
 import type { DesktopBridge, DesktopUpdateState } from "@workjet/contracts";
-import { ArrowRightIcon } from "lucide-react";
 
 import {
   getDesktopUpdateDownloadedVersion,
@@ -9,51 +8,39 @@ import { toastManager } from "./ui/toast";
 
 type DesktopUpdateShell = Pick<DesktopBridge, "openExternal">;
 
-function ReleaseNotesLink({
-  shell,
-  releaseUrl,
-}: {
-  shell: DesktopUpdateShell;
-  releaseUrl: string;
-}) {
-  return (
-    <button
-      className="ml-2 inline cursor-pointer text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors hover:text-foreground"
-      onClick={() => {
-        void (async () => {
-          try {
-            if (await shell.openExternal(releaseUrl)) return;
-          } catch {
-            // Surface rejected IPC calls through the same user-visible fallback.
-          }
-          toastManager.add({ type: "error", title: "Unable to open release notes" });
-        })();
-      }}
-      type="button"
-    >
-      Read more
-      <ArrowRightIcon
-        aria-hidden
-        className="ml-1 inline size-3 -rotate-45 align-[-0.125em]"
-        strokeWidth={2.25}
-      />
-    </button>
-  );
+/** Öffnet die Versionshinweise; scheitert das, folgt ein einzeiliger Fehler-Toast. */
+export function openDesktopUpdateReleaseNotes(shell: DesktopUpdateShell, releaseUrl: string): void {
+  void (async () => {
+    try {
+      if (await shell.openExternal(releaseUrl)) return;
+    } catch {
+      // Surface rejected IPC calls through the same user-visible fallback.
+    }
+    toastManager.add({ type: "error", title: "Versionshinweise nicht geöffnet" });
+  })();
 }
 
+/**
+ * Toast nach dem Download (UI-Vertrag: eine Zeile, höchstens eine Aktion):
+ * „Update 0.0.86 geladen · [Versionshinweise]“. Neu gestartet wird über den
+ * Update-Chip, nicht aus dem Toast.
+ */
 export function showDesktopUpdateDownloadedToast(
   shell: DesktopUpdateShell,
   state: DesktopUpdateState,
 ): void {
-  const releaseUrl = getDesktopUpdateReleaseUrl(getDesktopUpdateDownloadedVersion(state));
+  const version = getDesktopUpdateDownloadedVersion(state);
+  const releaseUrl = getDesktopUpdateReleaseUrl(version);
   toastManager.add({
     type: "success",
-    title: "Update downloaded",
-    description: (
-      <>
-        Restart the app from the update button to install it.
-        {releaseUrl ? <ReleaseNotesLink releaseUrl={releaseUrl} shell={shell} /> : null}
-      </>
-    ),
+    title: version ? `Update ${version} geladen` : "Update geladen",
+    ...(releaseUrl
+      ? {
+          actionProps: {
+            children: "Versionshinweise",
+            onClick: () => openDesktopUpdateReleaseNotes(shell, releaseUrl),
+          },
+        }
+      : {}),
   });
 }

@@ -1,0 +1,44 @@
+{
+  "sizes": [
+    {
+      "viewport": 1440,
+      "scroll": 1440
+    },
+    {
+      "viewport": 420,
+      "scroll": 420
+    }
+  ],
+  "errors": [],
+  "startupNetworkChangedCount": 0,
+  "steps": [
+    "selected switch locked",
+    "local has no trash",
+    "inline confirmation; no modal",
+    "1440 and 420 no overflow",
+    "disable and reload",
+    "reenable",
+    "remove managed and reload",
+    "remove paired"
+  ],
+  "writes": [
+    {
+      "instanceId": "local:fixture",
+      "state": "disabled"
+    },
+    {
+      "instanceId": "local:fixture",
+      "state": "enabled"
+    },
+    {
+      "instanceId": "managed:fixture-meridian",
+      "state": "removed"
+    },
+    {
+      "instanceId": "paired:manual_pairing:AAAAAAAAAAAAAAAAAAAAAA",
+      "state": "removed"
+    }
+  ],
+  "scope": "production InstancesTable and shared SettingsSection; synthetic file-backed callback; native registry/guest behavior covered separately by unit tests",
+  "installedAppAccess": false
+}

@@ -44,6 +44,13 @@ const make = Effect.gen(function* () {
       if (invocation.workjetRole !== "standard" && invocation.workjetRole !== "orchestrator") {
         return yield* new WorkjetDecisionHubConnectionError({ reason: "foreign-environment" });
       }
+      const supervisor = yield* sql`SELECT 1 FROM projection_threads
+        WHERE thread_id = ${invocation.threadId} AND deleted_at IS NULL AND archived_at IS NULL
+          AND json_extract(workjet_config_json, '$.team.role') = 'supervisor'`.pipe(
+        Effect.mapError(failure),
+      );
+      if (supervisor.length === 0)
+        return yield* new WorkjetDecisionHubConnectionError({ reason: "foreign-environment" });
       const target = yield* registry.resolveReadyTarget(connectionId);
       const expiresAtMillis =
         input.expiresAt === undefined ? undefined : DateTime.toEpochMillis(input.expiresAt);

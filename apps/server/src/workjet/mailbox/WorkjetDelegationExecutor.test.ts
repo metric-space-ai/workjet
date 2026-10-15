@@ -3278,8 +3278,21 @@ it.effect("satisfies the mailbox RPC's reassignment port with its own guard", ()
         getThreadDetailById: () =>
           Effect.succeed(
             Option.some({
-              ...thread({ role: "orchestrator" }),
+              ...thread({ role: "standard" }),
               id: SOURCE_THREAD,
+              workjetConfig: {
+                schemaVersion: 2,
+                role: "standard",
+                enabledCapabilityIds: [],
+                team: {
+                  role: "supervisor",
+                  threadId: SOURCE_THREAD,
+                  projectId: "project",
+                  parentThreadId: null,
+                  goal: "Complete the project",
+                  createdAt: NOW,
+                },
+              },
             } as unknown as OrchestrationThread),
           ),
       },

@@ -29,8 +29,8 @@ export function ComputerPopupEditor(props: ComputerPopupEditorProps) {
     return (
       <p role="status" className="text-sm text-muted-foreground">
         {target.phase === "resolving"
-          ? "Checking the active instance…"
-          : "Computer settings are unavailable for this instance. Check the instance selection in Settings."}
+          ? "Instanz wird geprüft …"
+          : "Rechner-Einstellungen nicht verfügbar"}
       </p>
     );
   }
@@ -65,19 +65,15 @@ function ScopedComputerPopupEditor(
   if (computer === null) {
     return (
       <p role="alert" className="text-sm text-muted-foreground">
-        This computer is no longer available in the active instance.
+        Rechner nicht mehr verfügbar
       </p>
     );
   }
   return (
     <div>
-      <p className="mb-3 text-xs text-muted-foreground">
-        Saved computer settings · These defaults are shared by workers using this computer. Saving
-        does not move this chat.
-      </p>
       {inspection.error ? (
         <p role="status" className="mb-3 text-xs text-muted-foreground">
-          The host could not be checked. Saved settings remain available.
+          Host nicht prüfbar
         </p>
       ) : null}
       <WorkjetComputerEditor

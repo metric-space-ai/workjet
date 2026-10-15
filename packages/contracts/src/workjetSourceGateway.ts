@@ -1,6 +1,8 @@
 import * as Schema from "effect/Schema";
 import { ModelSelection } from "./orchestration.ts";
 import { RemoteWorkerRequest } from "./remoteWorker.ts";
+import { WorkjetExecutionPolicy } from "./workjetExecutionPolicy.ts";
+import { WorkjetParentTeamBinding } from "./workjetParentTeamBinding.ts";
 import { EnvironmentId, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   WorkjetConnectionId,
@@ -43,6 +45,8 @@ export const WorkjetRemoteWorkerBinding = Schema.Struct({
   repositoryUrl: Identifier,
   repositoryHead: Schema.String.check(Schema.isPattern(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)),
   workspaceKey: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/)),
+  executionPolicy: Schema.optionalKey(WorkjetExecutionPolicy),
+  parentTeamBinding: Schema.optionalKey(WorkjetParentTeamBinding),
   credentialRef: WorkjetGatewayCredentialRef,
   providerRef: WorkjetGatewayProviderRef,
   modelRef: WorkjetGatewayModelRef,
@@ -73,14 +77,23 @@ export const WorkjetGatewayAdmissionInput = Schema.Struct({
   permit: WorkjetRemoteWorkerPermit,
 });
 export type WorkjetGatewayAdmissionInput = typeof WorkjetGatewayAdmissionInput.Type;
+export const WorkjetGatewayInferenceProtocol = Schema.Literals([
+  "responses",
+  "messages",
+  "chat-completions",
+]);
+export type WorkjetGatewayInferenceProtocol = typeof WorkjetGatewayInferenceProtocol.Type;
 export const WorkjetGatewayInferenceInput = Schema.Struct({
   ...WorkjetGatewayAdmissionInput.fields,
-  // Responses protocol, non-streaming, bounded UTF-8 JSON. No URL or header injection.
+  /** Absent retains the original non-streaming Responses worker contract. */
+  protocol: Schema.optionalKey(WorkjetGatewayInferenceProtocol),
+  // Bounded native protocol body. No URL or header injection.
   requestJson: Schema.String.check(Schema.isMaxLength(256 * 1024)),
 });
 export type WorkjetGatewayInferenceInput = typeof WorkjetGatewayInferenceInput.Type;
 export const WorkjetGatewayInferenceResult = Schema.Struct({
   requestJson: Schema.String.check(Schema.isMaxLength(1024 * 1024)),
+  contentType: Schema.optionalKey(Schema.Literals(["application/json", "text/event-stream"])),
 });
 export type WorkjetGatewayInferenceResult = typeof WorkjetGatewayInferenceResult.Type;
 

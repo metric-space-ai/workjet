@@ -66,7 +66,7 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
     return AsyncResult.failure(
       Cause.fail(
         new BrowserPreviewUnavailableError({
-          message: "The integrated browser is unavailable in this runtime.",
+          message: "Integrierter Browser hier nicht verfügbar.",
         }),
       ),
     );

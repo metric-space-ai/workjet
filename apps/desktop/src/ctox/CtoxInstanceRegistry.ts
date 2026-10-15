@@ -15,6 +15,7 @@ import {
   type CtoxPairedInstanceMutationFailureCode as CtoxPairedInstanceMutationFailureCodeType,
   type CtoxSshManagedInstanceAddInput,
 } from "@workjet/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -33,6 +34,12 @@ import * as Semaphore from "effect/Semaphore";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import {
+  preferences,
+  accessState,
+  applyPreferences,
+  rememberDiscovery,
+} from "./CtoxInstancePreferences.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import type { CtoxBusinessOsLaunchConfig } from "./CtoxBusinessOsShell.ts";
 import {
@@ -41,6 +48,7 @@ import {
   type CtoxDeviceProofKey,
 } from "./CtoxDeviceProofKey.ts";
 import { buildCtoxBusinessOsLaunchConfig } from "./CtoxLaunchConfig.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 import {
   discoverCtoxLocalDaemonNativeTargets,
   isLaunchableCtoxLocalDaemon,
@@ -360,6 +368,7 @@ export class CtoxInstanceRegistry extends Context.Service<
     readonly merge: (managed: CtoxManagedDiscoveryResult) => Effect.Effect<CtoxDiscoveryResult>;
     readonly importInvite: (
       invite: string,
+      replacesInstanceId?: string,
     ) => Effect.Effect<CtoxManagedInstance, CtoxInstanceRegistryError>;
     readonly importManualPairing: (
       input: CtoxManualPairingImportInput,
@@ -1031,6 +1040,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
   const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
+  const keyRecovery = yield* Effect.serviceOption(DesktopKeyRecovery);
   const registryLock = yield* Semaphore.make(1);
   const ctoxDirectory = path.join(environment.stateDir, "ctox");
   const publicRegistryPath = path.join(ctoxDirectory, PUBLIC_REGISTRY_FILE);
@@ -1041,6 +1051,15 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     options.nowEpochMs === undefined
       ? DateTime.now.pipe(Effect.map(DateTime.toEpochMillis))
       : Effect.sync(options.nowEpochMs);
+  const backupUnreadableRegistry = Effect.gen(function* () {
+    const suffix = `${yield* Clock.currentTimeMillis}-${yield* crypto.randomUUIDv4}`;
+    for (const filePath of [secretRegistryPath, publicRegistryPath]) {
+      if (!(yield* fileSystem.exists(filePath))) continue;
+      const backup = `${filePath}.recovery-${suffix}.bak`;
+      yield* fileSystem.copyFile(filePath, backup);
+      if (environment.platform !== "win32") yield* fileSystem.chmod(backup, 0o600);
+    }
+  }).pipe(Effect.mapError(() => registryError("persistence_failed")));
   // Health probing stays opt-in: no probe is injected yet, so discovery reads
   // only the descriptor. The probe arrives with the local launch path.
   const localDaemonOptions: CtoxLocalDaemonDiscoveryOptions = {
@@ -1048,6 +1067,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     env: process.env,
     ...(options.nowEpochMs === undefined ? {} : { nowEpochMs: options.nowEpochMs }),
     ...options.localDaemon,
+    shouldProbe: (id) => accessState(id).pipe(Effect.map((state) => state === "enabled")),
   };
   // Discovery runs with the services acquired here, never with the caller's.
   const discoverLocalInstances = discoverCtoxLocalDaemonNativeTargets(localDaemonOptions).pipe(
@@ -1065,6 +1085,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       ? undefined
       : makeCtoxSshExec({ spawner: spawnerOption.value, fileSystem, path }));
   const sshManagedOptions: CtoxSshManagedDiscoveryOptions = {
+    shouldProbe: (id) => accessState(id).pipe(Effect.map((state) => state === "enabled")),
     ...(sshExec === undefined ? {} : { exec: sshExec }),
     ...(options.nowEpochMs === undefined ? {} : { nowEpochMs: options.nowEpochMs }),
     ...(options.sshManaged?.nowEpochMs === undefined
@@ -1171,21 +1192,39 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     const document = yield* readSecretDocument(fileSystem, secretRegistryPath);
     const record = document.deviceKeys?.find((entry) => entry.id === id);
     if (record !== undefined) {
-      const bytes = Result.getOrUndefined(Encoding.decodeBase64(record.ciphertext));
-      if (bytes === undefined) return yield* registryError("persistence_failed");
-      const plaintext = yield* safeStorage
-        .decryptString(bytes)
-        .pipe(Effect.mapError(() => registryError("unsafe_secret_storage")));
-      const payload = yield* decodeDeviceKeyPayload(plaintext, {
-        onExcessProperty: "error",
-      }).pipe(Effect.mapError(() => registryError("persistence_failed")));
-      if (payload.scope.instanceId !== scope.instanceId || payload.scope.userId !== scope.userId) {
-        return yield* registryError("persistence_failed");
-      }
-      return yield* Effect.try({
-        try: () => restoreCtoxDeviceProofKey(Redacted.make(payload.pkcs8)),
-        catch: () => registryError("persistence_failed"),
-      });
+      const restored = yield* Effect.gen(function* () {
+        const bytes = Result.getOrUndefined(Encoding.decodeBase64(record.ciphertext));
+        if (bytes === undefined) return yield* registryError("persistence_failed");
+        const plaintext = yield* safeStorage
+          .decryptString(bytes)
+          .pipe(Effect.mapError(() => registryError("unsafe_secret_storage")));
+        const payload = yield* decodeDeviceKeyPayload(plaintext, {
+          onExcessProperty: "error",
+        }).pipe(Effect.mapError(() => registryError("persistence_failed")));
+        if (
+          payload.scope.instanceId !== scope.instanceId ||
+          payload.scope.userId !== scope.userId
+        ) {
+          return yield* registryError("persistence_failed");
+        }
+        return yield* Effect.try({
+          try: () => restoreCtoxDeviceProofKey(Redacted.make(payload.pkcs8)),
+          catch: () => registryError("persistence_failed"),
+        });
+      }).pipe(Effect.result);
+      if (Result.isSuccess(restored)) return restored.success;
+      const recovery = Option.isSome(keyRecovery)
+        ? yield* keyRecovery.value.inspect.pipe(Effect.orElseSucceed(() => undefined))
+        : undefined;
+      // Only a newly authenticated, explicit enrollment can replace a lost key.
+      if (
+        !createIfMissing ||
+        recovery === undefined ||
+        recovery.pendingLogin ||
+        !recovery.unreadableStores.includes("ctox")
+      )
+        return yield* restored.failure;
+      yield* backupUnreadableRegistry;
     }
     if (!createIfMissing) return yield* registryError("not_found");
     const key = yield* Effect.try({
@@ -1203,7 +1242,10 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     );
     yield* writeSecrets({
       ...document,
-      deviceKeys: [...(document.deviceKeys ?? []), { id, ciphertext }],
+      deviceKeys: [
+        ...(document.deviceKeys ?? []).filter((entry) => entry.id !== id),
+        { id, ciphertext },
+      ],
     });
     return key;
   });
@@ -1240,12 +1282,22 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     }).pipe(Effect.mapError(() => registryError("persistence_failed")));
   });
 
+  const assertRecoverableConsistency = (
+    publicDocument: PublicRegistryDocument,
+    secretDocument: SecretRegistryDocument,
+  ) =>
+    Effect.gen(function* () {
+      const recovery = Option.isSome(keyRecovery) ? yield* keyRecovery.value.inspect : undefined;
+      if (recovery?.ctoxRetired) return;
+      yield* assertRegistryConsistency(publicDocument, secretDocument);
+    }).pipe(Effect.mapError(() => registryError("persistence_failed")));
+
   const readPairedInstances = Effect.fn("CtoxInstanceRegistry.readPairedInstances")(function* () {
     const [publicDocument, secretDocument] = yield* Effect.all([
       readPublicDocument(fileSystem, publicRegistryPath),
       readSecretDocument(fileSystem, secretRegistryPath),
     ]);
-    yield* assertRegistryConsistency(publicDocument, secretDocument);
+    yield* assertRecoverableConsistency(publicDocument, secretDocument);
     if (publicDocument.instances.length === 0) {
       return { instances: [] as readonly CtoxManagedInstance[], pairedUnavailable: false };
     }
@@ -1256,7 +1308,11 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     let storageUnavailable = Result.isFailure(yield* assertSafeStorage().pipe(Effect.result));
     for (const instance of publicDocument.instances) {
       const record = secretsById.get(instance.id);
-      if (record === undefined) return yield* registryError("persistence_failed");
+      if (record === undefined) {
+        pairedUnavailable = true;
+        instances.push({ ...instance, status: "pairing_expired" });
+        continue;
+      }
       if (storageUnavailable) {
         pairedUnavailable = true;
         instances.push({ ...instance, status: "error" });
@@ -1317,6 +1373,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
   const resolvePairedLaunch = Effect.fn("CtoxInstanceRegistry.resolvePairedLaunch")(function* (
     instanceId: string,
   ) {
+    if ((yield* accessState(instanceId)) !== "enabled") return yield* registryError("not_found");
     if (!/^paired:(?:pairing_invite|manual_pairing):[A-Za-z0-9_-]{22}$/.test(instanceId)) {
       return yield* registryError("not_found");
     }
@@ -1325,8 +1382,8 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       readPublicDocument(fileSystem, publicRegistryPath),
       readSecretDocument(fileSystem, secretRegistryPath),
     ]);
-    yield* assertRegistryConsistency(publicDocument, secretDocument);
     const descriptor = publicDocument.instances.find((instance) => instance.id === instanceId);
+    yield* assertRecoverableConsistency(publicDocument, secretDocument);
     const record = secretDocument.records.find((entry) => entry.id === instanceId);
     if (
       descriptor === undefined ||
@@ -1401,6 +1458,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
 
   const resolveLocalDaemonTarget = Effect.fn("CtoxInstanceRegistry.resolveLocalDaemonTarget")(
     function* (instanceId: string) {
+      if ((yield* accessState(instanceId)) !== "enabled") return yield* registryError("not_found");
       const discovered = yield* discoverLocalInstances;
       const withShellStatus = yield* attachShellStatuses(discovered.map((entry) => entry.instance));
       const target = discovered.find((entry) => entry.instance.id === instanceId);
@@ -1419,6 +1477,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
 
   const resolveSshManagedTarget = Effect.fn("CtoxInstanceRegistry.resolveSshManagedTarget")(
     function* (instanceId: string) {
+      if ((yield* accessState(instanceId)) !== "enabled") return yield* registryError("not_found");
       // Discovery is re-run rather than cached: an SSH-managed row may only be
       // launched while its daemon is answering right now, the same rule the
       // local-daemon path applies.
@@ -1509,15 +1568,35 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
 
   const importPairing = Effect.fn("CtoxInstanceRegistry.importPairing")(function* (
     pairing: ValidatedPairing,
+    replacesInstanceId?: string,
   ) {
     yield* assertSafeStorage();
     const [publicDocument, secretDocument] = yield* Effect.all([
       readPublicDocument(fileSystem, publicRegistryPath),
       readSecretDocument(fileSystem, secretRegistryPath),
     ]);
-    yield* assertRegistryConsistency(publicDocument, secretDocument);
+    yield* assertRecoverableConsistency(publicDocument, secretDocument);
 
+    if (replacesInstanceId !== undefined) {
+      const original = publicDocument.instances.find((entry) => entry.id === replacesInstanceId);
+      if (original === undefined || !isSafePersistedPairedInstance(original))
+        return yield* registryError("not_found");
+      // A fresh invite may use another pairing source. Pin its identity to the
+      // saved public hash before retaining the old id and project references.
+      if (
+        (yield* stableId(original.source as PairedSource, pairing.instanceIdentity)) !== original.id
+      )
+        return yield* registryError("invalid_input");
+      pairing = { ...pairing, source: original.source as PairedSource };
+    }
     const id = yield* stableId(pairing.source, pairing.instanceIdentity);
+    const previous = secretDocument.records.find((entry) => entry.id === id);
+    if (
+      previous !== undefined &&
+      Result.isFailure(yield* decryptSecret(previous).pipe(Effect.result))
+    ) {
+      yield* backupUnreadableRegistry;
+    }
     const publicInstance: CtoxManagedInstance = {
       id,
       source: pairing.source,
@@ -1620,25 +1699,126 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
           const [local, ssh] = yield* Effect.all([discoverLocalInstances, discoverSshInstances], {
             concurrency: 2,
           });
+          const stored = yield* preferences;
           const merged = mergeCtoxInstanceSources(managed, paired, [
             ...local.map((entry) => entry.instance),
             ...ssh.map((entry) => entry.instance),
           ]);
+          const recovery = Option.isSome(keyRecovery)
+            ? yield* keyRecovery.value.inspect.pipe(Effect.orElseSucceed(() => undefined))
+            : undefined;
+          const recoveryStatus =
+            recovery === undefined
+              ? {}
+              : {
+                  keyRecovery: {
+                    pendingLogin: recovery.pendingLogin,
+                    connectionCatalogReset: recovery.catalogReset === true,
+                    ...(recovery.ctoxRetired || recovery.managedRepairStarted
+                      ? {
+                          generation: recovery.generation,
+                          ...(recovery.attempt === undefined ? {} : { attempt: recovery.attempt }),
+                          ...(recovery.nextAt === undefined ? {} : { nextAt: recovery.nextAt }),
+                          repairingInstanceIds: (recovery.instanceRepairs ?? [])
+                            .filter((entry) => entry.state === "repairing")
+                            .map((entry) => entry.instanceId),
+                          repairedInstanceIds: (recovery.instanceRepairs ?? [])
+                            .filter((entry) => entry.state === "repaired")
+                            .map((entry) => entry.instanceId),
+                          instanceIssues: [
+                            ...(recovery.instanceRepairs ?? [])
+                              .filter(
+                                (entry) =>
+                                  entry.state === "repair_failed" ||
+                                  entry.state === "login_required" ||
+                                  entry.state === "retryable",
+                              )
+                              .map((entry) => ({
+                                instanceId: entry.instanceId,
+                                reason:
+                                  entry.state === "retryable"
+                                    ? ("retryable" as const)
+                                    : entry.state === "login_required"
+                                      ? ("login_required" as const)
+                                      : ("repair_failed" as const),
+                                ...(entry.operation === undefined
+                                  ? {}
+                                  : { operation: entry.operation }),
+                                ...(entry.httpStatus === undefined
+                                  ? {}
+                                  : { httpStatus: entry.httpStatus }),
+                              })),
+                            ...(recovery.pendingLogin
+                              ? [
+                                  ...new Map(
+                                    [
+                                      ...stored,
+                                      ...(managed._tag === "ready" ? managed.instances : []),
+                                    ]
+                                      .filter(
+                                        (entry) =>
+                                          entry.id.startsWith("managed:") &&
+                                          !recovery.instanceRepairs?.some(
+                                            (issue) =>
+                                              issue.instanceId === entry.id &&
+                                              (issue.state === "repair_failed" ||
+                                                issue.state === "login_required" ||
+                                                issue.state === "retryable"),
+                                          ),
+                                      )
+                                      .map((entry) => [entry.id, entry]),
+                                  ).values(),
+                                ].map((entry) => ({
+                                  instanceId: entry.id,
+                                  reason: "login_required" as const,
+                                }))
+                              : []),
+                            ...(recovery.ctoxRetired
+                              ? paired
+                                  .filter((entry) => entry.status === "pairing_expired")
+                                  .map((entry) => ({
+                                    instanceId: entry.id,
+                                    reason: "pairing_required" as const,
+                                  }))
+                              : []),
+                          ],
+                        }
+                      : {}),
+                  },
+                };
           if (merged._tag !== "ready") {
-            return pairedUnavailable ? { ...merged, pairedUnavailable: true as const } : merged;
+            if (stored.length > 0)
+              return {
+                _tag: "ready" as const,
+                instances: applyPreferences([], stored),
+                managedState: managed._tag,
+                ...recoveryStatus,
+                ...(pairedUnavailable ? { pairedUnavailable: true as const } : {}),
+              };
+            return {
+              ...merged,
+              ...recoveryStatus,
+              ...(pairedUnavailable ? { pairedUnavailable: true as const } : {}),
+            };
           }
+          const instances = yield* attachShellStatuses(merged.instances);
+          yield* rememberDiscovery(instances);
           return {
             ...merged,
-            instances: yield* attachShellStatuses(merged.instances),
+            ...recoveryStatus,
+            instances: applyPreferences(instances, stored),
             ...(pairedUnavailable ? { pairedUnavailable: true as const } : {}),
           };
         }).pipe(Effect.withSpan("CtoxInstanceRegistry.merge")),
       ),
-    importInvite: (invite) =>
+    importInvite: (invite, replacesInstanceId) =>
       registryLock.withPermit(
         Effect.gen(function* () {
           const now = yield* currentTimeMillis;
-          return yield* importPairing(yield* parseCtoxPairingInvite(invite, now));
+          return yield* importPairing(
+            yield* parseCtoxPairingInvite(invite, now),
+            replacesInstanceId,
+          );
         }),
       ),
     importManualPairing: (input) =>
@@ -1648,7 +1828,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
           if (pairing === undefined) {
             return yield* registryError("invalid_input");
           }
-          return yield* importPairing(pairing);
+          return yield* importPairing(pairing, input.replacesInstanceId);
         }),
       ),
     addSshManagedInstance: (input) =>
@@ -1695,7 +1875,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
             readPublicDocument(fileSystem, publicRegistryPath),
             readSecretDocument(fileSystem, secretRegistryPath),
           ]);
-          yield* assertRegistryConsistency(publicDocument, secretDocument);
+          yield* assertRecoverableConsistency(publicDocument, secretDocument);
           const descriptor = publicDocument.instances.find(
             (instance) => instance.id === instanceId,
           );

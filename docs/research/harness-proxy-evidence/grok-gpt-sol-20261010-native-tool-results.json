@@ -1,0 +1,206 @@
+{
+  "recordedAt": "2026-10-10T02:43:32.331Z",
+  "harness": "Grok CLI / Grok Build",
+  "model": "gpt-6.1-sol",
+  "workjetThreadId": "5dd9d40b-2273-4d4a-a1ee-23305d3688b3",
+  "nativeSessionId": "01a123b0-054b-7312-b58f-1c6fbaf676c8",
+  "terminal": "ready",
+  "workjetToolCompletions": 20,
+  "errors": [],
+  "runtimeBuild": {
+    "recordedAt": "2026-10-10T02:38:35.223Z",
+    "native": {
+      "binary": "/Volumes/OneTB/dev-artifacts/workjet/harness-proxy-rc-20261009/cargo-target/debug/workjet-provider-gateway-host",
+      "sha256": "7bd4f46f7c62a4ce0150ffb542dc7744ccadf7c67d40d8d04d77ccc4ce674add",
+      "sourceHead": "7b4415a00"
+    },
+    "server": {
+      "entry": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/runtime/apps/server/dist/bin.mjs",
+      "sha256": "d45cc88e4bb796d232563c4a325c1d67864d9f8b022d6dcc26d8b6efa55fea7c",
+      "sourceHead": "6b17cd3b3f6d354829db9cba7e890641c7b7bf88"
+    }
+  },
+  "strictlySequential": true,
+  "nativeResults": [
+    {
+      "index": 1,
+      "callId": "call_UCVKB9FRnP2pxwWsR6L3Z6OF",
+      "command": "printf 'PROXY_MATRIX_01\\n'",
+      "output": "PROXY_MATRIX_01\n",
+      "exitCode": 0,
+      "completedAt": 1791600110,
+      "status": "completed"
+    },
+    {
+      "index": 2,
+      "callId": "call_klBcK1LFmiyqArf8Xsc1r0Sj",
+      "command": "printf 'PROXY_MATRIX_02\\n'",
+      "output": "PROXY_MATRIX_02\n",
+      "exitCode": 0,
+      "completedAt": 1791600115,
+      "status": "completed"
+    },
+    {
+      "index": 3,
+      "callId": "call_HcI0LkYWLkQJnxsuVb8MT4Cj",
+      "command": "printf 'PROXY_MATRIX_03\\n'",
+      "output": "PROXY_MATRIX_03\n",
+      "exitCode": 0,
+      "completedAt": 1791600118,
+      "status": "completed"
+    },
+    {
+      "index": 4,
+      "callId": "call_5YcMc928RxO2xieYx3hF1hqE",
+      "command": "printf 'PROXY_MATRIX_04\\n'",
+      "output": "PROXY_MATRIX_04\n",
+      "exitCode": 0,
+      "completedAt": 1791600121,
+      "status": "completed"
+    },
+    {
+      "index": 5,
+      "callId": "call_m0F4b7HAlMpk1FO3E7bnqMNO",
+      "command": "printf 'PROXY_MATRIX_05\\n'",
+      "output": "PROXY_MATRIX_05\n",
+      "exitCode": 0,
+      "completedAt": 1791600124,
+      "status": "completed"
+    },
+    {
+      "index": 6,
+      "callId": "call_BHjkUrmotZvsQNvamLHmZ6Px",
+      "command": "printf 'PROXY_MATRIX_06\\n'",
+      "output": "PROXY_MATRIX_06\n",
+      "exitCode": 0,
+      "completedAt": 1791600127,
+      "status": "completed"
+    },
+    {
+      "index": 7,
+      "callId": "call_0MtFJqsH73ZHMa3JmJnKXAyd",
+      "command": "printf 'PROXY_MATRIX_07\\n'",
+      "output": "PROXY_MATRIX_07\n",
+      "exitCode": 0,
+      "completedAt": 1791600130,
+      "status": "completed"
+    },
+    {
+      "index": 8,
+      "callId": "call_YMDNyBNksamqwKGcV1daRPBi",
+      "command": "printf 'PROXY_MATRIX_08\\n'",
+      "output": "PROXY_MATRIX_08\n",
+      "exitCode": 0,
+      "completedAt": 1791600133,
+      "status": "completed"
+    },
+    {
+      "index": 9,
+      "callId": "call_BfaxeycdL9M5BE0TQ1YnqnTx",
+      "command": "printf 'PROXY_MATRIX_09\\n'",
+      "output": "PROXY_MATRIX_09\n",
+      "exitCode": 0,
+      "completedAt": 1791600136,
+      "status": "completed"
+    },
+    {
+      "index": 10,
+      "callId": "call_PDCGjyflcPR8yhQDUYRs8RKv",
+      "command": "printf 'PROXY_MATRIX_10\\n'",
+      "output": "PROXY_MATRIX_10\n",
+      "exitCode": 0,
+      "completedAt": 1791600139,
+      "status": "completed"
+    },
+    {
+      "index": 11,
+      "callId": "call_cgQBwbuqEnnUoB31lYPSewIk",
+      "command": "printf 'PROXY_MATRIX_11\\n'",
+      "output": "PROXY_MATRIX_11\n",
+      "exitCode": 0,
+      "completedAt": 1791600142,
+      "status": "completed"
+    },
+    {
+      "index": 12,
+      "callId": "call_g0zV7DPAYbTKWdRfOr8S6Rb7",
+      "command": "printf 'PROXY_MATRIX_12\\n'",
+      "output": "PROXY_MATRIX_12\n",
+      "exitCode": 0,
+      "completedAt": 1791600145,
+      "status": "completed"
+    },
+    {
+      "index": 13,
+      "callId": "call_Vg5svVLUBKj5bXZQV9sanMl5",
+      "command": "printf 'PROXY_MATRIX_13\\n'",
+      "output": "PROXY_MATRIX_13\n",
+      "exitCode": 0,
+      "completedAt": 1791600147,
+      "status": "completed"
+    },
+    {
+      "index": 14,
+      "callId": "call_0hPqXqSLZNL1D4ImrB3T0EmO",
+      "command": "printf 'PROXY_MATRIX_14\\n'",
+      "output": "PROXY_MATRIX_14\n",
+      "exitCode": 0,
+      "completedAt": 1791600150,
+      "status": "completed"
+    },
+    {
+      "index": 15,
+      "callId": "call_YQZtzQ3EqIaPlv637uaDKUzB",
+      "command": "printf 'PROXY_MATRIX_15\\n'",
+      "output": "PROXY_MATRIX_15\n",
+      "exitCode": 0,
+      "completedAt": 1791600154,
+      "status": "completed"
+    },
+    {
+      "index": 16,
+      "callId": "call_NXyNLqL4oS1VCkDbYkwOQcn5",
+      "command": "printf 'PROXY_MATRIX_16\\n'",
+      "output": "PROXY_MATRIX_16\n",
+      "exitCode": 0,
+      "completedAt": 1791600156,
+      "status": "completed"
+    },
+    {
+      "index": 17,
+      "callId": "call_U8QrRza9WrDNsJWNCgDKzKrF",
+      "command": "printf 'PROXY_MATRIX_17\\n'",
+      "output": "PROXY_MATRIX_17\n",
+      "exitCode": 0,
+      "completedAt": 1791600159,
+      "status": "completed"
+    },
+    {
+      "index": 18,
+      "callId": "call_ER0L53EUbgYioq7oHbt9N4lF",
+      "command": "printf 'PROXY_MATRIX_18\\n'",
+      "output": "PROXY_MATRIX_18\n",
+      "exitCode": 0,
+      "completedAt": 1791600162,
+      "status": "completed"
+    },
+    {
+      "index": 19,
+      "callId": "call_uRfvP77knfmBOFQwNUMKY3Ck",
+      "command": "printf 'PROXY_MATRIX_19\\n'",
+      "output": "PROXY_MATRIX_19\n",
+      "exitCode": 0,
+      "completedAt": 1791600165,
+      "status": "completed"
+    },
+    {
+      "index": 20,
+      "callId": "call_A1yQ2GEVqQ6xBjSyG0LJG1Tk",
+      "command": "printf 'PROXY_MATRIX_20\\n'",
+      "output": "PROXY_MATRIX_20\n",
+      "exitCode": 0,
+      "completedAt": 1791600168,
+      "status": "completed"
+    }
+  ]
+}

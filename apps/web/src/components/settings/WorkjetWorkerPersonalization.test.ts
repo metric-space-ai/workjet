@@ -20,16 +20,16 @@ describe("Workjet worker personalization matrices", () => {
 
   it("rejects malformed dimensions and weights outside the interactive range", () => {
     expect(() => parseWorkjetPersonalizationMatrices("[[1]]", "[[0]]", 2, 2)).toThrow(
-      "W must be 2 × 2",
+      "W muss 2 × 2",
     );
     expect(() =>
       parseWorkjetPersonalizationMatrices("[[1, 0], [0, 1]]", "[[0, 1.1], [0, 0]]", 2, 2),
-    ).toThrow("weights from -1 to 1");
+    ).toThrow("Gewichte von -1 bis 1");
   });
 
   it("rejects JSON values that only coerce to numbers", () => {
     expect(() =>
       parseWorkjetPersonalizationMatrices('[[1, "0"], [0, 1]]', "[[0, 0], [0, 0]]", 2, 2),
-    ).toThrow("weights from -1 to 1");
+    ).toThrow("Gewichte von -1 bis 1");
   });
 });

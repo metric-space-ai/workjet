@@ -51,23 +51,22 @@ export function useCloudLinkController() {
   const [operationError, setOperationError] = useState<string | null>(null);
 
   const reportUpdateFailure = (cause: unknown) => {
-    const message =
-      cause instanceof Error ? cause.message : "Could not update Workjet Connect access.";
+    const message = cause instanceof Error ? cause.message : "Workjet Connect fehlgeschlagen.";
     const traceId = findErrorTraceId(cause);
     console.error("[workjet-connect] Could not update Workjet Connect", {
       message,
       traceId,
       cause,
     });
-    setOperationError(traceId ? `${message} Trace ID: ${traceId}` : message);
+    setOperationError(traceId ? `${message} Trace-ID: ${traceId}` : message);
     toastManager.add({
       type: "error",
-      title: "Could not update Workjet Connect",
+      title: "Workjet Connect fehlgeschlagen",
       description: message,
       data: traceId
         ? {
             secondaryActionProps: {
-              children: "Copy trace ID",
+              children: "Trace-ID kopieren",
               onClick: () => void navigator.clipboard?.writeText(traceId),
             },
           }
@@ -86,7 +85,7 @@ export function useCloudLinkController() {
     setOperationError(null);
     const target = primaryCloudLinkState.target;
     if (!target) {
-      reportUpdateFailure(new Error("Local environment is not ready yet."));
+      reportUpdateFailure(new Error("Lokale Instanz noch nicht bereit."));
       return false;
     }
     const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
@@ -117,7 +116,7 @@ export function useCloudLinkController() {
       }
       const clerkToken = tokenResult.value;
       if (!clerkToken) {
-        reportUpdateFailure(new Error("Sign in to Workjet Connect before enabling this."));
+        reportUpdateFailure(new Error("Erst bei Workjet Connect anmelden."));
         return false;
       }
       if (!linked || managedTunnelActive !== desired.managedTunnel) {

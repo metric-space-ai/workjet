@@ -67,8 +67,18 @@ const thread = (
     ],
     deletedAt: overrides.deletedAt ?? null,
     workjetConfig: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       role,
+      ...(role === "orchestrator"
+        ? {
+            team: {
+              role: "supervisor",
+              threadId: SOURCE_THREAD_ID,
+              projectId: "project-1",
+              parentThreadId: null,
+            },
+          }
+        : {}),
       parent: null,
       managedInstructions: "",
       enabledCapabilityIds: [],

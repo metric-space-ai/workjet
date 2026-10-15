@@ -79,18 +79,18 @@ it("does not treat an opened guest as a synchronized module", () => {
     healthSummary: unavailable,
   });
   expect(ctoxInstanceStatusLabel(local, false)).toBe(
-    "Verfügbar · Synchronisierung nicht verfügbar",
+    "Verbunden · Synchronisierung nicht verfügbar",
   );
   expect(ctoxInstanceStatusLabel(local, true)).toBe(
-    "Verfügbar · Synchronisierung nicht verfügbar · Geöffnet · Datenstand unbestätigt",
+    "Verbunden · Synchronisierung nicht verfügbar · Geöffnet · Datenstand unbestätigt",
   );
 });
 
 it("keeps module freshness unconfirmed when discovery advertises a ready data plane", () => {
   const managed = instance({ id: "managed:welsch", source: "ctox_dev", displayName: "Welsch" });
-  expect(ctoxInstanceStatusLabel(managed)).toBe("Verfügbar · Synchronisierung verfügbar");
+  expect(ctoxInstanceStatusLabel(managed)).toBe("Verbunden · Synchronisierung verfügbar");
   expect(ctoxInstanceStatusLabel(managed, true)).toBe(
-    "Verfügbar · Synchronisierung verfügbar · Geöffnet · Datenstand unbestätigt",
+    "Verbunden · Synchronisierung verfügbar · Geöffnet · Datenstand unbestätigt",
   );
   expect(ctoxInstanceStatusLabel(managed, true)).not.toContain("Synchronisierung bereit");
 });
@@ -242,10 +242,10 @@ describe("CTOX instance presentation", () => {
 
     const groups = groupCtoxInstances(instances);
     expect(groups.map((group) => group.label)).toEqual([
-      "CTOX Backend",
-      "Verbundene Backends",
-      "Lokale Backends",
-      "SSH-Backends",
+      "ctox.dev",
+      "Verbundene Instanzen",
+      "Lokale Instanzen",
+      "SSH-Instanzen",
     ]);
     expect(groups.map((group) => group.instances.map(({ displayName }) => displayName))).toEqual([
       ["Managed Alpha"],
@@ -266,13 +266,13 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Aktives Backend");
+    expect(markup).toContain("Aktive Instanz");
     expect(markup).toContain("Managed Alpha");
     expect(markup).not.toContain("Paired Office");
     expect(markup).not.toContain("Local Lab");
     expect(markup).not.toContain("SSH Lab");
-    expect(markup).toContain("CTOX Backend · owner · alpha.ctox.dev");
-    expect(markup).toContain("Verfügbar · Synchronisierung verfügbar");
+    expect(markup).toContain("ctox.dev · owner · alpha.ctox.dev");
+    expect(markup).toContain("Verbunden · Synchronisierung verfügbar");
     expect(markup).not.toContain("Synchronisierung bereit");
     expect(markup).not.toContain("room-secret-must-not-render");
     expect(markup).not.toContain("tenant-launch-token-must-not-render");
@@ -297,7 +297,7 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Wähle ein Backend im Dropdown oben aus.");
+    expect(markup).toContain("Es ist noch keine Instanz gewählt.");
     expect(markup).not.toContain("Other");
   });
 
@@ -336,8 +336,8 @@ describe("CTOX instance presentation", () => {
     expect(canActivateCtoxInstance(reachable)).toBe(true);
     expect(canActivateCtoxInstance(unreachable)).toBe(false);
     expect(isRemovableCtoxInstance(reachable)).toBe(true);
-    expect(markup).toContain("Aktives Backend");
-    expect(markup).toContain("SSH-Backend\nVerfügbar · Synchronisierung nicht verfügbar");
+    expect(markup).toContain("Aktive Instanz");
+    expect(markup).toContain("SSH-Instanz\nVerbunden · Synchronisierung nicht verfügbar");
     expect(markup).not.toContain(CTOX_SSH_LAUNCH_PENDING_HINT);
     expect(markup).not.toContain("Quiet Box");
     expect(markup).not.toContain("cursor-not-allowed");
@@ -392,8 +392,8 @@ describe("CTOX instance presentation", () => {
       ctoxModeShellSource.indexOf(') : choice === "invite" ? ('),
     );
     expect(sshForm).toContain("SSH-Host oder Alias");
-    expect(sshForm).toContain("CTOX-Datenordner auf diesem Host (optional)");
-    expect(sshForm).toContain("Es werden keine Zugangsdaten");
+    expect(sshForm).toContain("CTOX-Datenordner");
+    expect(sshForm).not.toContain("Es werden keine Zugangsdaten");
     expect(sshForm).not.toContain('type="password"');
     expect(sshForm).not.toMatch(/secret|token|credential.{0,20}=/iu);
   });
@@ -431,13 +431,13 @@ describe("CTOX instance presentation", () => {
     );
 
     expect(canActivateCtoxInstance(local)).toBe(true);
-    expect(markup).toContain("Aktives Backend");
+    expect(markup).toContain("Aktive Instanz");
     expect(markup).toContain("Workshop Business OS");
     expect(markup).not.toContain("Stopped Daemon");
     // A running daemon carries no unavailability hint; a stopped one does.
-    expect(markup).toContain("Lokales Backend\nVerfügbar · Synchronisierung nicht verfügbar");
+    expect(markup).toContain("Lokale Instanz\nVerbunden · Synchronisierung nicht verfügbar");
     expect(markup).not.toContain(
-      "Lokales Backend\nVerfügbar · Synchronisierung nicht verfügbar\nDieses lokale Backend läuft nicht.",
+      "Lokale Instanz\nVerbunden · Synchronisierung nicht verfügbar\nLokale Instanz läuft nicht.",
     );
     // Other discovered backends belong only in the dropdown.
     expect(markup).toContain('data-ctox-instance-source="local_daemon"');
@@ -474,7 +474,7 @@ describe("CTOX instance presentation", () => {
     expect(markup).toContain("Nicht bei ctox.dev angemeldet");
     expect(markup).toContain("Anmelden");
     expect(markup).toContain("Invited Office");
-    expect(markup).toContain("Settings");
+    expect(markup).toContain("Einstellungen");
     expect(markup).not.toContain("Abmelden");
   });
 
@@ -498,10 +498,7 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain(
-      "Gespeicherte Backend-Verbindungen sind teilweise oder vollständig nicht lesbar.",
-    );
-    expect(markup).toContain("Die gespeicherten Daten wurden nicht verändert.");
+    expect(markup).toContain("Die gespeicherten Verbindungen lassen sich nicht lesen.");
     expect(markup).toContain("Welsch");
   });
 
@@ -531,11 +528,9 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain(
-      "CTOX Backend konnte nicht geladen werden. Verbundene Backends bleiben verfügbar.",
-    );
+    expect(markup).toContain("Die Instanz ist gerade nicht erreichbar.");
     expect(markup).toContain("Paired Office");
-    expect(markup).toContain("Verbindung abgelaufen · Synchronisierung nicht verfügbar");
+    expect(markup).toContain("Anmeldung nötig · Synchronisierung nicht verfügbar");
   });
 
   it("infers legacy managed-only discovery without overriding explicit managed state", () => {
@@ -588,6 +583,14 @@ describe("CTOX instance presentation", () => {
     });
 
     expect(canActivateCtoxInstance(managed)).toBe(true);
+    expect(isRemovableCtoxInstance(managed)).toBe(false);
+    expect(canActivateCtoxInstance({ ...managed, workjetState: "disabled" })).toBe(false);
+    expect(canActivateCtoxInstance({ ...paired, workjetState: "removed" })).toBe(false);
+    expect(
+      groupCtoxInstances([{ ...managed, workjetState: "removed" }]).every(
+        (group) => group.instances.length === 0,
+      ),
+    ).toBe(true);
     expect(canActivateCtoxInstance(paired)).toBe(true);
     expect(canActivateCtoxInstance(invited)).toBe(true);
     expect(canActivateCtoxInstance(expired)).toBe(false);
@@ -623,7 +626,7 @@ describe("CTOX instance presentation", () => {
       /<button(?![^>]*disabled)[^>]*data-ctox-instance-source="local_daemon"[^>]*data-ctox-instance-status="available"[^>]*>[^]*Local Alpha/,
     );
     expect(markup).toMatch(
-      /<button[^>]*disabled=""[^>]*title="[^"]*Dieses lokale Backend läuft nicht\."[^>]*>[^]*Stopped Alpha/,
+      /<button[^>]*disabled=""[^>]*title="[^"]*Lokale Instanz läuft nicht\."[^>]*>[^]*Stopped Alpha/,
     );
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[^]*SSH Alpha/);
   });
@@ -841,6 +844,11 @@ describe("CTOX bridge actions", () => {
     });
     expect(activate).toHaveBeenLastCalledWith("managed:alpha", bounds);
     expect(activate).toHaveBeenCalledTimes(2);
+
+    // Only an explicit gesture may reset the repair backoff in Desktop Main.
+    await activateCtoxInstance(bridge, managed, bounds, true);
+    expect(activate).toHaveBeenLastCalledWith("managed:alpha", bounds, true);
+    expect(activate.mock.calls[1]).toHaveLength(2);
   });
 
   it("rejects managed removal before calling the paired-instance bridge", async () => {
@@ -1004,8 +1012,8 @@ describe("CtoxMainShell", () => {
 
     expect(markup).toContain('data-ctox-main-shell=""');
     expect(markup).toContain('data-ctox-main-chrome=""');
-    expect(markup).toContain("Kein Backend ausgewählt");
-    expect(markup).toContain("Wählen Sie ein verfügbares Backend");
+    expect(markup).toContain("Es ist noch keine Instanz gewählt.");
+    expect(markup).toContain("Instanz auswählen");
     expect(ctoxModeShellSource).not.toContain("Managed Business OS guest");
     expect(ctoxModeShellSource).not.toContain("managed Business OS guest");
     expect(markup).not.toContain("iframe");
@@ -1034,9 +1042,9 @@ describe("CtoxMainShell", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Backend derzeit nicht verfügbar");
-    expect(markup).toContain("Die ausgewählte Instanz bleibt gespeichert");
-    expect(markup).not.toContain("Kein Backend ausgewählt");
+    expect(markup).toContain("Die Instanz ist gerade nicht erreichbar.");
+    expect(markup).toContain("Erneut versuchen");
+    expect(markup).not.toContain("Es ist noch keine Instanz gewählt.");
   });
 
   it("keeps exposed host copy in product language", () => {
@@ -1070,7 +1078,7 @@ describe("CtoxMainShell", () => {
     expect(textAndExposedAttributes).not.toMatch(
       /\b(?:guest|webcontentsview|sidecar|native|binary|room|signaling|rxdb|webrtc)\b/iu,
     );
-    expect(markup).toContain("Aktives Backend");
+    expect(markup).toContain("Aktive Instanz");
     expect(ctoxModeShellSource).toContain("aria-label={`Business OS: ${instance.displayName}`}");
     expect(ctoxModeShellSource).toContain('error: "Business OS konnte nicht geöffnet werden."');
     for (const staleCopy of [
@@ -1145,7 +1153,7 @@ describe("CTOX app rail presentation", () => {
     );
     expect(markup).not.toContain('aria-current="true"');
     expect(markup).toContain("cursor-not-allowed");
-    expect(markup).toContain("Dieses Backend ist nicht verfügbar.");
+    expect(markup).toContain("Instanz nicht verfügbar.");
   });
 
   it("renders nothing for an instance without rail apps", () => {
@@ -1473,7 +1481,7 @@ describe("CTOX sidebar footer", () => {
       </CtoxModeProvider>,
     );
     expect(markup).toContain('data-ctox-sidebar-footer=""');
-    expect(markup).toContain("Settings");
+    expect(markup).toContain("Einstellungen");
     expect(markup).not.toContain("Business OS-Einstellungen");
     expect(markup).not.toContain('aria-label="Backends aktualisieren"');
     expect(markup).not.toContain("Check for updates");

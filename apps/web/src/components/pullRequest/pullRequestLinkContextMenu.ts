@@ -9,21 +9,21 @@ export type PullRequestLinkContextMenuAction = "copy-link" | "open-external";
 
 /** Named for the host rather than "externally": the point is where you will land. */
 export const OPEN_ON_HOST_LABELS: Partial<Record<string, string>> = {
-  github: "Open on GitHub",
-  gitlab: "Open on GitLab",
-  bitbucket: "Open on Bitbucket",
-  "azure-devops": "Open on Azure DevOps",
+  github: "Auf GitHub öffnen",
+  gitlab: "Auf GitLab öffnen",
+  bitbucket: "Auf Bitbucket öffnen",
+  "azure-devops": "Auf Azure DevOps öffnen",
 };
 
 export const openOnHostLabel = (provider: string): string =>
-  OPEN_ON_HOST_LABELS[provider] ?? "Open on host";
+  OPEN_ON_HOST_LABELS[provider] ?? "Beim Host öffnen";
 
 /** Copy first: it is the reason to right-click a number rather than click it. */
 export function pullRequestLinkContextMenuItems(
   openLabel: string,
 ): readonly ContextMenuItem<PullRequestLinkContextMenuAction>[] {
   return [
-    { id: "copy-link", label: "Copy link", icon: "copy" },
+    { id: "copy-link", label: "Link kopieren", icon: "copy" },
     { id: "open-external", label: openLabel },
   ];
 }
@@ -62,7 +62,7 @@ export async function showPullRequestLinkContextMenu({
   } catch {
     toastManager.add({
       type: "error",
-      title: action === "copy-link" ? "Could not copy the link" : "Could not open the link",
+      title: action === "copy-link" ? "Link nicht kopiert" : "Link nicht geöffnet",
     });
   }
 }

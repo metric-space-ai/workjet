@@ -60,10 +60,11 @@ WorkerDispatch failure reasons. Native completion checks the exact parent,
 worker ID, selected computer and typed model/capability data. It rejects changed
 replays.
 
-The worker remains in its source project's Workers group while active. The
-existing PR lifecycle stops the target execution, archives the worker, retires
-its source harness authority and closes its tunnel after its single PR is
-merged or closed.
+The worker remains in its source project's One-Shot Worker group while active.
+Its single verified PR submission stops the target execution, publishes the PR
+link at the source parent, archives the worker and retires its source authority.
+The PR remains available for the parent to review and merge. Launch completion
+above is distinct from this later submitted-PR receipt.
 
 ## Evidence
 

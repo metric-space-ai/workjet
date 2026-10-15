@@ -56,10 +56,8 @@ export function formatWorkjetHandoffBranch(
   branch: WorkjetReceivedHandoff["branch"],
 ): string | null {
   if (branch === undefined) return null;
-  const head = branch.headCommit === undefined ? "head unknown" : `head ${branch.headCommit}`;
-  const remote = branch.remoteConfigured
-    ? "source repo has a remote; nothing was pushed"
-    : "source repo has no remote";
+  const head = branch.headCommit === undefined ? "Head unbekannt" : `Head ${branch.headCommit}`;
+  const remote = branch.remoteConfigured ? "Remote vorhanden, nichts gepusht" : "Kein Remote";
   return `${branch.branch} · ${head} · ${remote}`;
 }
 
@@ -110,10 +108,10 @@ export interface WorkjetHandoffInboxProps {
 }
 
 const CONTINUE_LABEL: Record<WorkjetHandoffContinueState, string> = {
-  ready: "Continue here",
-  busy: "Continuing…",
-  unavailable: "Context missing",
-  continued: "Open thread",
+  ready: "Hier fortsetzen",
+  busy: "Wird fortgesetzt …",
+  unavailable: "Kontext fehlt",
+  continued: "Unterhaltung öffnen",
 };
 
 export function WorkjetHandoffInbox({
@@ -138,7 +136,7 @@ export function WorkjetHandoffInbox({
         className="text-muted-foreground hover:text-foreground flex w-full items-center gap-2 text-xs font-medium tracking-wide uppercase"
         data-testid="workjet-handoff-inbox-trigger"
       >
-        Handoffs ({rows.length})
+        Übergaben ({rows.length})
       </CollapsibleTrigger>
       <CollapsiblePanel>
         <ul className="mt-1.5 flex flex-col gap-1" data-testid="workjet-handoff-inbox-list">
@@ -164,8 +162,7 @@ export function WorkjetHandoffInbox({
               ) : null}
               {row.continueState === "unavailable" ? (
                 <span className="text-muted-foreground text-[11px]">
-                  The context snapshot did not arrive on this machine, so this handoff cannot be
-                  continued here.
+                  Kontext nicht auf diesem Rechner
                 </span>
               ) : null}
               <button

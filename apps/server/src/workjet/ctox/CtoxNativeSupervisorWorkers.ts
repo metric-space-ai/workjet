@@ -8,6 +8,9 @@ import {
   NativeSupervisorWorkerCompletion,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as NodeUtil from "node:util";
+import { NativeWorkerTerminalReceipt } from "../NativeWorkerOutcome.ts";
+import type { RemoteWorkerResult } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -25,9 +28,19 @@ const CompleteReceipt = Schema.Struct({
   revision: Schema.Int,
   intentId: Schema.String,
 });
+const OutcomeAcknowledgement = Schema.Struct({
+  provenance: Schema.Literal("authenticated_source_report"),
+  accepted_at_ms: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  registration_revision: Schema.Int,
+  receipt: NativeWorkerTerminalReceipt,
+});
+const decodeOutcome = Schema.decodeUnknownEffect(NativeWorkerTerminalReceipt);
+const encodeOutcome = Schema.encodeEffect(NativeWorkerTerminalReceipt);
+const decodeOutcomeAcknowledgement = Schema.decodeUnknownEffect(OutcomeAcknowledgement);
 const decodeRegistration = Schema.decodeUnknownEffect(NativeSupervisorSourceRegistration);
 const decodePoll = Schema.decodeUnknownEffect(PollReceipt);
 const decodeComplete = Schema.decodeUnknownEffect(CompleteReceipt);
+const encodeCompletion = Schema.encodeEffect(NativeSupervisorWorkerCompletion);
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
 const sameSource = (left: NativeSupervisorSource, right: NativeSupervisorSource) =>
   left.sourceEnvironmentId === right.sourceEnvironmentId &&
@@ -37,40 +50,94 @@ const sameSource = (left: NativeSupervisorSource, right: NativeSupervisorSource)
 /** Native agent sessions cannot call the managed-source side of this channel.
  * Every operation resolves the current existing owner-authenticated connection. */
 export function makeCtoxNativeSupervisorWorkers(dependencies: {
-  readonly connections: Pick<DecisionHubConnectionRegistry["Service"], "resolveReadyTarget">;
+  readonly connections: Pick<
+    DecisionHubConnectionRegistry["Service"],
+    "resolveReadyTarget" | "probe"
+  >;
   readonly transport: ReturnType<typeof makeCtoxMcpTransport>;
 }) {
+  // Re-resolve authority on every call. Share only successful tool discovery,
+  // fenced by the exact current endpoint and credential, across project parents.
+  const discovered = new Map<string, { readonly endpoint: string; readonly token: string }>();
   const invoke = Effect.fn("CtoxNativeSupervisorWorkers.invoke")(function* (
     scope: RemoteWorkerNativeScope,
     args: Record<string, unknown>,
   ) {
+    yield* Effect.annotateCurrentSpan({
+      connectionId: scope.connectionId,
+      instanceId: scope.instanceId,
+      action: args.action,
+    });
     const target = yield* dependencies.connections
       .resolveReadyTarget(scope.connectionId, scope.instanceId)
-      .pipe(Effect.mapError(failure));
+      .pipe(
+        Effect.tapError((error) =>
+          Effect.annotateCurrentSpan({ reason: error.reason, stage: "resolve" }),
+        ),
+        Effect.mapError(failure),
+      );
     const tool = "business_os.workjet_worker_dispatch";
-    if (args.action === "register_source")
-      yield* dependencies.transport.probe(target, [tool]).pipe(Effect.mapError(failure));
-    const response = yield* dependencies.transport
-      .callTool(target, tool, args)
-      .pipe(Effect.mapError(failure));
-    if (response.isError || response.structuredContent === undefined) return yield* failure();
+    const discoveryKey = `${scope.connectionId}/${scope.instanceId}`;
+    const saved = discovered.get(discoveryKey);
+    const needsDiscovery =
+      args.action === "register_source" &&
+      (saved?.endpoint !== target.endpoint || saved.token !== target.token);
+    const call = dependencies.transport.callTool(target, tool, args);
+    const response = yield* (
+      needsDiscovery
+        ? dependencies.transport.probe(target, [tool]).pipe(
+            Effect.tap(() => Effect.sync(() => discovered.set(discoveryKey, target))),
+            Effect.andThen(call),
+          )
+        : call
+    ).pipe(
+      Effect.tapError((error) =>
+        Effect.annotateCurrentSpan({
+          reason: error.reason,
+          stage: needsDiscovery ? "discover-or-call" : "call",
+        }),
+      ),
+      Effect.tapError(() => Effect.sync(() => discovered.delete(discoveryKey))),
+      Effect.tapError((error) =>
+        error.reason === "authentication-required"
+          ? // Probe the current credential, rather than invalidating a token that
+            // may have been replaced while this request was in flight. A second
+            // 401 persists needs_auth and stops all parents sharing this source.
+            dependencies.connections.probe(scope.connectionId).pipe(Effect.ignore)
+          : Effect.void,
+      ),
+      Effect.mapError(failure),
+    );
+    if (response.isError || response.structuredContent === undefined) {
+      yield* Effect.annotateCurrentSpan({
+        reason: response.isError ? "tool-denied" : "receipt-missing",
+      });
+      return yield* failure();
+    }
     return response.structuredContent;
   });
   return {
-    register: Effect.fn("CtoxNativeSupervisorWorkers.register")(function* (
-      scope: RemoteWorkerNativeScope,
-      source: NativeSupervisorSource,
-    ) {
-      const receipt = yield* invoke(scope, {
-        action: "register_source",
-        source_environment_id: source.sourceEnvironmentId,
-        source_supervisor_thread_id: source.sourceSupervisorThreadId,
-        project_id: source.projectId,
-      }).pipe(Effect.flatMap(decodeRegistration), Effect.mapError(failure));
-      if (!sameSource(receipt, source) || receipt.sourceInstanceId !== scope.instanceId)
-        return yield* failure();
-      return receipt;
-    }),
+    register: Effect.fn("CtoxNativeSupervisorWorkers.register")(
+      function* (scope: RemoteWorkerNativeScope, source: NativeSupervisorSource) {
+        yield* Effect.annotateCurrentSpan({
+          connectionId: scope.connectionId,
+          instanceId: scope.instanceId,
+          threadId: source.sourceSupervisorThreadId,
+          projectId: source.projectId,
+          environmentId: source.sourceEnvironmentId,
+        });
+        const receipt = yield* invoke(scope, {
+          action: "register_source",
+          source_environment_id: source.sourceEnvironmentId,
+          source_supervisor_thread_id: source.sourceSupervisorThreadId,
+          project_id: source.projectId,
+        }).pipe(Effect.flatMap(decodeRegistration), Effect.mapError(failure));
+        if (!sameSource(receipt, source) || receipt.sourceInstanceId !== scope.instanceId)
+          return yield* failure();
+        return receipt;
+      },
+      Effect.tapError((error) => Effect.annotateCurrentSpan({ reason: error.reason })),
+    ),
     poll: Effect.fn("CtoxNativeSupervisorWorkers.poll")(function* (
       scope: RemoteWorkerNativeScope,
       sourceEnvironmentId: EnvironmentId,
@@ -82,6 +149,38 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
       if (receipt.intents.some((intent) => intent.sourceEnvironmentId !== sourceEnvironmentId))
         return yield* failure();
       return receipt.intents;
+    }),
+    reportOutcome: Effect.fn("CtoxNativeSupervisorWorkers.reportOutcome")(function* (
+      scope: RemoteWorkerNativeScope,
+      registration: NativeSupervisorSourceRegistration,
+      startup: RemoteWorkerResult,
+      outcome: NativeWorkerTerminalReceipt,
+    ) {
+      const receipt = yield* decodeOutcome(outcome).pipe(Effect.mapError(failure));
+      if (
+        registration.state !== "active" ||
+        registration.sourceInstanceId !== scope.instanceId ||
+        startup.parent.environmentId !== registration.sourceEnvironmentId ||
+        startup.parent.threadId !== registration.sourceSupervisorThreadId ||
+        startup.workerThreadId !== receipt.worker_thread_id ||
+        startup.environmentId !== receipt.environment_id ||
+        startup.computerId !== receipt.computer_id ||
+        startup.branch !== receipt.branch
+      )
+        return yield* failure();
+      const acknowledged = yield* invoke(scope, {
+        action: "report_outcome",
+        registration_id: registration.registrationId,
+        revision: registration.revision,
+        intent_id: startup.workerThreadId,
+        receipt: yield* encodeOutcome(receipt).pipe(Effect.mapError(failure)),
+      }).pipe(Effect.flatMap(decodeOutcomeAcknowledgement), Effect.mapError(failure));
+      if (
+        acknowledged.registration_revision !== registration.revision ||
+        !NodeUtil.isDeepStrictEqual(acknowledged.receipt, receipt)
+      )
+        return yield* failure();
+      return acknowledged.accepted_at_ms;
     }),
     complete: Effect.fn("CtoxNativeSupervisorWorkers.complete")(function* (
       scope: RemoteWorkerNativeScope,
@@ -107,9 +206,7 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
         registration_id: registration.registrationId,
         revision: registration.revision,
         intent_id: intent.intentId,
-        result: yield* Schema.encodeEffect(NativeSupervisorWorkerCompletion)(result).pipe(
-          Effect.mapError(failure),
-        ),
+        result: yield* encodeCompletion(result).pipe(Effect.mapError(failure)),
       }).pipe(Effect.flatMap(decodeComplete), Effect.mapError(failure));
       if (
         receipt.registrationId !== registration.registrationId ||

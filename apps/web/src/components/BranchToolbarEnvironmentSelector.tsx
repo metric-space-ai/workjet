@@ -65,7 +65,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             data-composer-label-motion
             className="block w-full min-w-0 max-w-[240px] origin-left truncate transition-[opacity,transform] duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] group-data-[compact]/composer-context:[transform:translateX(-0.25rem)_scaleX(0.95)] group-data-[compact]/composer-context:opacity-0 motion-reduce:transform-none motion-reduce:transition-opacity"
           >
-            {activeEnvironment?.label ?? "Run on"}
+            {activeEnvironment?.label ?? "Ausführen auf"}
           </span>
         </span>
       </span>
@@ -83,7 +83,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
         variant="ghost"
         size="xs"
         className="min-w-0 max-w-full font-medium"
-        aria-label="Run on"
+        aria-label="Ausführen auf"
         data-composer-context-control
       >
         {activeEnvironment?.isPrimary ? (
@@ -105,7 +105,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       </SelectTrigger>
       <SelectPopup>
         <SelectGroup>
-          <SelectGroupLabel>Run on</SelectGroupLabel>
+          <SelectGroupLabel>Ausführen auf</SelectGroupLabel>
           {availableEnvironments.map((env) => (
             <SelectItem key={env.environmentId} value={env.environmentId}>
               <span className="inline-flex items-center gap-1.5">

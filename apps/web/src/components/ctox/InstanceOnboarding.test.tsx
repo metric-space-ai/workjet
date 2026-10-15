@@ -1,13 +1,16 @@
 import type { CtoxManagedInstance } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   canMountSelectedInstance,
+  INSTANCE_ONBOARDING_SLOW_MS,
   resolveInstanceOnboardingState,
+  startInstanceOnboardingSlowTimer,
   InstanceOnboardingView,
   InstanceNavigationBoundary,
   InstanceSidebarBoundary,
   InstanceWorkspaceBoundary,
+  WorkjetKeyRecoveryView,
 } from "./InstanceOnboarding";
 import { instanceAppsLabel, instanceHostLabel } from "./InstanceNetworkOverview";
 import { closeInstanceSetup, instanceSetupStore, openInstanceSetup } from "../../instanceSetup";
@@ -42,6 +45,28 @@ const alpha: CtoxManagedInstance = {
 };
 
 describe("instance-first network navigation", () => {
+  it("shows exactly one recovery action and blocks the old workspace until sign-in", () => {
+    const html = renderToStaticMarkup(
+      <WorkjetKeyRecoveryView onLogin={() => undefined} catalogReset />,
+    );
+    expect(html).toContain("Neu anmelden");
+    expect(html).toContain("Bei ctox.dev anmelden");
+    expect(html).not.toContain("Schlüssel verloren");
+    expect(html.match(/<button\b/g)).toHaveLength(1);
+    expect(html).not.toContain("Reconnect Workjet Desktop");
+    expect(html).not.toContain("Back up and reset");
+    expect(
+      resolveInstanceOnboardingState(
+        {
+          _tag: "ready",
+          instances: [alpha],
+          keyRecovery: { pendingLogin: true, connectionCatalogReset: true },
+        },
+        alpha.id,
+        "ready",
+      ),
+    ).toBe("create-or-connect");
+  });
   it("renders the selected Code workspace and project sidebar before an Ops guest exists", () => {
     const html = renderToStaticMarkup(
       <InstanceWorkspaceBoundary surface="code">
@@ -130,29 +155,35 @@ describe("instance-first network navigation", () => {
       ),
     ).toBe("connecting");
   });
-  it("shows every first-start entry on the main screen without a project action", () => {
+  it("shows a calm first-start state with exactly one action and never the network", () => {
     const html = renderToStaticMarkup(
       <InstanceOnboardingView
         state="create-or-connect"
         instances={[]}
         onSelect={() => {}}
-        onRefresh={() => {}}
-        network={<div>Network fixture</div>}
+        onRetry={() => {}}
       />,
     );
-    for (const label of [
-      "Dieser Computer",
-      "SSH-Rechner",
-      "Tailscale-Rechner",
-      "QR-Code scannen",
-      "Link eingeben",
-      "Server, Raum und Passwort",
-      "ctox.dev",
-    ])
-      expect(html).toContain(label);
-    expect(html).not.toContain("project.add");
-    expect(html).not.toContain("Add project");
-    expect(html).not.toContain("Business OS hinzufügen");
+    expect(html).toContain("Instanz verbinden");
+    expect(html).toContain("Instanz hinzufügen");
+    expect(html.match(/<a\b|<button\b/g)).toHaveLength(1);
+    expect(html).not.toContain("Netzwerk");
+    expect(html).not.toContain("network");
+  });
+  it("offers a retry and the instance settings when the selected instance fails", () => {
+    const html = renderToStaticMarkup(
+      <InstanceOnboardingView
+        state="failed"
+        instances={[alpha]}
+        selectedId={alpha.id}
+        onSelect={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(html).toContain("ist nicht erreichbar");
+    expect(html).toContain("Erneut verbinden");
+    expect(html).toContain("Instanzen verwalten");
+    expect(html).not.toContain("Netzwerk");
   });
   it("routes different entry points through one resettable setup request", () => {
     openInstanceSetup("ssh");
@@ -169,7 +200,7 @@ describe("instance-first network navigation", () => {
 
 describe("network evidence labels", () => {
   it("does not infer an SSH host from a display name or a pairing label", () => {
-    expect(instanceHostLabel(alpha)).toBe("Dieser Computer");
+    expect(instanceHostLabel(alpha)).toBe("Dieser Rechner");
     expect(instanceHostLabel({ ...alpha, source: "pairing_invite", displayName: "gpu3" })).toBe(
       "Hostname noch nicht gemeldet",
     );
@@ -182,5 +213,78 @@ describe("network evidence labels", () => {
     expect(
       instanceAppsLabel({ _tag: "completed", instanceId: "alpha", source: "live", apps: [] }),
     ).toBe("0 Apps");
+  });
+});
+
+describe("instance onboarding ends every wait", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each(["loading", "connecting"] as const)("reports %s as slow after exactly 10 s", (state) => {
+    vi.useFakeTimers();
+    const onSlow = vi.fn();
+    const stop = startInstanceOnboardingSlowTimer(state, onSlow);
+    expect(INSTANCE_ONBOARDING_SLOW_MS).toBe(10_000);
+    vi.advanceTimersByTime(9_999);
+    expect(onSlow).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onSlow).toHaveBeenCalledTimes(1);
+    stop?.();
+  });
+
+  it("cancels the timer on cleanup and never waits in other states", () => {
+    vi.useFakeTimers();
+    const onSlow = vi.fn();
+    startInstanceOnboardingSlowTimer("connecting", onSlow)?.();
+    vi.advanceTimersByTime(20_000);
+    expect(onSlow).not.toHaveBeenCalled();
+    for (const state of ["select", "failed", "create-or-connect"] as const)
+      expect(startInstanceOnboardingSlowTimer(state, onSlow)).toBeUndefined();
+  });
+
+  it.each(["loading", "connecting"] as const)(
+    "offers „Erneut verbinden“ and „Instanzen verwalten“ once %s is slow",
+    (state) => {
+      const waiting = renderToStaticMarkup(
+        <InstanceOnboardingView
+          state={state}
+          instances={[alpha]}
+          selectedId={alpha.id}
+          onSelect={() => {}}
+          onRetry={() => {}}
+        />,
+      );
+      expect(waiting).not.toContain("Erneut verbinden");
+      const slow = renderToStaticMarkup(
+        <InstanceOnboardingView
+          state={state}
+          instances={[alpha]}
+          selectedId={alpha.id}
+          onSelect={() => {}}
+          onRetry={() => {}}
+          slow
+        />,
+      );
+      expect(slow).toContain("Erneut verbinden");
+      expect(slow).toContain("Instanzen verwalten");
+      expect(slow).toContain("data-workjet-onboarding-status");
+    },
+  );
+
+  it("lists instances as rows with a status dot", () => {
+    const html = renderToStaticMarkup(
+      <InstanceOnboardingView
+        state="select"
+        instances={[alpha, { ...alpha, id: "beta", displayName: "Beta", status: "offline" }]}
+        onSelect={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(html.match(/data-slot="row"/g)).toHaveLength(2);
+    expect(html.match(/data-slot="row-status"/g)).toHaveLength(2);
+    expect(html).toContain('aria-label="verbunden"');
+    expect(html).toContain('aria-label="getrennt"');
+    expect(html).toContain("lucide-server");
   });
 });

@@ -254,7 +254,7 @@ describe("theme files", () => {
         appearance: "light",
         colors: { background: "#ffffff" },
       }),
-    ).toThrow('"background" is not a supported theme color role.');
+    ).toThrow("„background“ ist keine unterstützte Farbrolle.");
 
     expect(() =>
       parseThemeFile({
@@ -263,7 +263,7 @@ describe("theme files", () => {
         appearance: "light",
         colors: { accent: "var(--danger)" },
       }),
-    ).toThrow('The color for "accent" must be a literal CSS color');
+    ).toThrow("Farbe für „accent“ muss eine CSS-Farbe sein");
   });
 
   it("canonicalizes the explicitly exported theme", () => {
@@ -462,7 +462,7 @@ describe("theme files", () => {
         colors: { canvas: "#f8fbff" },
         variants: { light: { canvas: "#101827" } },
       }),
-    ).toThrow('Theme variants must not repeat the base appearance "light".');
+    ).toThrow("Theme-Varianten dürfen die Grunddarstellung „light“ nicht wiederholen.");
   });
 
   it("keeps a single-mode theme on its only palette", () => {
@@ -893,7 +893,7 @@ describe("theme files", () => {
           colors: { accent: "#5b6cff" },
         }),
       ),
-    ).toThrow('A theme named "Aurora" is already installed.');
+    ).toThrow("Theme „Aurora“ ist bereits installiert.");
     expect(setItem).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();

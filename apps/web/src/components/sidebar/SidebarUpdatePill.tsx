@@ -48,7 +48,7 @@ function SidebarUpdateReleaseNotesTooltip({
         {state.status === "available" ? (
           <div>
             <div className="whitespace-nowrap text-sm leading-5 font-medium">
-              Update ready to download
+              Aktualisierung bereit
             </div>
             {state.availableVersion ? (
               <div className="mt-0.5 text-xs leading-4 text-update-foreground">
@@ -66,7 +66,7 @@ function SidebarUpdateReleaseNotesTooltip({
             {index > 0 && <Separator className="my-3 bg-border/60" />}
             <section>
               <h3 className="text-foreground text-xs leading-4 font-semibold">
-                {index === 0 ? "What's changed" : `Changes in ${releaseNote.version}`}
+                {index === 0 ? "Neuerungen" : `Änderungen in ${releaseNote.version}`}
               </h3>
               <ul className="mt-2 space-y-1.5 pl-4 text-xs leading-5 text-popover-foreground/90">
                 {keyReleaseNoteItems(releaseNote.items).map(({ item, key }) => (
@@ -97,7 +97,7 @@ function SidebarUpdateArchitectureWarningContent() {
   return (
     <Alert variant="warning" className="rounded-2xl border-warning/40 bg-warning/8 text-xs">
       <TriangleAlertIcon />
-      <AlertTitle>Intel build on Apple Silicon</AlertTitle>
+      <AlertTitle>Intel-Build auf Apple Silicon</AlertTitle>
       <AlertDescription>{description}</AlertDescription>
     </Alert>
   );
@@ -117,10 +117,10 @@ function SidebarUpdateControl() {
   const tooltip = isUpdateState
     ? state
       ? getDesktopUpdateButtonTooltip(state)
-      : "Update available"
+      : "Aktualisierung verfügbar"
     : state?.status === "checking"
-      ? "Checking for updates…"
-      : "Check for updates";
+      ? "Suche Aktualisierungen …"
+      : "Nach Aktualisierungen suchen";
   const disabled = isUpdateState ? isDesktopUpdateButtonDisabled(state) : !canCheckForUpdate(state);
 
   const handleAction = useCallback(async () => {
@@ -143,7 +143,7 @@ function SidebarUpdateControl() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Could not download update",
+              title: "Download fehlgeschlagen",
               description: actionError,
             }),
           );
@@ -152,8 +152,8 @@ function SidebarUpdateControl() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Could not start update download",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
+              title: "Download nicht gestartet",
+              description: error instanceof Error ? error.message : "Unerwarteter Fehler.",
             }),
           );
         })
@@ -172,8 +172,8 @@ function SidebarUpdateControl() {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not confirm update",
-            description: error instanceof Error ? error.message : "Update confirmation failed.",
+            title: "Bestätigung fehlgeschlagen",
+            description: error instanceof Error ? error.message : "Bestätigung fehlgeschlagen.",
           }),
         );
         return;
@@ -191,7 +191,7 @@ function SidebarUpdateControl() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Could not install update",
+              title: "Installation fehlgeschlagen",
               description: actionError,
             }),
           );
@@ -200,8 +200,8 @@ function SidebarUpdateControl() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Could not install update",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
+              title: "Installation fehlgeschlagen",
+              description: error instanceof Error ? error.message : "Unerwarteter Fehler.",
             }),
           );
         })
@@ -219,8 +219,7 @@ function SidebarUpdateControl() {
             toastManager.add(
               stackedThreadToast({
                 type: "success",
-                title: "You're up to date",
-                description: "No newer build is available.",
+                title: "Workjet ist aktuell",
               }),
             );
           }
@@ -229,9 +228,8 @@ function SidebarUpdateControl() {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not check for updates",
-            description:
-              result.state.message ?? "Automatic updates are not available in this build.",
+            title: "Suche fehlgeschlagen",
+            description: result.state.message ?? "Nicht verfügbar in diesem Build.",
           }),
         );
       })
@@ -239,8 +237,8 @@ function SidebarUpdateControl() {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not check for updates",
-            description: error instanceof Error ? error.message : "Update check failed.",
+            title: "Suche fehlgeschlagen",
+            description: error instanceof Error ? error.message : "Suche fehlgeschlagen.",
           }),
         );
       })

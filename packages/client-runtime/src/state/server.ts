@@ -870,6 +870,11 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetGatewayDiscoverModels,
     staleTimeMs: WORKJET_GATEWAY_MODELS_STALE_TIME_MS,
   });
+  const workjetGatewayAccountModels = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:account-models",
+    tag: WS_METHODS.workjetGatewayAccountModels,
+    staleTimeMs: 30_000,
+  });
   const workjetDecisionHubConnections = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:workjet:decision-hub:connections",
     tag: WS_METHODS.workjetDecisionHubListConnections,
@@ -1232,6 +1237,7 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetGatewayModelChecks,
     checkWorkjetGatewayModels,
     workjetGatewayModels,
+    workjetGatewayAccountModels,
     workjetHarnessInspect,
     lumaConfiguration,
     updateLumaConfiguration,

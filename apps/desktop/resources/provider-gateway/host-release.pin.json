@@ -3,67 +3,67 @@
   "component": "workjet-provider-gateway-host",
   "status": "pinned",
   "release": {
-    "version": "0.1.1",
-    "releaseTag": "provider-gateway-host-v0.1.1",
-    "sourceCommit": "9b2c23c2d000c5f50715b3e0bb6ff9e4bf500dba",
-    "manifestFileName": "workjet-provider-gateway-host-0.1.1.manifest.json",
-    "manifestUrl": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1.manifest.json",
+    "version": "0.1.3",
+    "releaseTag": "provider-gateway-host-v0.1.3",
+    "sourceCommit": "1449ee02a4db83d3137842d9c05f72187c98cc13",
+    "manifestFileName": "workjet-provider-gateway-host-0.1.3.manifest.json",
+    "manifestUrl": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.3/workjet-provider-gateway-host-0.1.3.manifest.json",
     "manifestByteLength": 3174,
-    "manifestSha256": "8b1409f9efa1919fb30a06569d1b8a8727612de36f22355008cb2c8332b914b7",
+    "manifestSha256": "b93907a75bf96d6b4a545f26d9a7da2e4286724bd873b89e0a9fa55cc7215009",
     "artifacts": [
       {
         "triple": "aarch64-apple-darwin",
         "os": "darwin",
         "arch": "arm64",
-        "fileName": "workjet-provider-gateway-host-0.1.1-aarch64-apple-darwin",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-aarch64-apple-darwin",
-        "byteLength": 17667856,
-        "sha256": "5d07e61898d2e69d6bb1b2974f651d0062418f6d514891848b8c3185649d4c82"
+        "fileName": "workjet-provider-gateway-host-0.1.3-aarch64-apple-darwin",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.3/workjet-provider-gateway-host-0.1.3-aarch64-apple-darwin",
+        "byteLength": 18065312,
+        "sha256": "b9566f36e5582396c27b08f548387aea6858bbdccfd16066883c58881693b224"
       },
       {
         "triple": "x86_64-apple-darwin",
         "os": "darwin",
         "arch": "x64",
-        "fileName": "workjet-provider-gateway-host-0.1.1-x86_64-apple-darwin",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-x86_64-apple-darwin",
-        "byteLength": 19113240,
-        "sha256": "2c2583262e0ee0e185abf3f06f2a5792a334f107a3608359aca55194e7813790"
+        "fileName": "workjet-provider-gateway-host-0.1.3-x86_64-apple-darwin",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.3/workjet-provider-gateway-host-0.1.3-x86_64-apple-darwin",
+        "byteLength": 19889808,
+        "sha256": "49a86d50ea75c8ed56e38b4c536b538d9642bc71c5d9404b129a93ac3f1141fa"
       },
       {
         "triple": "x86_64-unknown-linux-gnu",
         "os": "linux",
         "arch": "x64",
-        "fileName": "workjet-provider-gateway-host-0.1.1-x86_64-unknown-linux-gnu",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-x86_64-unknown-linux-gnu",
-        "byteLength": 20872496,
-        "sha256": "f31b07e4fd8768b1450f94a2d884f09c63fc88bfff2f9fd7c38d9f4fffe7efd9"
+        "fileName": "workjet-provider-gateway-host-0.1.3-x86_64-unknown-linux-gnu",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.3/workjet-provider-gateway-host-0.1.3-x86_64-unknown-linux-gnu",
+        "byteLength": 21420112,
+        "sha256": "8f7720198564cdc30506354b24cb36d64b344a121c85b48472ca1aaa591b90e2"
       },
       {
         "triple": "aarch64-unknown-linux-gnu",
         "os": "linux",
         "arch": "arm64",
-        "fileName": "workjet-provider-gateway-host-0.1.1-aarch64-unknown-linux-gnu",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-aarch64-unknown-linux-gnu",
-        "byteLength": 18622584,
-        "sha256": "887b7afc056dc6a4b2a5f10827f966c5d6cf5c3b5fcdfae28cfa046bf61f30a9"
+        "fileName": "workjet-provider-gateway-host-0.1.3-aarch64-unknown-linux-gnu",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.3/workjet-provider-gateway-host-0.1.3-aarch64-unknown-linux-gnu",
+        "byteLength": 18958608,
+        "sha256": "ec2a45eb7cf7f456b3ba20f5ca6038620dd40347c98c1f3b2cd17ee4bbbd5daf"
       },
       {
         "triple": "x86_64-pc-windows-msvc",
         "os": "win32",
         "arch": "x64",
-        "fileName": "workjet-provider-gateway-host-0.1.1-x86_64-pc-windows-msvc.exe",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-x86_64-pc-windows-msvc.exe",
-        "byteLength": 24647168,
-        "sha256": "3ea7a3a400d2a368ebd3e664ff55513317f7c293b489ed55975b3be74ed3af1f"
+        "fileName": "workjet-provider-gateway-host-0.1.3-x86_64-pc-windows-msvc.exe",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.3/workjet-provider-gateway-host-0.1.3-x86_64-pc-windows-msvc.exe",
+        "byteLength": 23521280,
+        "sha256": "d9c3737b61852888578ac443fea2ee4ba12abb96d49971f1c567b2fd6e535558"
       },
       {
         "triple": "aarch64-pc-windows-msvc",
         "os": "win32",
         "arch": "arm64",
-        "fileName": "workjet-provider-gateway-host-0.1.1-aarch64-pc-windows-msvc.exe",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-aarch64-pc-windows-msvc.exe",
-        "byteLength": 21745664,
-        "sha256": "b12a103527465eb5134844e9bf4f934a22cd8f3dfcc15d89c2269c9106d3cc20"
+        "fileName": "workjet-provider-gateway-host-0.1.3-aarch64-pc-windows-msvc.exe",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.3/workjet-provider-gateway-host-0.1.3-aarch64-pc-windows-msvc.exe",
+        "byteLength": 20483072,
+        "sha256": "d4ad9d3386f60efd74795ade74910e7e93105b11fac4a24dcd13ae4dc2ef6d8c"
       }
     ]
   }

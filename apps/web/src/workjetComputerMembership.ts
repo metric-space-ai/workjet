@@ -23,24 +23,47 @@ export interface ComputerMembershipSnapshot {
 function membershipError(code: string): string {
   switch (code) {
     case "authentication_required":
-      return "Sign in to the selected Business OS, then retry.";
+      return "Bei der Instanz anmelden und erneut versuchen.";
     case "unsupported":
-      return "This Business OS needs an update before it can add computers.";
+      return "Instanz braucht ein Update, um Rechner hinzuzufügen.";
     case "timeout":
-      return "The Business OS has not confirmed the computer yet. Refresh to check its status.";
+      return "Instanz hat den Rechner noch nicht bestätigt.";
+    case "unreachable":
+      return "Instanz antwortet nicht.";
     case "sync_unavailable":
-      return "Business OS synchronization was interrupted. Wait for the connection to recover, then retry.";
+      return "Synchronisierung mit der Instanz unterbrochen.";
     case "query_unsupported":
-      return "This Business OS backend does not support loading the computer list yet. Update the backend, then retry.";
+      return "Instanz kann die Rechnerliste noch nicht laden. Backend aktualisieren.";
     case "command_failed":
-      return "Business OS could not complete the computer request. Open Business OS to check its status, then retry.";
+      return "Instanz konnte die Rechner-Anfrage nicht ausführen.";
     case "response_invalid":
-      return "Business OS returned an incompatible computer result. Update Workjet and the backend, then retry.";
+      return "Instanz lieferte ein unpassendes Ergebnis. Workjet und Backend aktualisieren.";
     case "not_active":
-      return "Open the selected Business OS and retry.";
+      return "Instanz öffnen und erneut versuchen.";
     default:
-      return "Could not confirm the computer with this Business OS. Check its connection and retry.";
+      return "Rechner konnte mit der Instanz nicht bestätigt werden.";
   }
+}
+
+/** A blocked instance must not leave the list „prüft…“ forever. */
+export const MEMBERSHIP_DEADLINE_MS = 20_000;
+function withDeadline<T>(work: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(membershipError("unreachable"))),
+      MEMBERSHIP_DEADLINE_MS,
+    );
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 /** Only native-confirmed projections enter this store. It never persists local membership claims. */
@@ -71,18 +94,22 @@ export function createComputerMembershipStore() {
     publish({ ...snapshot, phase: "loading", error: null, pendingComputerId: null });
     try {
       if (!bridge?.requestComputerControl) throw new Error(membershipError("unsupported"));
-      let result = await bridge.requestComputerControl(instanceId, {
-        action: "computer.list",
-        includeOperationalDetails: true,
-      });
-      if (revision !== generation) return;
-      if (result._tag === "failed" && result.code === "not_active" && bridge.ensurePooled) {
-        await bridge.ensurePooled(instanceId);
-        if (revision !== generation) return;
-        result = await bridge.requestComputerControl(instanceId, {
+      let result = await withDeadline(
+        bridge.requestComputerControl(instanceId, {
           action: "computer.list",
           includeOperationalDetails: true,
-        });
+        }),
+      );
+      if (revision !== generation) return;
+      if (result._tag === "failed" && result.code === "not_active" && bridge.ensurePooled) {
+        await withDeadline(bridge.ensurePooled(instanceId));
+        if (revision !== generation) return;
+        result = await withDeadline(
+          bridge.requestComputerControl(instanceId, {
+            action: "computer.list",
+            includeOperationalDetails: true,
+          }),
+        );
       }
       if (revision !== generation) return;
       if (result._tag === "failed") throw new Error(membershipError(result.code));
@@ -205,7 +232,7 @@ export function createComputerMembershipStore() {
       snapshot.phase !== "ready" ||
       snapshot.pendingComputerId !== null
     ) {
-      throw new Error("Wait for the selected Business OS to finish checking its computers.");
+      throw new Error("Instanz prüft ihre Rechner noch.");
     }
     const revision = ++generation;
     const isCurrent = () => revision === generation && snapshot.instanceId === instanceId;
@@ -223,7 +250,7 @@ export function createComputerMembershipStore() {
           sshKey = key;
         },
       );
-      if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
+      if (!isCurrent()) throw new Error("Instanz gewechselt. Rechner erneut hinzufügen.");
       publish({
         ...snapshot,
         computers: [...snapshot.computers.filter((entry) => entry.id !== confirmed.id), confirmed],

@@ -432,7 +432,13 @@ export function derivePendingApprovals(
           : null;
     const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
 
-    if (activity.kind === "approval.requested" && requestId && requestKind) {
+    if (
+      activity.kind === "approval.requested" &&
+      requestId &&
+      requestKind &&
+      payload?.recipient !== "supervisor" &&
+      payload?.recipient !== "autonomous"
+    ) {
       openByRequestId.set(requestId, {
         requestId,
         requestKind,
@@ -529,7 +535,12 @@ export function derivePendingUserInputs(
         : null;
     const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
 
-    if (activity.kind === "user-input.requested" && requestId) {
+    if (
+      activity.kind === "user-input.requested" &&
+      requestId &&
+      payload?.recipient !== "supervisor" &&
+      payload?.recipient !== "autonomous"
+    ) {
       const questions = parseUserInputQuestions(payload);
       if (!questions) {
         continue;

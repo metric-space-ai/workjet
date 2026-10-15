@@ -13,7 +13,6 @@
  * @module providerInstances
  */
 import {
-  matchesWorkjetGatewayModelPattern,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   PROVIDER_DISPLAY_NAMES,
@@ -327,18 +326,62 @@ export function resolveSelectableProviderInstance(
   return resolveSelectableProviderInstanceEntry(entries, instanceId)?.instanceId;
 }
 
-/** New project team members use the explicitly configured standard route.
- * Imported selections remain untouched by this resolver.
+/** New team members use a concrete model from the available account catalog.
+ * An explicit project selection must still be advertised by that same account;
+ * it is never silently replaced. Imported thread selections are untouched.
  */
 export function resolveProjectTeamModelSelection(
   providers: ReadonlyArray<ServerProvider>,
+  preferred?: ModelSelection | null,
 ): ModelSelection | null {
-  const model = "gpt-6.1-sol";
-  const candidates = deriveProviderInstanceEntries(providers).filter((entry) =>
-    entry.models.some((candidate) => matchesWorkjetGatewayModelPattern(candidate.slug, model)),
+  const concrete = (model: ServerProviderModel) => !model.isLegacy && !/[*?]/.test(model.slug);
+  const candidates = deriveProviderInstanceEntries(providers).filter(
+    (entry) => entry.status !== "error" && entry.models.some(concrete),
   );
+  if (preferred) {
+    const entry = candidates.find((candidate) => candidate.instanceId === preferred.instanceId);
+    return entry &&
+      isSelectableProviderInstanceEntry(entry) &&
+      entry.models.some((model) => concrete(model) && model.slug === preferred.model)
+      ? preferred
+      : null;
+  }
+  const supervisorDefault = resolveSupervisorPreferredSelection(candidates);
+  if (supervisorDefault) return supervisorDefault;
   const entry = resolveSelectableProviderInstanceEntry(candidates, undefined);
-  return entry ? { instanceId: entry.instanceId, model } : null;
+  const model =
+    entry?.models.find((model) => concrete(model) && model.isDefault) ??
+    entry?.models.find(concrete);
+  return entry && model ? { instanceId: entry.instanceId, model: model.slug } : null;
+}
+
+/** Product rule: the project supervisor runs on Claude Code with Opus by default. */
+const SUPERVISOR_DRIVER_KIND = "claudeAgent";
+
+const isOpusSlug = (slug: string): boolean => /(^|-)opus(-|$)/.test(slug);
+
+/**
+ * Preferred supervisor harness among the plausible-to-start entries: a Claude
+ * Code instance (ready first) with its newest concrete Opus model. Returns
+ * null when no Claude instance is usable so callers fall back to the generic
+ * deterministic choice.
+ */
+export function resolveSupervisorPreferredSelection(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+): ModelSelection | null {
+  const claude = entries.filter(
+    (entry) =>
+      entry.driverKind === SUPERVISOR_DRIVER_KIND &&
+      isSelectableProviderInstanceEntry(entry) &&
+      entry.status !== "error",
+  );
+  const entry = claude.find(isProviderInstancePickerReady) ?? claude[0];
+  if (!entry) return null;
+  const concrete = entry.models.filter((model) => !model.isLegacy && !/[*?]/.test(model.slug));
+  const opus =
+    concrete.find((model) => isOpusSlug(model.slug) && model.isDefault) ??
+    concrete.find((model) => isOpusSlug(model.slug));
+  return opus ? { instanceId: entry.instanceId, model: opus.slug } : null;
 }
 
 /**
@@ -351,6 +394,12 @@ export function resolveDefaultProviderModelSelection(
   providers: ReadonlyArray<ServerProvider>,
   selection: ModelSelection | null | undefined,
 ): ModelSelection | null {
+  if (!selection) {
+    const supervisorDefault = resolveSupervisorPreferredSelection(
+      deriveProviderInstanceEntries(providers),
+    );
+    if (supervisorDefault) return supervisorDefault;
+  }
   const instanceId = resolveSelectableProviderInstance(providers, selection?.instanceId);
   if (instanceId === undefined) return null;
   if (selection?.instanceId === instanceId) return selection;

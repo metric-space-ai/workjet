@@ -10,6 +10,13 @@ import { validateSlideDocument, type SlideDocument } from "@workjet/slide-engine
 import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
 import { requestWorkjetProjectControl } from "../workjetProjectControl";
 import { newCommandId } from "./utils";
+import { jourFixeCacheKey, readJourFixeCache, writeJourFixeCache } from "./jourFixeCache";
+
+import {
+  retryJourFixeRead,
+  jourFixeReadDeadline,
+  jourFixeTransportError,
+} from "./jourFixeReadRetry";
 
 type Control = typeof requestWorkjetProjectControl;
 
@@ -60,15 +67,43 @@ async function confirmed(
   control: Control,
   instanceId: string,
   request: CtoxWorkjetProjectControlRequest,
+  options?: { readonly signal?: AbortSignal | undefined; readonly deadline?: number },
 ) {
-  const result = await control(instanceId, request);
-  if (result._tag !== "completed") throw new Error(`Presentation unavailable: ${result.code}`);
+  const invoke = async () => {
+    const result = await control(instanceId, request);
+    if (result._tag !== "completed") throw jourFixeTransportError(result);
+    return result;
+  };
+  const result = options ? await retryJourFixeRead(invoke, options) : await invoke();
   if (
     result.response.action !== request.action ||
     !isWorkjetPresentationReceiptForRequest(request, result.response)
   )
     throw new Error("The presentation answer does not match the request.");
   return result.response;
+}
+
+interface CachedPresentation {
+  readonly manifest: WorkjetPresentationManifest;
+  readonly document: unknown;
+}
+
+/**
+ * The last presentation CTOX confirmed for this meeting, validated again by
+ * the slide engine, for an immediate first render. Null when none is stored.
+ */
+export async function readCachedJourFixePresentation(
+  instanceId: string,
+  projectId: ProjectId,
+  meetingId: string,
+): Promise<JourFixePresentation | null> {
+  const cached = await readJourFixeCache<CachedPresentation>(
+    jourFixeCacheKey.presentation(instanceId, projectId, meetingId),
+  );
+  if (!cached || cached.manifest?.meeting_id !== meetingId) return null;
+  if (cached.manifest.project_id !== projectId) return null;
+  const validation = validateSlideDocument(cached.document);
+  return validation.ok ? { manifest: cached.manifest, document: validation.document } : null;
 }
 
 /**
@@ -81,30 +116,51 @@ export async function readJourFixePresentation(
   projectId: ProjectId,
   meetingId: string,
   control: Control = requestWorkjetProjectControl,
+  signal?: AbortSignal,
 ): Promise<JourFixePresentation | null> {
-  const read = await confirmed(control, instanceId, {
-    action: "project.presentation.read",
-    commandId: newCommandId(),
-    projectId,
-    meetingId,
-  });
+  const options = { signal, deadline: jourFixeReadDeadline() };
+  const read = await confirmed(
+    control,
+    instanceId,
+    {
+      action: "project.presentation.read",
+      commandId: newCommandId(),
+      projectId,
+      meetingId,
+    },
+    options,
+  );
   if (read.action !== "project.presentation.read") throw new Error("Unexpected answer.");
   const manifest = read.presentation;
   if (manifest === null) return null;
+  // The stored copy is only reused for byte-identical content of the same revision.
+  const cached = await readCachedJourFixePresentation(instanceId, projectId, meetingId);
+  if (
+    cached &&
+    cached.manifest.presentation_id === manifest.presentation_id &&
+    cached.manifest.revision === manifest.revision &&
+    cached.manifest.document_sha256 === manifest.document_sha256
+  )
+    return { manifest, document: cached.document };
   const bytes = new Uint8Array(manifest.document_bytes);
   let offset = 0;
   while (offset < manifest.document_bytes) {
     const length = Math.min(WORKJET_PRESENTATION_RANGE_BYTES, manifest.document_bytes - offset);
-    const part = await confirmed(control, instanceId, {
-      action: "project.presentation.content.read",
-      commandId: newCommandId(),
-      projectId,
-      meetingId,
-      presentationId: manifest.presentation_id,
-      revision: manifest.revision,
-      offset,
-      length,
-    });
+    const part = await confirmed(
+      control,
+      instanceId,
+      {
+        action: "project.presentation.content.read",
+        commandId: newCommandId(),
+        projectId,
+        meetingId,
+        presentationId: manifest.presentation_id,
+        revision: manifest.revision,
+        offset,
+        length,
+      },
+      options,
+    );
     if (part.action !== "project.presentation.content.read") throw new Error("Unexpected answer.");
     const chunk = base64Bytes(part.range.data_base64);
     if (
@@ -128,6 +184,10 @@ export async function readJourFixePresentation(
         .map((issue) => issue.message)
         .join("; ")}`,
     );
+  void writeJourFixeCache(jourFixeCacheKey.presentation(instanceId, projectId, meetingId), {
+    manifest,
+    document: parsed,
+  } satisfies CachedPresentation);
   return { manifest, document: validation.document };
 }
 

@@ -1,12 +1,5 @@
-import {
-  ExternalLinkIcon,
-  PaletteIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  SearchIcon,
-  ShieldCheckIcon,
-} from "lucide-react";
-import type { FormEvent } from "react";
+import { ExternalLinkIcon, PaletteIcon, PlusIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import type { KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   importOpenVsxThemeExtension,
@@ -20,30 +13,22 @@ import {
   replaceCustomThemeCollection,
   type ThemeDefinition,
 } from "../../themePalette";
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogPopup,
-  AlertDialogTitle,
-} from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Spinner } from "../ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-const DOWNLOAD_FORMAT = new Intl.NumberFormat(undefined, {
+const DOWNLOAD_FORMAT = new Intl.NumberFormat("de-DE", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
 const SUGGESTED_SEARCHES = ["Dracula", "Catppuccin", "Nord", "Tokyo Night"];
 const SORT_OPTIONS: ReadonlyArray<{ value: OpenVsxThemeSort; label: string }> = [
-  { value: "downloadCount", label: "Most downloaded" },
-  { value: "rating", label: "Best rated" },
-  { value: "timestamp", label: "Newest" },
-  { value: "relevance", label: "Most relevant" },
+  { value: "downloadCount", label: "Meiste Downloads" },
+  { value: "rating", label: "Beste Bewertung" },
+  { value: "timestamp", label: "Neueste" },
+  { value: "relevance", label: "Relevanz" },
 ];
 
 function ThemeExtensionIcon({ extension }: { extension: OpenVsxThemeExtension }) {
@@ -82,6 +67,15 @@ export function ThemeSearchSection({
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [pendingUpdate, setPendingUpdate] = useState<OpenVsxThemeExtension | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  // Eine Suche endet sichtbar: nach 10 s Statuszeile mit „Erneut versuchen“.
+  const [isSearchSlow, setIsSearchSlow] = useState(false);
+
+  useEffect(() => {
+    setIsSearchSlow(false);
+    if (!isSearching) return;
+    const timer = setTimeout(() => setIsSearchSlow(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [isSearching]);
 
   useEffect(() => {
     requestRef.current?.abort();
@@ -120,7 +114,7 @@ export function ThemeSearchSection({
         if (!controller.signal.aborted) setResults(nextResults);
       } catch (cause) {
         if (!controller.signal.aborted) {
-          setError(cause instanceof Error ? cause.message : "Open VSX search failed.");
+          setError(cause instanceof Error ? cause.message : "Suche fehlgeschlagen.");
         }
       }
       if (requestRef.current === controller) {
@@ -131,8 +125,10 @@ export function ThemeSearchSection({
     [sortBy],
   );
 
-  const handleSearch = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
+  // Enter sucht, statt das umgebende Import-Formular abzusenden.
+  const handleSearchKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter") return;
       event.preventDefault();
       void runSearch(query);
     },
@@ -158,7 +154,7 @@ export function ThemeSearchSection({
       try {
         installedCollection = getStoredCustomThemeCollection(extension.collectionId);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Installed themes could not be read.");
+        setError(cause instanceof Error ? cause.message : "Installierte Themen nicht lesbar.");
         return;
       }
       const updated = installedCollection.length > 0;
@@ -181,7 +177,7 @@ export function ThemeSearchSection({
         }
       } catch (cause) {
         if (!controller.signal.aborted) {
-          setError(cause instanceof Error ? cause.message : "That theme could not be added.");
+          setError(cause instanceof Error ? cause.message : "Thema nicht hinzugefügt.");
         }
       }
       if (requestRef.current === controller) {
@@ -193,46 +189,38 @@ export function ThemeSearchSection({
   );
 
   return (
-    <section className="space-y-3" aria-labelledby="theme-search-heading">
-      <div>
-        <h3 className="text-sm font-medium" id="theme-search-heading">
-          Search community themes
-        </h3>
-        <p className="mt-0.5 text-muted-foreground text-xs">
-          Find open-source themes from Open VSX.
-        </p>
-      </div>
-      <form className="relative flex gap-2" onSubmit={handleSearch}>
+    <section aria-label="Themensuche" className="space-y-3">
+      <div className="relative flex gap-2" role="search">
         <SearchIcon className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          aria-label="Search Open VSX themes"
-          className="rounded-xl [&_input]:pl-9"
+          aria-label="Themen durchsuchen"
+          className="[&_input]:pl-9"
           autoFocus
           onChange={(event) => setQuery(event.currentTarget.value)}
-          placeholder="try dracula, nord, catppuccin..."
-          size="lg"
+          onKeyDown={handleSearchKeyDown}
+          placeholder="Thema suchen"
           type="search"
           value={query}
         />
         <Button
           disabled={!query.trim() || isSearching || installingId !== null}
-          type="submit"
+          type="button"
           variant="outline"
+          onClick={() => void runSearch(query)}
         >
           {isSearching ? <Spinner /> : <SearchIcon />}
-          Search
+          Suchen
         </Button>
-      </form>
+      </div>
 
       {!isSearching ? (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <p className="text-muted-foreground text-xs">Popular</p>
             {SUGGESTED_SEARCHES.map((suggestion) => (
               <Button
                 key={suggestion}
                 size="xs"
-                variant="ghost"
+                variant="outline"
                 onClick={() => void runSearch(suggestion)}
               >
                 {suggestion}
@@ -240,60 +228,58 @@ export function ThemeSearchSection({
             ))}
           </div>
           {results && results.length > 0 ? (
-            <div className="flex shrink-0 items-center justify-end gap-2">
-              <p className="text-muted-foreground text-xs">Sort</p>
-              <Select
-                disabled={installingId !== null}
-                value={sortBy}
-                onValueChange={handleSortChange}
-              >
-                <SelectTrigger size="sm" className="w-40" aria-label="Sort themes">
-                  <SelectValue>
-                    {SORT_OPTIONS.find((option) => option.value === sortBy)?.label}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {SORT_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} hideIndicator value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            </div>
+            <Select
+              disabled={installingId !== null}
+              value={sortBy}
+              onValueChange={handleSortChange}
+            >
+              <SelectTrigger size="sm" className="w-44 shrink-0" aria-label="Sortierung">
+                <SelectValue>
+                  {SORT_OPTIONS.find((option) => option.value === sortBy)?.label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} hideIndicator value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           ) : null}
         </div>
       ) : null}
 
       <div className="sr-only" role="status">
-        {isSearching
-          ? "Finding themes..."
-          : results
-            ? `${results.length} supported ${results.length === 1 ? "theme" : "themes"} found.`
-            : ""}
+        {isSearching ? "Sucht…" : results ? `${results.length} Treffer` : ""}
       </div>
 
       {error ? (
-        <div
-          aria-live="polite"
-          className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-sm"
-        >
+        <div aria-live="polite" className="text-destructive text-xs" role="alert">
           {error}
         </div>
       ) : null}
 
       {isSearching ? (
-        <div className="flex min-h-20 items-center justify-center gap-2 text-muted-foreground text-sm">
-          <Spinner /> Finding themes...
+        <div className="flex min-h-12 items-center gap-2 text-muted-foreground text-xs">
+          {isSearchSlow ? (
+            <>
+              <span>Keine Antwort erhalten</span>
+              <Button size="xs" variant="outline" onClick={() => void runSearch(query)}>
+                Erneut versuchen
+              </Button>
+            </>
+          ) : (
+            <>
+              <Spinner /> Sucht…
+            </>
+          )}
         </div>
       ) : null}
 
       {results ? (
         results.length === 0 ? (
-          <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed text-center">
-            <p className="text-sm font-medium">No supported open-source themes found</p>
-            <p className="mt-1 text-muted-foreground text-xs">Try a broader search.</p>
-          </div>
+          <p className="text-muted-foreground text-xs">Keine Treffer</p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
             {results.map((extension) => {
@@ -301,89 +287,88 @@ export function ThemeSearchSection({
               const isInstalled = getCustomThemes().some(
                 (theme) => theme.collection?.id === extension.collectionId,
               );
-              const action = isInstalled ? "Update" : "Add";
-              const progressAction = isInstalled ? "Updating" : "Adding";
+              const isConfirmingUpdate = pendingUpdate?.id === extension.id;
+              const action = isInstalled ? "Aktualisieren" : "Hinzufügen";
+              const progressAction = isInstalled ? "Aktualisiert…" : "Fügt hinzu…";
               return (
                 <article
-                  className="group flex min-w-0 flex-col gap-3 rounded-xl border border-border/70 bg-card/60 p-3 transition-colors hover:bg-accent/20"
+                  className="flex min-w-0 flex-col gap-2 rounded-lg border border-border/70 bg-card/60 p-2.5"
                   key={extension.id}
                 >
-                  <div className="flex min-w-0 gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <ThemeExtensionIcon key={extension.iconUrl} extension={extension} />
                     <div className="min-w-0 flex-1">
-                      <h4 className="truncate text-sm font-medium">{extension.name}</h4>
+                      <h4 className="truncate text-[13.5px] font-medium">{extension.name}</h4>
                       <p className="truncate text-muted-foreground text-xs">
                         {extension.publisher} · {DOWNLOAD_FORMAT.format(extension.downloadCount)}{" "}
-                        downloads
+                        Downloads · {extension.license}
                       </p>
                     </div>
+                    {extension.sourceUrl ? (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              aria-label={`Quelle von ${extension.name}`}
+                              render={
+                                <a href={extension.sourceUrl} rel="noreferrer" target="_blank" />
+                              }
+                              size="icon-xs"
+                              variant="ghost"
+                            >
+                              <ExternalLinkIcon />
+                            </Button>
+                          }
+                        />
+                        <TooltipPopup>Quelle</TooltipPopup>
+                      </Tooltip>
+                    ) : null}
                   </div>
-                  <p className="line-clamp-2 min-h-8 text-muted-foreground text-xs leading-4">
-                    {extension.description || "A community color theme for your editor."}
-                  </p>
-                  <div className="mt-auto flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-muted-foreground text-[11px]">
-                        <ShieldCheckIcon className="size-3" /> {extension.license}
+                  {isConfirmingUpdate ? (
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <span className="min-w-0 flex-1 text-muted-foreground text-xs">
+                        Ersetzt installierte Varianten.
                       </span>
-                      {extension.sourceUrl ? (
-                        <a
-                          aria-label={`View source for ${extension.name}`}
-                          className="inline-flex items-center gap-1 text-muted-foreground text-[11px] hover:text-foreground"
-                          href={extension.sourceUrl}
-                          rel="noreferrer"
-                          target="_blank"
-                        >
-                          Source <ExternalLinkIcon className="size-3" />
-                        </a>
-                      ) : null}
+                      <Button size="xs" variant="outline" onClick={() => setPendingUpdate(null)}>
+                        Abbrechen
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="destructive"
+                        onClick={() => {
+                          setPendingUpdate(null);
+                          void handleInstall(extension, true);
+                        }}
+                      >
+                        Wirklich aktualisieren?
+                      </Button>
                     </div>
-                    <Button
-                      aria-label={`${isInstalling ? progressAction : action} ${extension.name}`}
-                      disabled={installingId !== null}
-                      size="xs"
-                      variant="outline"
-                      onClick={() => void handleInstall(extension, false)}
-                    >
-                      {isInstalling ? <Spinner /> : isInstalled ? <RefreshCwIcon /> : <PlusIcon />}
-                      {isInstalling ? `${progressAction}...` : action}
-                    </Button>
-                  </div>
+                  ) : (
+                    <div className="flex justify-end">
+                      <Button
+                        aria-label={`${extension.name}: ${isInstalling ? progressAction : action}`}
+                        disabled={installingId !== null}
+                        size="xs"
+                        variant="outline"
+                        onClick={() => void handleInstall(extension, false)}
+                      >
+                        {isInstalling ? (
+                          <Spinner />
+                        ) : isInstalled ? (
+                          <RefreshCwIcon />
+                        ) : (
+                          <PlusIcon />
+                        )}
+                        {isInstalling ? progressAction : action}
+                      </Button>
+                    </div>
+                  )}
                 </article>
               );
             })}
           </div>
         )
       ) : null}
-
-      <AlertDialog
-        open={pendingUpdate !== null}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) setPendingUpdate(null);
-        }}
-      >
-        <AlertDialogPopup>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Update “{pendingUpdate?.name}”?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This replaces its installed variants, including any local edits. Variants no longer in
-              the extension will be removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-            <Button
-              onClick={() => {
-                const extension = pendingUpdate;
-                setPendingUpdate(null);
-                if (extension) void handleInstall(extension, true);
-              }}
-            >
-              Update theme
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogPopup>
-      </AlertDialog>
     </section>
   );
 }

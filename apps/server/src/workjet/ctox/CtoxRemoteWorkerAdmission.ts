@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Hashes the immutable wire request; no credential material is transported.
 import * as NodeCrypto from "node:crypto";
+import { canonicalWorkerJson } from "../CanonicalWorkerJson.ts";
 import * as NodeUtil from "node:util";
 import {
   RemoteWorkerDispatchError,
@@ -9,6 +10,8 @@ import {
   WorkjetGatewayCredentialRef,
   WorkjetGatewayModelRef,
   WorkjetGatewayProviderRef,
+  WorkjetExecutionPolicy,
+  WorkjetParentTeamBinding,
   type WorkjetGatewayGrantTarget,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
@@ -32,6 +35,8 @@ export const RemoteWorkerNativeBinding = Schema.Struct({
   repositoryUrl: Id,
   repositoryHead: Schema.String.check(Schema.isPattern(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)),
   workspaceKey: Id,
+  executionPolicy: Schema.optionalKey(WorkjetExecutionPolicy),
+  parentTeamBinding: Schema.optionalKey(WorkjetParentTeamBinding),
   credentialRef: WorkjetGatewayCredentialRef,
   providerRef: WorkjetGatewayProviderRef,
   modelRef: WorkjetGatewayModelRef,
@@ -65,22 +70,11 @@ export interface RemoteWorkerModelReferences {
 const failure = (reason: RemoteWorkerDispatchError["reason"]) =>
   new RemoteWorkerDispatchError({ reason });
 
-/** Key ordering cannot change a request identity. Array ordering remains part
- * of the immutable wire request, including the explicitly delegated grants. */
-const canonicalJson = (value: unknown): string => {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    return `{${Object.entries(value)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
-};
 export const remoteWorkerRequestDigest = (request: RemoteWorkerRequest) =>
   Schema.encodeEffect(RemoteWorkerRequest)(request).pipe(
-    Effect.map((wire) => NodeCrypto.createHash("sha256").update(canonicalJson(wire)).digest("hex")),
+    Effect.map((wire) =>
+      NodeCrypto.createHash("sha256").update(canonicalWorkerJson(wire)).digest("hex"),
+    ),
     Effect.mapError(() => failure("invalid-request")),
   );
 
@@ -107,6 +101,15 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
       binding.sourceSupervisorThreadId !== request.parent.threadId ||
       binding.sourceInstanceId !== scope.instanceId ||
       binding.projectId !== request.project.id ||
+      !NodeUtil.isDeepStrictEqual(binding.executionPolicy, request.executionPolicy) ||
+      !NodeUtil.isDeepStrictEqual(binding.parentTeamBinding, request.parentTeamBinding) ||
+      (binding.parentTeamBinding !== undefined &&
+        (request.parentTeamRole !== "specialist" ||
+          binding.parentTeamBinding.project_id !== binding.projectId ||
+          binding.parentTeamBinding.thread_id !== binding.sourceSupervisorThreadId ||
+          binding.parentTeamBinding.supervisor_thread_id === binding.sourceSupervisorThreadId)) ||
+      (binding.executionPolicy !== undefined &&
+        binding.executionPolicy.projectId !== binding.projectId) ||
       binding.targetEnvironmentId !== request.targetEnvironmentId ||
       binding.repositoryHead !== request.revision ||
       binding.modelRef.modelId !== request.modelSelection.model ||
@@ -179,6 +182,9 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     executionId?: string,
     renewalSequence?: number,
   ) {
+    binding = yield* Schema.decodeUnknownEffect(RemoteWorkerNativeBinding)(binding).pipe(
+      Effect.mapError(() => failure("invalid-request")),
+    );
     yield* validate(scope, request, binding, action !== "revoke");
     if (
       action === "renew" &&
@@ -210,6 +216,8 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     ).pipe(Effect.mapError(() => failure("invalid-request")));
     if (
       !NodeUtil.isDeepStrictEqual(receipt.binding, binding) ||
+      (binding.parentTeamBinding !== undefined &&
+        receipt.ownerUserId !== binding.parentTeamBinding.owner_user_id) ||
       (permitId !== undefined && receipt.permitId !== permitId) ||
       ((action === "claim" || action === "revalidate" || action === "renew") &&
         (receipt.state !== "claimed" || receipt.executionId !== executionId)) ||

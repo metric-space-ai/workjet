@@ -189,6 +189,8 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
                 label={row.name}
                 open={editing === row.name}
                 onOpenChange={(open) => setEditing(open ? row.name : null)}
+                // The row's own chevron and Esc collapse it.
+                hideCollapseControl
               >
                 <CredentialEditor
                   key={row.name}
@@ -206,6 +208,7 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
           label={t("Zugangsdaten hinzufügen", "Add credential")}
           open={adding}
           onOpenChange={setAdding}
+          className="pt-8"
         >
           <CredentialEditor language={language} onStore={store} />
         </InlineExpand>

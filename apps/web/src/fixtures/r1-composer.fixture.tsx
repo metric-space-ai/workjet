@@ -16,7 +16,7 @@ import {
   type WorkjetMeshRoster,
   type WorkjetWorkerProfile,
 } from "@workjet/contracts";
-import { GitBranchIcon, PaperclipIcon, ArrowUpIcon, MicIcon } from "lucide-react";
+import { GitBranchIcon, PlusIcon, ArrowUpIcon, MicIcon } from "lucide-react";
 
 import "../index.css";
 import { ComposerBar } from "../components/chat/ComposerBar";
@@ -236,7 +236,7 @@ function Fixture() {
                 <ComposerBar
                   attachments={
                     <Button type="button" size="icon-sm" variant="ghost" aria-label="Anhängen">
-                      <PaperclipIcon />
+                      <PlusIcon />
                     </Button>
                   }
                   worker={

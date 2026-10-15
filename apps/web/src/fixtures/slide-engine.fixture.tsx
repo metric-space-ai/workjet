@@ -19,6 +19,7 @@ import { canvasSceneForSlide, updateSlideCanvas } from "@workjet/slide-engine/ex
 import type { SlideDocument, SlideNode } from "@workjet/slide-engine/schema";
 import "@workjet/slide-engine/styles/core.css";
 import { Button } from "../components/ui/button";
+import { JOUR_FIXE_CANVAS_MESSAGES } from "../lib/jourFixeCanvasMessages";
 import "../index.css";
 
 if (!import.meta.env.DEV || !["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) {
@@ -133,7 +134,7 @@ const sourceRefs: SlideNode["sourceRefs"] = [
 const initialDeck: SlideDocument = {
   schemaVersion: "learnordie.slide.v1",
   id: "jour-fixe-fixture-deck",
-  title: "Jour fixe · Projekt Nordlicht",
+  title: "Regeltermin · Projekt Nordlicht",
   language: "de",
   aspect: "16:9",
   theme: "learnordie-north",
@@ -147,11 +148,11 @@ const initialDeck: SlideDocument = {
     {
       // No canvas: migrated on the fly by the engine.
       id: "titel",
-      title: "Jour fixe · Projekt Nordlicht",
+      title: "Regeltermin · Projekt Nordlicht",
       layout: "title_statement",
       intent: "title",
       blocks: [
-        { id: "titel-h", type: "heading", text: "Jour fixe · Projekt Nordlicht" },
+        { id: "titel-h", type: "heading", text: "Regeltermin · Projekt Nordlicht" },
         {
           id: "titel-p",
           type: "paragraph",
@@ -226,7 +227,7 @@ const initialDeck: SlideDocument = {
         embed("kennzahlen:kpi", 88, 190, 1424, 640, {
           type: "scene3d",
           sceneId: "business.kpi-bars",
-          caption: "Vier Kennzahlen gegenüber dem letzten Jour fixe",
+          caption: "Vier Kennzahlen gegenüber dem letzten Regeltermin",
           data: {
             items: [
               { label: "Umsatz", value: 1.24, previous: 1.1, unit: "Mio €" },
@@ -284,7 +285,10 @@ function Fixture() {
   useEffect(() => {
     let cancelled = false;
     setLoadError("");
-    loadCanvasRuntime({ assetBaseUrl: "/vendor/excalidraw/" }).then(
+    loadCanvasRuntime({
+      assetBaseUrl: "/vendor/excalidraw/",
+      messages: JOUR_FIXE_CANVAS_MESSAGES,
+    }).then(
       (loaded) => {
         if (!cancelled) setRuntime(loaded);
       },
@@ -340,7 +344,7 @@ function Fixture() {
         slides: deck.slides.map((candidate) => (candidate.id === slide.id ? updated : candidate)),
       });
       setDraft(null);
-      setStatus({ kind: "saved", text: "Saved" });
+      setStatus({ kind: "saved", text: "Gespeichert" });
     } catch (error) {
       setStatus({ kind: "error", text: `Not saved: ${describe(error)}` });
     }
@@ -353,7 +357,7 @@ function Fixture() {
     >
       <nav
         className="flex flex-wrap items-center gap-2 border-b border-border p-3"
-        aria-label="Fixture controls"
+        aria-label="Prüfsteuerung"
       >
         <span className="mr-auto text-xs text-muted-foreground">
           Isolated fixture · slide {index + 1} of {deck.slides.length} · {slide.title}
@@ -380,7 +384,7 @@ function Fixture() {
           aria-pressed={mode === "edit"}
           onClick={() => setMode(mode === "present" ? "edit" : "present")}
         >
-          {mode === "present" ? "Edit" : "Present"}
+          {mode === "present" ? "Bearbeiten" : "Vorführen"}
         </Button>
         <Button size="sm" disabled={!runtime} onClick={save}>
           Save
@@ -391,7 +395,7 @@ function Fixture() {
           aria-pressed={theme === "dark"}
           onClick={() => setTheme(theme === "light" ? "dark" : "light")}
         >
-          {theme === "light" ? "Dark" : "Light"}
+          {theme === "light" ? "Dunkel" : "Hell"}
         </Button>
         <output
           role="status"
@@ -412,7 +416,7 @@ function Fixture() {
             langCode="de-DE"
             onSceneChange={(scene) => {
               setDraft({ slideId: slide.id, scene });
-              setStatus({ kind: "dirty", text: "Unsaved changes" });
+              setStatus({ kind: "dirty", text: "Nicht gespeichert" });
             }}
           />
         ) : loadError ? (

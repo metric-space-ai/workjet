@@ -886,6 +886,27 @@ function JourFixeRoomContent({
                   )}
                 </div>
               )}
+              {/* 420 px: die 16:9-Folie wird zu klein zum Lesen; ihr Text steht lesbar daneben (Audit B #47). */}
+              {canvasSlide && !canvasEditing && (slide.title || slide.markdown) ? (
+                <article
+                  className="@[36rem]:hidden rounded-lg border border-border px-3 py-2 text-[13.5px]"
+                  data-workjet-slide-text=""
+                  aria-label="Folientext"
+                >
+                  {slide.title ? <h2 className="font-semibold">{slide.title}</h2> : null}
+                  {slide.markdown ? (
+                    <div className="mt-1 leading-relaxed [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-2">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        skipHtml
+                        components={MEETING_MARKDOWN_COMPONENTS}
+                      >
+                        {slide.markdown}
+                      </ReactMarkdown>
+                    </div>
+                  ) : null}
+                </article>
+              ) : null}
               <div
                 ref={stageRef}
                 tabIndex={0}

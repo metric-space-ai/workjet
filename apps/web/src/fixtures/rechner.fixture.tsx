@@ -18,6 +18,8 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { AddComputerInline, type AddComputerKind } from "../components/settings/AddComputerInline";
+import { AddMachineEnrollment } from "../components/settings/AddMachineEnrollment";
+import { createFixtureMachineEnrollment } from "../components/settings/machineEnrollmentFixture";
 import { ComputerProvisioningSection } from "../components/settings/ComputerProvisioningSection";
 import {
   knownComputerFacts,
@@ -237,6 +239,28 @@ const snapshot = (harnesses: ReadonlyArray<string>) => ({
   })),
 });
 
+// ?enroll: Ein-Klick-Beitritt (sync v4 §16.41) gegen die Attrappe.
+// ?hold=<schritt> hält vor einem Schritt an; skf-vm scheitert an der Anmeldung.
+const enrollment =
+  query.get("enroll") !== null
+    ? createFixtureMachineEnrollment({
+        stepMs: Number(query.get("stepMs") ?? 700),
+        holdBefore: (query.get("hold") as never) ?? null,
+        failures: {
+          "skf-vm": {
+            key: "transport_connected",
+            error_code: "auth_rejected",
+            detail: "ctox@10.20.0.4: Permission denied (publickey,password).",
+          },
+        },
+        capabilities: {
+          "ts-gpu1": { build: true, storage: true, gpu: "RTX A6000 · 48 GB" },
+          "lan-gpu3": { build: true, storage: false, gpu: "RTX A4500 · 20 GB" },
+          gpu4: { build: true, storage: true, gpu: "RTX 4090 · 24 GB" },
+        },
+      })
+    : null;
+
 function Fixture() {
   const [configuration, setConfiguration] = useState(initial);
   const [addOpen, setAddOpen] = useState(query.get("add") !== null);
@@ -375,69 +399,85 @@ function Fixture() {
             />
           )}
           addPanel={
-            <AddComputerInline
-              open={addOpen}
-              onOpenChange={setAddOpen}
-              segment={segment}
-              onSegmentChange={setSegment}
-              localAvailable
-              desktopAvailable
-              sshAliases={[
-                {
-                  alias: "lan-gpu1",
-                  hostname: "192.168.1.21",
-                  username: "deck",
-                  port: 22,
-                  source: "ssh-config",
-                },
-                {
-                  alias: "lan-gpu3",
-                  hostname: "192.168.1.30",
-                  username: "metricspace",
-                  port: 22,
-                  source: "ssh-config",
-                },
-                {
-                  alias: "welsch",
-                  hostname: "welsch.ctox.dev",
-                  username: "root",
-                  port: 22,
-                  source: "ssh-config",
-                },
-                {
-                  alias: "skf-vm",
-                  hostname: "10.20.0.4",
-                  username: "ctox",
-                  port: 2222,
-                  source: "ssh-config",
-                },
-              ]}
-              knownHosts={["100.87.204.48", "100.120.16.93"]}
-              sshAliasesLoading={false}
-              onRefreshSshAliases={() => undefined}
-              rolesAvailable
-              sshKeys={[
-                { path: "/Users/michael/.ssh/id_ed25519", publicKeyFingerprint: "SHA256:7Hq2" },
-                { path: "/Users/michael/.ssh/gpu_deploy", publicKeyFingerprint: "SHA256:Lk9x" },
-                { path: "/Users/michael/.ssh/id_rsa", publicKeyFingerprint: "SHA256:aa31" },
-              ]}
-              knownComputer={(kind, hostname) =>
-                knownComputerFacts(configuration.computers, kind, hostname, local)
-              }
-              discoverTailscalePeers={discoverTailscalePeers}
-              inspectHostKey={() =>
-                delay({
-                  _tag: "ready" as const,
-                  algorithm: "ED25519",
-                  fingerprint: "SHA256:q3J8bV0m4Wc1xYzK7pLr2NfT9sHdE6uA5oGiQ+BkXvM",
-                })
-              }
-              onAdd={async () =>
-                query.get("result") === "error"
-                  ? delay({ status: "error" as const, message: "Permission denied (publickey)." })
-                  : delay({ status: "done" as const })
-              }
-            />
+            enrollment ? (
+              <AddMachineEnrollment
+                source={enrollment.source}
+                transport={enrollment.transport}
+                defaultOpen={query.get("enroll") === "open"}
+                isKnown={(candidate) =>
+                  configuration.computers.some((entry) => {
+                    const connection = entry.metadata?.connection;
+                    if (!connection) return false;
+                    if (connection._tag === "local") return candidate.transport === "local";
+                    return "target" in connection && connection.target.hostname === candidate.host;
+                  })
+                }
+              />
+            ) : (
+              <AddComputerInline
+                open={addOpen}
+                onOpenChange={setAddOpen}
+                segment={segment}
+                onSegmentChange={setSegment}
+                localAvailable
+                desktopAvailable
+                sshAliases={[
+                  {
+                    alias: "lan-gpu1",
+                    hostname: "192.168.1.21",
+                    username: "deck",
+                    port: 22,
+                    source: "ssh-config",
+                  },
+                  {
+                    alias: "lan-gpu3",
+                    hostname: "192.168.1.30",
+                    username: "metricspace",
+                    port: 22,
+                    source: "ssh-config",
+                  },
+                  {
+                    alias: "welsch",
+                    hostname: "welsch.ctox.dev",
+                    username: "root",
+                    port: 22,
+                    source: "ssh-config",
+                  },
+                  {
+                    alias: "skf-vm",
+                    hostname: "10.20.0.4",
+                    username: "ctox",
+                    port: 2222,
+                    source: "ssh-config",
+                  },
+                ]}
+                knownHosts={["100.87.204.48", "100.120.16.93"]}
+                sshAliasesLoading={false}
+                onRefreshSshAliases={() => undefined}
+                rolesAvailable
+                sshKeys={[
+                  { path: "/Users/michael/.ssh/id_ed25519", publicKeyFingerprint: "SHA256:7Hq2" },
+                  { path: "/Users/michael/.ssh/gpu_deploy", publicKeyFingerprint: "SHA256:Lk9x" },
+                  { path: "/Users/michael/.ssh/id_rsa", publicKeyFingerprint: "SHA256:aa31" },
+                ]}
+                knownComputer={(kind, hostname) =>
+                  knownComputerFacts(configuration.computers, kind, hostname, local)
+                }
+                discoverTailscalePeers={discoverTailscalePeers}
+                inspectHostKey={() =>
+                  delay({
+                    _tag: "ready" as const,
+                    algorithm: "ED25519",
+                    fingerprint: "SHA256:q3J8bV0m4Wc1xYzK7pLr2NfT9sHdE6uA5oGiQ+BkXvM",
+                  })
+                }
+                onAdd={async () =>
+                  query.get("result") === "error"
+                    ? delay({ status: "error" as const, message: "Permission denied (publickey)." })
+                    : delay({ status: "done" as const })
+                }
+              />
+            )
           }
         />
       </div>

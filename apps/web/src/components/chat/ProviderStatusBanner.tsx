@@ -3,7 +3,7 @@ import { memo } from "react";
 import { InfoIcon, XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { formatProviderDriverKindLabel } from "../../providerModels";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { isComposerPlainLine } from "./composerErrorLineLogic";
 
 export function getProviderStatusBannerKey(status: ServerProvider | null): string | null {
   return !status || status.status === "ready" || status.status === "disabled"
@@ -46,14 +46,20 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
     : isUnauthenticated
       ? `${providerName} nicht angemeldet`
       : `${providerName}-Zustand`;
+  // Rohtext des Anbieters (englisch, HTTP-Status) steht nur hinter „Details“.
+  const raw = status.message?.trim() || null;
+  const rawIsPlain = raw !== null && isComposerPlainLine(raw);
   const message = isMissingHarness
     ? "Auf diesem Rechner nicht installiert. Harness wechseln oder installieren."
     : isUnauthenticated
       ? "Per CLI neu anmelden"
-      : (status.message ??
-        (status.status === "error"
+      : rawIsPlain
+        ? raw
+        : status.status === "error"
           ? `${providerName} nicht verfügbar`
-          : `${providerName} eingeschränkt verfügbar`));
+          : `${providerName} eingeschränkt verfügbar`;
+  const details =
+    !isMissingHarness && !isUnauthenticated && raw !== null && !rawIsPlain ? raw : null;
 
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
@@ -70,14 +76,15 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
         <InfoIcon className="size-4 shrink-0" aria-hidden />
         <div className="flex min-w-0 flex-col gap-1">
           <div className="font-medium">{title}</div>
-          <Tooltip>
-            <TooltipTrigger
-              render={<div className="line-clamp-3 text-muted-foreground">{message}</div>}
-            />
-            <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap">
-              {message}
-            </TooltipPopup>
-          </Tooltip>
+          <div className="line-clamp-3 text-muted-foreground">{message}</div>
+          {details ? (
+            <details className="text-muted-foreground text-xs">
+              <summary className="w-fit cursor-pointer select-none">Details</summary>
+              <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono">
+                {details}
+              </pre>
+            </details>
+          ) : null}
         </div>
         <button
           type="button"

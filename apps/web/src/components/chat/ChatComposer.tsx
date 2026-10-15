@@ -1715,10 +1715,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [workjetGatewayCatalogQuery.data, workjetGatewayModelsQuery.data]);
   const manualModelsUnavailableReason = workjetGatewayCatalogQuery.isPending
     ? "Modellkatalog wird geladen …"
-    : (workjetGatewayCatalogQuery.error ??
-      (workjetGatewayCatalogQuery.data === null
-        ? "Modellkatalog nicht verfügbar"
-        : "Keine Modelle im Katalog"));
+    : // Rohfehler des Katalogs (HTTP-Status, englischer Text) stehen nie im Menü.
+      workjetGatewayCatalogQuery.error !== null || workjetGatewayCatalogQuery.data === null
+      ? "Modellkatalog nicht verfügbar"
+      : "Keine Modelle im Katalog";
   const greppyManualModels = useMemo(
     () =>
       getGreppyManualModelCatalog(
@@ -4162,7 +4162,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               )
                                 ? "In dieser Instanz nicht freigegeben"
                                 : connection?.phase !== "connected"
-                                  ? (connection?.error ?? status)
+                                  ? "Rechner getrennt"
                                   : !selectableEnvironmentIds.includes(computer.environmentId) &&
                                       computer.environmentId !== environmentId
                                     ? `Kein Checkout auf ${computer.label}`

@@ -76,6 +76,8 @@ describe("DesktopLifecycle", () => {
         createMainIfBackendReady: Effect.void,
         showConnectingSplash: Effect.void,
         handleBackendBlocked: () => Effect.succeed(false),
+        awaitServiceTakeover: Effect.succeed(true),
+        showStartupFailure: Effect.succeed(false),
         handleBackendReady: () => Effect.void,
         handleBackendNotReady: Effect.void,
         flushMainWindowBounds: Effect.void,

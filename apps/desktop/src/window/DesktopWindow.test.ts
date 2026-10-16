@@ -69,6 +69,7 @@ function makeFakeBrowserWindow() {
       webContentsListeners.set(eventName, listener);
     }),
     once: vi.fn(),
+    removeListener: vi.fn(),
     openDevTools: vi.fn(),
     reload: vi.fn(),
     replaceMisspelling: vi.fn(),
@@ -101,6 +102,7 @@ function makeFakeBrowserWindow() {
     once: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
       windowListeners.set(eventName, listener);
     }),
+    removeListener: vi.fn(),
     restore: vi.fn(),
     setBackgroundColor: vi.fn(),
     setAutoHideCursor: vi.fn(),
@@ -1215,7 +1217,10 @@ describe("DesktopWindow", () => {
       }),
   );
 
-  it.effect("replaces a blocked first-start spinner with a visible escaped failure", () =>
+  const lineHtml = (loadURL: { mock: { lastCall?: readonly unknown[] | undefined } }) =>
+    decodeURIComponent(String(loadURL.mock.lastCall?.[0] ?? "").split(",")[1] ?? "");
+
+  it.effect("replaces a blocked first-start spinner with one in-app line, no reason text", () =>
     Effect.gen(function* () {
       const splash = makeFakeBrowserWindow();
       const scenario = yield* makeSplashScenario([splash.window]);
@@ -1228,13 +1233,51 @@ describe("DesktopWindow", () => {
           ),
         );
         assert.equal(yield* Ref.get(scenario.createCalls), 1);
-        const url = splash.loadURL.mock.lastCall?.[0] as string;
-        const html = decodeURIComponent(url.split(",")[1] ?? "");
-        assert.include(html, "Workjet-Dienst blockiert");
-        assert.include(html, "&lt;local&gt; credential &amp; open &quot;keychain&quot;");
-        assert.notInclude(html, "<local>");
+        const html = lineHtml(splash.loadURL);
+        assert.include(html, 'Workjet-Dienst blockiert · <a href="#neu-oeffnen">Neu öffnen</a>');
+        assert.notInclude(html, "credential");
+        assert.notInclude(html, "<script");
         assert.notInclude(html, '<div class="spinner"></div>');
         assert.deepEqual(yield* Ref.get(scenario.revealedWindows), [splash.window]);
+      }).pipe(Effect.provide(scenario.layer));
+    }),
+  );
+
+  it.effect("another installation: in-app line, takeover on Übernehmen, window back to app", () =>
+    Effect.gen(function* () {
+      const splash = makeFakeBrowserWindow();
+      const scenario = yield* makeSplashScenario([splash.window]);
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        const waiting = yield* Effect.forkChild(desktopWindow.awaitServiceTakeover);
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        const html = lineHtml(splash.loadURL);
+        assert.include(
+          html,
+          'Andere Workjet-Installation aktiv · <a href="#uebernehmen">Übernehmen</a>',
+        );
+        assert.isUndefined(waiting.pollUnsafe());
+        const navigate = splash.webContentsListeners.get("did-navigate-in-page");
+        assert.isDefined(navigate);
+        navigate?.({}, "data:text/html;charset=utf-8,x#uebernehmen");
+        assert.isTrue(yield* Fiber.join(waiting));
+        assert.include(lineHtml(splash.loadURL), '<div class="spinner"></div>');
+      }).pipe(Effect.provide(scenario.layer));
+    }),
+  );
+
+  it.effect("closing the window instead of taking over does not take over", () =>
+    Effect.gen(function* () {
+      const splash = makeFakeBrowserWindow();
+      const scenario = yield* makeSplashScenario([splash.window]);
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        const waiting = yield* Effect.forkChild(desktopWindow.awaitServiceTakeover);
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        splash.windowListeners.get("closed")?.();
+        assert.isFalse(yield* Fiber.join(waiting));
       }).pipe(Effect.provide(scenario.layer));
     }),
   );

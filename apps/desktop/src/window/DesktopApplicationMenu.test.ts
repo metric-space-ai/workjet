@@ -65,23 +65,12 @@ interface SupportProbe {
   readonly dialogShown: Deferred.Deferred<Electron.MessageBoxOptions>;
   readonly pathCopied: Deferred.Deferred<string>;
   /** 0 selects "Copy Path". */
-  readonly messageBoxResponse: number;
 }
 
 const makeElectronDialogLayer = (probe?: SupportProbe) =>
   Layer.succeed(ElectronDialog.ElectronDialog, {
     pickFolder: () => Effect.succeed(Option.none()),
     pickFiles: () => Effect.succeed([]),
-    showMessageBox: (options) =>
-      (probe === undefined
-        ? Effect.void
-        : Deferred.succeed(probe.dialogShown, options).pipe(Effect.asVoid)
-      ).pipe(
-        Effect.as({
-          response: probe?.messageBoxResponse ?? 0,
-          checkboxChecked: false,
-        }),
-      ),
     showErrorBox: () => Effect.void,
   } satisfies ElectronDialog.ElectronDialog["Service"]);
 
@@ -127,6 +116,8 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
     createMainIfBackendReady: Effect.void,
     showConnectingSplash: Effect.void,
     handleBackendBlocked: () => Effect.succeed(false),
+    awaitServiceTakeover: Effect.succeed(true),
+    showStartupFailure: Effect.succeed(false),
     handleBackendReady: () => Effect.void,
     handleBackendNotReady: Effect.void,
     flushMainWindowBounds: Effect.void,
@@ -282,7 +273,6 @@ describe("DesktopApplicationMenu", () => {
         bundlePath: "/state/support-bundles/ctox-support-bundle-20260820T100000000Z.json",
         dialogShown: yield* Deferred.make<Electron.MessageBoxOptions>(),
         pathCopied: yield* Deferred.make<string>(),
-        messageBoxResponse: 0,
       };
 
       yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown, probe);

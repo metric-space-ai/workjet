@@ -99,7 +99,6 @@ import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
-import * as ElectronDialog from "../electron/ElectronDialog.ts";
 
 const { logWarning: logBackendPoolWarning } =
   DesktopObservability.makeComponentLogger("desktop-backend-pool");
@@ -209,7 +208,6 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
   Effect.gen(function* () {
     const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
-    const electronDialog = yield* ElectronDialog.ElectronDialog;
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     // Anchor the pool's lifetime to its layer scope so registered
     // instance scopes can be forked off it. Without this, instance
@@ -238,10 +236,8 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
             "primary WSL preflight retry window exhausted; using Windows for this launch",
             { reason },
           );
-          yield* electronDialog.showErrorBox(
-            "WSL nicht verfügbar",
-            "Workjet nutzt diesmal Windows und versucht WSL beim nächsten Start.",
-          );
+          // Erkennen statt fragen: the fallback is automatic and nothing waits on
+          // the user, so no message at all (FIX-DLG).
           yield* appSettings.applyWslWindowsFallbackInMemory;
           return true;
         }
@@ -249,10 +245,8 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
         yield* logBackendPoolWarning("primary WSL preflight failed; falling back to Windows", {
           reason,
         });
-        yield* electronDialog.showErrorBox(
-          "WSL startet nicht",
-          "Workjet nutzt Windows. WSL in den Einstellungen wieder einschalten.",
-        );
+        // Silent as well: the persisted fallback turns the WSL setting off, which
+        // is where the user switches it back on.
         // Fully disable the WSL backend — both flags, matching the "Switch to
         // Windows" recovery path — so the manager's next restart re-resolves the
         // primary as Windows and reconcile won't register a secondary WSL backend
@@ -277,6 +271,7 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
     const primary = yield* DesktopBackendManager.makeBackendInstance({
       id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
       ...(run === undefined ? {} : { run }),
+      // The blocked state is one in-app line in the main window or splash.
       onAttachmentBlocked: (reason) =>
         desktopWindow
           .handleBackendBlocked(reason)
@@ -284,10 +279,7 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
             Effect.flatMap((shown) =>
               shown
                 ? Effect.void
-                : electronDialog.showErrorBox(
-                    "Workjet-Dienst blockiert",
-                    "Workjet bitte neu öffnen.",
-                  ),
+                : logBackendPoolWarning("local service blocked without a window", { reason }),
             ),
           ),
       // Keep this lazy. The pool layer is initialized before startup loads

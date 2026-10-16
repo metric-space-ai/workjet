@@ -104,9 +104,17 @@ export class DesktopWindow extends Context.Service<
     // WSL-only cold boot waits for the renderer's backend. It is dismissed
     // automatically once the real main window reveals.
     readonly showConnectingSplash: Effect.Effect<void>;
-    // Replace the startup spinner with a visible failure when the local
-    // service cannot attach. Returns false if a real main window owns the UI.
+    // Show one in-app line "Workjet-Dienst blockiert · Neu öffnen" (main
+    // window or startup splash). Returns false if no window could show it.
     readonly handleBackendBlocked: (reason: string) => Effect.Effect<boolean>;
+    // Show one in-app line "Andere Workjet-Installation aktiv · Übernehmen".
+    // True once the user takes over (the window returns to the app); false if
+    // the window closes or none can show the line.
+    readonly awaitServiceTakeover: Effect.Effect<boolean>;
+    // Show one in-app line "Workjet startet nicht · Neu öffnen" for a fatal
+    // startup error. Completes when the user relaunches or closes the window;
+    // false if no window could show it.
+    readonly showStartupFailure: Effect.Effect<boolean>;
     // Marks the primary backend as ready so `createMainIfBackendReady` and the
     // macOS "activate without windows" path may open the real main window. The
     // renderer now always loads the local client URL (getDesktopUrl) and connects
@@ -189,28 +197,91 @@ export function resolveInitialMainWindowBounds(
   return DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE;
 }
 
-// A self-contained startup splash for first service installs and WSL-only cold
-// boots. Inlined as a data URL so it needs no bundled asset or backend.
-function buildConnectingSplashDataUrl(
-  shouldUseDarkColors: boolean,
-  blockedReason?: string,
-): string {
-  const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
-  const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
-  const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
-  const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
-  const escapedReason = blockedReason?.replace(
+const escapeHtml = (value: string) =>
+  value.replace(
     /[&<>"']/g,
     (character) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ??
       character,
   );
-  const content =
-    escapedReason === undefined
-      ? '<div class="spinner"></div><div class="label">Workjet startet …</div>'
-      : `<h1>Workjet-Dienst blockiert</h1><p>Workjet bitte neu öffnen.</p><details><summary>Details</summary><p>${escapedReason}</p></details>`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px;box-sizing:border-box;text-align:center;-webkit-user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}h1{color:${accent};font-size:18px;margin:0}p{font-size:12px;line-height:1.35;margin:0;overflow-wrap:anywhere}details{font-size:11px;-webkit-app-region:no-drag;-webkit-user-select:text}summary{cursor:pointer}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body>${content}</body></html>`;
+
+function buildPageDataUrl(shouldUseDarkColors: boolean, content: string): string {
+  const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
+  const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
+  const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
+  const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px;box-sizing:border-box;text-align:center;-webkit-user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}.line{font-size:13px;color:${accent};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.line a{color:${accent};font-weight:600;text-decoration:none;-webkit-app-region:no-drag}.line a:hover{text-decoration:underline}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body>${content}</body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+// A self-contained startup splash for first service installs and WSL-only cold
+// boots. Inlined as a data URL so it needs no bundled asset or backend.
+function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
+  return buildPageDataUrl(
+    shouldUseDarkColors,
+    '<div class="spinner"></div><div class="label">Workjet startet …</div>',
+  );
+}
+
+export interface WindowLine {
+  readonly text: string;
+  readonly action: { readonly label: string; readonly id: string };
+}
+
+export const SERVICE_BLOCKED_LINE: WindowLine = {
+  text: "Workjet-Dienst blockiert",
+  action: { label: "Neu öffnen", id: "neu-oeffnen" },
+};
+export const OTHER_INSTALLATION_LINE: WindowLine = {
+  text: "Andere Workjet-Installation aktiv",
+  action: { label: "Übernehmen", id: "uebernehmen" },
+};
+export const STARTUP_FAILURE_LINE: WindowLine = {
+  text: "Workjet startet nicht",
+  action: { label: "Neu öffnen", id: "neu-oeffnen" },
+};
+
+// One line with one action inside the app window, never a native dialog. The
+// action is a same-document fragment link: no script, observed by the main
+// process through `did-navigate-in-page`.
+export function buildLinePageDataUrl(shouldUseDarkColors: boolean, line: WindowLine): string {
+  return buildPageDataUrl(
+    shouldUseDarkColors,
+    `<div class="line">${escapeHtml(line.text)} · <a href="#${escapeHtml(line.action.id)}">${escapeHtml(line.action.label)}</a></div>`,
+  );
+}
+
+type LineOutcome = "action" | "closed";
+
+/** Completes with "action" when the line's link is clicked, "closed" when the window goes away. */
+export function awaitLineAction(
+  window: Pick<Electron.BrowserWindow, "once" | "removeListener" | "isDestroyed"> & {
+    readonly webContents: Pick<Electron.WebContents, "on" | "removeListener">;
+  },
+  actionId: string,
+): Effect.Effect<LineOutcome> {
+  return Effect.callback<LineOutcome>((resume) => {
+    if (window.isDestroyed()) {
+      resume(Effect.succeed("closed"));
+      return;
+    }
+    const onNavigate = (_event: unknown, url: string) => {
+      if (!url.endsWith(`#${actionId}`)) return;
+      cleanup();
+      resume(Effect.succeed("action"));
+    };
+    const onClosed = () => {
+      cleanup();
+      resume(Effect.succeed("closed"));
+    };
+    const cleanup = () => {
+      window.webContents.removeListener("did-navigate-in-page", onNavigate);
+      window.removeListener("closed", onClosed);
+    };
+    window.webContents.on("did-navigate-in-page", onNavigate);
+    window.once("closed", onClosed);
+    return Effect.sync(cleanup);
+  });
 }
 
 export function isSameOriginRendererNavigation(input: {
@@ -864,6 +935,64 @@ export const make = Effect.gen(function* () {
     Effect.withSpan("desktop.window.showConnectingSplash"),
   );
 
+  const relaunch = Effect.sync(() => {
+    Electron.app.relaunch();
+    Electron.app.quit();
+  });
+
+  // Puts one line with one action into the main window, or into the startup
+  // splash when no main window exists yet. `restore` returns the window to the
+  // app (main) or the spinner (splash).
+  const showLine = (line: WindowLine) =>
+    Effect.gen(function* () {
+      const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+      const main = yield* currentMainWindow;
+      let target: Electron.BrowserWindow;
+      let restoreUrl: string;
+      if (Option.isSome(main) && !main.value.isDestroyed()) {
+        target = main.value;
+        restoreUrl = getDesktopUrl(environment.isDevelopment);
+      } else {
+        yield* showConnectingSplash;
+        const splash = yield* Ref.get(splashWindowRef);
+        if (Option.isNone(splash) || splash.value.isDestroyed())
+          return Option.none<{
+            readonly outcome: Effect.Effect<LineOutcome>;
+            readonly restore: Effect.Effect<void>;
+          }>();
+        target = splash.value;
+        restoreUrl = buildConnectingSplashDataUrl(shouldUseDarkColors);
+      }
+      const window = target;
+      const outcome = yield* Effect.cached(awaitLineAction(window, line.action.id));
+      yield* Effect.forkDetach(outcome);
+      yield* Effect.tryPromise({
+        try: () => window.loadURL(buildLinePageDataUrl(shouldUseDarkColors, line)),
+        catch: (cause) => ({
+          _tag: "WindowLineLoadError" as const,
+          message: cause instanceof Error ? cause.message : String(cause),
+        }),
+      });
+      yield* electronWindow.reveal(window);
+      return Option.some({
+        outcome,
+        restore: Effect.sync(() => {
+          if (!window.isDestroyed()) void window.loadURL(restoreUrl).catch(() => undefined);
+        }),
+      });
+    }).pipe(
+      Effect.catch((error) =>
+        logWindowWarning("failed to show in-app line", { message: error.message }).pipe(
+          Effect.as(
+            Option.none<{
+              readonly outcome: Effect.Effect<LineOutcome>;
+              readonly restore: Effect.Effect<void>;
+            }>(),
+          ),
+        ),
+      ),
+    );
+
   return DesktopWindow.of({
     createMain,
     ensureMain,
@@ -895,31 +1024,33 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.withSpan("desktop.window.activate")),
     createMainIfBackendReady,
     showConnectingSplash,
-    handleBackendBlocked: (reason) =>
-      Effect.gen(function* () {
-        yield* Ref.set(backendReadyRef, false);
-        yield* showConnectingSplash;
-        const splash = yield* Ref.get(splashWindowRef);
-        if (Option.isNone(splash) || splash.value.isDestroyed()) return false;
-        const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
-        yield* Effect.tryPromise({
-          try: () =>
-            splash.value.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors, reason)),
-          catch: (cause) => ({
-            _tag: "BlockedSplashLoadError" as const,
-            message: cause instanceof Error ? cause.message : String(cause),
-          }),
-        });
-        yield* electronWindow.reveal(splash.value);
-        return true;
-      }).pipe(
-        Effect.catch((error) =>
-          logWindowWarning("failed to show blocked startup", { message: error.message }).pipe(
-            Effect.as(false),
-          ),
-        ),
-        Effect.withSpan("desktop.window.handleBackendBlocked"),
-      ),
+    handleBackendBlocked: Effect.fn("desktop.window.handleBackendBlocked")(function* (reason) {
+      yield* Ref.set(backendReadyRef, false);
+      yield* logWindowWarning("local service blocked", { reason });
+      const shown = yield* showLine(SERVICE_BLOCKED_LINE);
+      if (Option.isNone(shown)) return false;
+      yield* shown.value.outcome.pipe(
+        Effect.flatMap((outcome) => (outcome === "action" ? relaunch : Effect.void)),
+        Effect.forkDetach,
+      );
+      return true;
+    }),
+    awaitServiceTakeover: Effect.gen(function* () {
+      const shown = yield* showLine(OTHER_INSTALLATION_LINE);
+      if (Option.isNone(shown)) return false;
+      const outcome = yield* shown.value.outcome;
+      if (outcome !== "action") return false;
+      yield* logWindowInfo("service takeover confirmed in app");
+      yield* shown.value.restore;
+      return true;
+    }).pipe(Effect.withSpan("desktop.window.awaitServiceTakeover")),
+    showStartupFailure: Effect.gen(function* () {
+      const shown = yield* showLine(STARTUP_FAILURE_LINE);
+      if (Option.isNone(shown)) return false;
+      const outcome = yield* shown.value.outcome;
+      if (outcome === "action") yield* relaunch;
+      return true;
+    }).pipe(Effect.withSpan("desktop.window.showStartupFailure")),
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
       yield* Ref.set(backendReadyRef, true);
       yield* logWindowInfo("backend ready", { source: "http", url: httpBaseUrl.href });

@@ -118,8 +118,10 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   | DesktopState.DesktopState
   | ElectronApp.ElectronApp
   | ElectronDialog.ElectronDialog
+  | DesktopWindow.DesktopWindow
 > {
   const shutdown = yield* DesktopShutdown.DesktopShutdown;
+  const desktopWindow = yield* DesktopWindow.DesktopWindow;
   const state = yield* DesktopState.DesktopState;
   const electronApp = yield* ElectronApp.ElectronApp;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
@@ -133,12 +135,14 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   });
   const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
   if (!wasQuitting) {
-    // Einzige native Box (die App hat kein Fenster): deutsch, kurz, ohne
-    // Stacktrace oder Pfade; Stufe und Details stehen im Protokoll.
-    yield* electronDialog.showErrorBox(
-      "Workjet startet nicht",
-      "Workjet bitte neu öffnen. Details stehen im Protokoll.",
-    );
+    // After `whenReady` a window can exist: the failure is one in-app line
+    // ("Workjet startet nicht · Neu öffnen") in the main window or splash.
+    const shownInApp = stage === "whenReady" ? false : yield* desktopWindow.showStartupFailure;
+    if (!shownInApp) {
+      // Einzige native Box: vor `whenReady` kann Electron kein Fenster
+      // erzeugen. Eine Zeile, kein Erklärsatz; Details stehen im Protokoll.
+      yield* electronDialog.showErrorBox("Workjet startet nicht", "");
+    }
   }
   yield* shutdown.request;
   yield* electronApp.quit;

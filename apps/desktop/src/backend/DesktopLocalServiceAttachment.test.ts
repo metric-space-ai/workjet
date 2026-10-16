@@ -15,7 +15,6 @@ import {
   makeAttachment,
   discoverService,
   parseServiceMode,
-  requestProfileMigrationConsent,
   LocalServiceAttachmentError,
 } from "./DesktopLocalServiceAttachment.ts";
 import type { RunBackendProcessOptions } from "./DesktopBackendManager.ts";
@@ -273,26 +272,6 @@ it.effect("refuses changed endpoint settings before starting or attaching", () =
     assert.equal(result.restart, false);
     assert.include(result.reason, "settings do not match");
   }).pipe(Effect.provide(noForeground)),
-);
-
-it.effect("requires both an affirmative migration button and stopped-runtime confirmation", () =>
-  Effect.gen(function* () {
-    for (const response of [0, 1]) {
-      for (const checkboxChecked of [false, true]) {
-        const consent = yield* requestProfileMigrationConsent({
-          showMessageBox: (options) => {
-            assert.equal(options.defaultId, 0);
-            assert.equal(options.cancelId, 0);
-            assert.equal(options.checkboxChecked, false);
-            // D44: keine Profilpfade im nativen Dialog.
-            assert.notInclude(options.detail ?? "", "/");
-            return Effect.succeed({ response, checkboxChecked });
-          },
-        });
-        assert.equal(consent, response === 1 && checkboxChecked);
-      }
-    }
-  }),
 );
 
 it.effect("migrates the confirmed selected endpoint once and reconnects without reinstalling", () =>

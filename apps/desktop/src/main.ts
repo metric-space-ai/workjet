@@ -63,6 +63,7 @@ import * as DesktopBackendConfiguration from "./backend/DesktopBackendConfigurat
 import * as DesktopBackendPool from "./backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./backend/DesktopLocalEnvironmentAuth.ts";
 import * as DesktopLocalServiceSession from "./backend/DesktopLocalServiceSession.ts";
+import * as DesktopServiceTakeover from "./backend/DesktopServiceTakeover.ts";
 import * as DesktopLocalServiceAttachment from "./backend/DesktopLocalServiceAttachment.ts";
 import * as DesktopNetworkInterfaces from "./backend/DesktopNetworkInterfaces.ts";
 import * as DesktopEnvironment from "./app/DesktopEnvironment.ts";
@@ -208,6 +209,7 @@ const desktopServiceAttachmentLayer = DesktopLocalServiceAttachment.layer.pipe(
   Layer.provideMerge(
     DesktopLocalServiceSession.layer.pipe(Layer.provideMerge(desktopRpcSessionLayer)),
   ),
+  Layer.provideMerge(DesktopServiceTakeover.layer),
   Layer.provideMerge(desktopFoundationLayer),
 );
 

@@ -64,8 +64,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const nonEmpty = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= 512;
-const onlyKeys = (value: Record<string, unknown>, allowed: ReadonlyArray<string>) =>
-  Object.keys(value).every((key) => allowed.includes(key));
+/** Strict decoding: the destructured rest holds every key outside the contract. */
+const noExtraKeys = (rest: Record<string, unknown>) => Object.keys(rest).length === 0;
 
 export function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
@@ -94,8 +94,15 @@ export function decodeCanonical32(value: string): Uint8Array | null {
 
 function signalingTarget(value: unknown): V4InviteSignalingTarget | null {
   if (!isRecord(value)) return null;
-  if (!onlyKeys(value, ["urls", "room", "native_peer_id", "token", "ice_servers"])) return null;
-  const { urls, room, native_peer_id: nativePeerId, token, ice_servers: iceServers } = value;
+  const {
+    urls,
+    room,
+    native_peer_id: nativePeerId,
+    token,
+    ice_servers: iceServers,
+    ...rest
+  } = value;
+  if (!noExtraKeys(rest)) return null;
   if (!Array.isArray(urls) || urls.length === 0 || urls.length > 8) return null;
   const valid = urls.every((url) => {
     if (typeof url !== "string") return false;
@@ -150,26 +157,18 @@ export function parseV4DeviceInviteLink(link: string, nowMs: number): V4InviteLi
   }
   if (!isRecord(value) || value.type !== V4_INVITE_PAYLOAD_TYPE) return null;
   const invalid = { ok: false, code: "invite_invalid" } as const;
-  if (
-    value.version !== V4_INVITE_PAYLOAD_VERSION ||
-    !onlyKeys(value, [
-      "type",
-      "version",
-      "instance_id",
-      "signaling",
-      "invite_id",
-      "one_time_secret",
-      "expires_at_ms",
-    ])
-  )
-    return invalid;
-  const signaling = signalingTarget(value.signaling);
   const {
+    type: _type,
+    version,
     instance_id: instanceId,
+    signaling: target,
     invite_id: inviteId,
     one_time_secret: oneTimeSecret,
     expires_at_ms: expiresAtMs,
+    ...rest
   } = value;
+  if (version !== V4_INVITE_PAYLOAD_VERSION || !noExtraKeys(rest)) return invalid;
+  const signaling = signalingTarget(target);
   if (
     signaling === null ||
     !nonEmpty(instanceId) ||

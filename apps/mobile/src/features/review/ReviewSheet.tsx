@@ -74,6 +74,7 @@ import { resolveSelectedReviewFileId } from "./reviewPaneSelection";
 import { buildReviewSectionMenu } from "./review-section-menu";
 import type { ReviewSectionItem } from "./reviewModel";
 import { markNativeShowcaseReady } from "../showcase/nativeShowcaseScene";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 const REVIEW_HEADER_SPACING = 0;
 const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
@@ -610,7 +611,9 @@ export function ReviewSheet(props: ReviewSheetProps) {
       children.push(
         <View key="review-error" className="border-b border-border bg-card px-4 py-3">
           <Text className="text-sm font-workjet-bold text-foreground">Prüfung nicht verfügbar</Text>
-          <Text className="text-xs leading-normal text-foreground-muted">{error}</Text>
+          <Text className="text-xs leading-normal text-foreground-muted">
+            {userFacingErrorText(error, "ReviewSheet")}
+          </Text>
         </View>,
       );
     }

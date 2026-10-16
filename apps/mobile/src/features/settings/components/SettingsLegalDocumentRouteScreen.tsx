@@ -8,6 +8,7 @@ import { LoadingStrip } from "../../../components/LoadingStrip";
 import { SymbolView } from "../../../components/AppSymbol";
 import { useThemeColor } from "../../../lib/useThemeColor";
 import { isLegalDocumentUrl, LEGAL_URL } from "../lib/legal-document-url";
+import { userFacingErrorText } from "../../../lib/userFacingError";
 
 export function SettingsLegalDocumentCloseHeaderButton() {
   const navigation = useNavigation();
@@ -169,12 +170,17 @@ export function SettingsLegalDocumentRouteScreen({
         }}
         onError={(event) => {
           setLoadProgress(0);
-          setLoadError(event.nativeEvent.description || "Seite nicht geladen.");
+          setLoadError(userFacingErrorText(event.nativeEvent.description, "SettingsLegalDocument"));
         }}
         onHttpError={(event) => {
           if (!isLegalDocumentUrl(event.nativeEvent.url)) return;
           setLoadProgress(0);
-          setLoadError(`The server returned status ${event.nativeEvent.statusCode}.`);
+          setLoadError(
+            userFacingErrorText(
+              `The server returned status ${event.nativeEvent.statusCode}.`,
+              "SettingsLegalDocument",
+            ),
+          );
         }}
         renderLoading={() => (
           <View className="absolute inset-0 items-center justify-center bg-sheet">

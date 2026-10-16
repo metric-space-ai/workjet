@@ -17,6 +17,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 /** Version skew: never send settle/unsettle to a server that predates them
     (capability defaults false on decode for older servers). */
@@ -58,14 +59,6 @@ function environmentSupportsTitleRegeneration(
 }
 
 type ThreadListAction = "archive" | "unarchive" | "delete" | "settle" | "unsettle";
-
-function actionFailureMessage(_action: ThreadListAction, cause: Cause.Cause<unknown>): string {
-  const error = Cause.squash(cause);
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-  return "Aktion fehlgeschlagen.";
-}
 
 function selectionHaptic(): void {
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -145,7 +138,10 @@ function useThreadActionExecutor(
                 input: { threadId: thread.id },
               });
         if (result._tag === "Failure") {
-          Alert.alert(actionFailureTitle(action), actionFailureMessage(action, result.cause));
+          Alert.alert(
+            actionFailureTitle(action),
+            userFacingErrorText(Cause.squash(result.cause), "useThreadListActions"),
+          );
           return false;
         }
         // Settled threads stay in the live shell stream; only the archive
@@ -274,12 +270,7 @@ export function useThreadListActions(): {
         });
         if (result._tag === "Failure") {
           const error = Cause.squash(result.cause);
-          Alert.alert(
-            "Nicht zurückgestellt",
-            error instanceof Error && error.message.trim().length > 0
-              ? error.message
-              : "Nicht zurückgestellt.",
-          );
+          Alert.alert("Nicht zurückgestellt", userFacingErrorText(error, "useThreadListActions"));
           return false;
         }
         return true;
@@ -309,12 +300,7 @@ export function useThreadListActions(): {
         });
         if (result._tag === "Failure") {
           const error = Cause.squash(result.cause);
-          Alert.alert(
-            "Nicht geweckt",
-            error instanceof Error && error.message.trim().length > 0
-              ? error.message
-              : "Nicht geweckt.",
-          );
+          Alert.alert("Nicht geweckt", userFacingErrorText(error, "useThreadListActions"));
           return false;
         }
         return true;
@@ -353,12 +339,7 @@ export function useThreadListActions(): {
       });
       if (result._tag === "Failure") {
         const error = Cause.squash(result.cause);
-        Alert.alert(
-          "Nicht angeheftet",
-          error instanceof Error && error.message.trim().length > 0
-            ? error.message
-            : "Nicht angeheftet.",
-        );
+        Alert.alert("Nicht angeheftet", userFacingErrorText(error, "useThreadListActions"));
         return false;
       }
       return true;
@@ -378,12 +359,7 @@ export function useThreadListActions(): {
       });
       if (result._tag === "Failure") {
         const error = Cause.squash(result.cause);
-        Alert.alert(
-          "Nicht gelöst",
-          error instanceof Error && error.message.trim().length > 0
-            ? error.message
-            : "Nicht gelöst.",
-        );
+        Alert.alert("Nicht gelöst", userFacingErrorText(error, "useThreadListActions"));
         return false;
       }
       return true;
@@ -415,9 +391,7 @@ export function useThreadListActions(): {
           const error = Cause.squash(result.cause);
           Alert.alert(
             "Titel nicht neu erzeugt",
-            error instanceof Error && error.message.trim().length > 0
-              ? error.message
-              : "Titel nicht neu erzeugt.",
+            userFacingErrorText(error, "useThreadListActions"),
           );
           return false;
         }
@@ -485,12 +459,7 @@ export function useThreadListActions(): {
           });
           if (result._tag === "Failure") {
             const error = Cause.squash(result.cause);
-            Alert.alert(
-              "Nicht verschoben",
-              error instanceof Error && error.message.trim().length > 0
-                ? error.message
-                : "Nicht verschoben.",
-            );
+            Alert.alert("Nicht verschoben", userFacingErrorText(error, "useThreadListActions"));
             // No rollback: keys already written are valid orderings on their
             // own (each write is a complete, consistent placement), so a
             // partial materialization leaves the list sensible, not corrupt.

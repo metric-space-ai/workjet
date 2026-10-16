@@ -18,11 +18,10 @@ import {
 import { useBusinessOs } from "../BusinessOsProvider";
 import { setBusinessOsContentProtected } from "../security/content-protection";
 import { CredentialQrCode } from "./CredentialQrCode";
+import { userFacingErrorText } from "../../../lib/userFacingError";
 
 function safeMessage(error: unknown): string {
-  return error instanceof Error && error.name === "WorkjetDeviceInviteControlUnavailableError"
-    ? "Instanz vom Gerät aus nicht erreichbar."
-    : "Aktion fehlgeschlagen. Erneut versuchen.";
+  return userFacingErrorText(error, "BusinessOsSettingsPanel");
 }
 
 export function BusinessOsSettingsPanel(props: {

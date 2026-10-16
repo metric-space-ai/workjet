@@ -25,6 +25,7 @@ import {
   type ParsedWorkjetDevicePairingLink,
   validateRedeemedWorkjetDeviceInviteV2,
 } from "./workjet-device-invite";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 interface WorkjetDevicePairingContextValue {
   readonly importPairingPayload: (payload: string) => Promise<boolean>;
@@ -208,7 +209,7 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
         .catch((cause) => {
           Alert.alert(
             "Pairing fehlgeschlagen",
-            cause instanceof Error ? cause.message : "QR-Code ungültig oder abgelaufen.",
+            userFacingErrorText(cause, "WorkjetDevicePairingProvider"),
           );
         })
         .finally(() => pendingIncomingDevicePairingIds.current.delete(pairingAttemptId));

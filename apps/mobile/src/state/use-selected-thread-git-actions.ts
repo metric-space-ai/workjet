@@ -25,6 +25,7 @@ import { useAtomCommand } from "./use-atom-command";
 import { showGitActionResult } from "./use-vcs-action-state";
 import { useThreadSelection } from "./use-thread-selection";
 import { useSelectedThreadWorktree } from "./use-selected-thread-worktree";
+import { userFacingErrorText } from "../lib/userFacingError";
 
 export function useSelectedThreadGitActions() {
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
@@ -105,7 +106,7 @@ export function useSelectedThreadGitActions() {
           );
       if (AsyncResult.isFailure(result)) {
         const error = Cause.squash(result.cause);
-        const message = error instanceof Error ? error.message : "Git-Status nicht aktualisiert.";
+        const message = userFacingErrorText(error, "use-selected-thread-git-actions");
         setPendingConnectionError(message);
         return null;
       }
@@ -154,7 +155,7 @@ export function useSelectedThreadGitActions() {
           : await vcsActionManager.track(appAtomRegistry, target, { operation, label }, run);
       if (AsyncResult.isFailure(result)) {
         const error = Cause.squash(result.cause);
-        const message = error instanceof Error ? error.message : "Git-Aktion fehlgeschlagen.";
+        const message = userFacingErrorText(error, "use-selected-thread-git-actions");
         setPendingConnectionError(message);
         showGitActionResult({
           type: "error",

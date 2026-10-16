@@ -47,6 +47,7 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
 type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "linking";
@@ -212,7 +213,7 @@ function ConfiguredSettingsRouteScreen() {
         const error = squashAtomCommandFailure(result);
         Alert.alert(
           "Mitteilungen nicht verfügbar",
-          error instanceof Error ? error.message : "Mitteilungen nicht angefragt.",
+          userFacingErrorText(error, "SettingsRouteScreen"),
         );
       }
       return;
@@ -265,7 +266,7 @@ function ConfiguredSettingsRouteScreen() {
       const error = squashAtomCommandFailure(tokenResult);
       Alert.alert(
         "Live-Aktivitäten nicht verfügbar",
-        error instanceof Error ? error.message : "Live-Aktivitäten nicht aktiviert.",
+        userFacingErrorText(error, "SettingsRouteScreen"),
       );
       return;
     }
@@ -291,7 +292,7 @@ function ConfiguredSettingsRouteScreen() {
         const error = squashAtomCommandFailure(updateResult);
         Alert.alert(
           "Live-Aktivitäten nicht verfügbar",
-          error instanceof Error ? error.message : "Live-Aktivitäten nicht aktiviert.",
+          userFacingErrorText(error, "SettingsRouteScreen"),
         );
       }
       return;

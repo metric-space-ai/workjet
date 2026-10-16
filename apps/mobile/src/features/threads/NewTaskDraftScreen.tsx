@@ -63,6 +63,7 @@ import {
   resolveNewTaskWorkspaceLabel,
 } from "./new-task-context-presentation";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 function NewTaskWorkspaceIcon(props: {
   readonly workspaceMode: "local" | "worktree";
@@ -479,7 +480,7 @@ export function NewTaskDraftScreen(props: {
         }
         Alert.alert(
           "Geteilter Inhalt nicht importiert",
-          error instanceof Error ? error.message : "Geteilter Inhalt nicht gespeichert.",
+          userFacingErrorText(error, "NewTaskDraftScreen"),
           [
             {
               text: "Import abbrechen",
@@ -516,9 +517,7 @@ export function NewTaskDraftScreen(props: {
                     }
                     Alert.alert(
                       "Import nicht abgebrochen",
-                      cancelError instanceof Error
-                        ? cancelError.message
-                        : "Geteilter Inhalt nicht wiederhergestellt.",
+                      userFacingErrorText(cancelError, "NewTaskDraftScreen"),
                       [
                         {
                           text: "Import wiederholen",
@@ -680,10 +679,7 @@ export function NewTaskDraftScreen(props: {
       try {
         await enqueueThreadOutboxMessage(message);
       } catch (error) {
-        Alert.alert(
-          "Aufgabe nicht eingereiht",
-          error instanceof Error ? error.message : "Aufgabe nicht gespeichert.",
-        );
+        Alert.alert("Aufgabe nicht eingereiht", userFacingErrorText(error, "NewTaskDraftScreen"));
         return;
       } finally {
         flow.setSubmitting(false);
@@ -737,10 +733,7 @@ export function NewTaskDraftScreen(props: {
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        Alert.alert(
-          "Aufgabe nicht gestartet",
-          error instanceof Error ? error.message : "Aufgabe nicht gestartet.",
-        );
+        Alert.alert("Aufgabe nicht gestartet", userFacingErrorText(error, "NewTaskDraftScreen"));
       }
       return;
     }

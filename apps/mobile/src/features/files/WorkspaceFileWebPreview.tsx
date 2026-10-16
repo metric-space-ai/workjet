@@ -4,6 +4,7 @@ import { WebView } from "react-native-webview";
 
 import { AppText as Text } from "../../components/AppText";
 import { LoadingStrip } from "../../components/LoadingStrip";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 export function WorkspaceFileWebPreview(props: { readonly uri: string | null }) {
   const [loadProgress, setLoadProgress] = useState(0);
@@ -46,7 +47,9 @@ export function WorkspaceFileWebPreview(props: { readonly uri: string | null }) 
         }}
         onError={(event) => {
           setLoadProgress(0);
-          setLoadError(event.nativeEvent.description || "Datei nicht darstellbar.");
+          setLoadError(
+            userFacingErrorText(event.nativeEvent.description, "WorkspaceFileWebPreview"),
+          );
         }}
         renderLoading={() => (
           <View className="absolute inset-0 items-center justify-center bg-card">

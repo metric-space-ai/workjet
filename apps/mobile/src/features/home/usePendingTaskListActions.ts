@@ -5,6 +5,7 @@ import { Alert } from "react-native";
 import { removeThreadOutboxMessage } from "../../state/thread-outbox";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { releaseEditingQueuedMessage } from "../../state/use-thread-outbox";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 export function usePendingTaskListActions(): {
   readonly openPendingTask: (pendingTask: PendingNewTask) => void;
@@ -41,7 +42,7 @@ export function usePendingTaskListActions(): {
             .catch((error) => {
               Alert.alert(
                 "Aufgabe nicht gelöscht",
-                error instanceof Error ? error.message : "Aufgabe nicht entfernt.",
+                userFacingErrorText(error, "usePendingTaskListActions"),
               );
             });
         },

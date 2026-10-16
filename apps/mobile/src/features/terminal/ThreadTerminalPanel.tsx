@@ -14,6 +14,7 @@ import {
   type TerminalGridSize,
   type ThreadTerminalSubscriptionIdentity,
 } from "./threadTerminalPanelModel";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 interface ThreadTerminalPanelProps {
   readonly environmentId: EnvironmentId;
@@ -227,7 +228,7 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
         <View className="flex-row items-center gap-2">
           {terminal.error ? (
             <Text className="max-w-44 text-right text-2xs text-red-300" numberOfLines={1}>
-              {terminal.error}
+              {userFacingErrorText(terminal.error, "ThreadTerminalPanel")}
             </Text>
           ) : null}
           <Pressable

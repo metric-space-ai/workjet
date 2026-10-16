@@ -6,11 +6,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import type {
-  CtoxV4AppPort,
-  CtoxV4CommandState,
-  CtoxV4Live,
-} from "@workjet/shared/ctoxV4AppData";
+import type { CtoxV4AppPort, CtoxV4CommandState, CtoxV4Live } from "@workjet/shared/ctoxV4AppData";
 import { bindCtoxV4AppPort } from "./CtoxV4AppPorts.ts";
 import { makeCtoxLumaConfigurationClient } from "./CtoxLumaConfigurationClient.ts";
 import { makeCtoxNativeSupervisorWorkers } from "./CtoxNativeSupervisorWorkers.ts";
@@ -106,49 +102,51 @@ describe("V4 bound: seams use the kernel client, never MCP", () => {
     }),
   );
 
-  it.effect("decision_hub request/get map to threads.ctox_approval.request and its projection", () =>
-    Effect.gen(function* () {
-      const endpoint = `https://v4-decision-${++instanceSequence}.invalid/mcp/instance`;
-      const { port, rows, commands } = memoryPort({
-        "threads.ctox_approval.request": () => ({ status: "completed" }),
-      });
-      const release = bindCtoxV4AppPort({ instanceId: `dh-${instanceSequence}`, endpoint }, port);
-      try {
-        const client = yield* DecisionHubMcpClient.pipe(
-          Effect.provide(
-            decisionHubClientLayer.pipe(
-              Layer.provide(Layer.succeed(HttpClient.HttpClient, forbiddenHttp)),
+  it.effect(
+    "decision_hub request/get map to threads.ctox_approval.request and its projection",
+    () =>
+      Effect.gen(function* () {
+        const endpoint = `https://v4-decision-${++instanceSequence}.invalid/mcp/instance`;
+        const { port, rows, commands } = memoryPort({
+          "threads.ctox_approval.request": () => ({ status: "completed" }),
+        });
+        const release = bindCtoxV4AppPort({ instanceId: `dh-${instanceSequence}`, endpoint }, port);
+        try {
+          const client = yield* DecisionHubMcpClient.pipe(
+            Effect.provide(
+              decisionHubClientLayer.pipe(
+                Layer.provide(Layer.succeed(HttpClient.HttpClient, forbiddenHttp)),
+              ),
             ),
-          ),
-        );
-        const target = { endpoint, token: "" };
-        yield* client.probe(target);
-        const requested = yield* client.requestDecision(target, {
-          decision_key: "k",
-          title: "Freigabe",
-          question: "Weiter?",
-          options: [{ id: "approve", label: "Ja" }],
-          source: { thread_id: "t-1", environment_id: "env" },
-        });
-        assert.deepStrictEqual(requested, { decisionId: "workjet-decision:k", status: "open" });
-        assert.strictEqual(commands[0]?.type, "threads.ctox_approval.request");
-        rows.set("ctox_task_approval_requests/workjet-decision:k", {
-          id: "workjet-decision:k",
-          status: "rejected",
-          updated_at_ms: 9,
-        });
-        const resolved = yield* client.getDecision(target, "workjet-decision:k");
-        assert.deepStrictEqual(resolved, {
-          decisionId: "workjet-decision:k",
-          status: "resolved",
-          selectedOptionId: "reject",
-          comment: null,
-          resolutionVersion: 9,
-        });
-      } finally {
-        release();
-      }
-    }),
+          );
+          const target = { endpoint, token: "" };
+          yield* client.probe(target);
+          const requested = yield* client.requestDecision(target, {
+            decision_key: "k",
+            title: "Freigabe",
+            question: "Weiter?",
+            options: [{ id: "approve", label: "Ja" }],
+            source: { thread_id: "t-1", environment_id: "env" },
+          });
+          assert.deepStrictEqual(requested, { decisionId: "workjet-decision:k", status: "open" });
+          assert.strictEqual(commands[0]?.type, "threads.ctox_approval.request");
+          rows.set("ctox_task_approval_requests/workjet-decision:k", {
+            id: "workjet-decision:k",
+            status: "rejected",
+            updated_at_ms: 9,
+          });
+          const resolved = yield* client.getDecision(target, "workjet-decision:k");
+          assert.deepStrictEqual(resolved, {
+            decisionId: "workjet-decision:k",
+            status: "resolved",
+            selectedOptionId: "reject",
+            comment: null,
+            resolutionVersion: 9,
+          });
+        } finally {
+          release();
+        }
+      }),
   );
 
   it.effect("worker dispatch is the Workjet app command, not the MCP tool", () =>
@@ -183,7 +181,10 @@ describe("V4 bound: seams use the kernel client, never MCP", () => {
         // which proves the answer came from the V4 command and not from MCP.
         assert.strictEqual(registration._tag, "RemoteWorkerDispatchError");
         assert.strictEqual(commands[0]?.type, "workjet.worker.dispatch");
-        assert.strictEqual((commands[0]?.payload as { action?: string }).action, "register_source");
+        assert.strictEqual(
+          (commands[0]?.payload as { action?: string } | undefined)?.action,
+          "register_source",
+        );
       } finally {
         release();
       }

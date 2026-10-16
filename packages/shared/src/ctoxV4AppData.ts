@@ -227,9 +227,7 @@ type LumaRow = {
 };
 const LUMA_META = new Set(["id", "revision", "configured", "updatedAtMs"]);
 
-export function readWorkjetLumaConfiguration(
-  api: CtoxV4AppPort,
-): WorkjetLumaConfigurationDocument {
+export function readWorkjetLumaConfiguration(api: CtoxV4AppPort): WorkjetLumaConfigurationDocument {
   const row = api.get<LumaRow>(WORKJET_LUMA_STATE, WORKJET_LUMA_STATE_ID).get();
   if (row === null) return { revision: 0, configuration: null, updatedAtMs: null };
   const configuration = Object.fromEntries(
@@ -350,7 +348,9 @@ export function readWorkjetDecision(
     decisionId,
     status,
     selectedOptionId:
-      status !== "resolved" ? null : (row.decision ?? (row.status === "approved" ? "approve" : "reject")),
+      status !== "resolved"
+        ? null
+        : (row.decision ?? (row.status === "approved" ? "approve" : "reject")),
     comment: row.review_comment ?? row.comment ?? null,
     resolutionVersion: row.updated_at_ms ?? row.resolved_at_ms ?? 0,
   };

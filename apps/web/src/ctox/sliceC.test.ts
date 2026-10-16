@@ -26,7 +26,11 @@ import { MemoryCoreTransport } from "./kernel/fake-core.mjs";
 import type { CtoxAppApi, Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
 import { getCtoxClient } from "./ctoxClient";
-import { WORKJET_APP_ID, WORKJET_FOREIGN_COLLECTIONS, workjetAppManifest } from "./workjetAppManifest";
+import {
+  WORKJET_APP_ID,
+  WORKJET_FOREIGN_COLLECTIONS,
+  workjetAppManifest,
+} from "./workjetAppManifest";
 import {
   ctoxSignalingEndpoints,
   ctoxSshInstancePathAllowed,
@@ -45,7 +49,8 @@ const APP_VER = "v4-slice-c";
  */
 const WORKER_DISPATCH_HANDLER = `export default async function handle(command, ctx) {
   const p = command.payload;
-  if (typeof p.worker_id !== "string" || typeof p.brief !== "string") throw Object.assign(new Error("payload_invalid"), { code: "invalid" });
+  if (p.action === "register_source") return { source_environment_id: p.source_environment_id, project_id: p.project_id, registered: true };
+  if (p.action !== "dispatch" || typeof p.worker_id !== "string" || typeof p.brief !== "string") throw Object.assign(new Error("payload_invalid"), { code: "invalid" });
   const run = await ctx.cap.process.run({ program: "cat", args: [], stdin: JSON.stringify({ worker_id: p.worker_id, project_id: p.project_id, brief: p.brief }), timeout_ms: 30000 });
   return { dispatch_id: p.dispatch_id, exit_code: run.exit_code, accepted: run.exit_code === 0, echo: run.stdout };
 }
@@ -141,7 +146,12 @@ async function openV4(role: "admin" | "user" = "admin") {
   return { instanceId, api, transport, approvals };
 }
 
-async function waitForRow<T>(api: CtoxAppApi, collection: string, id: string, ok: (row: T) => boolean) {
+async function waitForRow<T>(
+  api: CtoxAppApi,
+  collection: string,
+  id: string,
+  ok: (row: T) => boolean,
+) {
   const live = api.get<T>(collection, id);
   const off = live.subscribe(() => {});
   try {
@@ -171,8 +181,11 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
   it("1 mailbox: publish, live query instead of polling, receipt as api.patch", async () => {
     const { api, transport } = await openV4();
     const seen: string[][] = [];
-    const off = watchPendingWorkjetMailboxEnvelopes(api, "env-me", () => 0, (rows) =>
-      seen.push(rows.map((row) => row.id)),
+    const off = watchPendingWorkjetMailboxEnvelopes(
+      api,
+      "env-me",
+      () => 0,
+      (rows) => seen.push(rows.map((row) => row.id)),
     );
     try {
       expect(await publishWorkjetMailboxEnvelope(api, envelope("e-1", "env-me"))).toEqual({
@@ -187,7 +200,9 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
       expect(readPendingWorkjetMailboxEnvelopes(api, "env-me", 0).map((row) => row.id)).toEqual([
         "e-1",
       ]);
-      expect(await acknowledgeWorkjetMailboxEnvelopes(api, ["e-1", "missing"], "env-me", 5)).toBe(1);
+      expect(await acknowledgeWorkjetMailboxEnvelopes(api, ["e-1", "missing"], "env-me", 5)).toBe(
+        1,
+      );
       await waitForRow<WorkjetMailboxEnvelopeDocument>(
         api,
         WORKJET_MAILBOX_ENVELOPES,
@@ -283,14 +298,30 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
 
   it("4 worker dispatch runs in the Workjet app handler with process.run", async () => {
     const { api } = await openV4();
-    const result = (await dispatchWorkjetWorker(api, {
-      dispatchId: "d-1",
-      workerId: "w-1",
-      projectId: "p-1",
-      brief: "Baue X",
-    })) as { accepted: boolean; echo: string };
+    expect(
+      await dispatchWorkjetWorker(api, {
+        action: "register_source",
+        source_environment_id: "env-me",
+        project_id: "p-1",
+      }),
+    ).toEqual({ source_environment_id: "env-me", project_id: "p-1", registered: true });
+    const result = (await dispatchWorkjetWorker(
+      api,
+      {
+        action: "dispatch",
+        dispatch_id: "d-1",
+        worker_id: "w-1",
+        project_id: "p-1",
+        brief: "Baue X",
+      },
+      "d-1",
+    )) as { accepted: boolean; echo: string };
     expect(result.accepted).toBe(true);
-    expect(JSON.parse(result.echo)).toEqual({ worker_id: "w-1", project_id: "p-1", brief: "Baue X" });
+    expect(JSON.parse(result.echo)).toEqual({
+      worker_id: "w-1",
+      project_id: "p-1",
+      brief: "Baue X",
+    });
   });
 
   it("5 business OS adapter: query, get and command through the V4 client", async () => {
@@ -302,7 +333,13 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
       selector: { target_environment_id: "env-me" },
     })) as { id: string }[];
     expect(rows.map((row) => row.id)).toEqual(["e-9"]);
-    expect(await callWorkjetBusinessOs(api, { kind: "get", collection: WORKJET_MAILBOX_ENVELOPES, id: "x" })).toBeNull();
+    expect(
+      await callWorkjetBusinessOs(api, {
+        kind: "get",
+        collection: WORKJET_MAILBOX_ENVELOPES,
+        id: "x",
+      }),
+    ).toBeNull();
     await expect(
       callWorkjetBusinessOs(api, { kind: "command", type: "ctox.not.a.route", payload: {} }),
     ).rejects.toMatchObject({ code: "unknown_command" });
@@ -375,7 +412,12 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
               signature: "C".repeat(86),
             },
             scopes_wanted: [],
-            transport: { codecs: ["gzip"], max_frame_bytes: 16384, fragmentation: true, reassembly: true },
+            transport: {
+              codecs: ["gzip"],
+              max_frame_bytes: 16384,
+              fragmentation: true,
+              reassembly: true,
+            },
           },
         },
         packageKeys: [{ keyId: "k1", alg: "Ed25519", publicKey: "A".repeat(43) }],

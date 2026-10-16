@@ -13,7 +13,10 @@ const PAIRING_URI = /^workjet:\/\/pair\?payload=([A-Za-z0-9_-]{1,2300})$/u;
 
 export type WorkjetInviteRedeemOutcome =
   | { readonly ok: true; readonly launchContext: Readonly<V4LaunchContext["v4"]> }
-  | { readonly ok: false; readonly code: "invite_invalid" | "redeem_failed" | "launch_context_invalid" };
+  | {
+      readonly ok: false;
+      readonly code: "invite_invalid" | "redeem_failed" | "launch_context_invalid";
+    };
 
 /** The signaling exchange of the invite payload; the transport is the host's, never SSH or HTTPS to the instance. */
 export type WorkjetSignalingInviteExchange = (payload: string) => Promise<unknown>;

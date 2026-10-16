@@ -1299,31 +1299,36 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
         ? (JSON.parse(new TextDecoder().decode(request.body.body)) as Record<string, unknown>)
         : {};
     return Clock.currentTimeMillis.pipe(
-      Effect.flatMap((nowMillis) => Effect.tryPromise(async (): Promise<unknown> => {
-      if (url.pathname.endsWith("/workjet/mailbox/publish"))
-        return publishWorkjetMailboxEnvelope(port, body() as unknown as WorkjetMailboxPublishInput);
-      if (url.pathname.endsWith("/workjet/mailbox/pending"))
-        return {
-          envelopes: readPendingWorkjetMailboxEnvelopes(
-            port,
-            url.searchParams.get("environment_id") ?? localEnvironmentId,
-            nowMillis,
-          ).slice(0, Number(url.searchParams.get("limit") ?? WORKJET_TRANSPORT_PULL_LIMIT)),
-          has_more: false,
-          next_cursor: null,
-        };
-      if (url.pathname.endsWith("/workjet/mailbox/consumed")) {
-        const ids = body().envelope_ids;
-        const consumed = await acknowledgeWorkjetMailboxEnvelopes(
-          port,
-          Array.isArray(ids) ? ids.map(String) : [],
-          localEnvironmentId,
-          nowMillis,
-        );
-        return { consumed };
-      }
-      throw new Error("unknown_mailbox_route");
-    })),
+      Effect.flatMap((nowMillis) =>
+        Effect.tryPromise(async (): Promise<unknown> => {
+          if (url.pathname.endsWith("/workjet/mailbox/publish"))
+            return publishWorkjetMailboxEnvelope(
+              port,
+              body() as unknown as WorkjetMailboxPublishInput,
+            );
+          if (url.pathname.endsWith("/workjet/mailbox/pending"))
+            return {
+              envelopes: readPendingWorkjetMailboxEnvelopes(
+                port,
+                url.searchParams.get("environment_id") ?? localEnvironmentId,
+                nowMillis,
+              ).slice(0, Number(url.searchParams.get("limit") ?? WORKJET_TRANSPORT_PULL_LIMIT)),
+              has_more: false,
+              next_cursor: null,
+            };
+          if (url.pathname.endsWith("/workjet/mailbox/consumed")) {
+            const ids = body().envelope_ids;
+            const consumed = await acknowledgeWorkjetMailboxEnvelopes(
+              port,
+              Array.isArray(ids) ? ids.map(String) : [],
+              localEnvironmentId,
+              nowMillis,
+            );
+            return { consumed };
+          }
+          throw new Error("unknown_mailbox_route");
+        }),
+      ),
       Effect.option,
     );
   };

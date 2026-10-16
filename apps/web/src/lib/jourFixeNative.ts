@@ -244,7 +244,7 @@ export class JourFixeNativeSession {
           );
         this.pending = undefined;
         this.settled = pending;
-        throw new Error("Diese Änderung wurde nicht übernommen. Erneut senden schickt sie neu.");
+        throw new Error("Änderung nicht übernommen");
       }
       if (pending.request.action === "project.jour_fixe.todos.confirm") {
         if (!("goal" in result.response) || result.response.goal === undefined)

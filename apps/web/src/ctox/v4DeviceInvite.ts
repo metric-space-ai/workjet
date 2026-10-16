@@ -186,6 +186,12 @@ export function parseV4DeviceInviteLink(link: string, nowMs: number): V4InviteLi
   return { ok: true, invite: { instanceId, signaling, inviteId, oneTimeSecret, expiresAtMs } };
 }
 
+/** True for a V4 invitation link, valid or not; a V3 pairing link answers false. */
+export function isV4DeviceInviteLink(link: string): boolean {
+  // The clock only decides expired vs. valid; recognition never depends on it.
+  return parseV4DeviceInviteLink(link, 0) !== null;
+}
+
 /** Encodes an invitation as link (Core/test side of the same payload contract). */
 export function encodeV4DeviceInviteLink(invite: V4DeviceInvite): string {
   const payload = {
@@ -229,7 +235,11 @@ function concat(...parts: ReadonlyArray<Uint8Array>): Uint8Array<ArrayBuffer> {
  *   proof = base64url_no_pad(HMAC_SHA256(K, M))
  */
 export async function deriveV4InviteProof(
-  input: { readonly oneTimeSecret: string; readonly inviteId: string; readonly devicePubkey: string },
+  input: {
+    readonly oneTimeSecret: string;
+    readonly inviteId: string;
+    readonly devicePubkey: string;
+  },
   subtle: SubtleCrypto = globalThis.crypto.subtle,
 ): Promise<string> {
   const secret = decodeCanonical32(input.oneTimeSecret);

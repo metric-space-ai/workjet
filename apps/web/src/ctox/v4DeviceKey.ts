@@ -96,7 +96,9 @@ export function createIndexedDbV4DeviceKeyStorage(
   return {
     get: async (instanceId) => {
       const db = await open();
-      const value = await request(db.transaction(STORE, "readonly").objectStore(STORE).get(instanceId));
+      const value = await request(
+        db.transaction(STORE, "readonly").objectStore(STORE).get(instanceId),
+      );
       return valid(value) ? value : undefined;
     },
     putIfAbsent: async (instanceId, key) => {
@@ -104,7 +106,9 @@ export function createIndexedDbV4DeviceKeyStorage(
       const store = db.transaction(STORE, "readwrite").objectStore(STORE);
       const existing: unknown = await request(store.get(instanceId));
       if (valid(existing)) return existing;
-      await request(store.put({ privateKey: key.privateKey, publicKey: key.publicKey }, instanceId));
+      await request(
+        store.put({ privateKey: key.privateKey, publicKey: key.publicKey }, instanceId),
+      );
       return key;
     },
   };

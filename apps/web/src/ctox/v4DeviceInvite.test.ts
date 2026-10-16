@@ -1,5 +1,5 @@
 import * as NodeCrypto from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { redeemWorkjetDeviceInvite } from "./instanceAccess";
 import {
@@ -90,7 +90,9 @@ const launchContext = (instanceId = "inst-1") => ({
 /** Independent reference of the #927 proof (Node crypto, not the code under test). */
 function referenceProof(secret: string, inviteId: string, devicePubkey: string) {
   const key = NodeCrypto.createHash("sha256")
-    .update(Buffer.concat([Buffer.from("ctox.device.invite.key.v1\0"), Buffer.from(secret, "base64url")]))
+    .update(
+      Buffer.concat([Buffer.from("ctox.device.invite.key.v1\0"), Buffer.from(secret, "base64url")]),
+    )
     .digest();
   const id = Buffer.from(inviteId, "utf8");
   const length = Buffer.alloc(4);
@@ -180,7 +182,9 @@ function createFakeSignaling(
         peerOnChannel = (data) => {
           const response = core.handle(JSON.parse(data) as V4PairingControlRequest, NOW);
           queueMicrotask(() =>
-            options.dropAfterRequest ? open.emit("close") : open.emit("message", JSON.stringify(response)),
+            options.dropAfterRequest
+              ? open.emit("close")
+              : open.emit("message", JSON.stringify(response)),
           );
         };
         open.readyState = "open";
@@ -255,7 +259,11 @@ describe("E54.4 proof derivation (ctox #927 contract)", () => {
 
   it("refuses non-canonical secret or device key", async () => {
     await expect(
-      deriveV4InviteProof({ oneTimeSecret: `${SECRET}=`, inviteId: INVITE_ID, devicePubkey: DEVICE_7 }),
+      deriveV4InviteProof({
+        oneTimeSecret: `${SECRET}=`,
+        inviteId: INVITE_ID,
+        devicePubkey: DEVICE_7,
+      }),
     ).rejects.toThrow();
     await expect(
       deriveV4InviteProof({
@@ -269,7 +277,9 @@ describe("E54.4 proof derivation (ctox #927 contract)", () => {
   it("keeps the device label display-only within the Core bounds", () => {
     expect(normalizeV4DeviceLabel("Workjet\n(macOS)")).toBe("Workjet (macOS)");
     expect(normalizeV4DeviceLabel("  ")).toBe("Workjet");
-    expect(new TextEncoder().encode(normalizeV4DeviceLabel("ä".repeat(200))).length).toBeLessThanOrEqual(128);
+    expect(
+      new TextEncoder().encode(normalizeV4DeviceLabel("ä".repeat(200))).length,
+    ).toBeLessThanOrEqual(128);
   });
 });
 
@@ -364,17 +374,20 @@ describe("E54.4 redeem against a fake signaling + pairing peer", () => {
     ).toEqual({ ok: false, code: "proof_invalid" });
   });
 
-  it.each(V4_INVITE_REJECTIONS)("passes the Core rejection %s through with a short text", async (code) => {
-    const signaling = createFakeSignaling(createFakeCore({ forced: code }));
-    const outcome = await redeemWorkjetDeviceInvite(encodeV4DeviceInviteLink(invite()), {
-      exchange: signaling.exchange,
-      deviceKeys: deviceKeys(),
-      now: () => NOW,
-    });
-    expect(outcome).toEqual({ ok: false, code });
-    expect(hasPairedV4LaunchContext("inst-1")).toBe(false);
-    expect(V4_INVITE_FAILURE_TEXT[code].text.length).toBeGreaterThan(0);
-  });
+  it.each(V4_INVITE_REJECTIONS)(
+    "passes the Core rejection %s through with a short text",
+    async (code) => {
+      const signaling = createFakeSignaling(createFakeCore({ forced: code }));
+      const outcome = await redeemWorkjetDeviceInvite(encodeV4DeviceInviteLink(invite()), {
+        exchange: signaling.exchange,
+        deviceKeys: deviceKeys(),
+        now: () => NOW,
+      });
+      expect(outcome).toEqual({ ok: false, code });
+      expect(hasPairedV4LaunchContext("inst-1")).toBe(false);
+      expect(V4_INVITE_FAILURE_TEXT[code].text.length).toBeGreaterThan(0);
+    },
+  );
 
   it("never sends a link that is locally recognisable as expired", async () => {
     const core = createFakeCore();
@@ -399,7 +412,10 @@ describe("E54.4 redeem against a fake signaling + pairing peer", () => {
     const outcome = await redeemV4DeviceInvite({
       link: encodeV4DeviceInviteLink(
         invite({
-          signaling: { ...invite().signaling, urls: ["wss://down.example/ws", "wss://signal.example/ws"] },
+          signaling: {
+            ...invite().signaling,
+            urls: ["wss://down.example/ws", "wss://signal.example/ws"],
+          },
         }),
       ),
       exchange: signaling.exchange,
@@ -414,7 +430,10 @@ describe("E54.4 redeem against a fake signaling + pairing peer", () => {
     const lost = await redeemV4DeviceInvite({
       link: encodeV4DeviceInviteLink(
         invite({
-          signaling: { ...invite().signaling, urls: ["wss://signal.example/a", "wss://signal.example/b"] },
+          signaling: {
+            ...invite().signaling,
+            urls: ["wss://signal.example/a", "wss://signal.example/b"],
+          },
         }),
       ),
       exchange: dropping.exchange,
@@ -429,11 +448,12 @@ describe("E54.4 redeem against a fake signaling + pairing peer", () => {
   it("rejects an answer for another instance or without a valid launch context", async () => {
     const link = encodeV4DeviceInviteLink(invite());
     const base = { link, deviceKeys: deviceKeys(), deviceLabel: "W", now: () => NOW };
-    const answer = (body: object) => async (_target: unknown, request: V4PairingControlRequest) => ({
-      type: "pairing_response",
-      id: request.id,
-      ...body,
-    });
+    const answer =
+      (body: object) => async (_target: unknown, request: V4PairingControlRequest) => ({
+        type: "pairing_response",
+        id: request.id,
+        ...body,
+      });
     await expect(
       redeemV4DeviceInvite({ ...base, exchange: answer({ result: launchContext("other") }) }),
     ).resolves.toEqual({ ok: false, code: "launch_context_invalid" });
@@ -464,6 +484,8 @@ describe("E54.4 device key", () => {
       false,
       ["verify"],
     );
-    await expect(crypto.subtle.verify("Ed25519", publicKey, signature, message)).resolves.toBe(true);
+    await expect(crypto.subtle.verify("Ed25519", publicKey, signature, message)).resolves.toBe(
+      true,
+    );
   });
 });

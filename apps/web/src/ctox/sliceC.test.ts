@@ -730,7 +730,12 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
     const instanceId = "inst-1";
     const link = encodeV4DeviceInviteLink({
       instanceId,
-      signaling: { urls: ["wss://signal.example/ws"], room: "r", nativePeerId: "n", iceServers: [] },
+      signaling: {
+        urls: ["wss://signal.example/ws"],
+        room: "r",
+        nativePeerId: "n",
+        iceServers: [],
+      },
       inviteId: "0b6f6f5e-3c1a-4d2e-9f00-123456789abc",
       oneTimeSecret: "A".repeat(43),
       expiresAtMs: Date.now() + 60_000,

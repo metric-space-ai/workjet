@@ -13,7 +13,9 @@ export function storePairedV4LaunchContext(instanceId: string, payload: { readon
 }
 
 /** Hands out the stored context once (the offer's E50 ticket is single-use). */
-export function takePairedV4LaunchContext(instanceId: string): { readonly v4: unknown } | undefined {
+export function takePairedV4LaunchContext(
+  instanceId: string,
+): { readonly v4: unknown } | undefined {
   const payload = contexts.get(instanceId);
   contexts.delete(instanceId);
   return payload;

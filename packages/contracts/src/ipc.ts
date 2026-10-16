@@ -119,6 +119,7 @@ import type {
   CtoxWorkjetSessionControlRequest,
   CtoxWorkjetSessionControlResult,
   CtoxWorkjetSessionTransferNotification,
+  CtoxV4LaunchContextReadResult,
   CtoxPairedInstanceImportResult,
   CtoxPairedInstanceRemoveResult,
   CtoxSshManagedInstanceAddInput,
@@ -1353,6 +1354,8 @@ export interface DesktopCtoxBridge {
     instanceId: string,
     request: CtoxWorkjetSessionControlRequest,
   ) => Promise<CtoxWorkjetSessionControlResult>;
+  /** Scheibe C: the launch context's `v4` member of exactly this instance (null on a V3 core). */
+  readV4LaunchContext?: (instanceId: string) => Promise<CtoxV4LaunchContextReadResult>;
   /** Register local computer ids with every warm Business OS renderer. */
   registerSessionTransferEvents?: (
     computerIds: readonly string[],

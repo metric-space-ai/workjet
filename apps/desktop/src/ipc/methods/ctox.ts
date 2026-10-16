@@ -22,6 +22,8 @@ import {
   CtoxWorkjetSessionControlInput,
   CtoxWorkjetSessionControlResult,
   CtoxWorkjetSessionEventsRegistrationInput,
+  CtoxV4LaunchContextReadInput,
+  CtoxV4LaunchContextReadResult,
   CtoxManagedActionResult,
   CtoxManagedActivationInput,
   CtoxManagedGuestResult,
@@ -855,6 +857,29 @@ export const requestSessionControl: DesktopIpc.DesktopIpcMethod<
     }),
 };
 
+export const readV4LaunchContext: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_V4_LAUNCH_CONTEXT_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxV4LaunchContextReadInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxV4LaunchContextReadResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      return yield* manager
+        .readV4LaunchContext(input.value.instanceId)
+        .pipe(Effect.flatMap((result) => encodeSafe(CtoxV4LaunchContextReadResult, result)));
+    }),
+};
+
 export const registerSessionTransferEvents: DesktopIpc.DesktopIpcMethod<
   never,
   CtoxGuestManager.CtoxGuestManager
@@ -1134,6 +1159,7 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   requestProjectControl,
   requestComputerControl,
   requestSessionControl,
+  readV4LaunchContext,
   registerSessionTransferEvents,
   openApp,
   openSettings,

@@ -12,6 +12,8 @@ import {
 } from "./v4HostBootstrap";
 import { commitActiveWorkjetSelection, readActiveWorkjetScope } from "../activeWorkjetScope";
 import { WORKJET_APP_ID, workjetAppManifest } from "./workjetAppManifest";
+import { desktopLaunchContextReader, startWorkjetV4HostBootstrap } from "./v4HostWiring";
+import type { DesktopCtoxBridge } from "@workjet/contracts";
 
 const APP_VER = "bootstrap-test";
 
@@ -229,5 +231,26 @@ describe("V4 bootstrap: mount only on a V4 instance", () => {
     await controller.sync(instanceId);
     await controller.dispose();
     expect(getCtoxClient(instanceId)).toBeNull();
+  });
+});
+
+describe("V4 bootstrap: desktop launch-context reader", () => {
+  it("maps the guest read to the launch-context payload", async () => {
+    const reader = desktopLaunchContextReader(async (instanceId) =>
+      instanceId === "v3"
+        ? { _tag: "completed", v4: null }
+        : instanceId === "down"
+          ? { _tag: "failed", code: "not_active" }
+          : { _tag: "completed", v4: v4LaunchContext("core-r").v4 },
+    );
+    expect(detectWorkjetCoreGeneration(await reader("v3"))).toBe("v3");
+    expect(detectWorkjetCoreGeneration(await reader("v4"))).toBe("v4");
+    await expect(reader("down")).rejects.toThrow("ctox_launch_context_not_active");
+  });
+
+  it("an older preload without the reader never mounts", () => {
+    const stop = startWorkjetV4HostBootstrap({} as DesktopCtoxBridge, APP_VER);
+    stop();
+    expect(getCtoxClient("any")).toBeNull();
   });
 });

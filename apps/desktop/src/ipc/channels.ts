@@ -127,6 +127,7 @@ export const CTOX_WORKJET_DEVICE_CONTROL_CHANNEL = "desktop:ctox-workjet-device-
 export const CTOX_WORKJET_PROJECT_CONTROL_CHANNEL = "desktop:ctox-workjet-project-control";
 export const CTOX_WORKJET_COMPUTER_CONTROL_CHANNEL = "desktop:ctox-workjet-computer-control";
 export const CTOX_WORKJET_SESSION_CONTROL_CHANNEL = "desktop:ctox-workjet-session-control";
+export const CTOX_V4_LAUNCH_CONTEXT_CHANNEL = "desktop:ctox-v4-launch-context";
 export const CTOX_SESSION_TRANSFER_REGISTER_CHANNEL = "desktop:ctox-session-events-register";
 export const CTOX_SESSION_TRANSFER_EVENT_CHANNEL = "desktop:ctox-session-transfer-event";
 export const CTOX_OPEN_APP_CHANNEL = "desktop:ctox-open-app";

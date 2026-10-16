@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AppleIcon, MonitorIcon, MonitorSmartphoneIcon, PlusIcon, ServerIcon } from "lucide-react";
+import { MonitorIcon, MonitorSmartphoneIcon, PlusIcon, ServerIcon } from "lucide-react";
 import "./networkDiagram.css";
-import { LinuxIcon } from "./LinuxIcon";
 import {
   layoutNetwork,
   type NetworkClientNode,
@@ -28,9 +27,8 @@ export interface NetworkDiagramProps {
   readonly onAdd: () => void;
 }
 
-function PlatformIcon({ platform }: { readonly platform: NetworkPlatform }) {
-  if (platform === "macos") return <AppleIcon size={19} />;
-  if (platform === "linux") return <LinuxIcon size={19} />;
+/** Rechner = Monitor (UI-Vertrag §5, Audit D25); die Plattform steht im Inspektor. */
+function PlatformIcon(_props: { readonly platform: NetworkPlatform }) {
   return <MonitorIcon size={19} />;
 }
 

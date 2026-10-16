@@ -523,10 +523,16 @@ describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", (
     });
   });
 
-  it("E42.3: the manifest owns only mailbox envelopes and Luma state", () => {
+  it("E54.3b: the manifest owns exactly the five Workjet collections", () => {
     const manifest = workjetAppManifest(APP_VER);
     expect(Object.keys(manifest.collections).sort()).toEqual(
-      ["workjet_luma_state", "workjet_mailbox_envelopes"].sort(),
+      [
+        "workjet_luma_state",
+        "workjet_mailbox_envelopes",
+        "workjet_worker_dispatch_intents",
+        "workjet_worker_dispatch_outcomes",
+        "workjet_worker_dispatch_sources",
+      ].sort(),
     );
     for (const read of [
       "workjet_projects",
@@ -539,8 +545,10 @@ describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", (
         owner_app: "ctox",
         ops: ["read"],
       });
-    // threads.ctox_approval.request is a platform route, not an app command_out.
-    expect(manifest.commands_out).toEqual(["ctox.maintenance.restart"]);
+    // Approval is a platform route; the restart joins once its Core route exists.
+    expect(manifest.commands_out).toEqual([]);
+    // The dispatch handler lives in the instance module (Shell v4), not in this manifest.
+    expect(manifest.handlers).toEqual({});
     expect(JSON.stringify(manifest)).not.toContain("workjet.worker.dispatch");
   });
 

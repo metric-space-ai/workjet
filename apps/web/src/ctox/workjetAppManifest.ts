@@ -1,6 +1,5 @@
 import {
   CTOX_APPROVAL_REQUESTS,
-  CTOX_MAINTENANCE_RESTART,
   WORKJET_LUMA_STATE,
   WORKJET_MAILBOX_ENVELOPES,
 } from "@workjet/shared/ctoxV4AppData";
@@ -9,14 +8,21 @@ import { THREAD_READ_COLLECTIONS } from "./threadReadAtoms";
 
 /**
  * Workjet app manifest (app_id `workjet`) as the Shell/Core activates it (§9, E35 Nr. 3).
- * Ownership follows E42.3: until `store_workjet_projects.rs` is retired after M7, the project,
+ * Ownership follows E42.3/E54.3b: until `store_workjet_projects.rs` is retired after M7, the project,
  * KPI, feed and worker-profile collections stay ctox-owned and Workjet reads them through the
- * K-WJ-1 exports. Workjet owns only its mailbox envelopes and the Luma state.
- * `workjet.worker.dispatch` is not part of this manifest until the Core decides its shape.
+ * K-WJ-1 exports. Workjet owns its mailbox envelopes, the Luma state and the three worker
+ * dispatch collections; the `workjet.worker.dispatch` handler lives in the instance module.
  */
 export const WORKJET_APP_ID = "workjet";
-/** E42.3: the only Workjet-owned collections. */
-export const WORKJET_OWNED_COLLECTIONS = [WORKJET_MAILBOX_ENVELOPES, WORKJET_LUMA_STATE] as const;
+/** E54.3b: the only Workjet-owned collections. */
+export const WORKJET_OWNED_COLLECTIONS = [
+  WORKJET_MAILBOX_ENVELOPES,
+  WORKJET_LUMA_STATE,
+  // Worker dispatch (E54.3b): its handler sits in the instance module (Shell v4), not here.
+  "workjet_worker_dispatch_sources",
+  "workjet_worker_dispatch_intents",
+  "workjet_worker_dispatch_outcomes",
+] as const;
 /** E42.3: ctox-owned Workjet data read through the K-WJ-1 exports. */
 export const WORKJET_CTOX_EXPORT_READS = [
   "workjet_projects",
@@ -69,10 +75,10 @@ export const WORKJET_FOREIGN_COLLECTIONS = [
 ];
 export const PLATFORM_OWNED = new Set(["devices", "machine_enrollments"]);
 /**
- * `threads.ctox_approval.request` is a Core platform route and needs no entry. The restart has no
- * Core route yet and stays here behind the `hello_ok` capability check.
+ * E54.3b: empty for now. `threads.ctox_approval.request` is a Core platform route and needs no
+ * entry; `ctox.maintenance.restart` joins once its Core route exists.
  */
-export const WORKJET_COMMANDS_OUT = [CTOX_MAINTENANCE_RESTART] as const;
+export const WORKJET_COMMANDS_OUT: readonly string[] = [];
 
 export function workjetAppManifest(appVer: string) {
   return {

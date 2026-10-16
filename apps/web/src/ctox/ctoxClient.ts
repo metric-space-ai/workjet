@@ -26,6 +26,11 @@ export function getBoundCtoxClientInstance(api: CtoxAppApi): string | null {
   return instanceId !== undefined && clients.get(instanceId)?.api === api ? instanceId : null;
 }
 
+/** Every instance with a bound client right now (renderer→server proxy, C3). */
+export function listBoundCtoxClients(): ReadonlyArray<{ instanceId: string; api: CtoxAppApi }> {
+  return [...clients].map(([instanceId, { api }]) => ({ instanceId, api }));
+}
+
 export function subscribeCtoxClients(listener: () => void): () => void {
   listeners.add(listener);
   return () => {

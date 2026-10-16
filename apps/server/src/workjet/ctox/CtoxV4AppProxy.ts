@@ -22,21 +22,21 @@ import { bindCtoxV4AppPort } from "./CtoxV4AppPorts.ts";
  */
 export interface CtoxV4AppProxySessions {
   readonly open: (
+    attachId: string,
     input: CtoxV4ProxyAttachInput,
     endpoints: ReadonlyArray<string>,
     emit: (event: CtoxV4ProxyAttachEvent) => void,
-  ) => { readonly attachId: string; readonly close: () => void };
+  ) => { readonly close: () => void };
   readonly reply: (input: CtoxV4ProxyReplyInput) => boolean;
   readonly size: () => number;
 }
 
-export function makeCtoxV4AppProxySessions(
-  newId: () => string = () => crypto.randomUUID(),
-): CtoxV4AppProxySessions {
+export function makeCtoxV4AppProxySessions(): CtoxV4AppProxySessions {
   const sessions = new Map<string, CtoxV4ProxyServer>();
   return {
-    open: (input, endpoints, emit) => {
-      const attachId = newId();
+    open: (attachId, input, endpoints, emit) => {
+      // The attach id is the reply capability of this stream: unguessable, one per attach.
+      if (sessions.has(attachId)) throw new Error("ctox_v4_attach_id_reused");
       emit({ type: "attached", attachId });
       const server = createCtoxV4ProxyServer({
         actor: input.actor,
@@ -54,7 +54,6 @@ export function makeCtoxV4AppProxySessions(
               );
       });
       return {
-        attachId,
         close: () => {
           if (sessions.get(attachId) !== server) return;
           sessions.delete(attachId);
@@ -81,15 +80,17 @@ export function ctoxV4AppProxyAttachStream<E>(
   sessions: CtoxV4AppProxySessions,
   input: CtoxV4ProxyAttachInput,
   endpoints: Effect.Effect<ReadonlyArray<string>, E>,
+  newAttachId: Effect.Effect<string>,
 ): Stream.Stream<CtoxV4ProxyAttachEvent> {
   return Stream.callback<CtoxV4ProxyAttachEvent>((queue) =>
     Effect.gen(function* () {
+      const attachId = yield* newAttachId;
       const resolved = yield* endpoints.pipe(
         Effect.orElseSucceed((): ReadonlyArray<string> => []),
       );
       yield* Effect.acquireRelease(
         Effect.sync(() =>
-          sessions.open(input, resolved, (event) => {
+          sessions.open(attachId, input, resolved, (event) => {
             Queue.offerUnsafe(queue, event);
           }),
         ),

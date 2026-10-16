@@ -482,13 +482,14 @@ export interface WorkjetWorkerDispatchOutcomeDocument {
 export function dispatchWorkjetWorker(
   api: CtoxV4AppPort,
   args: WorkjetWorkerDispatchArgs,
-  idempotencyKey?: string,
+  /** `record_id` = project of a supervisor `dispatch`/`observe` (replaces the native session). */
+  options?: { readonly idempotency_key?: string; readonly record_id?: string },
 ): Promise<unknown> {
   return runCtoxV4Command(
     api,
     WORKJET_WORKER_DISPATCH,
     args,
-    idempotencyKey === undefined ? undefined : { idempotency_key: idempotencyKey },
+    options === undefined ? undefined : { ...options },
   );
 }
 

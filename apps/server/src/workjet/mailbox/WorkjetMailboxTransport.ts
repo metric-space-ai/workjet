@@ -20,6 +20,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
+import * as Random from "effect/Random";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
@@ -2056,43 +2058,45 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     return snapshot();
   });
 
-  const nextCycle = Effect.callback<void>((resume) => {
-    let done = false;
-    const cleanups: Array<() => void> = [];
-    const wake = () => {
-      if (done) return;
-      done = true;
-      for (const cleanup of cleanups) cleanup();
-      resume(Effect.void);
-    };
-    const after = (ms: number) => {
-      const timer = setTimeout(wake, ms);
-      cleanups.push(() => clearTimeout(timer));
-    };
-    const port = lastEndpoint === null ? null : resolveCtoxV4AppPortForEndpoint(lastEndpoint);
-    if (port === null) {
-      const base = Duration.toMillis(WORKJET_TRANSPORT_POLL_INTERVAL);
-      after(base * (0.8 + Math.random() * 0.4));
-      // A V4 port bound meanwhile takes over without waiting for the timer.
-      cleanups.push(subscribeCtoxV4AppPorts(wake));
-    } else {
-      after(Duration.toMillis(WORKJET_TRANSPORT_V4_BACKSTOP));
-      cleanups.push(subscribeCtoxV4AppPorts(wake));
-      const startedAt = Date.now();
-      cleanups.push(
-        watchPendingWorkjetMailboxEnvelopes(port, localEnvironmentId, Date.now, (rows) => {
-          if (rows.length === 0) return;
-          const wait = startedAt + WORKJET_TRANSPORT_V4_MIN_GAP_MS - Date.now();
-          if (wait <= 0) wake();
-          else after(wait);
-        }),
+  const nextCycle = Effect.scoped(
+    Effect.gen(function* () {
+      const clock = yield* Clock.Clock;
+      const wake = yield* Queue.sliding<void>(1);
+      const signal = () => {
+        Queue.offerUnsafe(wake, undefined);
+      };
+      // A bind or unbind re-evaluates at once (V4 takes over, or V3 resumes its timer).
+      yield* Effect.acquireRelease(Effect.sync(() => subscribeCtoxV4AppPorts(signal)), (off) =>
+        Effect.sync(off),
       );
-    }
-    return Effect.sync(() => {
-      done = true;
-      for (const cleanup of cleanups) cleanup();
-    });
-  });
+      const port = lastEndpoint === null ? null : resolveCtoxV4AppPortForEndpoint(lastEndpoint);
+      if (port === null) {
+        const jitter = yield* Random.nextBetween(0.8, 1.2);
+        return yield* Effect.raceFirst(
+          Queue.take(wake),
+          Effect.sleep(Duration.toMillis(WORKJET_TRANSPORT_POLL_INTERVAL) * jitter),
+        );
+      }
+      const startedAt = clock.currentTimeMillisUnsafe();
+      yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          watchPendingWorkjetMailboxEnvelopes(
+            port,
+            localEnvironmentId,
+            () => clock.currentTimeMillisUnsafe(),
+            (rows) => {
+              if (rows.length > 0) signal();
+            },
+          ),
+        ),
+        (off) => Effect.sync(off),
+      );
+      yield* Effect.raceFirst(Queue.take(wake), Effect.sleep(WORKJET_TRANSPORT_V4_BACKSTOP));
+      // A pending envelope whose receipt failed must not spin the loop.
+      const rest = startedAt + WORKJET_TRANSPORT_V4_MIN_GAP_MS - clock.currentTimeMillisUnsafe();
+      if (rest > 0) yield* Effect.sleep(rest);
+    }),
+  );
 
   return WorkjetMailboxTransport.of({
     nextCycle,

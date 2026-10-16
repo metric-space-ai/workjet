@@ -95,14 +95,18 @@ const pathOf = (doc: unknown, path: string): unknown => {
   }
   return value;
 };
+// Same semantics as the kernel query (app-api.mjs matchCond): a missing field never equals.
 const same = (left: unknown, right: unknown): boolean =>
-  left === right ||
-  ((left === undefined || left === null) && right === null) ||
+  left !== undefined &&
+  (left === right ||
   (typeof left === "object" &&
     left !== null &&
     typeof right === "object" &&
     right !== null &&
-    JSON.stringify(left) === JSON.stringify(right));
+    JSON.stringify(left) === JSON.stringify(right)));
+const comparable = (left: unknown, right: unknown) =>
+  (typeof left === "number" && typeof right === "number") ||
+  (typeof left === "string" && typeof right === "string");
 const order = (left: unknown, right: unknown): number =>
   left === right
     ? 0
@@ -124,19 +128,19 @@ function matches(value: unknown, condition: unknown): boolean {
       case "$eq":
         return same(value, operand);
       case "$ne":
-        return !same(value, operand);
+        return value === undefined || !same(value, operand);
       case "$gt":
-        return value !== undefined && value !== null && order(value, operand) > 0;
+        return comparable(value, operand) && order(value, operand) > 0;
       case "$gte":
-        return value !== undefined && value !== null && order(value, operand) >= 0;
+        return comparable(value, operand) && order(value, operand) >= 0;
       case "$lt":
-        return value !== undefined && value !== null && order(value, operand) < 0;
+        return comparable(value, operand) && order(value, operand) < 0;
       case "$lte":
-        return value !== undefined && value !== null && order(value, operand) <= 0;
+        return comparable(value, operand) && order(value, operand) <= 0;
       case "$in":
         return Array.isArray(operand) && operand.some((entry) => same(value, entry));
       case "$nin":
-        return Array.isArray(operand) && !operand.some((entry) => same(value, entry));
+        return value === undefined || (Array.isArray(operand) && !operand.some((entry) => same(value, entry)));
       case "$exists":
         return (value !== undefined) === Boolean(operand);
       default:
@@ -184,12 +188,14 @@ const emit = <T>(slot: Listeners<T>, value: T) => {
   slot.value = value;
   for (const listener of slot.listeners) listener(value);
 };
-const liveOf = <T>(slot: Listeners<T>, project: (value: unknown) => T): CtoxV4Live<T> => ({
+const liveOf = <S, T>(slot: Listeners<S>, project: (value: S) => T): CtoxV4Live<T> => ({
   get: () => project(slot.value),
   subscribe: (listener) => {
-    const wrapped = (value: unknown) => listener(project(value));
-    slot.listeners.add(wrapped as (value: T) => void);
-    return () => slot.listeners.delete(wrapped as (value: T) => void);
+    const wrapped = (value: S) => listener(project(value));
+    slot.listeners.add(wrapped);
+    return () => {
+      slot.listeners.delete(wrapped);
+    };
   },
 });
 
@@ -243,7 +249,7 @@ export function createCtoxV4ProxyServer(options: {
   ): CtoxV4Live<T> => {
     const subId = next("sub");
     const slot: Listeners<unknown> = { value: empty, listeners: new Set() };
-    const live = liveOf<T>(slot, (value) => value as T);
+    const live = liveOf(slot, (value) => value as T);
     let active = 0;
     return {
       get: live.get,
@@ -295,19 +301,14 @@ export function createCtoxV4ProxyServer(options: {
     query: <T>(collection: string, query: CtoxV4Query) => {
       const mirror = mirrors.get(collection);
       if (mirror === undefined) return forwarded<T[]>(collection, { query }, []);
-      return liveOf<T[]>(mirror, (rows) =>
-        applyCtoxV4Query(rows as ReadonlyArray<T>, query ?? {}),
+      return liveOf(mirror, (rows) =>
+        applyCtoxV4Query(rows as ReadonlyArray<unknown> as ReadonlyArray<T>, query ?? {}),
       );
     },
     get: <T>(collection: string, id: string) => {
       const mirror = mirrors.get(collection);
       if (mirror === undefined) return forwarded<T | null>(collection, { id }, null);
-      return liveOf<T | null>(
-        mirror,
-        (rows) =>
-          ((rows as Array<Record<string, unknown>>).find((row) => row.id === id) ??
-            null) as T | null,
-      );
+      return liveOf(mirror, (rows) => (rows.find((row) => row.id === id) ?? null) as T | null);
     },
     put: (collection, doc): CtoxV4WriteHandle => {
       const { local, result } = write(

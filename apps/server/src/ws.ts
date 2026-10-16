@@ -1605,6 +1605,7 @@ const makeWsRpcLayer = (
                     Effect.map((endpoints) => endpoints.flat()),
                   )
                 : Effect.succeed([]),
+              crypto.randomUUIDv4.pipe(Effect.orDie),
             ),
             { "rpc.aggregate": "ctox-v4" },
           ),

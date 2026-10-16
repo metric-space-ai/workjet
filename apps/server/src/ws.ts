@@ -106,6 +106,10 @@ import * as WorkjetCrossModeLinkStore from "./workjet/crossmode/WorkjetCrossMode
 import * as WorkjetCrossModeRpc from "./workjet/crossmode/WorkjetCrossModeRpc.ts";
 import * as WorkjetCrossModeThreads from "./workjet/crossmode/WorkjetCrossModeThreads.ts";
 import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
+import {
+  ctoxV4AppProxyAttachStream,
+  ctoxV4AppProxySessions,
+} from "./workjet/ctox/CtoxV4AppProxy.ts";
 import { requireCtoxConnectionInstance } from "./workjet/ctox/CtoxConnectionBinding.ts";
 import { makeCtoxLumaConfigurationClient } from "./workjet/ctox/CtoxLumaConfigurationClient.ts";
 import { makeCtoxLumaConfigurationRpc } from "./workjet/ctox/CtoxLumaConfigurationRpc.ts";
@@ -1576,6 +1580,38 @@ const makeWsRpcLayer = (
           Option.isSome(workerConnection)
             ? workerConnection.value.confirm(input)
             : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetCtoxV4Attach]: (input) =>
+          observeRpcStream(
+            WS_METHODS.workjetCtoxV4Attach,
+            ctoxV4AppProxyAttachStream(
+              ctoxV4AppProxySessions,
+              input,
+              // Endpoints of the owner's connections to this instance, so the seams keyed by
+              // endpoint (mailbox, Luma, decision hub) find the bound port as well.
+              Option.isSome(decisionHubConnections)
+                ? decisionHubConnections.value.list.pipe(
+                    Effect.flatMap((summaries) =>
+                      Effect.forEach(
+                        summaries.filter((summary) => summary.instanceId === input.instanceId),
+                        (summary) =>
+                          decisionHubConnections.value
+                            .resolveReadyTarget(summary.connectionId, input.instanceId)
+                            .pipe(
+                              Effect.map((target) => [target.endpoint]),
+                              Effect.orElseSucceed((): string[] => []),
+                            ),
+                      ),
+                    ),
+                    Effect.map((endpoints) => endpoints.flat()),
+                  )
+                : Effect.succeed([]),
+            ),
+            { "rpc.aggregate": "ctox-v4" },
+          ),
+        [WS_METHODS.workjetCtoxV4Reply]: (input) =>
+          Effect.sync(() => {
+            ctoxV4AppProxySessions.reply(input);
+          }),
         [WS_METHODS.workjetWorkerRequests]: () =>
           observeRpcStream(
             WS_METHODS.workjetWorkerRequests,

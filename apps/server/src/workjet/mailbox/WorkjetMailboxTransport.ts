@@ -45,10 +45,14 @@ import {
   acknowledgeWorkjetMailboxEnvelopes,
   publishWorkjetMailboxEnvelope,
   readPendingWorkjetMailboxEnvelopes,
+  watchPendingWorkjetMailboxEnvelopes,
   type CtoxV4AppPort,
   type WorkjetMailboxPublishInput,
 } from "@workjet/shared/ctoxV4AppData";
-import { resolveCtoxV4AppPortForEndpoint } from "../ctox/CtoxV4AppPorts.ts";
+import {
+  resolveCtoxV4AppPortForEndpoint,
+  subscribeCtoxV4AppPorts,
+} from "../ctox/CtoxV4AppPorts.ts";
 
 /**
  * The Workjet side of the LOCAL CTOX daemon mailbox docking (docs/workjet-plan.md
@@ -178,6 +182,10 @@ import { resolveCtoxV4AppPortForEndpoint } from "../ctox/CtoxV4AppPorts.ts";
 
 /** Poll cadence. Jittered, so several machines never align their polls. */
 export const WORKJET_TRANSPORT_POLL_INTERVAL = Duration.seconds(10);
+/** V4: outgoing push backstop while the live query wakes the pull side. */
+export const WORKJET_TRANSPORT_V4_BACKSTOP = Duration.seconds(60);
+/** V4: a still-pending envelope (failed receipt) wakes again no sooner than this. */
+const WORKJET_TRANSPORT_V4_MIN_GAP_MS = 1_000;
 
 /** Outbound rows considered per cycle. */
 export const WORKJET_TRANSPORT_PUSH_LIMIT = 50;
@@ -416,6 +424,13 @@ export interface WorkjetMailboxTransportShape {
    * test drives the real cycle rather than a parallel test-only path.
    */
   readonly runCycle: Effect.Effect<WorkjetMailboxTransportStatus>;
+
+  /**
+   * Waits until the next cycle is due. V3: the jittered poll interval. V4 (C3): the live query
+   * `watchPendingWorkjetMailboxEnvelopes` of the bound port wakes the cycle when an envelope is
+   * pending, plus a slow backstop for the outgoing push; a bind/unbind re-evaluates at once.
+   */
+  readonly nextCycle?: Effect.Effect<void>;
 }
 
 export class WorkjetMailboxTransport extends Context.Service<
@@ -1028,6 +1043,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
   let counters = EMPTY_COUNTERS;
   let rejections = EMPTY_REJECTIONS;
   let running = false;
+  let lastEndpoint: string | null = null;
   let idleReason: WorkjetMailboxTransportIdleReason | null = null;
   let lastPushAtMillis: number | null = null;
   let lastPullAtMillis: number | null = null;
@@ -2005,6 +2021,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     }
 
     const resolved = yield* sources.resolveEndpoint;
+    lastEndpoint = resolved._tag === "idle" ? null : resolved.endpoint.baseUrl;
     if (resolved._tag === "idle") {
       running = false;
       idleReason = resolved.reason;
@@ -2039,7 +2056,46 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
     return snapshot();
   });
 
+  const nextCycle = Effect.callback<void>((resume) => {
+    let done = false;
+    const cleanups: Array<() => void> = [];
+    const wake = () => {
+      if (done) return;
+      done = true;
+      for (const cleanup of cleanups) cleanup();
+      resume(Effect.void);
+    };
+    const after = (ms: number) => {
+      const timer = setTimeout(wake, ms);
+      cleanups.push(() => clearTimeout(timer));
+    };
+    const port = lastEndpoint === null ? null : resolveCtoxV4AppPortForEndpoint(lastEndpoint);
+    if (port === null) {
+      const base = Duration.toMillis(WORKJET_TRANSPORT_POLL_INTERVAL);
+      after(base * (0.8 + Math.random() * 0.4));
+      // A V4 port bound meanwhile takes over without waiting for the timer.
+      cleanups.push(subscribeCtoxV4AppPorts(wake));
+    } else {
+      after(Duration.toMillis(WORKJET_TRANSPORT_V4_BACKSTOP));
+      cleanups.push(subscribeCtoxV4AppPorts(wake));
+      const startedAt = Date.now();
+      cleanups.push(
+        watchPendingWorkjetMailboxEnvelopes(port, localEnvironmentId, Date.now, (rows) => {
+          if (rows.length === 0) return;
+          const wait = startedAt + WORKJET_TRANSPORT_V4_MIN_GAP_MS - Date.now();
+          if (wait <= 0) wake();
+          else after(wait);
+        }),
+      );
+    }
+    return Effect.sync(() => {
+      done = true;
+      for (const cleanup of cleanups) cleanup();
+    });
+  });
+
   return WorkjetMailboxTransport.of({
+    nextCycle,
     status: Effect.sync(snapshot),
     // One wedged cycle must never take the server down or stop the loop: the
     // next cycle re-resolves the daemon and starts clean.
@@ -2086,10 +2142,13 @@ export const layer = Layer.effect(
   WorkjetMailboxTransport,
   Effect.gen(function* () {
     const transport = yield* makeWorkjetMailboxTransport();
-    yield* transport.runCycle.pipe(
-      Effect.repeat(Schedule.spaced(WORKJET_TRANSPORT_POLL_INTERVAL).pipe(Schedule.jittered)),
-      Effect.forkScoped,
-    );
+    yield* (
+      transport.nextCycle === undefined
+        ? transport.runCycle.pipe(
+            Effect.repeat(Schedule.spaced(WORKJET_TRANSPORT_POLL_INTERVAL).pipe(Schedule.jittered)),
+          )
+        : transport.runCycle.pipe(Effect.andThen(transport.nextCycle), Effect.forever)
+    ).pipe(Effect.forkScoped);
     return transport;
   }),
 );

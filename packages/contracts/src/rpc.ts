@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { WorkjetConfiguration } from "./workjet.ts";
+import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import {
@@ -393,6 +394,10 @@ export const WS_METHODS = {
   workjetWorkerSourcePrepare: "workjet.worker.sourcePrepare",
   workjetWorkerRouteVerify: "workjet.worker.routeVerify",
   workjetWorkerSourceConfirm: "workjet.worker.sourceConfirm",
+  // Renderer→server proxy of the V4 app API (slice C, C3): the server streams requests to the
+  // renderer that holds the bound kernel client, the renderer answers each with a reply.
+  workjetCtoxV4Attach: "workjet.ctoxV4.attach",
+  workjetCtoxV4Reply: "workjet.ctoxV4.reply",
   workjetWorkerEnrollComputer: "workjet.worker.enrollComputer",
 
   // Server meta
@@ -1805,7 +1810,40 @@ export const WsWorkerEnrollComputerRpc = Rpc.make(WS_METHODS.workjetWorkerEnroll
   success: RemoteWorkerComputerEnrollmentResult,
   error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
 });
+/** One proxied message; shape and bounds are checked by `@workjet/shared/ctoxV4AppProxy`. */
+const CtoxV4ProxyMessage = Schema.Record(Schema.String, Schema.Unknown);
+export const CtoxV4ProxyAttachInput = Schema.Struct({
+  instanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  actor: Schema.Struct({
+    id: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+    role: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  }),
+});
+export type CtoxV4ProxyAttachInput = typeof CtoxV4ProxyAttachInput.Type;
+export const CtoxV4ProxyAttachEvent = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("attached"), attachId: TrimmedNonEmptyString }),
+  Schema.Struct({ type: Schema.Literal("request"), request: CtoxV4ProxyMessage }),
+]);
+export type CtoxV4ProxyAttachEvent = typeof CtoxV4ProxyAttachEvent.Type;
+export const CtoxV4ProxyReplyInput = Schema.Struct({
+  attachId: TrimmedNonEmptyString,
+  reply: CtoxV4ProxyMessage,
+});
+export type CtoxV4ProxyReplyInput = typeof CtoxV4ProxyReplyInput.Type;
+export const WsCtoxV4AttachRpc = Rpc.make(WS_METHODS.workjetCtoxV4Attach, {
+  payload: CtoxV4ProxyAttachInput,
+  success: CtoxV4ProxyAttachEvent,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+export const WsCtoxV4ReplyRpc = Rpc.make(WS_METHODS.workjetCtoxV4Reply, {
+  payload: CtoxV4ProxyReplyInput,
+  success: Schema.Void,
+  error: EnvironmentAuthorizationError,
+});
 export const WsRpcGroup = RpcGroup.make(
+  WsCtoxV4AttachRpc,
+  WsCtoxV4ReplyRpc,
   WsWorkerEnrollComputerRpc,
   WsWorkerRouteReserveRpc,
   WsWorkerSourcePrepareRpc,

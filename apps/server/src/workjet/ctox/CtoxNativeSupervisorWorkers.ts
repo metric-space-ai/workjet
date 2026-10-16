@@ -15,7 +15,12 @@ import * as Schema from "effect/Schema";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import type { RemoteWorkerNativeScope } from "./CtoxRemoteWorkerAdmission.ts";
-import { dispatchWorkjetWorker } from "@workjet/shared/ctoxV4AppData";
+import {
+  WORKJET_WORKER_DISPATCH_CONTRACT,
+  dispatchWorkjetWorker,
+  readWorkjetWorkerDispatchHead,
+  type WorkjetWorkerDispatchArgs,
+} from "@workjet/shared/ctoxV4AppData";
 import { resolveCtoxV4AppPortForInstance } from "./CtoxV4AppPorts.ts";
 
 const PollReceipt = Schema.Struct({
@@ -70,13 +75,24 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
       instanceId: scope.instanceId,
       action: args.action,
     });
-    // V4 (E49.5): a Workjet app command the Workjet app handler runs with process.run; no MCP.
+    // V4 (E54.3b): the intent queue is Workjet app data. `poll` is a local read of
+    // workjet_worker_dispatch_intents; every write action is the `workjet.worker.dispatch`
+    // command the instance module handles over ctx.db. No MCP, no process.
     const v4 = resolveCtoxV4AppPortForInstance(scope.instanceId);
-    if (v4 !== null)
+    if (v4 !== null) {
+      if (args.action === "poll")
+        return yield* Effect.try({
+          try: () => ({
+            contract: WORKJET_WORKER_DISPATCH_CONTRACT,
+            ...readWorkjetWorkerDispatchHead(v4, String(args.source_environment_id)),
+          }),
+          catch: failure,
+        });
       return yield* Effect.tryPromise({
-        try: () => dispatchWorkjetWorker(v4, { ...args, action: String(args.action) }),
+        try: () => dispatchWorkjetWorker(v4, args as unknown as WorkjetWorkerDispatchArgs),
         catch: failure,
       });
+    }
     const target = yield* dependencies.connections
       .resolveReadyTarget(scope.connectionId, scope.instanceId)
       .pipe(

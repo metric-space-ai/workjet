@@ -356,19 +356,129 @@ export function readWorkjetDecision(
   };
 }
 
-// ---------------------------------------------------------------- 4. Worker-Dispatch (E49.5)
-
-/** Workjet app command; the Workjet app handler on the instance runs it with `process.run`. */
-export const WORKJET_WORKER_DISPATCH = "workjet.worker.dispatch";
+// ---------------------------------------------------------------- 4. Worker-Dispatch (E54.3b)
 
 /**
- * Same action-multiplexed arguments as today's `business_os.workjet_worker_dispatch` tool
- * (`register_source`, `dispatch`, …); the handler answers with the same receipt.
+ * Workjet app command of the instance module `workjet` (E54.3b). The native
+ * `business_os.workjet_worker_dispatch` tool never starts a process: it is an intent queue the
+ * dispatcher on the Workjet machine drains. On V4 the queue is Workjet app data
+ * (`workjet_worker_dispatch_{sources,intents,outcomes}`, owned by the instance module), the
+ * dispatcher reads intents with a live query and reports `complete`/`report_outcome` through this
+ * command. The handler on the instance runs every action over `ctx.db`; it needs no capability.
  */
-export type WorkjetWorkerDispatchArgs = Readonly<Record<string, unknown>> & {
-  readonly action: string;
-};
+export const WORKJET_WORKER_DISPATCH = "workjet.worker.dispatch";
+export const WORKJET_WORKER_DISPATCH_SOURCES = "workjet_worker_dispatch_sources";
+export const WORKJET_WORKER_DISPATCH_INTENTS = "workjet_worker_dispatch_intents";
+export const WORKJET_WORKER_DISPATCH_OUTCOMES = "workjet_worker_dispatch_outcomes";
+export const WORKJET_WORKER_DISPATCH_CONTRACT = "ctox.workjet.worker-dispatch.v1";
+/** Native bound of unanswered intents per owner and authority epoch. */
+export const WORKJET_WORKER_DISPATCH_PENDING_LIMIT = 128;
 
+/** The seven actions of the native tool (mcp_workjet_worker_dispatch.rs `Request`), 1:1. */
+export type WorkjetWorkerDispatchArgs =
+  | {
+      readonly action: "register_source";
+      readonly source_environment_id: string;
+      readonly source_supervisor_thread_id: string;
+      readonly project_id: string;
+      readonly expected_revision?: number;
+    }
+  | { readonly action: "revoke_source"; readonly registration_id: string; readonly revision: number }
+  | { readonly action: "poll"; readonly source_environment_id: string }
+  | {
+      readonly action: "complete";
+      readonly registration_id: string;
+      readonly revision: number;
+      readonly intent_id: string;
+      readonly result: object;
+    }
+  | {
+      readonly action: "report_outcome";
+      readonly registration_id: string;
+      readonly revision: number;
+      readonly intent_id: string;
+      readonly receipt: object;
+    }
+  | {
+      readonly action: "dispatch";
+      readonly dispatch_key: string;
+      readonly task: string;
+      readonly title?: string;
+      readonly computer_id?: string;
+      readonly worker_profile_id?: string;
+    }
+  | { readonly action: "observe"; readonly limit?: number };
+export type WorkjetWorkerDispatchAction = WorkjetWorkerDispatchArgs["action"];
+export const WORKJET_WORKER_DISPATCH_ACTIONS: ReadonlyArray<WorkjetWorkerDispatchAction> = [
+  "register_source",
+  "revoke_source",
+  "poll",
+  "complete",
+  "report_outcome",
+  "dispatch",
+  "observe",
+];
+
+/** Native `Registration` (record_json), camelCase as on the wire. */
+export interface WorkjetWorkerSourceRegistration {
+  readonly contract: typeof WORKJET_WORKER_DISPATCH_CONTRACT;
+  readonly registrationId: string;
+  readonly revision: number;
+  readonly sourceEnvironmentId: string;
+  readonly sourceSupervisorThreadId: string;
+  readonly sourceInstanceId: string;
+  readonly sourceWorkspaceId: string;
+  readonly projectId: string;
+  readonly ownerUserId: string;
+  readonly authorityEpoch: number;
+  readonly state: "active" | "revoked";
+}
+/** Native `Intent` (intent_json). */
+export interface WorkjetWorkerDispatchIntent {
+  readonly intentId: string;
+  readonly registrationId: string;
+  readonly registrationRevision: number;
+  readonly sourceEnvironmentId: string;
+  readonly sourceSupervisorThreadId: string;
+  readonly projectId: string;
+  readonly task: string;
+  readonly title?: string;
+  readonly computerId?: string;
+  readonly workerProfileId?: string;
+}
+/** Row of `workjet_worker_dispatch_sources` (native columns; record_json → `record`). */
+export interface WorkjetWorkerDispatchSourceDocument {
+  readonly id: string;
+  readonly owner_user_id: string;
+  readonly project_id: string;
+  readonly registration_id: string;
+  readonly record: WorkjetWorkerSourceRegistration;
+}
+/** Row of `workjet_worker_dispatch_intents`; `result` stays `null` until `complete`. */
+export interface WorkjetWorkerDispatchIntentDocument {
+  readonly id: string;
+  readonly intent_id: string;
+  readonly registration_id: string;
+  readonly registration_revision: number;
+  readonly command_id: string;
+  readonly dispatch_key: string;
+  readonly request_digest: string;
+  readonly intent: WorkjetWorkerDispatchIntent;
+  readonly result: Readonly<Record<string, unknown>> | null;
+}
+/** Row of `workjet_worker_dispatch_outcomes` (immutable once written). */
+export interface WorkjetWorkerDispatchOutcomeDocument {
+  readonly id: string;
+  readonly intent_id: string;
+  readonly owner_user_id: string;
+  readonly project_id: string;
+  readonly supervisor_thread_id: string;
+  readonly registration_revision: number;
+  readonly receipt: Readonly<Record<string, unknown>>;
+  readonly accepted_at_ms: number;
+}
+
+/** Writes go through the instance handler (idempotent, revision-fenced), never api.put/patch. */
 export function dispatchWorkjetWorker(
   api: CtoxV4AppPort,
   args: WorkjetWorkerDispatchArgs,
@@ -380,6 +490,55 @@ export function dispatchWorkjetWorker(
     args,
     idempotencyKey === undefined ? undefined : { idempotency_key: idempotencyKey },
   );
+}
+
+const pendingIntents = (sourceEnvironmentId: string): CtoxV4Query => ({
+  selector: { "intent.sourceEnvironmentId": sourceEnvironmentId, result: null },
+  // Intent ids are UUIDv7 from the instance handler: ascending id = queue order (native rowid).
+  sort: [{ intent_id: "asc" }],
+});
+
+/**
+ * `poll` as a local read: the head of the source-wide queue for one environment, at most one
+ * intent, skipping intents whose registration was replaced, revoked or moved (native join).
+ */
+export function readWorkjetWorkerDispatchHead(
+  api: CtoxV4AppPort,
+  sourceEnvironmentId: string,
+): { readonly intents: WorkjetWorkerDispatchIntent[] } {
+  const rows = api
+    .query<WorkjetWorkerDispatchIntentDocument>(
+      WORKJET_WORKER_DISPATCH_INTENTS,
+      pendingIntents(sourceEnvironmentId),
+    )
+    .get();
+  for (const row of rows) {
+    const source = api
+      .get<WorkjetWorkerDispatchSourceDocument>(WORKJET_WORKER_DISPATCH_SOURCES, row.registration_id)
+      .get();
+    const record = source?.record;
+    if (
+      record === undefined ||
+      record.state !== "active" ||
+      record.revision !== row.registration_revision ||
+      record.sourceEnvironmentId !== sourceEnvironmentId ||
+      row.intent.registrationId !== row.registration_id
+    )
+      continue;
+    return { intents: [row.intent] };
+  }
+  return { intents: [] };
+}
+
+/** Live query instead of the MCP poll timer: fires on every replicated intent change. */
+export function watchWorkjetWorkerDispatchIntents(
+  api: CtoxV4AppPort,
+  sourceEnvironmentId: string,
+  listener: () => void,
+): () => void {
+  return api
+    .query(WORKJET_WORKER_DISPATCH_INTENTS, pendingIntents(sourceEnvironmentId))
+    .subscribe(() => listener());
 }
 
 // ---------------------------------------------------------------- 5. ctox_business_os-Adapter (E49.7)

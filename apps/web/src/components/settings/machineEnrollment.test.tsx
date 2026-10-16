@@ -6,6 +6,7 @@ import {
   MACHINE_ENROLLMENT_STEP_KEYS,
   machineCandidateAddress,
   machineEnrollmentError,
+  machineEnrollmentDisplayProgress,
   machineEnrollmentProgress,
   machineEnrollmentStepLabel,
   startMachineEnrollment,
@@ -197,5 +198,28 @@ describe("AddMachineEnrollment", () => {
     expect(open).toContain("Hinzufügen");
     expect(open).not.toContain("Zuklappen");
     expect(open).not.toContain("<input");
+  });
+});
+
+describe("FIX-R Punkt 3: Fortschrittszeile endet, wenn der Rechner in der Liste steht", () => {
+  it("zeigt einen laufenden Beitritt als grün, sobald der Rechner verbunden gelistet ist", () => {
+    const running = machineEnrollmentProgress([
+      { key: "token_issued", state: "done", at_ms: 1 },
+      { key: "transport_connected", state: "running", at_ms: 2 },
+    ]);
+    expect(machineEnrollmentDisplayProgress(running, false)).toBe(running);
+    expect(machineEnrollmentDisplayProgress(running, true)).toMatchObject({
+      phase: "green",
+      key: "green",
+      fraction: 1,
+    });
+  });
+
+  it("lässt einen Fehler stehen, auch wenn der Rechner gelistet ist", () => {
+    const failed = machineEnrollmentProgress([
+      { key: "token_issued", state: "done", at_ms: 1 },
+      { key: "transport_connected", state: "failed", at_ms: 2, error_code: "unreachable" },
+    ]);
+    expect(machineEnrollmentDisplayProgress(failed, true)).toBe(failed);
   });
 });

@@ -369,6 +369,27 @@ export function machineEnrollmentProgress(
   };
 }
 
+/**
+ * Steht der Rechner schon grün in der Rechnerliste, ist der Beitritt für die
+ * Anzeige fertig, auch wenn der Installationsweg noch nachläuft (Erkennung,
+ * Eintrag in der Instanz): die Fortschrittszeile geht dann, statt doppelt neben
+ * der normalen Rechnerzeile stehen zu bleiben (FIX-R Punkt 3). Ein Fehler
+ * bleibt stehen.
+ */
+export function machineEnrollmentDisplayProgress(
+  progress: MachineEnrollmentProgress,
+  listedOnline: boolean,
+): MachineEnrollmentProgress {
+  if (!listedOnline || progress.phase !== "running") return progress;
+  return {
+    index: MACHINE_ENROLLMENT_STEP_KEYS.length - 1,
+    key: "green",
+    fraction: 1,
+    phase: "green",
+    fault: null,
+  };
+}
+
 /** Meta-Zeile eines Eintrags: `benutzer@host:port`, fehlende Werte als „—“. */
 export function machineCandidateAddress(candidate: MachineCandidate): string | null {
   if (candidate.transport === "local") return null;

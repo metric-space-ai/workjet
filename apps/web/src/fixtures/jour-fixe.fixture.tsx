@@ -15,7 +15,6 @@ import { JourFixeReadError } from "../lib/jourFixeReadRetry";
 import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
 import { type JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import type { GalleryProject } from "../projectOverview";
-import { workjetUiLanguage } from "../workjetProjectControl";
 import { randomUUID } from "../lib/utils";
 import fixture from "./jour-fixe.contract.json";
 import "../index.css";
@@ -198,18 +197,15 @@ function Fixture() {
           className="flex items-center justify-end gap-2 border-b border-border px-3 py-1.5"
           data-workjet-fixture-chrome=""
         >
-          <span className="mr-auto text-xs text-muted-foreground" role="status">
-            Instanz nicht erreichbar · Letzter Stand:{" "}
-            {new Date("2026-10-12T18:32:38").toLocaleString(
-              workjetUiLanguage() === "en" ? "en-US" : "de-DE",
-              {
-                day: "2-digit",
-                month: "2-digit",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              },
-            )}
+          {/* Wie die Galerie im Produkt (A-10): eine Zeile, genau eine Aktion. */}
+          <span
+            className="mr-auto flex items-center gap-2 text-[13.5px] text-muted-foreground"
+            role="status"
+          >
+            Instanz nicht erreichbar
+            <Button size="xs" variant="outline">
+              Erneut verbinden
+            </Button>
           </span>
           <VersionChipView
             label="Workjet 0.0.103 · Host 0.1.3 · welsch"

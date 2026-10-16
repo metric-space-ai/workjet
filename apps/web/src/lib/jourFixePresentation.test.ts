@@ -304,9 +304,10 @@ it("retries a transient manifest failure and still validates the complete docume
     const loaded = readJourFixePresentation("instance", projectId, "meeting-1", retrying);
     await vi.advanceTimersByTimeAsync(5_000);
     expect((await loaded)?.document).toEqual(jourFixeDeck);
-    expect(
-      retrying.mock.calls.filter(([, r]) => r.action === "project.presentation.read"),
-    ).toHaveLength(2);
+    const reads = retrying.mock.calls.filter(([, r]) => r.action === "project.presentation.read");
+    expect(reads).toHaveLength(2);
+    // A read asks for the current state: the retry after a timeout has a new id.
+    expect(reads[1]![1].commandId).not.toBe(reads[0]![1].commandId);
   } finally {
     vi.useRealTimers();
   }

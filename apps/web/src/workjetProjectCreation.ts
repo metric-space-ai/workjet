@@ -1,7 +1,10 @@
 import type {
+  CommandId,
+  CtoxProjectRegistration,
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectProjection,
 } from "@workjet/contracts";
+import { nextAttemptId } from "./lib/commandAttempt";
 import { markProjectInitPending, requestProjectInit } from "./projectInit";
 import { ProjectId } from "@workjet/contracts";
 
@@ -39,6 +42,24 @@ export type WorkjetProjectCreationOutcome =
         | "guest_failed"
         | "response_too_large";
     };
+
+/**
+ * The command id for the next project.create of a pending registration. The
+ * stored id belongs to the last attempt and `lastFailure` to its outcome: kept
+ * while that receipt was lost or unclear, renewed after a final failure.
+ */
+export function projectRegistrationAttemptId(
+  registration: Pick<CtoxProjectRegistration, "commandId" | "lastFailure">,
+  fresh?: () => CommandId,
+): CommandId {
+  return nextAttemptId(
+    registration.commandId,
+    registration.lastFailure === undefined
+      ? null
+      : { _tag: "failed", code: registration.lastFailure },
+    fresh,
+  );
+}
 
 export interface WorkjetProjectCreationOptions {
   readonly port?: WorkjetProjectControlPort;

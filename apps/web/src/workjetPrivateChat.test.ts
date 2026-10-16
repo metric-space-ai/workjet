@@ -10,7 +10,9 @@ import {
 import {
   bindWorkjetPrivateChat,
   createWorkjetPrivateChat,
+  renewedPrivateChatIntent,
   type PrivateChatCreationRequest,
+  type WorkjetPrivateChatIntent,
 } from "./workjetPrivateChat";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
 import { resolvePrivateChatDraftProject } from "./workjetPrivateChatScope";
@@ -151,5 +153,51 @@ describe("native private chat binding", () => {
       bindWorkjetPrivateChat(bound, { ...chat, chatId: "workjet_private_other" }),
     ).toThrow("Neue Unterhaltung");
     expect(bindWorkjetPrivateChat(bound, chat)).toEqual(bound);
+  });
+});
+
+describe("private chat ids per attempt (CTOX v4 idempotency)", () => {
+  const intent: WorkjetPrivateChatIntent = {
+    instanceId: "instance-one",
+    connectionId: WorkjetConnectionId.make("connection-one"),
+    projectId: request.projectId,
+    workerProfileId: request.workerProfileId,
+    separate: true,
+    membershipCommandId: CommandId.make("membership-1"),
+    chatCommandId: CommandId.make("chat-1"),
+    createdAt: request.createdAt,
+  };
+  const failure = async (result: Awaited<ReturnType<WorkjetProjectControlPort>>) =>
+    createWorkjetPrivateChat({ ...scope, port: async () => result }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+  let counter = 0;
+  const fresh = () => CommandId.make(`renewed-${++counter}`);
+
+  it("final failure + retry: both ids are renewed", async () => {
+    const renewed = renewedPrivateChatIntent(
+      await failure({ _tag: "failed", code: "invalid_input" }),
+      intent,
+      fresh,
+    );
+    expect(renewed).toEqual({
+      ...intent,
+      membershipCommandId: "renewed-1",
+      chatCommandId: "renewed-2",
+    });
+    const foreign = renewedPrivateChatIntent(
+      await failure({ _tag: "completed", response: { ...response, chatId: "other" } }),
+      intent,
+      fresh,
+    );
+    expect(foreign?.chatCommandId).not.toBe(intent.chatCommandId);
+  });
+
+  it("timeout + retry: both ids are kept", async () => {
+    expect(
+      renewedPrivateChatIntent(await failure({ _tag: "failed", code: "timeout" }), intent, fresh),
+    ).toBeNull();
+    expect(renewedPrivateChatIntent(new Error("transport closed"), intent, fresh)).toBeNull();
   });
 });

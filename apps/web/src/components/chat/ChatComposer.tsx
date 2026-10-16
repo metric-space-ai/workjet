@@ -4233,6 +4233,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               .getState()
                               .preparePrivateChatIntent(composerDraftTarget, candidate)
                           }
+                          renewIntent={(settled, next) =>
+                            useComposerDraftStore
+                              .getState()
+                              .renewPrivateChatIntent(composerDraftTarget, settled, next)
+                          }
                           isScopeCurrent={() => {
                             const active = readActiveWorkjetScope();
                             const registry = readWorkjetProjectRegistry(active.selectedInstanceId);

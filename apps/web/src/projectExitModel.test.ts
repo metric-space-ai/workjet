@@ -152,6 +152,7 @@ describe("project exit assessment", () => {
       _tag: "failed",
       message: "Antwort passt nicht zum Projekt.",
       reason: "uncorrelated",
+      receiptUncertain: false,
     });
     const timedOut = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
       _tag: "failed",
@@ -175,8 +176,26 @@ describe("project exit assessment", () => {
       _tag: "failed",
       message: "Bewertungsdienst nicht verfügbar.",
       reason: "unavailable",
+      receiptUncertain: false,
     });
     expect(exitModelPresentation(null, "project-one").value).toBe("—");
+  });
+
+  it("marks only a lost or unclear receipt as uncertain, so a retry keeps that id", async () => {
+    const outcome = async (port: WorkjetProjectControlPort) => {
+      const result = await requestProjectExitModel("managed:selected", request, port);
+      return result._tag === "failed" ? result.receiptUncertain : null;
+    };
+    // timeout + retry → same id; final failure + retry → new id (lib/commandAttempt).
+    expect(await outcome(async () => ({ _tag: "failed", code: "timeout" }))).toBe(true);
+    expect(await outcome(async () => ({ _tag: "failed", code: "not_active" }))).toBe(true);
+    expect(
+      await outcome(async () => {
+        throw new Error("transport closed");
+      }),
+    ).toBe(true);
+    expect(await outcome(async () => ({ _tag: "failed", code: "invalid_input" }))).toBe(false);
+    expect(await outcome(async () => ({ _tag: "failed", code: "guest_failed" }))).toBe(false);
   });
 
   it("keeps dated values visible while explicitly labelling expired evidence", () => {

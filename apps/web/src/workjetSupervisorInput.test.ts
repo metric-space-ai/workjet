@@ -301,3 +301,71 @@ describe("durable same-task Supervisor context", () => {
     ).rejects.toThrow("different context");
   });
 });
+
+describe("Supervisor context after a final failure (CTOX v4 idempotency)", () => {
+  const port =
+    (inputResult: CtoxWorkjetProjectControlResult, requests: CtoxWorkjetProjectControlRequest[]) =>
+    async (_instance: string, request: CtoxWorkjetProjectControlRequest) => {
+      requests.push(request);
+      if (request.action === "project.supervisor.turn.capabilities") return capability(request);
+      return inputResult;
+    };
+
+  it("final failure + retry: lifts the lock so the next context gets a new id", async () => {
+    let state = saved;
+    const journal = {
+      save: async (next: WorkjetSupervisorJournal) => {
+        state = structuredClone(next);
+      },
+    };
+    const requests: CtoxWorkjetProjectControlRequest[] = [];
+    expect(
+      await submitWorkjetSupervisorInput(
+        state,
+        intent,
+        journal,
+        port({ _tag: "failed", code: "invalid_input" }, requests),
+      ),
+    ).toEqual({ _tag: "failed", code: "invalid_input" });
+    expect(state.inputs ?? []).toEqual([]);
+    const next = { ...intent, commandId: CommandId.make("owner-input-2") };
+    const result = await submitWorkjetSupervisorInput(
+      state,
+      next,
+      journal,
+      port({ _tag: "completed", response: { ...receipt, commandId: next.commandId } }, requests),
+    );
+    expect(result._tag).toBe("completed");
+    expect(
+      requests
+        .filter((request) => request.action === "project.supervisor.turn.input")
+        .map((request) => request.commandId),
+    ).toEqual(["saved-owner-input", "owner-input-2"]);
+  });
+
+  it("timeout + retry: keeps the entry and its id", async () => {
+    let state = saved;
+    const journal = {
+      save: async (next: WorkjetSupervisorJournal) => {
+        state = structuredClone(next);
+      },
+    };
+    const requests: CtoxWorkjetProjectControlRequest[] = [];
+    await submitWorkjetSupervisorInput(
+      state,
+      intent,
+      journal,
+      port({ _tag: "failed", code: "timeout" }, requests),
+    );
+    expect(state.inputs?.[0]?.intent.commandId).toBe("saved-owner-input");
+    expect(state.inputs?.[0]?.submission).toBe("awaiting-receipt");
+    await expect(
+      submitWorkjetSupervisorInput(
+        state,
+        { ...intent, commandId: CommandId.make("other") },
+        journal,
+        port({ _tag: "failed", code: "timeout" }, requests),
+      ),
+    ).rejects.toThrow("Recover the previous context receipt");
+  });
+});

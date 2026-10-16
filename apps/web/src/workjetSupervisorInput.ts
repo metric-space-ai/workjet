@@ -14,6 +14,7 @@ import {
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 import type { WorkjetSupervisorJournalPort } from "./workjetSupervisorControl";
+import { isCommandReceiptUncertain } from "./lib/commandAttempt";
 
 const decodeIntent = Schema.decodeUnknownSync(WorkjetSupervisorInputIntent, {
   onExcessProperty: "error",
@@ -81,10 +82,15 @@ export async function submitWorkjetSupervisorInput(
     receipt: null,
     submission: "prepared",
   };
+  const others = previous.filter((item) => item.intent.commandId !== intent.commandId);
   const save = async (next: typeof entry, turn = saved.turn) => {
-    const inputs = [...previous.filter((item) => item.intent.commandId !== intent.commandId), next];
-    await journal.save({ ...saved, turn, inputs });
+    await journal.save({ ...saved, turn, inputs: [...others, next] });
     entry = next;
+  };
+  // A final answer under this id ends the attempt: dropping the entry lifts the
+  // one-unresolved-input lock, and the next send carries a new id.
+  const release = async () => {
+    await journal.save({ ...saved, inputs: others });
   };
   await save(entry);
   const nonce = Effect.runSync(Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER));
@@ -93,7 +99,11 @@ export async function submitWorkjetSupervisorInput(
     CommandId.make(`input-cap-${nonce}`),
     port,
   );
-  if (capability._tag !== "completed") return capability;
+  if (capability._tag !== "completed") {
+    // Only an input that was never dispatched may be dropped on a refused check.
+    if (entry.submission === "prepared" && !isCommandReceiptUncertain(capability)) await release();
+    return capability;
+  }
   await save({ ...entry, submission: "awaiting-receipt" });
   const request = {
     action: "project.supervisor.turn.input" as const,
@@ -104,12 +114,16 @@ export async function submitWorkjetSupervisorInput(
     body: intent.body,
   };
   const result = await requestWorkjetProjectControl(intent.instanceId, request, port);
-  if (result._tag !== "completed") return result;
+  if (result._tag !== "completed") {
+    if (!isCommandReceiptUncertain(result)) await release();
+    return result;
+  }
   if (
     !isWorkjetSupervisorReceiptForRequest(request, result.response) ||
     result.response.action !== "project.supervisor.turn.input" ||
     result.response.turn.taskId !== saved.turn.taskId
   )
+    // A foreign receipt does not say whether this input was delivered: keep it.
     return { _tag: "failed", code: "guest_failed" };
   let receipt: WorkjetSupervisorInputReceipt;
   try {

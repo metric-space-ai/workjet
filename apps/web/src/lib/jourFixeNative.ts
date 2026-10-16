@@ -17,6 +17,7 @@ import {
 } from "./jourFixeReadRetry";
 import { jourFixeCacheKey, readJourFixeCache, writeJourFixeCache } from "./jourFixeCache";
 import { newCommandId, randomUUID } from "./utils";
+import { isCommandReceiptUncertain } from "./commandAttempt";
 import type { JourFixeCommentDraft, JourFixeRoomSnapshot, JourFixeTodo } from "./jourFixeRoom";
 
 type MutationRequest = Extract<
@@ -87,6 +88,8 @@ export function mapJourFixeMeeting(meeting: WorkjetJourFixeMeeting): JourFixeRoo
 /** One visible room owns one immutable instance/project scope and uncertain intent. */
 export class JourFixeNativeSession {
   private pending: PendingMutation | undefined;
+  /** A change the core answered for good; „Erneut senden“ resends it under new ids. */
+  private settled: PendingMutation | undefined;
   private closed = false;
   private readonly reads = new Map<string, Promise<WorkjetJourFixeReadResponse>>();
   constructor(
@@ -102,9 +105,15 @@ export class JourFixeNativeSession {
     return this.pending !== undefined;
   }
   retryPending() {
-    if (!this.pending) throw new Error("Keine Änderung wartet auf eine Wiederholung.");
     const pending = this.pending;
-    return this.mutate(pending.key, () => pending.request);
+    if (pending) return this.mutate(pending.key, () => pending.request);
+    const settled = this.settled;
+    if (!settled) throw new Error("Keine Änderung wartet auf eine Wiederholung.");
+    return this.mutate(settled.key, () => ({
+      ...settled.request,
+      commandId: newCommandId(),
+      operationId: randomUUID(),
+    }));
   }
   /**
    * Wiederholt die unbestätigte Änderung still mit der Lese-Staffelung
@@ -123,7 +132,8 @@ export class JourFixeNativeSession {
         return await this.retryPending();
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") throw error;
-        if (Date.now() >= deadline) throw error;
+        // A final answer released the change; only an explicit resend renews it.
+        if (Date.now() >= deadline || this.pending === undefined) throw error;
         const delay = [5_000, 10_000, 20_000][failures++] ?? 30_000;
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(resolve, delay);
@@ -171,19 +181,21 @@ export class JourFixeNativeSession {
     signal?: AbortSignal,
   ): Promise<WorkjetJourFixeReadResponse> {
     this.assertCurrent();
-    const request = {
-      action: "project.jour_fixe.meeting.read" as const,
-      commandId: newCommandId(),
-      projectId: this.projectId,
-      ...(meetingId ? { meetingId } : {}),
-    };
-    const result = await retryJourFixeRead(
+    // A read asks for the current state: every attempt carries its own id, so
+    // the core never answers a retry with an earlier attempt's snapshot.
+    const { request, result } = await retryJourFixeRead(
       async () => {
         this.assertCurrent();
+        const request = {
+          action: "project.jour_fixe.meeting.read" as const,
+          commandId: newCommandId(),
+          projectId: this.projectId,
+          ...(meetingId ? { meetingId } : {}),
+        };
         const value = await this.control(this.instanceId, request);
         this.assertCurrent();
         if (value._tag !== "completed") throw jourFixeTransportError(value);
-        return value;
+        return { request, result: value };
       },
       { signal },
     );
@@ -214,6 +226,7 @@ export class JourFixeNativeSession {
       throw new Error("Erst die unbestätigte Änderung erneut senden.");
     const pending: PendingMutation = this.pending ?? { key, request: build() };
     this.pending = pending;
+    this.settled = undefined;
     if (pending.acknowledgedRevision === undefined) {
       const result = await this.control(this.instanceId, pending.request);
       this.assertCurrent();
@@ -221,10 +234,18 @@ export class JourFixeNativeSession {
         result._tag !== "completed" ||
         !isWorkjetJourFixeReceiptForRequest(pending.request, result.response) ||
         !("mutation" in result.response)
-      )
-        throw new Error(
-          "Diese Änderung wurde nicht bestätigt. Erneutes Senden behält ihre Kennung.",
-        );
+      ) {
+        // Only a lost receipt is resent under the same ids. A final answer
+        // (conflict, refusal, foreign receipt) releases the change; sending it
+        // again builds a new request with new ids.
+        if (result._tag === "failed" && isCommandReceiptUncertain(result))
+          throw new Error(
+            "Diese Änderung wurde nicht bestätigt. Erneutes Senden behält ihre Kennung.",
+          );
+        this.pending = undefined;
+        this.settled = pending;
+        throw new Error("Diese Änderung wurde nicht übernommen. Erneut senden schickt sie neu.");
+      }
       if (pending.request.action === "project.jour_fixe.todos.confirm") {
         if (!("goal" in result.response) || result.response.goal === undefined)
           throw new Error("Die Bestätigung des Projektziels fehlt.");

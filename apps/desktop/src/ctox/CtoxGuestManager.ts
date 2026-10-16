@@ -2680,6 +2680,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           listFailures.set(guest.view.webContents, failures);
         }
         if (staleShell(guest) || failures >= 3) {
+          // Real idempotency: the rebuilt shell resends the identical request,
+          // command id included, so the core answers the attempt it may already
+          // have run instead of running it twice.
           if (yield* rebuildPooled(instanceId, guest))
             return yield* requestProjectControlOnce(instanceId, request);
         }

@@ -11,6 +11,7 @@ import { randomUUID } from "../../lib/utils";
 import { classifyComposerError } from "./composerErrorLineLogic";
 import {
   createWorkjetPrivateChat,
+  renewedPrivateChatIntent,
   privateChatIntentRequest,
   type WorkjetPrivateChatIntent,
   type PrivateChatCreationRequest,
@@ -28,6 +29,7 @@ export function NativePrivateChatControl(props: {
   readonly workerId: string;
   readonly config: WorkjetThreadConfig;
   readonly prepareIntent: (candidate: WorkjetPrivateChatIntent) => WorkjetPrivateChatIntent;
+  readonly renewIntent: (settled: WorkjetPrivateChatIntent, next: WorkjetPrivateChatIntent) => void;
   readonly isScopeCurrent: () => boolean;
   readonly onBound: (chat: WorkjetThreadCtoxCrewChat) => void;
 }) {
@@ -57,10 +59,12 @@ export function NativePrivateChatControl(props: {
 
     pending.current = true;
     setBusy(true);
+    let intent: WorkjetPrivateChatIntent | null = null;
     try {
       if (!isCurrent()) throw new Error("Projekt gewechselt, Entwurf neu öffnen");
-      // Synchronously persist before any native request; rehydrated retries reuse both IDs.
-      const intent = captured.prepareIntent({
+      // Synchronously persist before any native request; rehydrated retries
+      // reuse both IDs while the receipt is unclear.
+      const prepared = captured.prepareIntent({
         instanceId: captured.instanceId,
         connectionId: captured.connectionId!,
         projectId: captured.projectId,
@@ -70,6 +74,7 @@ export function NativePrivateChatControl(props: {
         chatCommandId: CommandId.make(randomUUID()),
         createdAt: new Date().toISOString(),
       });
+      intent = prepared;
       const scope = {
         instanceId: captured.instanceId,
         connectionId: captured.connectionId!,
@@ -77,16 +82,22 @@ export function NativePrivateChatControl(props: {
       };
       const first = await createWorkjetPrivateChat({
         ...scope,
-        request: privateChatIntentRequest(intent, "project.worker.add"),
+        request: privateChatIntentRequest(prepared, "project.worker.add"),
       });
       const chat = separate
         ? await createWorkjetPrivateChat({
             ...scope,
-            request: privateChatIntentRequest(intent, "project.chat.create"),
+            request: privateChatIntentRequest(prepared, "project.chat.create"),
           })
         : first;
       if (isCurrent()) captured.onBound(chat);
     } catch (error) {
+      // A final answer under these ids: the next open is a new attempt with new ids.
+      const renewed =
+        intent === null
+          ? null
+          : renewedPrivateChatIntent(error, intent, () => CommandId.make(randomUUID()));
+      if (intent !== null && renewed !== null) captured.renewIntent(intent, renewed);
       if (live.current)
         toastManager.add({
           type: "error",

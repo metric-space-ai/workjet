@@ -20,6 +20,7 @@ import { isElectron } from "../../env";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { ensureLocalApi } from "../../localApi";
 import { newCommandId } from "../../lib/utils";
+import { createCommandAttempts } from "../../lib/commandAttempt";
 import { resolveProjectTeamModelSelection } from "../../providerInstances";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { environmentProjects, projectEnvironment } from "../../state/projects";
@@ -112,6 +113,7 @@ export function SessionImportSection({
   const mountedRef = useRef(true);
   const importingRef = useRef(false);
   const projectCreationAttempts = useRef(new Map<string, ReturnType<typeof newCommandId>>());
+  const ctoxCreationAttempts = useRef(createCommandAttempts());
   const stoppedRef = useRef(false);
   const isActive = () =>
     mountedRef.current &&
@@ -176,6 +178,7 @@ export function SessionImportSection({
     setNewProjectTitle("");
     setWorkspaceRoot("");
     projectCreationAttempts.current.clear();
+    ctoxCreationAttempts.current.clear();
     importingRef.current = false;
     stoppedRef.current = true;
   }, [scopeKey]);
@@ -339,11 +342,19 @@ export function SessionImportSection({
             }
           },
           confirmLogicalProject: async (project) => {
+            // CTOX attempts start on the registration id, keep it while the
+            // receipt is unclear and renew it after a final failure.
+            const attemptKey = JSON.stringify([environmentId, presentationInstanceId, project.id]);
+            const commandId = ctoxCreationAttempts.current.begin(attemptKey, () =>
+              ctoxCreationAttempts.current.has(attemptKey)
+                ? newCommandId()
+                : projectCommandId(project),
+            );
             const confirmed = await runWorkjetProjectCreation({
               presentationInstanceId: presentationInstanceId!,
               request: {
                 action: "project.create",
-                commandId: projectCommandId(project),
+                commandId,
                 projectId: project.id,
                 title: project.title,
                 createdAt: new Date().toISOString(),
@@ -352,6 +363,11 @@ export function SessionImportSection({
                   : {}),
               },
             });
+            ctoxCreationAttempts.current.settle(
+              attemptKey,
+              commandId,
+              confirmed._tag === "failed" ? confirmed : { _tag: "completed" },
+            );
             if (confirmed._tag === "failed")
               throw new Error(workjetProjectCreationFailureMessage(confirmed.code));
             if (!isActive()) throw new Error("Instanz gewechselt.");

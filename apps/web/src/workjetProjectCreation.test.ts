@@ -1,6 +1,10 @@
 import { CommandId, ProjectId } from "@workjet/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { runWorkjetProjectCreation, workjetLogicalProjectId } from "./workjetProjectCreation";
+import {
+  projectRegistrationAttemptId,
+  runWorkjetProjectCreation,
+  workjetLogicalProjectId,
+} from "./workjetProjectCreation";
 
 const instanceId = "managed:welsch";
 const projectId = ProjectId.make("11111111-1111-4111-8111-111111111111");
@@ -297,5 +301,25 @@ describe("runWorkjetProjectCreation", () => {
       code: "not_active",
     });
     expect(port).not.toHaveBeenCalled();
+  });
+});
+
+describe("project.create ids per attempt (CTOX v4 idempotency)", () => {
+  const stored = CommandId.make("registration-1");
+  const fresh = () => CommandId.make("registration-2");
+  it("final failure + retry: a pending registration retries under a new id", () => {
+    for (const lastFailure of ["unsupported", "guest_failed", "invalid_projection"])
+      expect(projectRegistrationAttemptId({ commandId: stored, lastFailure }, fresh)).toBe(
+        "registration-2",
+      );
+  });
+  it("timeout + retry: the stored id is kept", () => {
+    for (const lastFailure of [undefined, "timeout", "not_active", "launch_failed"])
+      expect(
+        projectRegistrationAttemptId(
+          lastFailure === undefined ? { commandId: stored } : { commandId: stored, lastFailure },
+          fresh,
+        ),
+      ).toBe(stored);
   });
 });

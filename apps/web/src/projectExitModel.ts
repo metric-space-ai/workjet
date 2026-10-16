@@ -1,4 +1,5 @@
 import { workjetUiLanguage } from "./workjetProjectControl";
+import { isCommandReceiptUncertain } from "./lib/commandAttempt";
 import {
   WorkjetExitModelAssessment,
   WorkjetExitModelResponse,
@@ -32,18 +33,31 @@ export async function requestProjectExitModel(
   port?: WorkjetProjectControlPort,
 ): Promise<
   | { readonly _tag: "completed"; readonly assessment: WorkjetExitModelAssessment }
-  | { readonly _tag: "failed"; readonly message: string; readonly reason: ExitModelFailureReason }
+  | {
+      readonly _tag: "failed";
+      readonly message: string;
+      readonly reason: ExitModelFailureReason;
+      /** No final answer for this command id arrived; a retry keeps the id. */
+      readonly receiptUncertain: boolean;
+    }
 > {
   try {
     const result = await requestWorkjetProjectControl(instanceId, request, port);
     if (result._tag !== "completed") {
+      const receiptUncertain = isCommandReceiptUncertain(result);
       if (result.code === "timeout" || result.diagnostic?.reason === "request_timeout")
-        return { _tag: "failed", message: "Bewertung nicht geladen.", reason: "timeout" };
+        return {
+          _tag: "failed",
+          message: "Bewertung nicht geladen.",
+          reason: "timeout",
+          receiptUncertain,
+        };
       const unavailable = result.code === "unsupported" || result.code === "guest_failed";
       return {
         _tag: "failed",
         message: unavailable ? "Bewertungsdienst nicht verfügbar." : "Bewertung nicht geladen.",
         reason: unavailable ? "unavailable" : "rejected",
+        receiptUncertain,
       };
     }
     const response = result.response;
@@ -61,10 +75,16 @@ export async function requestProjectExitModel(
         _tag: "failed",
         message: "Antwort passt nicht zum Projekt.",
         reason: "uncorrelated",
+        receiptUncertain: false,
       };
     return { _tag: "completed", assessment: response.assessment };
   } catch {
-    return { _tag: "failed", message: "Bewertung nicht geladen.", reason: "rejected" };
+    return {
+      _tag: "failed",
+      message: "Bewertung nicht geladen.",
+      reason: "rejected",
+      receiptUncertain: true,
+    };
   }
 }
 

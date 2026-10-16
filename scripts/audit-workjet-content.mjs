@@ -616,9 +616,36 @@ async function vendoredKernelFiles(root) {
   }
 }
 
+/**
+ * The Shell v4 worker dispatch handler (ctox #924) and the E51 stub are likewise byte copies of
+ * CTOX code, used only in tests. Exactly the files whose sha256 a PIN.md table pins are skipped;
+ * kernelProvenance.test.ts proves they are unmodified.
+ */
+const VENDORED_PIN_DIRS = [
+  "apps/web/src/ctox/contract/workjet-dispatch",
+  // The CTOX Sync v4 stub carrying E51 api.prefs (stub-e51/PIN.md), test-only.
+  "apps/web/src/ctox/stub-e51",
+];
+async function vendoredPinnedFiles(root) {
+  const files = [];
+  for (const dir of VENDORED_PIN_DIRS) {
+    try {
+      const pin = await NodeFSP.readFile(NodePath.join(root, dir, "PIN.md"), "utf8");
+      for (const [, file] of pin.matchAll(
+        /^\| *([\w.-]+\.(?:m?js|d\.ts)) *\|(?:[^|]*\|)? *[0-9a-f]{64} *\|$/gm,
+      ))
+        files.push(`${dir}/${file}`);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  return files;
+}
+
 /** Audit the bounded Workjet product surfaces from a repository root. */
 export async function auditWorkjetContent(root = repoRoot) {
   const vendored = await vendoredKernelFiles(root);
+  for (const file of await vendoredPinnedFiles(root)) vendored.add(file);
   const sourceFiles = (
     await Promise.all(AUDITED_SOURCE_ROOTS.map((directory) => collectFiles(root, directory)))
   )

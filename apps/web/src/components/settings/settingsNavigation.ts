@@ -50,7 +50,14 @@ export interface SettingsNavItem {
 }
 
 function navItem(to: SettingsPagePath): SettingsNavItem {
-  return { to, label: SETTINGS_SECTION_LABELS[to], icon: PAGE_ICONS[to] };
+  // Getter: der Name folgt der UI-Sprache beim Lesen (#800).
+  return {
+    to,
+    get label() {
+      return SETTINGS_SECTION_LABELS[to];
+    },
+    icon: PAGE_ICONS[to],
+  };
 }
 
 /** Die sieben Seiten (#568). */

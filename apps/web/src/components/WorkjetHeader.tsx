@@ -69,8 +69,7 @@ export function WorkjetHeaderFrame({
         <PrivacyModeToggle mac={isMacPlatform()} />
         <button
           type="button"
-          aria-label="Einstellungen"
-          title="Einstellungen"
+          aria-label={headerSettingsLabel()}
           className="no-drag mr-[var(--workspace-controls-right)] flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           data-workjet-header-settings=""
           onClick={() => void navigate({ to: "/settings" })}

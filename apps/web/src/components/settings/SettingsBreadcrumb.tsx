@@ -5,13 +5,14 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { SETTINGS_SECTION_LABELS } from "./settingsSearch";
 
-const SETTINGS_BREADCRUMB_LABELS: Readonly<Record<string, string>> = {
-  ...SETTINGS_SECTION_LABELS,
-};
-
 function settingsBreadcrumbLabel(pathname: string): string | null {
   const normalizedPathname = pathname.replace(/\/+$/, "") || "/";
-  return SETTINGS_BREADCRUMB_LABELS[normalizedPathname] ?? null;
+  return (SETTINGS_SECTION_LABELS as Readonly<Record<string, string>>)[normalizedPathname] ?? null;
+}
+
+function settingsWord(): string {
+  const lang = typeof document === "undefined" ? "de" : document.documentElement.lang;
+  return lang.toLowerCase().startsWith("en") ? "Settings" : "Einstellungen";
 }
 
 export function SettingsBreadcrumb({
@@ -24,10 +25,10 @@ export function SettingsBreadcrumb({
   const sectionLabel = settingsBreadcrumbLabel(pathname);
 
   return (
-    <WorkspaceBreadcrumb ariaLabel="Einstellungen">
+    <WorkspaceBreadcrumb ariaLabel={settingsWord()}>
       {sectionLabel ? (
         <>
-          <WorkspaceBreadcrumbItem>Einstellungen</WorkspaceBreadcrumbItem>
+          <WorkspaceBreadcrumbItem>{settingsWord()}</WorkspaceBreadcrumbItem>
           <WorkspaceBreadcrumbSeparator />
           {activeInstanceName !== null && pathname !== "/settings/business-os" ? (
             <>
@@ -40,7 +41,7 @@ export function SettingsBreadcrumb({
         </>
       ) : null}
       <WorkspaceBreadcrumbItem current className="truncate">
-        {sectionLabel ?? "Einstellungen"}
+        {sectionLabel ?? settingsWord()}
       </WorkspaceBreadcrumbItem>
     </WorkspaceBreadcrumb>
   );

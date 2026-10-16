@@ -312,15 +312,17 @@ function AboutVersionSection() {
                 disabled={isChangingUpdateChannel}
               >
                 <SelectValue>
-                  {selectedUpdateChannel === "nightly" ? "Vorabversion" : "Stabil"}
+                  {selectedUpdateChannel === "nightly"
+                    ? archiveText("Vorabversion", "Pre-release")
+                    : archiveText("Stabil", "Stable")}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="latest">
-                  Stabil
+                  {archiveText("Stabil", "Stable")}
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
-                  Vorabversion
+                  {archiveText("Vorabversion", "Pre-release")}
                 </SelectItem>
               </SelectPopup>
             </Select>
@@ -346,15 +348,17 @@ function AboutVersionSection() {
               >
                 {/* Ein Begriff auf beiden Wegen: Stabil | Vorabversion (Audit C 19). */}
                 <SelectValue>
-                  {selectedHostedAppChannel === "nightly" ? "Vorabversion" : "Stabil"}
+                  {selectedHostedAppChannel === "nightly"
+                    ? archiveText("Vorabversion", "Pre-release")
+                    : archiveText("Stabil", "Stable")}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="latest">
-                  Stabil
+                  {archiveText("Stabil", "Stable")}
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
-                  Vorabversion
+                  {archiveText("Vorabversion", "Pre-release")}
                 </SelectItem>
               </SelectPopup>
             </Select>

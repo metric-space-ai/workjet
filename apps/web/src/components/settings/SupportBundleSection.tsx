@@ -77,7 +77,13 @@ export function SupportBundleSectionView({
           disabled={state.status === "creating"}
           onClick={onCreate}
         >
-          {state.status === "creating" ? "Erstellt …" : "Erstellen"}
+          {workjetUiLanguage() === "en"
+            ? state.status === "creating"
+              ? "Creating …"
+              : "Create"
+            : state.status === "creating"
+              ? "Erstellt …"
+              : "Erstellen"}
         </Button>
       }
     >

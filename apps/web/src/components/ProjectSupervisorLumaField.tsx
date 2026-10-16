@@ -7,7 +7,7 @@ import {
 import { Schema } from "effect";
 
 type WorkjetLumaInstanceConfiguration = typeof WorkjetLumaInstanceConfigurationSchema.Type;
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "./ui/button";
 import { OptionSelect } from "./ui/option-select";
 import { useBusinessOsCodeScope } from "../businessOsCodeScope";
@@ -198,6 +198,7 @@ export function ProjectSupervisorLumaSelect({
   readonly retry?: (() => void) | undefined;
 }) {
   const selected = profiles.find((profile) => profile.id === value);
+  const loadingSlow = useLoadingEndsAfter10s(phase);
   return (
     <div className="grid min-w-0 gap-1">
       <OptionSelect
@@ -215,7 +216,7 @@ export function ProjectSupervisorLumaSelect({
         ]}
         onValueChange={(next) => onChange(next || null)}
       />
-      {phase === "unavailable" ? (
+      {phase === "unavailable" || loadingSlow ? (
         <PresetsUnavailableLine retry={retry} />
       ) : (
         <span className="break-words text-xs text-muted-foreground" role="status">
@@ -244,4 +245,18 @@ export function PresetsUnavailableLine({ retry }: { readonly retry?: (() => void
       ) : null}
     </div>
   );
+}
+
+/** Ein Laden endet nach 10 s (UI-Vertrag §1.3): danach gilt es als nicht erreichbar. */
+export function useLoadingEndsAfter10s(phase: "loading" | "ready" | "unavailable"): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (phase !== "loading") {
+      setSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setSlow(true), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
+  return slow;
 }

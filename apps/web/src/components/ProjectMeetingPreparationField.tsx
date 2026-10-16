@@ -7,8 +7,11 @@ import {
 } from "@workjet/contracts";
 import { Checkbox } from "./ui/checkbox";
 import { OptionSelect } from "./ui/option-select";
-import { useEffect, useState } from "react";
-import { PresetsUnavailableLine, useProjectSupervisorLumas } from "./ProjectSupervisorLumaField";
+import {
+  PresetsUnavailableLine,
+  useLoadingEndsAfter10s,
+  useProjectSupervisorLumas,
+} from "./ProjectSupervisorLumaField";
 import { workjetHarnessDisplayLabel } from "./settings/WorkjetWorkerEditor";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -53,15 +56,7 @@ export function MeetingPreparationField({
   const change = (patch: Partial<MeetingPreparationConfiguration>) =>
     onChange({ ...config, ...patch });
   // Laden endet nach 10 s in einer Statuszeile statt endlos zu warten.
-  const [loadingSlow, setLoadingSlow] = useState(false);
-  useEffect(() => {
-    if (phase !== "loading") {
-      setLoadingSlow(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setLoadingSlow(true), 10_000);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
+  const loadingSlow = useLoadingEndsAfter10s(phase);
   return (
     <fieldset
       className="grid min-w-0 gap-2 rounded-md border border-border p-3"

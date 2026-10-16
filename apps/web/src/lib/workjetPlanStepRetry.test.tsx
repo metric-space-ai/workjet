@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import type { CtoxWorkjetProjectControlRequest } from "@workjet/contracts";
+import { CommandId, type CtoxWorkjetProjectControlRequest } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { ThreadErrorBanner } from "../components/chat/ThreadErrorBanner";
 import type { WorkjetProjectControlPort } from "../workjetProjectControl";
@@ -22,6 +22,8 @@ function port(
   };
   return { control, seen };
 }
+const echoCommandId = (request: CtoxWorkjetProjectControlRequest) =>
+  request.action === "ctox.plan.step.retry" ? request.commandId : CommandId.make("none");
 const banner = (instanceId: string, stepId: string) =>
   renderToStaticMarkup(
     <ThreadErrorBanner error="Schritt fehlgeschlagen" planStep={{ instanceId, stepId }} />,
@@ -33,7 +35,7 @@ describe("plan step retry (ctox#872, Audit B #24)", () => {
       _tag: "completed",
       response: {
         action: "ctox.plan.step.retry",
-        commandId: "commandId" in request ? request.commandId : "",
+        commandId: echoCommandId(request),
         status: "pending",
       },
     }));
@@ -73,14 +75,18 @@ describe("plan step retry (ctox#872, Audit B #24)", () => {
     expect(banner("instance-b", "step-1")).toContain("Erneut versuchen");
     const wrong = port(() => ({
       _tag: "completed",
-      response: { action: "ctox.plan.step.retry", commandId: "other", status: "pending" },
+      response: {
+        action: "ctox.plan.step.retry",
+        commandId: CommandId.make("other"),
+        status: "pending",
+      },
     }));
     expect(await runPlanStepRetry("instance-b", "step-1", wrong.control)).toBe("failed");
     const ok = port((request) => ({
       _tag: "completed",
       response: {
         action: "ctox.plan.step.retry",
-        commandId: "commandId" in request ? request.commandId : "",
+        commandId: echoCommandId(request),
         status: "pending",
       },
     }));

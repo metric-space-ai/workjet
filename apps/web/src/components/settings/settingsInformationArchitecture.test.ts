@@ -14,7 +14,7 @@ import {
 } from "./settingsNavigation";
 
 describe("Workjet settings information architecture (#568)", () => {
-  it("has exactly seven pages, twelve in developer mode (Projekte live in the project)", () => {
+  it("has exactly seven pages, eleven in developer mode (Projekte live in the project)", () => {
     expect(SETTINGS_NAV_ITEMS.map((item) => item.label)).toEqual([
       "Allgemein",
       "Instanz",
@@ -25,11 +25,10 @@ describe("Workjet settings information architecture (#568)", () => {
       "Archiv",
     ]);
     expect(settingsNavItems(false)).toHaveLength(7);
-    expect(settingsNavItems(true)).toHaveLength(12);
+    expect(settingsNavItems(true)).toHaveLength(11);
     expect(DEVELOPER_SETTINGS_NAV_ITEMS.slice(7).map((item) => item.label)).toEqual([
       "Diagnose",
       "Harness",
-      "Schnittstellen",
       "Versionsverwaltung",
       "Tastenkürzel",
     ]);
@@ -53,6 +52,8 @@ describe("Workjet settings information architecture (#568)", () => {
     expect(projectsRouteSource).toContain("ProjectsSettingsRedirect");
     expect(settingsRouteSource).toContain('redirect({ to: "/settings/general"');
     expect(routeTreeSource).not.toContain("fullPath: '/settings/connections'");
+    // Toolhub-Schnittstellen sind nicht Teil von V4 (E49, docs/backlog/toolhub-v4.md).
+    expect(routeTreeSource).not.toContain("fullPath: '/settings/integrations'");
   });
 
   it("uses the regular Settings route from either product mode", () => {

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { CALENDAR_INTEGRATION_SLUGS } from "./CalendarAccountsSettings";
+import { CALENDAR_OAUTH_INTEGRATIONS } from "./integrationsCatalog";
 import { SettingsAddButton, SettingsLoadingRow } from "./settingsAdd";
 import { searchSettings } from "./settingsSearch";
 
@@ -46,6 +46,6 @@ describe("calendar accounts (Audit C 10)", () => {
   });
 
   it("know the catalog's calendar apps", () => {
-    expect(CALENDAR_INTEGRATION_SLUGS).toContain("google-calendar");
+    expect(CALENDAR_OAUTH_INTEGRATIONS.map((entry) => entry.slug)).toContain("google-calendar");
   });
 });

@@ -2,10 +2,8 @@
 /**
  * Instanz → Kalender-Konten (Audit C 10): die Kalender-Konten der gewählten
  * Instanz als Zeilen, ohne Entwicklermodus erreichbar und über die Suche
- * „Kalender“ auffindbar. „+ Hinzufügen“ erscheint, sobald der Katalog eine
- * verbindbare Kalender-App führt; erst dann wird der Toolhub gemountet.
- * Google Kalender verbindet nativ über die Instanz (ctox #875) und erscheint
- * nur, wenn deren Core die Anmeldung kennt.
+ * „Kalender“ auffindbar. Google Kalender verbindet nativ über die Instanz
+ * (ctox #875); „+ Hinzufügen“ erscheint nur, wenn deren Core die Anmeldung kennt.
  */
 import { Loader2Icon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -21,24 +19,12 @@ import {
 import { NativeAccountCalendar } from "../../calendar/nativeAccountCalendar";
 import { Button } from "../ui/button";
 import { Row } from "../ui/row";
-import {
-  CONNECTABLE_INTEGRATIONS,
-  IntegrationDraftRow,
-  IntegrationLogo,
-  integrationAddOptions,
-} from "./IntegrationsSettings";
 import { CALENDAR_OAUTH_INTEGRATIONS, type IntegrationEntry } from "./integrationsCatalog";
 import { SettingsAddButton, SettingsLoadingRow, type SettingsAddOption } from "./settingsAdd";
 import { SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { useToolhubIntegrations, type ToolhubIntegrations } from "./useToolhubIntegrations";
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
 
-/** Kalender-Apps des Katalogs; nur verbindbare erscheinen im Menü. */
-export const CALENDAR_INTEGRATION_SLUGS = ["google-calendar", "microsoft-outlook", "calendly"];
-const CALENDAR_INTEGRATIONS = CONNECTABLE_INTEGRATIONS.filter((entry) =>
-  CALENDAR_INTEGRATION_SLUGS.includes(entry.slug),
-);
 const RETRY_MS = 15_000;
 
 type Accounts = WorkjetCalendarAccounts["accounts"];
@@ -73,28 +59,23 @@ export function useCalendarConnectSupport(
   return supported;
 }
 
-export function CalendarAccountsSection({ instanceId }: { readonly instanceId: string }) {
-  return CALENDAR_INTEGRATIONS.length > 0 ? (
-    <CalendarAccountsWithHub instanceId={instanceId} />
-  ) : (
-    <CalendarAccountsView instanceId={instanceId} hub={null} />
+function IntegrationLogo({ entry }: { readonly entry: IntegrationEntry }) {
+  return (
+    <span
+      aria-hidden
+      className="flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-white"
+    >
+      {entry.logo ? (
+        <img src={entry.logo} alt="" className="size-full object-contain" draggable={false} />
+      ) : (
+        <span className="text-[11px] font-semibold text-neutral-700">{entry.name.slice(0, 1)}</span>
+      )}
+    </span>
   );
 }
 
-function CalendarAccountsWithHub({ instanceId }: { readonly instanceId: string }) {
-  const hub = useToolhubIntegrations();
-  return <CalendarAccountsView instanceId={instanceId} hub={hub} />;
-}
-
-function CalendarAccountsView({
-  instanceId,
-  hub,
-}: {
-  readonly instanceId: string;
-  readonly hub: ToolhubIntegrations | null;
-}) {
+export function CalendarAccountsSection({ instanceId }: { readonly instanceId: string }) {
   const [accounts, setAccounts] = useState<Accounts | null>(null);
-  const [draft, setDraft] = useState<IntegrationEntry | null>(null);
   const [google, setGoogle] = useState<GoogleDraft | null>(null);
   const googleSupported = useCalendarConnectSupport(instanceId);
   const current = useRef(instanceId);
@@ -162,28 +143,12 @@ function CalendarAccountsView({
           },
         ]
       : [];
-  const options = [
-    ...googleOption,
-    ...(hub === null ? [] : integrationAddOptions(CALENDAR_INTEGRATIONS, hub, setDraft)),
-  ];
   const add =
-    options.length > 0 && draft === null && google === null ? (
-      <SettingsAddButton action="calendar.accounts.add" options={options} />
+    googleOption.length > 0 && google === null ? (
+      <SettingsAddButton action="calendar.accounts.add" options={googleOption} />
     ) : null;
   return (
     <SettingsSection {...section} data-workjet-calendar-accounts="" headerAction={add}>
-      {draft !== null && hub !== null ? (
-        <div className="rounded-lg border">
-          <IntegrationDraftRow
-            entry={draft}
-            hub={hub}
-            onDone={() => {
-              setDraft(null);
-              void load();
-            }}
-          />
-        </div>
-      ) : null}
       {google !== null && GOOGLE_CALENDAR !== undefined ? (
         <GoogleDraftRow
           entry={GOOGLE_CALENDAR}
@@ -195,7 +160,7 @@ function CalendarAccountsView({
       {accounts === null ? (
         <SettingsLoadingRow onRetry={() => void load()} />
       ) : accounts.length === 0 ? (
-        draft === null && google === null ? (
+        google === null ? (
           <Empty className="py-4">
             <EmptyHeader>
               <EmptyTitle className="text-[13.5px]">Keine Kalender-Konten</EmptyTitle>

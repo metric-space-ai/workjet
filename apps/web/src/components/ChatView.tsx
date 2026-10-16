@@ -32,7 +32,6 @@ import {
   type WorkjetBusinessOsObjectId,
   type WorkjetBusinessOsObjectKind,
 } from "@workjet/contracts";
-import { SessionRequestCards } from "./chat/SessionRequestCards";
 import { type EnvironmentConnectionPresentation } from "@workjet/client-runtime/connection";
 import {
   changeRequestAutoSettles,
@@ -7533,7 +7532,6 @@ function ChatViewContent(props: ChatViewProps) {
                                   />
                                 </div>
                               ) : null}
-                              <SessionRequestCards sessionId={activeThread.id} />
                               <ThreadErrorBanner
                                 error={nativeSupervisorThread ? null : visibleThreadError}
                                 onDismiss={() => {

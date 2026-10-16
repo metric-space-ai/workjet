@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { toolhubAuthorizeOrigins } from "@workjet/contracts";
+import { CALENDAR_AUTHORIZE_ORIGINS } from "@workjet/contracts";
 
 vi.mock("../ctox/CtoxModeShell", () => ({
   useCtoxMode: () => ({ selectedId: "managed:tenant", discovery: "loading" }),
@@ -9,20 +9,18 @@ vi.mock("../ctox/CtoxModeShell", () => ({
 
 import { CALENDAR_CONNECT_FAILURES } from "../../calendar/calendarConnect";
 import { CalendarAccountsSection, GoogleDraftRow } from "./CalendarAccountsSettings";
-import { CONNECTABLE_INTEGRATIONS } from "./IntegrationsSettings";
 import { CALENDAR_OAUTH_INTEGRATIONS, INTEGRATIONS } from "./integrationsCatalog";
 
 const google = INTEGRATIONS.find((entry) => entry.slug === "google-calendar")!;
 
 describe("Katalog: Google Kalender (ctox #875)", () => {
-  it("verbindet nativ über die Instanz, nicht über den Toolhub", () => {
+  it("verbindet nativ über die Instanz", () => {
     expect(google.connect).toBe("calendar-oauth");
     expect(CALENDAR_OAUTH_INTEGRATIONS.map((entry) => entry.slug)).toEqual(["google-calendar"]);
-    expect(CONNECTABLE_INTEGRATIONS.some((entry) => entry.slug === "google-calendar")).toBe(false);
   });
 
   it("erlaubt im Anmeldefenster nur die feste Google-Login-Origin", () => {
-    expect(toolhubAuthorizeOrigins("google-calendar")).toEqual(["https://accounts.google.com"]);
+    expect(CALENDAR_AUTHORIZE_ORIGINS).toEqual(["https://accounts.google.com"]);
   });
 });
 

@@ -3,6 +3,7 @@ import { isComposerPlainLine } from "./composerErrorLineLogic";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { CircleAlertIcon, XIcon } from "lucide-react";
+import { usePlanStepRetry } from "../../lib/workjetPlanStepRetry";
 
 const START_FAILURE_PATTERN = /ProviderAdapter|spawn|ENOENT|process/i;
 
@@ -56,12 +57,20 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   error,
   onDismiss,
   onRetry,
+  planStep,
 }: {
   error: string | null;
   onDismiss?: () => void;
   /** Die eine Aktion des Banners; ohne Wiederholungsweg bleibt nur Schließen. */
   onRetry?: () => void;
+  /**
+   * Fehlgeschlagener CTOX-Planschritt (Audit B #24): „Erneut versuchen“ sendet
+   * `ctox.plan.step.retry`; kennt die Instanz den Befehl nicht, fehlt der Knopf.
+   */
+  planStep?: { readonly instanceId: string; readonly stepId: string } | null;
 }) {
+  const retryPlanStep = usePlanStepRetry(planStep);
+  const retry = onRetry ?? retryPlanStep;
   if (!error) return null;
   const { summary } = threadErrorPresentation(error);
   return (
@@ -71,10 +80,10 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
         <AlertDescription>
           <div className="truncate">{summary}</div>
         </AlertDescription>
-        {onRetry || onDismiss ? (
+        {retry || onDismiss ? (
           <AlertAction>
-            {onRetry ? (
-              <Button size="xs" variant="outline" onClick={onRetry}>
+            {retry ? (
+              <Button size="xs" variant="outline" onClick={retry}>
                 Erneut versuchen
               </Button>
             ) : null}

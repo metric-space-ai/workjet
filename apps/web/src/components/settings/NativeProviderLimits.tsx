@@ -1,7 +1,12 @@
 import type { WorkjetNativeProviderAccount } from "@workjet/contracts";
 import { useEffect, useState } from "react";
 import { AccountLimits } from "./WorkjetModelsProviders";
-import { MODELS_QUOTA_FRESH_FOR_MS, normalizeNativeModelsQuota } from "./WorkjetModelsQuota";
+import { RowStatusDot } from "../ui/row";
+import {
+  MODELS_QUOTA_FRESH_FOR_MS,
+  nativeQuotaResets,
+  normalizeNativeModelsQuota,
+} from "./WorkjetModelsQuota";
 
 export function NativeProviderLimits({
   provider,
@@ -17,7 +22,7 @@ export function NativeProviderLimits({
   // Repaint only when evidence ages or a reported window expires.
   useEffect(() => {
     if (quota?.state !== "reported") return;
-    const future = quota.windows.map((window) => window.resetAtMs).filter((at) => at > Date.now());
+    const future = nativeQuotaResets(quota).filter((at) => at > Date.now());
     if (future.length === 0) return;
     const staleAt = quota.observedAtMs + MODELS_QUOTA_FRESH_FOR_MS;
     if (staleAt > Date.now()) future.push(staleAt);
@@ -28,6 +33,14 @@ export function NativeProviderLimits({
     return () => clearTimeout(timer);
   }, [quota, expiryTick]);
 
+  if (quota?.state === "unavailable") {
+    // A failed quota read is the status dot alone, never a sentence (ctox#872).
+    return (
+      <div role="cell" className={`flex items-center ${className}`}>
+        <RowStatusDot status="error" label="Kontingent nicht lesbar" />
+      </div>
+    );
+  }
   if (quota?.state !== "reported") {
     return (
       // Unknown limits show nothing (#610).

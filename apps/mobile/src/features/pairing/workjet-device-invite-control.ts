@@ -16,7 +16,7 @@ export interface WorkjetDeviceInviteControlPort {
 
 export class WorkjetDeviceInviteControlUnavailableError extends Error {
   constructor() {
-    super("Device invite controls are not available for this environment yet.");
+    super("Für diesen Rechner nicht verfügbar.");
     this.name = "WorkjetDeviceInviteControlUnavailableError";
   }
 }

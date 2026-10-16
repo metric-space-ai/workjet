@@ -90,7 +90,7 @@ describe("incoming native shares", () => {
     });
 
     expect(result.attachments).toEqual([]);
-    expect(result.warnings).toEqual(["'huge.png' exceeds the 10 MB attachment limit."]);
+    expect(result.warnings).toEqual(["'huge.png' ist größer als 10 MB."]);
     expect(readBase64).not.toHaveBeenCalled();
     expect(removeOwnedFile).toHaveBeenCalledWith(image.value);
     expect(hasIncomingShareContent(result)).toBe(false);
@@ -115,7 +115,7 @@ describe("incoming native shares", () => {
 
     expect(result.attachments).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
     expect(result.warnings).toEqual([
-      `Only the first ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} shared images were attached.`,
+      `Nur die ersten ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} Bilder angehängt.`,
     ]);
     expect(readBase64).toHaveBeenCalledTimes(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
     expect(removeOwnedFile).toHaveBeenCalledTimes(payloads.length);

@@ -117,7 +117,7 @@ function FileContent(props: {
   if (props.fileError && props.fileContents === null) {
     return (
       <View className="flex-1 items-center justify-center bg-sheet px-6">
-        <EmptyState title="File unavailable" detail={props.fileError} />
+        <EmptyState title="Datei nicht verfügbar" detail={props.fileError} />
       </View>
     );
   }
@@ -126,7 +126,7 @@ function FileContent(props: {
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-sheet px-6">
         <ActivityIndicator />
-        <Text className="text-center text-sm text-foreground-muted">Loading file...</Text>
+        <Text className="text-center text-sm text-foreground-muted">Lädt Datei…</Text>
       </View>
     );
   }
@@ -136,10 +136,10 @@ function FileContent(props: {
       {props.truncated ? (
         <View className="border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-900/60 dark:bg-amber-950/40">
           <Text className="text-2xs font-workjet-bold uppercase text-amber-700 dark:text-amber-300">
-            Partial file
+            Teildatei
           </Text>
           <Text className="text-xs leading-snug text-amber-800 dark:text-amber-200">
-            Preview limited to the first 1 MB of a truncated file.
+            Nur die ersten 1 MB
           </Text>
         </View>
       ) : null}
@@ -199,11 +199,8 @@ function useThreadFilesWorkspace(params: {
 function FilesUnavailable() {
   return (
     <View className="flex-1 items-center justify-center bg-sheet px-6">
-      <NativeStackScreenOptions options={{ title: "Files" }} />
-      <EmptyState
-        title="Files unavailable"
-        detail="This thread does not have an active workspace path."
-      />
+      <NativeStackScreenOptions options={{ title: "Dateien" }} />
+      <EmptyState title="Dateien nicht verfügbar" />
     </View>
   );
 }
@@ -340,7 +337,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
         />
       );
     }
-    return <LoadingScreen message="Opening files..." messagePlacement="above-spinner" />;
+    return <LoadingScreen message="Öffnet Dateien…" messagePlacement="above-spinner" />;
   }
 
   if (cwd === null) {
@@ -374,7 +371,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
             ? () => [
                 createNativeMailSearchToolbarItem({
                   onSearchTextChange: setSearchQuery,
-                  placeholder: "Search files",
+                  placeholder: "Dateien suchen",
                   searchTextChangeId: "files-search-text",
                 }),
               ]
@@ -385,7 +382,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
                 allowToolbarIntegration: true,
                 autoCapitalize: "none",
                 hideNavigationBar: false,
-                placeholder: "Search files",
+                placeholder: "Dateien suchen",
                 onChangeText: (event) => {
                   setSearchQuery(event.nativeEvent.text);
                 },
@@ -398,12 +395,12 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
       {isAndroid ? (
         <>
           <AndroidScreenHeader
-            title="Files"
+            title="Dateien"
             subtitle={projectName}
             onBack={handleReturnToThread}
             actions={[
               {
-                accessibilityLabel: "Refresh files",
+                accessibilityLabel: "Dateien aktualisieren",
                 icon: "arrow.clockwise",
                 onPress: entriesQuery.refresh,
               },
@@ -412,11 +409,11 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
           <View className="flex-row items-center gap-2 border-b border-border px-3 py-2">
             <SymbolView name="magnifyingglass" size={17} tintColor={iconColor} type="monochrome" />
             <TextInput
-              accessibilityLabel="Search files"
+              accessibilityLabel="Dateien suchen"
               autoCapitalize="none"
               autoCorrect={false}
               className="min-h-10 flex-1 rounded-xl py-2 text-sm"
-              placeholder="Search files"
+              placeholder="Dateien suchen"
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
@@ -427,7 +424,9 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
           {layout.usesSplitView ? (
             <NativeHeaderToolbar placement="left">
               <NativeHeaderToolbar.Button
-                accessibilityLabel={panes.primarySidebarVisible ? "Maximize files" : "Show threads"}
+                accessibilityLabel={
+                  panes.primarySidebarVisible ? "Dateien maximieren" : "Unterhaltungen zeigen"
+                }
                 icon={
                   panes.primarySidebarVisible
                     ? "arrow.up.left.and.arrow.down.right"
@@ -547,7 +546,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   useRegisterWorkspaceInspector(fileInspector.supported ? renderWorkspaceInspector : undefined);
 
   if (selectedThread === null || environmentId === null || threadId === null) {
-    return <LoadingScreen message="Opening file..." messagePlacement="above-spinner" />;
+    return <LoadingScreen message="Öffnet Datei…" messagePlacement="above-spinner" />;
   }
 
   if (cwd === null) {
@@ -557,8 +556,8 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   if (relativePath === null) {
     return (
       <View className="flex-1 items-center justify-center bg-sheet px-6">
-        <NativeStackScreenOptions options={{ title: "Files" }} />
-        <EmptyState title="File unavailable" detail="This file path is invalid." />
+        <NativeStackScreenOptions options={{ title: "Dateien" }} />
+        <EmptyState title="Ungültiger Pfad" />
       </View>
     );
   }
@@ -584,7 +583,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
         <WorkspaceSidebarToolbar>
           {fileInspector.supported ? (
             <NativeHeaderToolbar.Button
-              accessibilityLabel="Return to chat"
+              accessibilityLabel="Zurück zum Chat"
               icon="chevron.left"
               onPress={() => {
                 navigation.dispatch(
@@ -601,14 +600,14 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           {fileInspector.supported ? (
             <NativeHeaderToolbar.Button
               accessibilityLabel={
-                panes.auxiliaryPaneVisible ? "Hide file navigator" : "Show file navigator"
+                panes.auxiliaryPaneVisible ? "Dateien ausblenden" : "Dateien zeigen"
               }
               icon="sidebar.right"
               onPress={toggleAuxiliaryPane}
               separateBackground
             />
           ) : null}
-          <NativeHeaderToolbar.Menu accessibilityLabel="File actions" icon="ellipsis">
+          <NativeHeaderToolbar.Menu accessibilityLabel="Dateiaktionen" icon="ellipsis">
             {canPreview && !isImageFile ? (
               <NativeHeaderToolbar.Menu inline>
                 <NativeHeaderToolbar.MenuAction
@@ -616,14 +615,14 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
                   isOn={resolvedActiveMode === "preview"}
                   onPress={() => setModeOverride({ path: relativePath, mode: "preview" })}
                 >
-                  Preview
+                  Vorschau
                 </NativeHeaderToolbar.MenuAction>
                 <NativeHeaderToolbar.MenuAction
                   icon="doc.text"
                   isOn={resolvedActiveMode === "source"}
                   onPress={() => setModeOverride({ path: relativePath, mode: "source" })}
                 >
-                  Source
+                  Quelltext
                 </NativeHeaderToolbar.MenuAction>
               </NativeHeaderToolbar.Menu>
             ) : null}
@@ -631,7 +630,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
               icon="doc.on.doc"
               onPress={() => copyTextWithHaptic(relativePath)}
             >
-              Copy path
+              Pfad kopieren
             </NativeHeaderToolbar.MenuAction>
             {isBrowserFile && typeof assetPreviewUri === "string" ? (
               <NativeHeaderToolbar.MenuAction
@@ -640,7 +639,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
                   void tryOpenExternalUrl(assetPreviewUri, "file-preview");
                 }}
               >
-                Open in Safari
+                In Safari öffnen
               </NativeHeaderToolbar.MenuAction>
             ) : null}
             {resolvedActiveMode === "preview" && (isBrowserFile || isImageFile) ? (
@@ -650,7 +649,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
                   setPreviewRevision((current) => current + 1);
                 }}
               >
-                Refresh
+                Aktualisieren
               </NativeHeaderToolbar.MenuAction>
             ) : null}
           </NativeHeaderToolbar.Menu>

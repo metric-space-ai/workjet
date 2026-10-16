@@ -36,12 +36,7 @@ export function BusinessOsRecents(props: {
         >
           <SymbolView name="chevron.left" size={21} tintColor={foreground} type="monochrome" />
         </Pressable>
-        <View>
-          <Text className="text-2xl font-workjet-bold">Recents</Text>
-          <Text className="text-sm text-foreground-muted">
-            Nur sichere App-Metadaten, keine Vorschauen
-          </Text>
-        </View>
+        <Text className="text-2xl font-workjet-bold">Zuletzt verwendet</Text>
       </View>
 
       <ScrollView

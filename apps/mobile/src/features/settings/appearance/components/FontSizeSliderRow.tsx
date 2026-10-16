@@ -162,8 +162,8 @@ export function FontSizeSliderRow(props: {
           <View
             accessible
             accessibilityActions={[
-              { name: "increment", label: `Increase ${props.label}` },
-              { name: "decrement", label: `Decrease ${props.label}` },
+              { name: "increment", label: `${props.label} größer` },
+              { name: "decrement", label: `${props.label} kleiner` },
             ]}
             accessibilityLabel={props.label}
             accessibilityRole="adjustable"

@@ -4,7 +4,7 @@ import { AppText as Text } from "./AppText";
 
 export function EmptyState(props: {
   readonly title: string;
-  readonly detail: string;
+  readonly detail?: string;
   readonly actionLabel?: string;
   readonly onAction?: () => void;
   readonly variant?: "card" | "plain";
@@ -13,9 +13,11 @@ export function EmptyState(props: {
     return (
       <View className="items-center px-8 py-8">
         <Text className="text-center text-xl font-workjet-bold text-foreground">{props.title}</Text>
-        <Text className="mt-2 text-center font-sans text-base leading-normal text-foreground-muted">
-          {props.detail}
-        </Text>
+        {props.detail ? (
+          <Text className="mt-2 text-center font-sans text-sm text-foreground-muted">
+            {props.detail}
+          </Text>
+        ) : null}
         {props.actionLabel && props.onAction ? (
           <Pressable
             className="mt-5 rounded-full bg-primary px-5 py-3 active:opacity-70"
@@ -33,9 +35,9 @@ export function EmptyState(props: {
   return (
     <View className="rounded-[22px] border border-border bg-card p-5">
       <Text className="font-workjet-bold text-lg text-foreground">{props.title}</Text>
-      <Text className="mt-2 font-sans text-sm leading-relaxed text-foreground-muted">
-        {props.detail}
-      </Text>
+      {props.detail ? (
+        <Text className="mt-2 font-sans text-sm text-foreground-muted">{props.detail}</Text>
+      ) : null}
       {props.actionLabel && props.onAction ? (
         <Pressable
           className="mt-4 self-start rounded-full bg-primary px-4 py-2.5 active:opacity-70"

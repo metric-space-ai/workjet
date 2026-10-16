@@ -63,11 +63,11 @@ function managedControlUrl(path: string, operation: Operation): string {
 }
 
 function responseError(operation: Operation, status: number) {
-  if (status === 401) return clientError(operation, "Managed device authentication failed.");
-  if (status === 403) return clientError(operation, "Managed device control was denied.");
+  if (status === 401) return clientError(operation, "Anmeldung fehlgeschlagen.");
+  if (status === 403) return clientError(operation, "Gerätesteuerung verweigert.");
   if (status === 410) return clientError(operation, "Managed device control expired.");
-  if (status === 429) return clientError(operation, "Managed device control is rate limited.");
-  return clientError(operation, "Managed device control is unavailable.");
+  if (status === 429) return clientError(operation, "Zu viele Anfragen. Später erneut.");
+  return clientError(operation, "Gerätesteuerung nicht verfügbar.");
 }
 
 async function postJson(input: {
@@ -104,7 +104,7 @@ async function postJson(input: {
     signal: abortController.signal,
   })
     .catch(() => {
-      throw clientError(input.operation, "Managed device control is unavailable.");
+      throw clientError(input.operation, "Gerätesteuerung nicht verfügbar.");
     })
     .finally(() => clearTimeout(timeout));
   if (!response.ok) throw responseError(input.operation, response.status);
@@ -192,7 +192,7 @@ export const workjetManagedBackendControlClientLayer = Layer.effect(
         catch: (cause) =>
           cause instanceof WorkjetManagedBackendControlClientError
             ? cause
-            : clientError(operation, "Managed device control is unavailable."),
+            : clientError(operation, "Gerätesteuerung nicht verfügbar."),
       });
 
     return WorkjetManagedBackendControlClient.of({

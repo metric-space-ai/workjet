@@ -104,32 +104,34 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       {Platform.OS === "android" ? (
-        <AndroidSheetHeader title="Confirm action" onBack={() => navigation.goBack()} />
+        <AndroidSheetHeader title="Aktion bestätigen" onBack={() => navigation.goBack()} />
       ) : (
         <View className="min-h-4 pt-2" />
       )}
 
       <View className="items-center gap-1 px-5 pb-3 pt-4">
         <Text className="text-xs font-workjet-bold tracking-[1px] uppercase text-foreground-muted">
-          Confirm
+          Bestätigen
         </Text>
         <Text className="text-center text-3xl font-workjet-bold">
-          {copy?.title ?? "Run action on default branch?"}
+          {copy?.title ?? "Auf Standardzweig ausführen?"}
         </Text>
-        <Text className="text-center text-foreground-secondary text-sm font-medium leading-normal">
-          {copy?.description ?? "Choose how to continue."}
-        </Text>
+        {copy?.description ? (
+          <Text className="text-center text-foreground-secondary text-sm font-medium">
+            {copy.description}
+          </Text>
+        ) : null}
       </View>
 
       <View className="gap-3 px-5 pt-2" style={{ paddingBottom: Math.max(insets.bottom, 18) + 8 }}>
         <SheetActionButton
           icon="arrow.right.circle"
-          label={copy?.continueLabel ?? "Continue"}
+          label={copy?.continueLabel ?? "Weiter"}
           onPress={() => void continuePendingAction()}
         />
         <SheetActionButton
           icon="arrow.branch"
-          label="Feature branch & continue"
+          label="Feature-Zweig & weiter"
           tone="primary"
           onPress={() => void movePendingActionToFeatureBranch()}
         />

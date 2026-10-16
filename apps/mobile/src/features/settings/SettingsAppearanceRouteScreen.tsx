@@ -17,7 +17,7 @@ export function SettingsAppearanceRouteScreen() {
       {Platform.OS === "android" ? (
         <>
           <NativeStackScreenOptions options={{ headerShown: false }} />
-          <AndroidScreenHeader title="Appearance" onBack={() => navigation.goBack()} />
+          <AndroidScreenHeader title="Darstellung" onBack={() => navigation.goBack()} />
         </>
       ) : null}
       <ScrollView

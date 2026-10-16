@@ -39,34 +39,26 @@ export function SettingsClientStorageRouteScreen() {
     const label =
       savedConnectionsById[environment.environmentId]?.environmentLabel ??
       environment.environmentId;
-    Alert.alert(
-      `Clear cache for ${label}?`,
-      "This removes offline threads, server metadata, and cached branches for this environment. The saved connection and credentials stay intact.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear Cache",
-          style: "destructive",
-          onPress: () =>
-            clearCache({ type: "environment", environmentId: environment.environmentId }),
-        },
-      ],
-    );
+    Alert.alert(`Cache von ${label} leeren?`, "Verbindung und Zugangsdaten bleiben erhalten.", [
+      { text: "Abbrechen", style: "cancel" },
+      {
+        text: "Cache leeren",
+        style: "destructive",
+        onPress: () =>
+          clearCache({ type: "environment", environmentId: environment.environmentId }),
+      },
+    ]);
   };
 
   const confirmClearAll = () => {
-    Alert.alert(
-      "Clear all client caches?",
-      "This removes offline data for every environment. Connections, credentials, account data, and app preferences stay intact.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear All Caches",
-          style: "destructive",
-          onPress: () => clearCache({ type: "all" }),
-        },
-      ],
-    );
+    Alert.alert("Alle Caches leeren?", "Verbindungen und Zugangsdaten bleiben erhalten.", [
+      { text: "Abbrechen", style: "cancel" },
+      {
+        text: "Alle Caches leeren",
+        style: "destructive",
+        onPress: () => clearCache({ type: "all" }),
+      },
+    ]);
   };
 
   return (
@@ -78,7 +70,7 @@ export function SettingsClientStorageRouteScreen() {
         className="flex-1"
         contentContainerClassName="gap-6 px-5 pt-4 pb-[18px]"
       >
-        <SettingsSection title="Environment caches">
+        <SettingsSection title="Rechner-Caches">
           {AsyncResult.isFailure(summaryResult) ? (
             <View className="items-center gap-2 px-6 py-8">
               <SymbolView
@@ -88,17 +80,15 @@ export function SettingsClientStorageRouteScreen() {
                 type="monochrome"
                 weight="regular"
               />
-              <Text className="text-center text-base text-foreground">Storage unavailable</Text>
-              <Text className="text-center text-sm text-foreground-muted">
-                Restart the app and try again.
+              <Text className="text-center text-base text-foreground">
+                Speicher nicht verfügbar
               </Text>
+              <Text className="text-center text-sm text-foreground-muted">App neu starten.</Text>
             </View>
           ) : !summary ? (
             <View className="items-center gap-3 px-6 py-8">
               <ActivityIndicator />
-              <Text className="text-center text-sm text-foreground-muted">
-                Inspecting cached data…
-              </Text>
+              <Text className="text-center text-sm text-foreground-muted">Prüft Cache…</Text>
             </View>
           ) : environmentSummaries.length > 0 ? (
             environmentSummaries.map((environment, index) => (
@@ -123,16 +113,13 @@ export function SettingsClientStorageRouteScreen() {
                 type="monochrome"
                 weight="regular"
               />
-              <Text className="text-center text-base text-foreground">No cached data</Text>
-              <Text className="text-center text-sm text-foreground-muted">
-                Offline cache records will appear here after environments are used.
-              </Text>
+              <Text className="text-center text-base text-foreground">Kein Cache</Text>
             </View>
           )}
         </SettingsSection>
 
         <View className="gap-3">
-          <SettingsSection title="Actions">
+          <SettingsSection title="Aktionen">
             <Pressable
               accessibilityRole="button"
               disabled={isClearing || !summary || summary.recordCount === 0}
@@ -147,18 +134,14 @@ export function SettingsClientStorageRouteScreen() {
                 weight="regular"
               />
               <Text className="flex-1 text-lg tabular-nums text-danger-foreground">
-                {summary ? `Clear ${formatBytes(summary.payloadBytes)}` : "Clear caches"}
+                {summary ? `${formatBytes(summary.payloadBytes)} leeren` : "Caches leeren"}
               </Text>
               {isClearing ? <ActivityIndicator color={dangerForegroundColor} /> : null}
             </Pressable>
           </SettingsSection>
-          <Text className="px-2 text-sm leading-normal text-foreground-muted">
-            Clearing caches never removes environment connections, credentials, account data, or
-            appearance preferences.
-          </Text>
           {AsyncResult.isFailure(summaryResult) || AsyncResult.isFailure(clearResult) ? (
             <Text selectable className="px-2 text-sm text-danger-foreground">
-              Client storage is temporarily unavailable. Try again after restarting the app.
+              Speicher nicht verfügbar. App neu starten.
             </Text>
           ) : null}
         </View>
@@ -194,14 +177,14 @@ function CacheEnvironmentRow(props: {
         {props.environmentLabel}
       </Text>
       <Pressable
-        accessibilityLabel={`Clear cache for ${props.environmentLabel}`}
+        accessibilityLabel={`Cache von ${props.environmentLabel} leeren`}
         accessibilityRole="button"
         disabled={props.disabled}
         onPress={props.onClear}
         className="rounded-full px-3 py-2 disabled:opacity-40"
       >
         <Text className="font-workjet-medium tabular-nums text-danger-foreground" numberOfLines={1}>
-          Clear {formatBytes(props.environment.payloadBytes)}
+          Leeren {formatBytes(props.environment.payloadBytes)}
         </Text>
       </Pressable>
     </View>

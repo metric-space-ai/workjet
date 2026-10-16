@@ -141,11 +141,7 @@ export async function pairBusinessOsInstance(
     newReferences.push(await dependencies.secrets.write(invite.session.capabilityToken));
   } catch (cause) {
     await removeBestEffort(dependencies.secrets, newReferences);
-    throw new BusinessOsRegistryError(
-      "secret-write",
-      "Business OS credentials could not be stored securely.",
-      { cause },
-    );
+    throw new BusinessOsRegistryError("secret-write", "Zugang nicht gespeichert.", { cause });
   }
 
   const instance: BusinessOsInstance = Object.freeze({
@@ -173,11 +169,7 @@ export async function pairBusinessOsInstance(
     await dependencies.registry.save(instance);
   } catch (cause) {
     await removeBestEffort(dependencies.secrets, newReferences);
-    throw new BusinessOsRegistryError(
-      "registry-write",
-      "Business OS instance metadata could not be stored.",
-      { cause },
-    );
+    throw new BusinessOsRegistryError("registry-write", "Instanz nicht gespeichert.", { cause });
   }
 
   if (existing) {
@@ -195,20 +187,14 @@ export async function loadBusinessOsLaunchSecrets(
   secretStore: BusinessOsSecretStorePort,
 ): Promise<BusinessOsLaunchSecrets> {
   if (!instance.browserTokenRef) {
-    throw new BusinessOsRegistryError(
-      "missing-secret",
-      "This pairing uses retired shared signaling credentials. Pair this backend again.",
-    );
+    throw new BusinessOsRegistryError("missing-secret", "Veraltetes Pairing. Erneut verbinden.");
   }
   const [browserToken, capabilityToken] = await Promise.all([
     secretStore.read(instance.browserTokenRef),
     secretStore.read(instance.capabilitySecretRef),
   ]);
   if (!browserToken || !capabilityToken) {
-    throw new BusinessOsRegistryError(
-      "missing-secret",
-      "Business OS credentials are incomplete. Pair this backend again.",
-    );
+    throw new BusinessOsRegistryError("missing-secret", "Zugang unvollständig. Erneut verbinden.");
   }
   return { browserToken, capabilityToken };
 }
@@ -221,11 +207,7 @@ export async function forgetBusinessOsInstance(
     try {
       await dependencies.profiles.remove(instance.storageIdentity);
     } catch (cause) {
-      throw new BusinessOsRegistryError(
-        "profile-delete",
-        "The Business OS web profile could not be removed.",
-        { cause },
-      );
+      throw new BusinessOsRegistryError("profile-delete", "Profil nicht entfernt.", { cause });
     }
   }
   await dependencies.registry.remove(instance.id);

@@ -27,30 +27,26 @@ export function usePendingTaskListActions(): {
   );
 
   const confirmDeletePendingTask = useCallback((pendingTask: PendingNewTask) => {
-    Alert.alert(
-      "Delete pending task?",
-      `“${pendingTask.title}” has not been sent yet and will be removed from the outbox.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            // Release the edit lock only after removal succeeds, and only if
-            // it is held for THIS task — clearing it up front (or for another
-            // task) would let the drain deliver a mid-edit payload.
-            void removeThreadOutboxMessage(pendingTask.message)
-              .then(() => releaseEditingQueuedMessage(pendingTask.message.messageId))
-              .catch((error) => {
-                Alert.alert(
-                  "Could not delete pending task",
-                  error instanceof Error ? error.message : "The pending task could not be removed.",
-                );
-              });
-          },
+    Alert.alert("Aufgabe löschen?", `„${pendingTask.title}“ ist noch nicht gesendet.`, [
+      { text: "Abbrechen", style: "cancel" },
+      {
+        text: "Löschen",
+        style: "destructive",
+        onPress: () => {
+          // Release the edit lock only after removal succeeds, and only if
+          // it is held for THIS task — clearing it up front (or for another
+          // task) would let the drain deliver a mid-edit payload.
+          void removeThreadOutboxMessage(pendingTask.message)
+            .then(() => releaseEditingQueuedMessage(pendingTask.message.messageId))
+            .catch((error) => {
+              Alert.alert(
+                "Aufgabe nicht gelöscht",
+                error instanceof Error ? error.message : "Aufgabe nicht entfernt.",
+              );
+            });
         },
-      ],
-    );
+      },
+    ]);
   }, []);
 
   return { openPendingTask, confirmDeletePendingTask };

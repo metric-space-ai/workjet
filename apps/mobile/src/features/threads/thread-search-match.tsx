@@ -69,7 +69,7 @@ export function ThreadSearchMatchExcerpt(props: {
               : "text-emerald-600 dark:text-emerald-400",
         )}
       >
-        {isUser ? "You:" : "Luma:"}{" "}
+        {isUser ? "Du:" : "Worker:"}{" "}
       </Text>
       {parts.map((part) => (
         <Text

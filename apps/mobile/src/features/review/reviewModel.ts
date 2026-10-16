@@ -8,8 +8,8 @@ import * as Order from "effect/Order";
 export type ReviewSectionKind = "turn" | "working-tree" | "branch-range";
 
 const DIRTY_WORKTREE_SECTION_ID = "git:working-tree";
-const DIRTY_WORKTREE_TITLE = "Dirty worktree";
-const DIRTY_WORKTREE_SUBTITLE = "Tracked, staged, and untracked worktree changes";
+const DIRTY_WORKTREE_TITLE = "Ungesicherte Änderungen";
+const DIRTY_WORKTREE_SUBTITLE = "Alle Änderungen der Arbeitskopie";
 
 export interface ReviewSectionItem {
   readonly id: string;
@@ -162,7 +162,7 @@ function gitSubtitle(section: ReviewDiffPreviewSource): string | null {
   if (section.baseRef) {
     return `${section.baseRef} ... ${section.headRef ?? "HEAD"}`;
   }
-  return "Base branch unavailable";
+  return "Basiszweig nicht verfügbar";
 }
 
 function stripGitPrefix(pathValue: string | undefined): string | null {
@@ -295,8 +295,8 @@ export function getReviewFilePreviewState(file: ReviewRenderableFile): ReviewFil
     return {
       kind: "suppressed",
       reason: "non-text",
-      title: "Non-text file",
-      message: "Diff preview is not available for this file format.",
+      title: "Keine Textdatei",
+      message: "Keine Vorschau für dieses Format.",
       actionLabel: null,
     };
   }
@@ -307,9 +307,9 @@ export function getReviewFilePreviewState(file: ReviewRenderableFile): ReviewFil
     return {
       kind: "suppressed",
       reason: "large",
-      title: "Large diff",
-      message: "Large diffs are not rendered by default.",
-      actionLabel: "Load diff",
+      title: "Großer Diff",
+      message: "Großer Diff ausgeblendet.",
+      actionLabel: "Diff laden",
     };
   }
 
@@ -593,9 +593,7 @@ export function buildReviewParsedDiff(
     return { kind: "empty" };
   }
 
-  const notice = truncated
-    ? "Diff output hit the server size cap. Showing the available excerpt."
-    : null;
+  const notice = truncated ? "Diff gekürzt, Auszug." : null;
 
   try {
     const parsedPatches = runDiffParserSilently(() =>
@@ -611,9 +609,7 @@ export function buildReviewParsedDiff(
       return {
         kind: "raw",
         text,
-        reason: truncated
-          ? "Diff was truncated before it could be parsed completely. Showing the raw excerpt."
-          : "Unsupported diff format. Showing raw patch.",
+        reason: truncated ? "Diff gekürzt, Rohauszug." : "Format unbekannt, Rohtext.",
         notice,
       };
     }
@@ -630,9 +626,7 @@ export function buildReviewParsedDiff(
     return {
       kind: "raw",
       text,
-      reason: truncated
-        ? "Diff was truncated before it could be parsed completely. Showing the raw excerpt."
-        : "Failed to parse patch. Showing raw patch.",
+      reason: truncated ? "Diff gekürzt, Rohauszug." : "Patch nicht lesbar, Rohtext.",
       notice,
     };
   }

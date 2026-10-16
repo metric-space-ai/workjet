@@ -139,6 +139,6 @@ describe("resolveNewTaskBranchLabel", () => {
         startFromOrigin: true,
         workspaceMode: "worktree",
       }),
-    ).toBe("Choose branch");
+    ).toBe("Zweig wählen");
   });
 });

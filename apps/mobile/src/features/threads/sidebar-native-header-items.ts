@@ -45,7 +45,7 @@ export function createSidebarHeaderItems(input: {
     withNativeGlassHeaderItem({
       type: "menu",
       label: "",
-      accessibilityLabel: "Filter and sort threads",
+      accessibilityLabel: "Filtern und sortieren",
       icon: sfSymbolIcon(input.filterIcon),
       menu: {
         title: input.filterMenu.title,
@@ -55,7 +55,7 @@ export function createSidebarHeaderItems(input: {
     withNativeGlassHeaderItem({
       type: "button",
       label: "",
-      accessibilityLabel: "Open settings",
+      accessibilityLabel: "Einstellungen öffnen",
       icon: sfSymbolIcon("gearshape"),
       onPress: input.onOpenSettings,
     }),

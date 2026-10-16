@@ -115,7 +115,7 @@ export function WorkspaceConnectionTitle(props: {
   return (
     <StatusFadeIn grow={props.grow}>
       <Pressable
-        accessibilityHint="Opens environment settings"
+        accessibilityHint="Öffnet Rechner-Einstellungen"
         accessibilityLabel={status.label}
         accessibilityRole="button"
         disabled={props.onPress === undefined}
@@ -161,9 +161,9 @@ export function getConnectionAwareBrandHeaderOptions(opts: {
 }): NativeStackNavigationOptions {
   if (Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED) {
     return {
-      headerTitle: "Threads",
+      headerTitle: "Unterhaltungen",
       headerTitleStyle: { color: "transparent", fontSize: 18, fontWeight: "800" },
-      title: "Threads",
+      title: "Unterhaltungen",
       unstable_headerLeftItems: (): NativeStackHeaderItem[] => [
         {
           element: (
@@ -189,6 +189,6 @@ export function getConnectionAwareBrandHeaderOptions(opts: {
       />
     ),
     headerTitleStyle: opts.fallbackTitleStyle,
-    title: "Threads",
+    title: "Unterhaltungen",
   };
 }

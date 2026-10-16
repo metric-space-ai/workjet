@@ -48,7 +48,7 @@ export function SidebarHeaderActions(props: SidebarHeaderActionsProps) {
   return (
     <View className="flex-row items-center gap-0.5">
       <FallbackHeaderButton
-        accessibilityLabel="Open settings"
+        accessibilityLabel="Einstellungen öffnen"
         grouped={props.grouped}
         icon="gearshape"
         onPress={props.onOpenSettings}

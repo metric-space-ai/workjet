@@ -30,7 +30,7 @@ async function loadImagePicker() {
   try {
     return await import("expo-image-picker");
   } catch (error) {
-    throw new Error("Image attachments are unavailable right now.", { cause: error });
+    throw new Error("Bildanhänge gerade nicht möglich.", { cause: error });
   }
 }
 
@@ -38,7 +38,7 @@ async function loadClipboard() {
   try {
     return await import("expo-clipboard");
   } catch (error) {
-    throw new Error("Clipboard paste is unavailable right now.", { cause: error });
+    throw new Error("Einfügen gerade nicht möglich.", { cause: error });
   }
 }
 
@@ -50,7 +50,7 @@ export async function pickComposerImages(input: { readonly existingCount: number
   if (remainingSlots <= 0) {
     return {
       images: [],
-      error: `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`,
+      error: `Höchstens ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} Bilder je Nachricht.`,
     };
   }
 
@@ -60,8 +60,7 @@ export async function pickComposerImages(input: { readonly existingCount: number
   } catch (error) {
     return {
       images: [],
-      error:
-        error instanceof Error ? error.message : "Image attachments are unavailable right now.",
+      error: error instanceof Error ? error.message : "Bildanhänge gerade nicht möglich.",
     };
   }
 
@@ -86,19 +85,19 @@ export async function pickComposerImages(input: { readonly existingCount: number
   for (const asset of result.assets) {
     const mimeType = asset.mimeType?.toLowerCase();
     if (!mimeType?.startsWith("image/")) {
-      error = `Unsupported file type for '${asset.fileName ?? "image"}'.`;
+      error = `Dateityp nicht unterstützt: '${asset.fileName ?? "image"}'.`;
       continue;
     }
 
     const base64 = asset.base64;
     if (!base64) {
-      error = `Failed to read '${asset.fileName ?? "image"}'.`;
+      error = `Nicht lesbar: '${asset.fileName ?? "image"}'.`;
       continue;
     }
 
     const sizeBytes = asset.fileSize ?? estimateBase64ByteSize(base64);
     if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-      error = `'${asset.fileName ?? "image"}' exceeds the 10 MB attachment limit.`;
+      error = `'${asset.fileName ?? "image"}' ist größer als 10 MB.`;
       continue;
     }
 
@@ -131,7 +130,7 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
     return {
       images: [],
       text: null,
-      error: error instanceof Error ? error.message : "Clipboard paste is unavailable right now.",
+      error: error instanceof Error ? error.message : "Einfügen gerade nicht möglich.",
     };
   }
 
@@ -142,7 +141,7 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
       return {
         images: [],
         text: null,
-        error: `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`,
+        error: `Höchstens ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} Bilder je Nachricht.`,
       };
     }
     const image = await clipboard.getImageAsync({ format: "png" });
@@ -150,7 +149,7 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
       return {
         images: [],
         text: null,
-        error: "Clipboard image is unavailable.",
+        error: "Bild nicht verfügbar.",
       };
     }
 
@@ -160,7 +159,7 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
       return {
         images: [],
         text: null,
-        error: "Clipboard image exceeds the 10 MB attachment limit.",
+        error: "Bild größer als 10 MB.",
       };
     }
 
@@ -186,14 +185,14 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
     return {
       images: [],
       text: text.length > 0 ? text : null,
-      error: text.length > 0 ? null : "Clipboard is empty.",
+      error: text.length > 0 ? null : "Zwischenablage ist leer.",
     };
   }
 
   return {
     images: [],
     text: null,
-    error: "Clipboard does not contain pasteable text or image content.",
+    error: "Zwischenablage enthält keinen Text und kein Bild.",
   };
 }
 
@@ -262,7 +261,7 @@ export async function convertPastedImagesToAttachments(input: {
         previewUri: ownedTemporaryFile ? `data:${mimeType};base64,${base64}` : uri,
       });
     } catch (error) {
-      console.warn("Failed to read pasted image", uri, error);
+      console.warn("Eingefügtes Bild nicht lesbar", uri, error);
     } finally {
       if (ownedTemporaryFile) {
         try {

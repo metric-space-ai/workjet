@@ -94,17 +94,17 @@ function groupLabel(triggerKind: ComposerTriggerKind | null): string | null {
 
 function emptyText(triggerKind: ComposerTriggerKind | null, isLoading: boolean): string {
   if (isLoading) {
-    return triggerKind === "path" ? "Searching files…" : "Loading…";
+    return triggerKind === "path" ? "Sucht Dateien…" : "Lädt…";
   }
   switch (triggerKind) {
     case "path":
-      return "No matching files or folders.";
+      return "Keine Treffer.";
     case "skill":
-      return "No skills found.";
+      return "Keine Skills.";
     case "slash-command":
-      return "No matching commands.";
+      return "Keine Befehle.";
     default:
-      return "No results.";
+      return "Keine Treffer.";
   }
 }
 

@@ -92,7 +92,7 @@ function confirmPairing(input: ReturnType<typeof prepareBusinessOsPairing>): Pro
   const host = input.confirmation.signalingHosts.join(", ");
   return new Promise((resolve) => {
     Alert.alert(
-      "Business OS verbinden?",
+      "Instanz verbinden?",
       `${input.confirmation.displayName}\nSignaling: ${host}\nGültig bis: ${expiresAt}`,
       [
         { text: "Abbrechen", style: "cancel", onPress: () => resolve(false) },
@@ -161,7 +161,7 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
   const select = useCallback(
     async (id: string) => {
       if (!instances.some((instance) => instance.id === id)) {
-        throw new Error("Die ausgewählte Business OS ist auf diesem Gerät nicht eingerichtet.");
+        throw new Error("Instanz auf diesem Gerät nicht eingerichtet.");
       }
       setSelectedId(id);
       await nativeBusinessOsSelection.save(id);
@@ -262,7 +262,7 @@ export function BusinessOsProvider(props: { readonly children: ReactNode }) {
 
   useEffect(() => {
     const showPairingFailure = () => {
-      Alert.alert("Pairing fehlgeschlagen", "Der QR-Code oder Link ist ungültig oder abgelaufen.");
+      Alert.alert("Pairing fehlgeschlagen", "QR-Code ungültig oder abgelaufen.");
     };
     const handle = (url: string | null) => {
       if (!url || !isBusinessOsPairLink(url)) return;

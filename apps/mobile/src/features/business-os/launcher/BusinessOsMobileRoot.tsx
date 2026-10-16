@@ -64,11 +64,7 @@ function SetupRoute() {
     >
       <View className="w-full max-w-[920px] flex-1 self-center">
         <View className="pb-6 pt-10">
-          <Text className="text-4xl font-workjet-bold">Workjet einrichten</Text>
-          <Text className="mt-3 max-w-[620px] text-base leading-normal text-foreground-muted">
-            Scanne einen kurzlebigen Workjet QR-Code. Signaling-Server und Zugangsdaten werden
-            sicher übernommen; eine manuelle Eingabe ist nicht erforderlich.
-          </Text>
+          <Text className="text-2xl font-workjet-bold">Instanz verbinden</Text>
         </View>
         <ScrollView contentContainerClassName="pb-10" showsVerticalScrollIndicator={false}>
           <BusinessOsSettingsPanel />
@@ -254,10 +250,7 @@ function UnavailableShell(props: { readonly app: BusinessOsMobileAppDescriptor |
       <Text className="mt-6 text-center text-2xl font-workjet-bold">
         {props.app?.title ?? "Business OS"} ist noch nicht bereit
       </Text>
-      <Text className="mt-3 max-w-[520px] text-center text-base leading-normal text-foreground-muted">
-        Das Business-OS-Paket konnte nicht geöffnet werden. Aktualisiere Workjet und versuche es
-        erneut.
-      </Text>
+      <Text className="mt-3 text-center text-sm text-foreground-muted">Workjet aktualisieren.</Text>
     </View>
   );
 }
@@ -510,8 +503,7 @@ export function BusinessOsMobileRoot(props: {
                 accessibilityRole="alert"
                 className="px-6 py-4 text-center text-foreground-muted"
               >
-                Diese App konnte nicht geöffnet werden. Kehre zum Home Desk zurück und versuche es
-                erneut.
+                App nicht geöffnet. Zurück zum Home Desk.
               </Text>
             ) : null}
             {activatedShellPack ? (

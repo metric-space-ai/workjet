@@ -33,9 +33,9 @@ function ArchivedWorkerHistoryPage(props: {
   if (detail.error !== null) {
     return (
       <View className="gap-3 rounded-2xl bg-danger p-4">
-        <Text className="text-sm text-danger-foreground">Could not load worker history.</Text>
+        <Text className="text-sm text-danger-foreground">Worker-Verlauf nicht geladen.</Text>
         <Pressable accessibilityRole="button" onPress={detail.refresh}>
-          <Text className="font-workjet-bold text-danger-foreground">Try again</Text>
+          <Text className="font-workjet-bold text-danger-foreground">Erneut versuchen</Text>
         </Pressable>
       </View>
     );
@@ -49,14 +49,14 @@ function ArchivedWorkerHistoryPage(props: {
     ...thread.messages.map((message) => ({
       key: `message:${message.id}`,
       createdAt: message.createdAt,
-      label: message.role === "assistant" ? "Luma" : message.role,
+      label: message.role === "assistant" ? "Worker" : message.role,
       text: message.text,
       attachments: message.attachments?.map((attachment) => attachment.name) ?? [],
     })),
     ...thread.activities.map((activity) => ({
       key: `activity:${activity.id}`,
       createdAt: activity.createdAt,
-      label: "Activity",
+      label: "Aktivität",
       text: activity.summary,
       attachments: [],
     })),
@@ -75,12 +75,12 @@ function ArchivedWorkerHistoryPage(props: {
         />
       ) : page?.hasMore && page.beforeCursor !== null ? (
         <Pressable
-          accessibilityLabel="Load earlier worker history"
+          accessibilityLabel="Früheren Verlauf laden"
           accessibilityRole="button"
           className="self-center rounded-full bg-subtle px-4 py-2 active:opacity-60"
           onPress={() => setOlderCursor(page.beforeCursor)}
         >
-          <Text className="text-sm font-workjet-bold">Load earlier history</Text>
+          <Text className="text-sm font-workjet-bold">Früheren Verlauf laden</Text>
         </Pressable>
       ) : null}
       {entries.map((entry) => (
@@ -93,13 +93,13 @@ function ArchivedWorkerHistoryPage(props: {
           </Text>
           {entry.attachments.map((name) => (
             <Text key={name} className="text-xs text-foreground-muted">
-              Image: {name}
+              Bild: {name}
             </Text>
           ))}
         </View>
       ))}
       {entries.length === 0 && olderCursor === null ? (
-        <Text className="text-center text-sm text-foreground-muted">No retained messages.</Text>
+        <Text className="text-center text-sm text-foreground-muted">Keine Nachrichten</Text>
       ) : null}
     </View>
   );
@@ -118,7 +118,7 @@ export function ArchivedWorkerDetailRouteScreen(
     >
       <View className="gap-4">
         <Text className="text-xs font-workjet-bold uppercase text-foreground-muted">
-          Completed worker · Read only
+          Beendeter Worker · Nur lesen
         </Text>
         <ArchivedWorkerHistoryPage environmentId={environmentId} threadId={threadId} />
       </View>

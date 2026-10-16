@@ -10,7 +10,7 @@ export class ProjectThreadTaskRequiredError extends Schema.TaggedErrorClass<Proj
   },
 ) {
   override get message(): string {
-    return "Enter a task before starting the thread.";
+    return "Aufgabe eingeben.";
   }
 }
 
@@ -22,7 +22,7 @@ export class ProjectThreadBaseBranchRequiredError extends Schema.TaggedErrorClas
   },
 ) {
   override get message(): string {
-    return "Select a base branch before creating a worktree.";
+    return "Basiszweig wählen.";
   }
 }
 

@@ -147,7 +147,7 @@ function WorkjetModeRoot(props: { readonly dark: boolean }) {
     setMode("code");
     savePreferences({ workjetPairingOnboardingDismissed: true });
   }, [savePreferences, setMode]);
-  if (!isReady || !pairingStateReady) return <LoadingScreen message="Opening Workjet…" />;
+  if (!isReady || !pairingStateReady) return <LoadingScreen message="Öffnet Workjet…" />;
   return (
     <WorkjetProductChromeProvider>
       <WorkjetProductChrome />

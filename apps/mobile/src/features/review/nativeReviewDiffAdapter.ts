@@ -214,13 +214,11 @@ function noticeRowsForFile(file: ReviewRenderableFile): ReadonlyArray<NativeRevi
 
   const previewState = getReviewFilePreviewState(file);
   if (previewState.kind === "suppressed" && previewState.reason === "non-text") {
-    return [
-      createNoticeRow(file.id, "non-text", "Unsupported format. Diff contents are not available."),
-    ];
+    return [createNoticeRow(file.id, "non-text", "Format nicht unterstützt.")];
   }
 
   if (file.changeType === "rename-pure") {
-    return [createNoticeRow(file.id, "rename", "This file was renamed without modifications.")];
+    return [createNoticeRow(file.id, "rename", "Nur umbenannt.")];
   }
 
   return [];

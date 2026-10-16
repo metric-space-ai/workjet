@@ -31,7 +31,7 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={copied ? "Copied" : props.accessibilityLabel}
+      accessibilityLabel={copied ? "Kopiert" : props.accessibilityLabel}
       disabled={props.text.length === 0}
       hitSlop={8}
       onPress={() => {

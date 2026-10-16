@@ -99,13 +99,13 @@ export function useSelectedThreadGitActions() {
             target,
             {
               operation: "refresh_status",
-              label: "Refreshing source control status",
+              label: "Aktualisiert Git-Status",
             },
             execute,
           );
       if (AsyncResult.isFailure(result)) {
         const error = Cause.squash(result.cause);
-        const message = error instanceof Error ? error.message : "Failed to refresh git status.";
+        const message = error instanceof Error ? error.message : "Git-Status nicht aktualisiert.";
         setPendingConnectionError(message);
         return null;
       }
@@ -154,9 +154,13 @@ export function useSelectedThreadGitActions() {
           : await vcsActionManager.track(appAtomRegistry, target, { operation, label }, run);
       if (AsyncResult.isFailure(result)) {
         const error = Cause.squash(result.cause);
-        const message = error instanceof Error ? error.message : "Git action failed.";
+        const message = error instanceof Error ? error.message : "Git-Aktion fehlgeschlagen.";
         setPendingConnectionError(message);
-        showGitActionResult({ type: "error", title: "Git action failed", description: message });
+        showGitActionResult({
+          type: "error",
+          title: "Git-Aktion fehlgeschlagen",
+          description: message,
+        });
         return null;
       }
       return result.value;
@@ -197,7 +201,7 @@ export function useSelectedThreadGitActions() {
     async (branch: string) => {
       await runSelectedThreadGitMutation(
         "switch_ref",
-        "Switching branch",
+        "Wechselt Zweig",
         async ({ thread, cwd }) => {
           const result = await switchRef({
             environmentId: thread.environmentId,
@@ -230,7 +234,7 @@ export function useSelectedThreadGitActions() {
     async (branch: string) => {
       await runSelectedThreadGitMutation(
         "create_ref",
-        "Creating branch",
+        "Erstellt Zweig",
         async ({ thread, cwd }) => {
           const result = await createRef({
             environmentId: thread.environmentId,
@@ -263,12 +267,10 @@ export function useSelectedThreadGitActions() {
     async (nextWorktree: { readonly baseBranch: string; readonly newBranch: string }) => {
       await runSelectedThreadGitMutation(
         "create_worktree",
-        "Creating worktree",
+        "Erstellt Worktree",
         async ({ thread, project }) => {
           if (project.workspaceRoot === null)
-            return AsyncResult.failure(
-              Cause.fail(new Error("Attach a working copy before creating a worktree.")),
-            );
+            return AsyncResult.failure(Cause.fail(new Error("Zuerst eine Arbeitskopie zuordnen.")));
           const result = await createWorktree({
             environmentId: thread.environmentId,
             input: {
@@ -297,28 +299,24 @@ export function useSelectedThreadGitActions() {
   );
 
   const onPullSelectedThreadBranch = useCallback(async () => {
-    await runSelectedThreadGitMutation(
-      "pull",
-      "Pulling latest changes",
-      async ({ thread, cwd }) => {
-        const result = await pull({
-          environmentId: thread.environmentId,
-          input: { cwd },
-        });
-        if (AsyncResult.isFailure(result)) {
-          return result;
-        }
-        await refreshSelectedThreadGitStatus({ quiet: true, cwd });
-        showGitActionResult({
-          type: "success",
-          title:
-            result.value.status === "skipped_up_to_date"
-              ? "Already up to date"
-              : `Pulled latest on ${result.value.refName}`,
-        });
+    await runSelectedThreadGitMutation("pull", "Aktualisiert", async ({ thread, cwd }) => {
+      const result = await pull({
+        environmentId: thread.environmentId,
+        input: { cwd },
+      });
+      if (AsyncResult.isFailure(result)) {
         return result;
-      },
-    );
+      }
+      await refreshSelectedThreadGitStatus({ quiet: true, cwd });
+      showGitActionResult({
+        type: "success",
+        title:
+          result.value.status === "skipped_up_to_date"
+            ? "Bereits aktuell"
+            : `${result.value.refName} aktualisiert`,
+      });
+      return result;
+    });
   }, [pull, refreshSelectedThreadGitStatus, runSelectedThreadGitMutation]);
 
   const onRunSelectedThreadGitAction = useCallback(
@@ -326,7 +324,7 @@ export function useSelectedThreadGitActions() {
       const actionId = uuidv4();
       return await runSelectedThreadGitMutation(
         "run_change_request",
-        "Running source control action",
+        "Git-Aktion läuft",
         async ({ thread, cwd }) => {
           const result = await runStackedAction({
             actionId,

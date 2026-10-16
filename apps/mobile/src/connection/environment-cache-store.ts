@@ -67,7 +67,7 @@ type CacheOperation = ConnectionPersistenceError["operation"];
 function persistenceError(operation: CacheOperation, cause: unknown) {
   return new ConnectionPersistenceError({
     operation,
-    message: `Could not ${operation.replaceAll("-", " ")}: ${String(cause)}`,
+    message: `Cache-Fehler (${operation}): ${String(cause)}`,
   });
 }
 

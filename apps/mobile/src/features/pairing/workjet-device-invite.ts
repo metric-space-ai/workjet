@@ -96,7 +96,7 @@ function decodeBase64UrlJson(encoded: string): unknown {
     encoded.length % 4 === 1 ||
     !BASE64URL_PATTERN.test(encoded)
   ) {
-    fail("payload", "Workjet pairing payload is invalid.");
+    fail("payload", "QR-Code ungültig.");
   }
   try {
     const normalized = encoded.replace(/-/gu, "+").replace(/_/gu, "/");
@@ -105,7 +105,7 @@ function decodeBase64UrlJson(encoded: string): unknown {
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
   } catch {
-    return fail("payload", "Workjet pairing payload is invalid.");
+    return fail("payload", "QR-Code ungültig.");
   }
 }
 
@@ -133,7 +133,7 @@ export function encodeWorkjetDevicePairLink(
   const search = new URLSearchParams([["payload", payload]]);
   const link = `workjet://pair?${search.toString()}`;
   if (new TextEncoder().encode(link).byteLength > 2_300) {
-    throw new Error("Workjet device invite is too large for a reliable QR code.");
+    throw new Error("QR-Code zu groß.");
   }
   return link;
 }
@@ -143,7 +143,7 @@ function decodeWorkjetDevicePairPayload(raw: string): unknown {
   try {
     url = new URL(normalizeIncomingWorkjetUrl(raw));
   } catch {
-    return fail("url", "Workjet pairing link is invalid.");
+    return fail("url", "QR-Code ungültig.");
   }
   if (!["workjet:", "workjet-dev:", "workjet-preview:"].includes(url.protocol)) {
     fail("scheme", "Workjet pairing scheme is unsupported.");
@@ -159,7 +159,7 @@ function decodeWorkjetDevicePairPayload(raw: string): unknown {
     fail("query", "Workjet pairing link must contain only payload.");
   }
   const encoded = url.searchParams.get("payload");
-  if (!encoded) fail("payload", "Workjet pairing payload is missing.");
+  if (!encoded) fail("payload", "QR-Code ungültig.");
   return decodeBase64UrlJson(encoded);
 }
 
@@ -204,7 +204,7 @@ export function parseWorkjetDevicePairLink(
 
   const expiresAtMs = Date.parse(invite.environment.expires_at);
   if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now) {
-    fail("expired", "Workjet pairing link is expired.");
+    fail("expired", "QR-Code abgelaufen.");
   }
   const baseUrl = validateEnvironmentBaseUrl(invite.environment.base_url);
   const businessOs = validateBusinessOsInviteV1(invite.business_os, { now });
@@ -283,7 +283,7 @@ export function parseWorkjetDevicePairingLink(
   }
   const expiresAtMs = Date.parse(reference.expires_at);
   if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now) {
-    fail("expired", "Workjet pairing link is expired.");
+    fail("expired", "QR-Code abgelaufen.");
   }
   return Object.freeze({
     kind: "reference" as const,

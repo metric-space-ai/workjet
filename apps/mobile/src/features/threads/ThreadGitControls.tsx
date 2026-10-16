@@ -39,10 +39,10 @@ function compactMenuBranchLabel(branch: string): string {
 
 function compactMenuStatus(gitStatus: VcsStatusResult | null): string {
   if (!gitStatus) {
-    return "Checking status";
+    return "Prüft Status";
   }
   if (!gitStatus.isRepo) {
-    return "Not a repo";
+    return "Kein Repo";
   }
 
   const parts: string[] = [];
@@ -123,17 +123,15 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
       isRepo
         ? resolveQuickAction(gitStatus, busy, isDefaultRef, hasPrimaryRemote)
         : {
-            label: "Git unavailable",
+            label: "Git nicht verfügbar",
             disabled: true,
             kind: "show_hint" as const,
-            hint: "This workspace is not a git repository.",
+            hint: "Kein Git-Repository.",
           },
     [busy, gitStatus, hasPrimaryRemote, isDefaultRef, isRepo],
   );
 
-  const quickActionHint = quickAction.disabled
-    ? (quickAction.hint ?? "This action is unavailable.")
-    : null;
+  const quickActionHint = quickAction.disabled ? (quickAction.hint ?? "Nicht verfügbar.") : null;
 
   const quickActionIcon: QuickActionIcon = (() => {
     if (quickAction.kind === "run_pull") return "arrow.down.circle";
@@ -149,11 +147,11 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const openExistingPr = useCallback(async () => {
     const prUrl = gitStatus?.pr?.state === "open" ? gitStatus.pr.url : null;
     if (!prUrl) {
-      Alert.alert("No open PR", "This branch does not have an open pull request.");
+      Alert.alert("Kein offener PR", "Kein offener PR.");
       return;
     }
     if (!(await tryOpenExternalUrl(prUrl, "pull-request"))) {
-      Alert.alert("Unable to open PR", "The pull request could not be opened.");
+      Alert.alert("PR nicht geöffnet", "PR nicht geöffnet.");
     }
   }, [gitStatus]);
 
@@ -252,7 +250,7 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
   return useMemo(
     () => ({
       terminal: {
-        accessibilityLabel: "Open terminal",
+        accessibilityLabel: "Terminal öffnen",
         disabled: !props.canOpenTerminal,
         icon: { name: "terminal", type: "sfSymbol" },
         identifier: "thread-right-terminal",
@@ -269,10 +267,10 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
             ...(props.projectScripts.length === 0
               ? [
                   {
-                    description: "This project has no saved scripts yet",
+                    description: "Keine Skripte",
                     disabled: true,
                     icon: { name: "play", type: "sfSymbol" as const },
-                    label: "No project scripts",
+                    label: "Keine Projektskripte",
                     onPress: () => {},
                     type: "action" as const,
                   },
@@ -294,9 +292,9 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
               type: "action" as const,
             })),
             {
-              description: "Start another shell for this thread",
+              description: "Weitere Shell starten",
               icon: { name: "plus", type: "sfSymbol" },
-              label: "Open new terminal",
+              label: "Neues Terminal",
               onPress: props.onOpenNewTerminal,
               type: "action",
             },
@@ -308,18 +306,18 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
         variant: "plain",
       },
       files: {
-        accessibilityLabel: "Open files",
+        accessibilityLabel: "Dateien öffnen",
         disabled: !props.canOpenFiles,
         icon: { name: "folder", type: "sfSymbol" },
         identifier: "thread-right-files",
-        label: "Files",
+        label: "Dateien",
         onPress: model.openFiles,
         sharesBackground: true,
         type: "button",
         variant: "plain",
       },
       git: {
-        accessibilityLabel: "Git actions",
+        accessibilityLabel: "Git-Aktionen",
         icon: { name: "point.topleft.down.curvedto.point.bottomright.up", type: "sfSymbol" },
         identifier: "thread-right-git",
         label: "Git",
@@ -345,17 +343,17 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
               type: "action",
             },
             {
-              description: "Turn diffs and worktree changes",
+              description: "Diffs",
               disabled: !model.isRepo,
               icon: { name: "text.bubble", type: "sfSymbol" },
-              label: "Review changes",
+              label: "Änderungen prüfen",
               onPress: model.openReview,
               type: "action",
             },
             {
-              description: "Commit, files, branches",
+              description: "Commit, Dateien, Zweige",
               icon: { name: "ellipsis", type: "sfSymbol" },
-              label: "More",
+              label: "Mehr",
               onPress: model.openGitInspector,
               type: "action",
             },
@@ -448,9 +446,9 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
               icon="play"
               disabled
               onPress={() => {}}
-              subtitle="This project has no saved scripts yet"
+              subtitle="Keine Skripte"
             >
-              <NativeHeaderToolbar.Label>No project scripts</NativeHeaderToolbar.Label>
+              <NativeHeaderToolbar.Label>Keine Projektskripte</NativeHeaderToolbar.Label>
             </NativeHeaderToolbar.MenuAction>
           )}
           {props.terminalSessions.map((session) => (
@@ -474,15 +472,15 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
           <NativeHeaderToolbar.MenuAction
             icon="plus"
             onPress={props.onOpenNewTerminal}
-            subtitle="Start another shell for this thread"
+            subtitle="Weitere Shell starten"
           >
-            <NativeHeaderToolbar.Label>Open new terminal</NativeHeaderToolbar.Label>
+            <NativeHeaderToolbar.Label>Neues Terminal</NativeHeaderToolbar.Label>
           </NativeHeaderToolbar.MenuAction>
         </NativeHeaderToolbar.Menu>
       ) : null}
       {showActionControls && props.showDirectFileControl ? (
         <NativeHeaderToolbar.Button
-          accessibilityLabel="Open files"
+          accessibilityLabel="Dateien öffnen"
           disabled={!props.canOpenFiles}
           icon="folder"
           onPress={model.openFiles}
@@ -526,16 +524,16 @@ export function ThreadGitMenu(props: ThreadGitMenuProps) {
         icon="text.bubble"
         disabled={!model.isRepo}
         onPress={model.openReview}
-        subtitle="Turn diffs and worktree changes"
+        subtitle="Diffs"
       >
-        <NativeHeaderToolbar.Label>Review changes</NativeHeaderToolbar.Label>
+        <NativeHeaderToolbar.Label>Änderungen prüfen</NativeHeaderToolbar.Label>
       </NativeHeaderToolbar.MenuAction>
       <NativeHeaderToolbar.MenuAction
         icon="ellipsis"
         onPress={model.openGitInspector}
-        subtitle="Commit, files, branches"
+        subtitle="Commit, Dateien, Zweige"
       >
-        <NativeHeaderToolbar.Label>More</NativeHeaderToolbar.Label>
+        <NativeHeaderToolbar.Label>Mehr</NativeHeaderToolbar.Label>
       </NativeHeaderToolbar.MenuAction>
     </NativeHeaderToolbar.Menu>
   );

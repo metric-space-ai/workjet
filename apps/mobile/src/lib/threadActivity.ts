@@ -358,7 +358,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const title = extractToolTitle(payload);
   // task.updated included: terminal bypassed updates (Codex children's only
   // terminal signal) must carry task identity so they collapse per child
-  // instead of stacking anonymous "Task idle" rows.
+  // instead of stacking anonymous "Aufgabe ruht" rows.
   const isTaskActivity =
     activity.kind === "task.progress" ||
     activity.kind === "task.completed" ||
@@ -1231,10 +1231,10 @@ function deriveThreadFeedTurnFolds(
     const interrupted = latestTurnMatches && latestTurn.state === "interrupted";
     const label = interrupted
       ? duration
-        ? `You stopped after ${duration}`
-        : "You stopped this response"
+        ? `Gestoppt nach ${duration}`
+        : "Antwort gestoppt"
       : duration
-        ? `Worked for ${duration}`
+        ? `Gearbeitet: ${duration}`
         : "Worked";
 
     foldsByAnchorId.set(firstEntry.id, {

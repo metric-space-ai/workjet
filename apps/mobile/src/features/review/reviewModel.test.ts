@@ -66,7 +66,7 @@ describe("buildReviewSectionItems", () => {
       {
         id: "working-tree",
         kind: "working-tree",
-        title: "Dirty worktree",
+        title: "Ungesicherte Änderungen",
         baseRef: "HEAD",
         headRef: null,
         diff: "diff --git a/a.ts b/a.ts",
@@ -125,8 +125,8 @@ describe("buildReviewSectionItems", () => {
       expect.objectContaining({
         id: "git:working-tree",
         kind: "working-tree",
-        title: "Dirty worktree",
-        subtitle: "Tracked, staged, and untracked worktree changes",
+        title: "Ungesicherte Änderungen",
+        subtitle: "Alle Änderungen der Arbeitskopie",
         diff: null,
         isLoading: true,
       }),
@@ -223,7 +223,7 @@ describe("buildReviewParsedDiff", () => {
       return;
     }
 
-    expect(parsed.notice).toContain("server size cap");
+    expect(parsed.notice).toContain("gekürzt");
     expect(parsed.fileCount).toBe(1);
     expect(parsed.files[0]?.rows[0]).toMatchObject({
       kind: "hunk",
@@ -241,7 +241,7 @@ describe("buildReviewParsedDiff", () => {
     expect(preview).toMatchObject({
       kind: "suppressed",
       reason: "non-text",
-      title: "Non-text file",
+      title: "Keine Textdatei",
       actionLabel: null,
     });
   });
@@ -267,8 +267,8 @@ describe("buildReviewParsedDiff", () => {
     expect(preview).toMatchObject({
       kind: "suppressed",
       reason: "large",
-      title: "Large diff",
-      actionLabel: "Load diff",
+      title: "Großer Diff",
+      actionLabel: "Diff laden",
     });
   });
 
@@ -347,7 +347,7 @@ describe("buildReviewParsedDiff", () => {
       expect.objectContaining({
         kind: "file-suppressed",
         fileId: file.id,
-        actionLabel: "Load diff",
+        actionLabel: "Diff laden",
       }),
     ]);
   });

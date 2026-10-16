@@ -147,9 +147,7 @@ export async function buildIncomingShareDraft(input: {
     const uri = resolved?.contentUri ?? payload.value;
     if (attachments.length >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
       if (!warnedAttachmentLimit) {
-        warnings.push(
-          `Only the first ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} shared images were attached.`,
-        );
+        warnings.push(`Nur die ersten ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} Bilder angehängt.`);
         warnedAttachmentLimit = true;
       }
       await releaseOwnedFiles(input.fileReader, [uri, payload.value]);
@@ -158,7 +156,7 @@ export async function buildIncomingShareDraft(input: {
 
     const mimeType = (resolved?.contentMimeType ?? payload.mimeType ?? "image/png").toLowerCase();
     if (!uri || !mimeType.startsWith("image/")) {
-      warnings.push("One shared item was not a supported image.");
+      warnings.push("Ein Element war kein Bild.");
       await releaseOwnedFiles(input.fileReader, [uri, payload.value]);
       continue;
     }
@@ -168,7 +166,7 @@ export async function buildIncomingShareDraft(input: {
       resolved.contentSize > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
     ) {
       warnings.push(
-        `'${resolved.originalName ?? fallbackName(uri, index, mimeType)}' exceeds the 10 MB attachment limit.`,
+        `'${resolved.originalName ?? fallbackName(uri, index, mimeType)}' ist größer als 10 MB.`,
       );
       await releaseOwnedFiles(input.fileReader, [uri, payload.value]);
       continue;
@@ -179,7 +177,7 @@ export async function buildIncomingShareDraft(input: {
       const sizeBytes = resolved?.contentSize ?? estimateBase64ByteSize(base64);
       if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
         warnings.push(
-          `'${resolved?.originalName ?? fallbackName(uri, index, mimeType)}' exceeds the 10 MB attachment limit.`,
+          `'${resolved?.originalName ?? fallbackName(uri, index, mimeType)}' ist größer als 10 MB.`,
         );
         continue;
       }
@@ -196,7 +194,7 @@ export async function buildIncomingShareDraft(input: {
         previewUri: dataUrl,
       });
     } catch {
-      warnings.push(`Could not read '${fallbackName(uri, index, mimeType)}'.`);
+      warnings.push(`Nicht lesbar: '${fallbackName(uri, index, mimeType)}'.`);
     } finally {
       await releaseOwnedFiles(input.fileReader, [uri, payload.value]);
     }

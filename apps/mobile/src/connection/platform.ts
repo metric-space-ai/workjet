@@ -123,7 +123,7 @@ const capabilitiesLayer = Layer.effectContext(
           if (session === null) {
             return yield* new ConnectionBlockedError({
               reason: "authentication",
-              detail: "Sign in to Workjet Connect to connect this environment.",
+              detail: "Bei Workjet Connect anmelden.",
             });
           }
           const token = yield* session.readClerkToken().pipe(
@@ -138,7 +138,7 @@ const capabilitiesLayer = Layer.effectContext(
           if (token === null) {
             return yield* new ConnectionBlockedError({
               reason: "authentication",
-              detail: "The Workjet Connect session is unavailable.",
+              detail: "Connect-Sitzung nicht verfügbar.",
             });
           }
           return token;
@@ -157,7 +157,7 @@ const capabilitiesLayer = Layer.effectContext(
               (cause) =>
                 new ConnectionTransientError({
                   reason: "remote-unavailable",
-                  detail: `Could not load the mobile device identity: ${String(cause)}`,
+                  detail: `Geräte-Identität nicht geladen: ${String(cause)}`,
                 }),
             ),
             Effect.map(Option.some),
@@ -178,14 +178,14 @@ const capabilitiesLayer = Layer.effectContext(
             Effect.fail(
               new ConnectionBlockedError({
                 reason: "unsupported",
-                detail: "SSH environments are only available in the desktop app.",
+                detail: "SSH-Rechner nur in der Desktop-App.",
               }),
             ),
           prepare: () =>
             Effect.fail(
               new ConnectionBlockedError({
                 reason: "unsupported",
-                detail: "SSH environments are only available in the desktop app.",
+                detail: "SSH-Rechner nur in der Desktop-App.",
               }),
             ),
           disconnect: () => Effect.void,

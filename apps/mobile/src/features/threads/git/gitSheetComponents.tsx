@@ -119,7 +119,7 @@ export function statusSummary(
   }
 
   if (!gitStatus.isRepo) {
-    return "Not a git repository";
+    return "Kein Git-Repository";
   }
 
   const parts: string[] = [];

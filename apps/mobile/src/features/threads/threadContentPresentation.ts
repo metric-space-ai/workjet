@@ -21,14 +21,14 @@ export function projectThreadContentPresentation(input: {
   if (input.detailDeleted) {
     return {
       kind: "unavailable",
-      title: "Thread unavailable",
-      detail: "This thread was deleted or is no longer available.",
+      title: "Unterhaltung nicht verfügbar",
+      detail: "Unterhaltung gelöscht.",
     };
   }
   if (input.detailError !== null) {
     return {
       kind: "unavailable",
-      title: "Could not load conversation",
+      title: "Unterhaltung nicht geladen",
       detail: input.detailError,
     };
   }
@@ -43,7 +43,7 @@ export function projectThreadContentPresentation(input: {
   }
   return {
     kind: "unavailable",
-    title: "Messages not cached",
-    detail: "Reconnect this environment to load the conversation.",
+    title: "Nachrichten nicht gecacht",
+    detail: "Rechner neu verbinden.",
   };
 }

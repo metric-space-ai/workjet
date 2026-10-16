@@ -71,14 +71,14 @@ export function WorkspacePaneDivider(props: WorkspacePaneDividerProps) {
       <Pressable
         className="relative z-[100] -mx-[22px] w-11 self-stretch cursor-pointer justify-center"
         accessibilityActions={[
-          { name: "increment", label: "Make pane wider" },
-          { name: "decrement", label: "Make pane narrower" },
+          { name: "increment", label: "Bereich breiter" },
+          { name: "decrement", label: "Bereich schmaler" },
         ]}
         accessibilityLabel={props.accessibilityLabel}
         accessibilityRole="adjustable"
         accessibilityValue={{
           now: Math.round(props.currentWidth),
-          text: `${Math.round(props.currentWidth)} points wide`,
+          text: `${Math.round(props.currentWidth)} Punkte breit`,
         }}
         onAccessibilityAction={handleAccessibilityAction}
         onHoverIn={() => setHovered(true)}

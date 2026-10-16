@@ -1,4 +1,5 @@
 import {
+  Platform,
   Text as RNText,
   TextInput as RNTextInput,
   type TextInputProps as RNTextInputProps,
@@ -14,7 +15,16 @@ export type AppTextProps = RNTextProps & { readonly className?: string };
  * Uses Uniwind className — no manual style parsing.
  */
 export function AppText({ className, ...props }: AppTextProps) {
-  return <RNText className={cn("font-sans text-foreground", className)} {...props} />;
+  return (
+    <RNText
+      className={cn("font-sans text-foreground", className)}
+      // Samsung One UI (Galaxy Fold) measures bundled bold/medium fonts too
+      // narrow with the default "highQuality" strategy and clips the last word
+      // ("Cod", "Worki"). The simple strategy measures and draws identically.
+      textBreakStrategy={Platform.OS === "android" ? "simple" : undefined}
+      {...props}
+    />
+  );
 }
 
 export type AppTextInputProps = Omit<RNTextInputProps, "placeholderTextColor"> & {

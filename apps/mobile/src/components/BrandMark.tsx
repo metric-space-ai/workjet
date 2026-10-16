@@ -46,11 +46,6 @@ export function BrandMark(props: {
             </View>
           ) : null}
         </View>
-        {!compact ? (
-          <Text className="text-xs font-medium text-foreground-muted">
-            Mobile control surface for your live coding environments
-          </Text>
-        ) : null}
       </View>
     </View>
   );

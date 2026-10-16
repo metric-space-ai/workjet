@@ -62,9 +62,7 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface(props: Ter
   const inputRef = useRef<TextInput>(null);
   const appearanceScheme = useColorScheme() === "light" ? "light" : "dark";
   const theme = props.theme ?? getPierreTerminalTheme(appearanceScheme);
-  const statusLabel = props.isRunning
-    ? "Native terminal unavailable. Using text fallback."
-    : "Open terminal to start a shell.";
+  const statusLabel = props.isRunning ? "Textmodus aktiv." : "Terminal öffnen.";
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -133,7 +131,7 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface(props: Ter
           autoCorrect={false}
           blurOnSubmit={false}
           editable={props.isRunning}
-          placeholder="type and press return"
+          placeholder="tippen und Enter"
           placeholderTextColor={theme.mutedForeground}
           returnKeyType="send"
           className="text-sm"

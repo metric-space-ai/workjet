@@ -30,21 +30,18 @@ type NewTaskRouteParams = {
 
 function deriveProjectEmptyState(catalogState: WorkspaceState): {
   readonly title: string;
-  readonly detail: string;
   readonly loading: boolean;
 } {
   if (catalogState.isLoadingConnections) {
     return {
-      title: "Loading environments",
-      detail: "Checking saved environments on this device.",
+      title: "Lädt Rechner",
       loading: true,
     };
   }
 
   if (!catalogState.hasConnections) {
     return {
-      title: "No environments connected",
-      detail: "Add an environment before creating a task.",
+      title: "Kein Rechner verbunden",
       loading: false,
     };
   }
@@ -56,8 +53,7 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
     !catalogState.hasLoadedShellSnapshot
   ) {
     return {
-      title: "Umgebung nicht erreichbar",
-      detail: "Adresse prüfen oder Umgebung starten.",
+      title: "Rechner nicht erreichbar",
       loading: false,
     };
   }
@@ -68,15 +64,13 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
     catalogState.connectionError === null
   ) {
     return {
-      title: "Verbindet mit Umgebung",
-      detail: "Lädt Projekte.",
+      title: "Verbindet mit Rechner",
       loading: true,
     };
   }
 
   return {
-    title: "No projects found",
-    detail: "The connected environment did not report any projects.",
+    title: "Keine Projekte",
     loading: false,
   };
 }
@@ -98,12 +92,12 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const incomingShare = routeShareId ? getShare(routeShareId) : null;
   const incomingShareSubtitle = incomingShare
     ? incomingShare.attachments.length === 0
-      ? "Choose a project for what you shared"
+      ? "Projekt wählen"
       : incomingShare.attachments.length === 1
-        ? "Choose a project for the image you shared"
-        : `Choose a project for the ${incomingShare.attachments.length} images you shared`
+        ? "Projekt wählen"
+        : `Projekt wählen (${incomingShare.attachments.length} Bilder)`
     : null;
-  const screenTitle = incomingShare ? "Start a task" : "Choose project";
+  const screenTitle = incomingShare ? "Neue Aufgabe" : "Projekt wählen";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
   const resumedDestinationKeyRef = useRef<string | null>(null);
   const reservedDestinationProject = incomingShare?.destination
@@ -120,10 +114,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         await releaseShareReservation(incomingShare.id, incomingShare.destination);
       } catch (error) {
         Alert.alert(
-          "Could not change project",
-          error instanceof Error
-            ? error.message
-            : "The shared content reservation could not be updated.",
+          "Projekt nicht geändert",
+          error instanceof Error ? error.message : "Geteilter Inhalt nicht aktualisiert.",
         );
         return;
       }
@@ -190,7 +182,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               catalogState.hasReadyEnvironment
                 ? [
                     {
-                      accessibilityLabel: "Add project",
+                      accessibilityLabel: "Projekt hinzufügen",
                       icon: "plus",
                       onPress: () => navigation.dispatch(StackActions.push("AddProject")),
                     },
@@ -210,7 +202,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
           <NativeHeaderToolbar placement="right">
             {layout.usesSplitView ? (
               <NativeHeaderToolbar.Button
-                accessibilityLabel="Close new task"
+                accessibilityLabel="Neue Aufgabe schließen"
                 icon="xmark"
                 onPress={() => navigation.goBack()}
                 separateBackground
@@ -244,9 +236,6 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             <Text className="text-center text-lg font-workjet-bold text-foreground">
               {projectEmptyState.title}
             </Text>
-            <Text className="text-center text-sm leading-normal text-foreground-muted">
-              {projectEmptyState.detail}
-            </Text>
             {!catalogState.hasReadyEnvironment ? (
               <Pressable
                 className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
@@ -258,7 +247,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 }
               >
                 <Text className="text-sm font-workjet-bold text-primary-foreground">
-                  Business OS einrichten
+                  Instanz verbinden
                 </Text>
               </Pressable>
             ) : (
@@ -267,7 +256,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
               >
                 <Text className="text-sm font-workjet-bold text-primary-foreground">
-                  Add new project
+                  Neues Projekt
                 </Text>
               </Pressable>
             )}
@@ -306,7 +295,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                         numberOfLines={1}
                       >
                         {hasMultipleProjects
-                          ? `${scope.projects.length} workspaces`
+                          ? `${scope.projects.length} Arbeitsbereiche`
                           : selectionTarget.workspaceRoot}
                       </Text>
                     </View>

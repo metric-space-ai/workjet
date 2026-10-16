@@ -74,7 +74,7 @@ export function SettingsRouteScreen() {
         <>
           {/* Android renders its own in-screen header instead of the native bar. */}
           <NativeStackScreenOptions options={{ headerShown: false }} />
-          <AndroidScreenHeader title="Settings" onBack={() => navigation.goBack()} />
+          <AndroidScreenHeader title="Einstellungen" onBack={() => navigation.goBack()} />
         </>
       ) : (
         <NativeStackScreenOptions
@@ -83,7 +83,7 @@ export function SettingsRouteScreen() {
               Platform.OS === "ios"
                 ? () => [
                     withNativeGlassHeaderItem({
-                      accessibilityLabel: "Close settings",
+                      accessibilityLabel: "Einstellungen schließen",
                       icon: { name: "xmark", type: "sfSymbol" } as const,
                       identifier: "settings-close",
                       label: "",
@@ -118,8 +118,8 @@ function LocalSettingsRouteScreen() {
 
         <GeneralSettingsSection />
 
-        <SettingsSection title="Appearance">
-          <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />
+        <SettingsSection title="Darstellung">
+          <SettingsRow icon="paintbrush" label="Darstellung" target="SettingsAppearance" />
         </SettingsSection>
 
         <LegacySettingsSection />
@@ -152,8 +152,8 @@ function ConfiguredSettingsRouteScreen() {
   const environmentCount = connections.length;
   const accountLabel = useMemo(() => {
     if (!isLoaded) return "Checking";
-    if (!isSignedIn) return "Sign in";
-    return user?.primaryEmailAddress?.emailAddress ?? "Signed in";
+    if (!isSignedIn) return "Anmelden";
+    return user?.primaryEmailAddress?.emailAddress ?? "Angemeldet";
   }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress]);
 
   const refreshNotifications = useCallback(async () => {
@@ -211,8 +211,8 @@ function ConfiguredSettingsRouteScreen() {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         Alert.alert(
-          "Notifications unavailable",
-          error instanceof Error ? error.message : "Could not request notification permission.",
+          "Mitteilungen nicht verfügbar",
+          error instanceof Error ? error.message : "Mitteilungen nicht angefragt.",
         );
       }
       return;
@@ -220,53 +220,36 @@ function ConfiguredSettingsRouteScreen() {
     if (result.value.type === "granted") {
       setNotificationStatus("enabled");
       if (getAgentAwarenessRegistrationStatus() === "registered") {
-        Alert.alert(
-          "Notifications enabled",
-          "Device notifications and Workjet Connect updates are enabled.",
-        );
+        Alert.alert("Mitteilungen an", "Mitteilungen aktiv.");
       } else {
-        Alert.alert(
-          "Notifications enabled",
-          "Device notifications are enabled. Workjet Connect updates will also appear after this device is linked.",
-        );
+        Alert.alert("Mitteilungen an", "Mitteilungen aktiv.");
       }
       return;
     }
     if (result.value.type === "unsupported") {
       setNotificationStatus("unsupported");
-      Alert.alert(
-        "Notifications unavailable",
-        "Device notifications are unavailable on this platform.",
-      );
+      Alert.alert("Mitteilungen nicht verfügbar", "Mitteilungen nicht verfügbar.");
       return;
     }
     setNotificationStatus("disabled");
     if (result.value.canAskAgain) {
-      Alert.alert("Notifications disabled", "Notifications were not enabled.");
+      Alert.alert("Mitteilungen aus", "Mitteilungen nicht aktiviert.");
       return;
     }
-    Alert.alert(
-      "Notifications disabled",
-      "Notifications were denied for this app. Open Settings to enable them.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Open Settings", onPress: () => void Linking.openSettings() },
-      ],
-    );
+    Alert.alert("Mitteilungen aus", "Mitteilungen abgelehnt. In Einstellungen erlauben.", [
+      { text: "Abbrechen", style: "cancel" },
+      { text: "Einstellungen öffnen", onPress: () => void Linking.openSettings() },
+    ]);
   }, []);
 
   const promptSignIn = useCallback(() => {
-    Alert.alert(
-      "Sign in to Workjet Connect",
-      "Live Activity updates require Workjet Connect so relay can deliver updates to this device.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Continue",
-          onPress: () => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" }),
-        },
-      ],
-    );
+    Alert.alert("Bei Workjet Connect anmelden", "Braucht Workjet Connect.", [
+      { text: "Abbrechen", style: "cancel" },
+      {
+        text: "Weiter",
+        onPress: () => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" }),
+      },
+    ]);
   }, [navigation]);
 
   const linkEnvironments = useCallback(async () => {
@@ -281,8 +264,8 @@ function ConfiguredSettingsRouteScreen() {
       setLiveActivityStatus("disabled");
       const error = squashAtomCommandFailure(tokenResult);
       Alert.alert(
-        "Live Activities unavailable",
-        error instanceof Error ? error.message : "Could not enable Live Activity updates.",
+        "Live-Aktivitäten nicht verfügbar",
+        error instanceof Error ? error.message : "Live-Aktivitäten nicht aktiviert.",
       );
       return;
     }
@@ -307,8 +290,8 @@ function ConfiguredSettingsRouteScreen() {
       if (!isAtomCommandInterrupted(updateResult)) {
         const error = squashAtomCommandFailure(updateResult);
         Alert.alert(
-          "Live Activities unavailable",
-          error instanceof Error ? error.message : "Could not enable Live Activity updates.",
+          "Live-Aktivitäten nicht verfügbar",
+          error instanceof Error ? error.message : "Live-Aktivitäten nicht aktiviert.",
         );
       }
       return;
@@ -322,15 +305,13 @@ function ConfiguredSettingsRouteScreen() {
     // Activities are live until the device is actually registered.
     if (getAgentAwarenessRegistrationStatus() === "registered") {
       Alert.alert(
-        "Live Activities enabled",
-        environmentCount > 0
-          ? `${environmentCount} environment${environmentCount === 1 ? "" : "s"} linked for Live Activity updates.`
-          : "Live Activity updates are enabled. Add an environment to start receiving updates.",
+        "Live-Aktivitäten aktiv",
+        environmentCount > 0 ? "Live-Aktivitäten aktiv." : "Live-Aktivitäten aktiv.",
       );
     } else {
       Alert.alert(
-        "Couldn't finish enabling Live Activities",
-        "This device could not be registered with Workjet Connect, so Live Activities won't appear yet. They'll start once registration succeeds.",
+        "Live-Aktivitäten nicht aktiviert",
+        "Gerät nicht bei Workjet Connect registriert.",
       );
     }
   }, [
@@ -350,14 +331,10 @@ function ConfiguredSettingsRouteScreen() {
         return;
       }
 
-      Alert.alert(
-        "Disable notifications",
-        "Notification permission is controlled by iOS. Open Settings to disable notifications for Workjet.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: () => void Linking.openSettings() },
-        ],
-      );
+      Alert.alert("Mitteilungen ausschalten", "In den iOS-Einstellungen ausschalten.", [
+        { text: "Abbrechen", style: "cancel" },
+        { text: "Einstellungen öffnen", onPress: () => void Linking.openSettings() },
+      ]);
     },
     [requestNotifications],
   );
@@ -441,24 +418,20 @@ function ConfiguredSettingsRouteScreen() {
         <WorkjetModeSettingsSection />
 
         <View className="gap-3">
-          <SettingsSection title="Account">
+          <SettingsSection title="Konto">
             <SettingsRow
               icon="person.crop.circle"
-              label="Workjet Account"
+              label="Workjet-Konto"
               value={accountLabel}
               onPress={openAccount}
             />
           </SettingsSection>
-          <Text className="px-2 text-sm text-foreground-muted">
-            Code funktioniert auch ohne Business OS. Verbundene Instanzen gelten gemeinsam für Code
-            und Business OS.
-          </Text>
         </View>
 
-        <SettingsSection title="Configuration">
+        <SettingsSection title="Konfiguration">
           <SettingsSwitchRow
             icon="bell.badge"
-            label="Device Notifications"
+            label="Mitteilungen"
             disabled={notificationStatus === "checking" || notificationStatus === "unsupported"}
             value={notificationStatus === "enabled"}
             onValueChange={handleDeviceNotificationsChange}
@@ -471,7 +444,7 @@ function ConfiguredSettingsRouteScreen() {
               liveActivityStatus === "linking"
             }
             icon="bolt.circle"
-            label="Live Activity Updates"
+            label="Live-Aktivitäten"
             // Same gate: a saved preference is meaningless until the device
             // registration the relay needs to push updates has succeeded.
             value={
@@ -485,8 +458,8 @@ function ConfiguredSettingsRouteScreen() {
 
         <GeneralSettingsSection />
 
-        <SettingsSection title="Appearance">
-          <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />
+        <SettingsSection title="Darstellung">
+          <SettingsRow icon="paintbrush" label="Darstellung" target="SettingsAppearance" />
         </SettingsSection>
 
         <LegacySettingsSection />
@@ -522,15 +495,15 @@ function GeneralSettingsSection() {
     preferencesResult.value.autoSettleOnMerge !== false;
 
   return (
-    <SettingsSection title="General">
-      <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
+    <SettingsSection title="Allgemein">
+      <SettingsRow icon="folder" label="Projektgruppierung" target="SettingsProjectGrouping" />
       <SettingsSwitchRow
         icon="arrow.triangle.branch"
-        label="Auto-settle merged threads"
+        label="Gemergte automatisch erledigen"
         value={autoSettleOnMerge}
         onValueChange={(value) => savePreferences({ autoSettleOnMerge: value })}
       />
-      <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
+      <SettingsRow icon="chart.bar.xaxis" label="Nutzung" target="SettingsUsage" />
     </SettingsSection>
   );
 }
@@ -549,24 +522,20 @@ function LegacySettingsSection() {
 
   return (
     <View className="gap-3">
-      <SettingsSection title="Legacy">
+      <SettingsSection title="Alt">
         <SettingsSwitchRow
           icon="sidebar.left"
-          label="Legacy Thread List"
+          label="Alte Liste"
           value={!threadListV2Enabled}
           onValueChange={(value) => savePreferences({ legacyThreadListEnabled: value })}
         />
         <SettingsSwitchRow
           icon="hammer"
-          label="Plan Mode"
+          label="Planmodus"
           value={planModeEnabled}
           onValueChange={(value) => savePreferences({ planModeEnabled: value })}
         />
       </SettingsSection>
-      <Text className="px-2 text-sm text-foreground-muted">
-        Opt into retired interfaces kept for compatibility. Plan Mode restores the Build/Plan
-        control; otherwise every task runs in Build mode.
-      </Text>
     </View>
   );
 }
@@ -587,7 +556,7 @@ function AppSettingsSection() {
   const busy =
     updateState === "checking" || updateState === "downloading" || updateState === "restarting";
 
-  // "Up to date" is a transient acknowledgement, not a state worth persisting —
+  // "Aktuell" is a transient acknowledgement, not a state worth persisting —
   // return the version row to its normal, deliberately quiet state.
   useEffect(() => {
     if (updateState !== "current") return;
@@ -624,7 +593,7 @@ function AppSettingsSection() {
         : updateState === "restarting"
           ? "Restarting…"
           : updateState === "current"
-            ? "Up to date"
+            ? "Aktuell"
             : null;
 
   const versionRow = (
@@ -648,8 +617,8 @@ function AppSettingsSection() {
 
   return (
     <SettingsSection title="App">
-      <SettingsRow icon="internaldrive" label="Client Storage" target="SettingsClientStorage" />
-      <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
+      <SettingsRow icon="internaldrive" label="Gerätespeicher" target="SettingsClientStorage" />
+      <SettingsRow icon="doc.text" label="Rechtliches" fullScreenTarget="SettingsLegal" />
       {updateCheckAvailable ? (
         <Pressable
           accessibilityLabel={`Version ${versionLabel}`}
@@ -672,8 +641,8 @@ function capitalize(value: string): string {
 
 function ArchivedThreadsSettingsSection() {
   return (
-    <SettingsSection title="Threads">
-      <SettingsRow icon="archivebox" label="Archived Threads" target="SettingsArchive" />
+    <SettingsSection title="Unterhaltungen">
+      <SettingsRow icon="archivebox" label="Archivierte Unterhaltungen" target="SettingsArchive" />
     </SettingsSection>
   );
 }

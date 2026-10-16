@@ -95,10 +95,7 @@ export function ConnectionsNewRouteScreen({
       return;
     }
 
-    Alert.alert(
-      "Camera access needed",
-      "Allow camera access to scan an environment pairing QR code.",
-    );
+    Alert.alert("Kamerazugriff nötig", "Kamerazugriff erlauben, um den QR-Code zu scannen.");
   }, [cameraPermission?.granted, requestCameraPermission]);
 
   const closeScanner = useCallback(() => {
@@ -123,8 +120,8 @@ export function ConnectionsNewRouteScreen({
         setShowScanner(false);
       } catch (error) {
         Alert.alert(
-          "Invalid QR code",
-          error instanceof Error ? error.message : "Scanned QR code was not recognized.",
+          "Ungültiger QR-Code",
+          error instanceof Error ? error.message : "QR-Code nicht erkannt.",
         );
       } finally {
         setTimeout(() => {
@@ -174,16 +171,16 @@ export function ConnectionsNewRouteScreen({
         options={{
           // Android renders its own in-screen header below instead of the native bar.
           ...(Platform.OS === "android" ? { headerShown: false } : null),
-          title: showScanner ? "Scan QR Code" : "Add computer",
+          title: showScanner ? "QR-Code scannen" : "Rechner hinzufügen",
         }}
       />
       {Platform.OS === "android" ? (
         <AndroidScreenHeader
-          title={showScanner ? "Scan QR Code" : "Add computer"}
+          title={showScanner ? "QR-Code scannen" : "Rechner hinzufügen"}
           onBack={() => navigation.goBack()}
           actions={[
             {
-              accessibilityLabel: showScanner ? "Close scanner" : "Scan QR code",
+              accessibilityLabel: showScanner ? "Scanner schließen" : "QR-Code scannen",
               icon: showScanner ? "xmark" : "camera",
               onPress: () => {
                 if (showScanner) {
@@ -235,12 +232,12 @@ export function ConnectionsNewRouteScreen({
             ) : (
               <View className="items-center gap-3 rounded-[24px] border-continuous bg-card px-5 py-8">
                 <Text className="text-center text-sm leading-normal text-foreground-muted">
-                  Camera permission is required to scan a QR code.
+                  Kamerazugriff fehlt.
                 </Text>
                 <ConnectionSheetButton
                   compact
                   icon="camera"
-                  label="Allow camera"
+                  label="Kamera erlauben"
                   tone="secondary"
                   onPress={() => {
                     void openScanner();
@@ -267,7 +264,7 @@ export function ConnectionsNewRouteScreen({
 
               <View collapsable={false} className="gap-1.5">
                 <Text className="text-2xs font-workjet-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  Pairing code
+                  Pairing-Code
                 </Text>
                 <TextInput
                   autoCapitalize="none"
@@ -283,7 +280,7 @@ export function ConnectionsNewRouteScreen({
 
               <ConnectionSheetButton
                 icon="plus"
-                label={isSubmitting ? "Pairing..." : "Add computer"}
+                label={isSubmitting ? "Verbindet…" : "Rechner hinzufügen"}
                 disabled={connectDisabled}
                 tone="primary"
                 onPress={() => {

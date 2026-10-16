@@ -25,7 +25,7 @@ import {
 
 const singleSelectQuestion = {
   id: "runtime",
-  header: "Runtime",
+  header: "Laufzeit",
   question: "Which runtime should be used?",
   options: [
     { label: "Go", description: "One binary" },
@@ -307,7 +307,7 @@ describe("buildThreadFeed", () => {
               item: {
                 server: "repository",
                 tool: "search",
-                arguments: { query: "work log" },
+                arguments: { query: "Arbeitsprotokoll" },
               },
             },
           },
@@ -322,7 +322,7 @@ describe("buildThreadFeed", () => {
     }
 
     expect(group.activities[0]?.icon).toBe("wrench");
-    expect(group.activities[0]?.getFullDetail()).toContain('"query": "work log"');
+    expect(group.activities[0]?.getFullDetail()).toContain('"query": "Arbeitsprotokoll"');
     expect(group.activities[0]?.getFullDetail()).toContain("repository.search");
   });
 
@@ -429,7 +429,7 @@ describe("buildThreadFeed", () => {
     expect(collapsed.map((entry) => entry.id)).toEqual(["turn-fold:turn-1", "assistant-final"]);
     expect(collapsed[0]).toMatchObject({
       type: "turn-fold",
-      label: "Worked for 17s",
+      label: "Gearbeitet: 17s",
       expanded: false,
     });
 
@@ -516,7 +516,7 @@ describe("buildThreadFeed", () => {
     const collapsed = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
     expect(collapsed.find((entry) => entry.type === "turn-fold")).toMatchObject({
       turnId: firstTurnId,
-      label: "Worked for 12s",
+      label: "Gearbeitet: 12s",
     });
   });
 

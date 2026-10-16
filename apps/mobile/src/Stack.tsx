@@ -163,56 +163,56 @@ const SettingsContentStack = createNativeStackNavigator({
       screen: SettingsRouteScreen,
       linking: "",
       options: {
-        title: "Settings",
+        title: "Einstellungen",
       },
     }),
     SettingsEnvironments: createNativeStackScreen({
       screen: SettingsEnvironmentsRouteScreen,
       linking: "environments",
       options: {
-        title: "Computers",
+        title: "Rechner",
       },
     }),
     SettingsEnvironmentNew: createNativeStackScreen({
       screen: ConnectionsNewRouteScreen,
       linking: "environment-new",
       options: {
-        title: "Add computer",
+        title: "Rechner hinzufügen",
       },
     }),
     SettingsArchive: createNativeStackScreen({
       screen: ArchivedThreadsRouteScreen,
       linking: "archive",
       options: {
-        title: "Archived Threads",
+        title: "Archivierte Unterhaltungen",
       },
     }),
     SettingsArchivedWorker: createNativeStackScreen({
       screen: ArchivedWorkerDetailRouteScreen,
       linking: "archive/worker/:environmentId/:threadId",
       options: {
-        title: "Completed worker",
+        title: "Beendeter Worker",
       },
     }),
     SettingsAppearance: createNativeStackScreen({
       screen: SettingsAppearanceRouteScreen,
       linking: "appearance",
       options: {
-        title: "Appearance",
+        title: "Darstellung",
       },
     }),
     SettingsProjectGrouping: createNativeStackScreen({
       screen: SettingsProjectGroupingRouteScreen,
       linking: "project-grouping",
       options: {
-        title: "Project Grouping",
+        title: "Projektgruppierung",
       },
     }),
     SettingsClientStorage: createNativeStackScreen({
       screen: SettingsClientStorageRouteScreen,
       linking: "client-storage",
       options: {
-        title: "Client Storage",
+        title: "Gerätespeicher",
       },
     }),
     SettingsBusinessOs: createNativeStackScreen({
@@ -226,7 +226,7 @@ const SettingsContentStack = createNativeStackNavigator({
       screen: UsageRouteScreen,
       linking: "usage",
       options: {
-        title: "Usage",
+        title: "Nutzung",
       },
     }),
   },
@@ -286,7 +286,7 @@ const NewTaskSheetStack = createNativeStackNavigator({
       screen: NewTaskRouteScreen,
       linking: "",
       options: {
-        title: "Choose project",
+        title: "Projekt wählen",
       },
     }),
     NewTaskDraft: createNativeStackScreen({
@@ -301,14 +301,14 @@ const NewTaskSheetStack = createNativeStackNavigator({
       screen: NewTaskEnvironmentPickerRouteScreen,
       linking: "draft/environment",
       options: {
-        title: "Environment",
+        title: "Rechner",
       },
     }),
     NewTaskBranch: createNativeStackScreen({
       screen: NewTaskBranchPickerRouteScreen,
       linking: "draft/branch",
       options: {
-        title: "Branch",
+        title: "Zweig",
       },
     }),
     ThreadSettings: createNativeStackScreen({
@@ -330,7 +330,7 @@ const NewTaskSheetStack = createNativeStackNavigator({
       screen: AddProjectSourceRoute,
       linking: "add-project",
       options: {
-        title: "Add Project",
+        title: "Projekt hinzufügen",
       },
     }),
     AddProjectRepository: createNativeStackScreen({
@@ -462,13 +462,13 @@ function NotFoundScreen() {
       style={[{ flex: 1 }, screenBgStyle]}
     >
       <Text className="text-3xl font-workjet-bold text-foreground" selectable>
-        Route not found
+        Seite nicht gefunden
       </Text>
       <Pressable
         style={returnHomeButtonStyle}
         onPress={() => navigation.dispatch(StackActions.replace("Home"))}
       >
-        <Text className="text-base font-workjet-bold text-primary-foreground">Return home</Text>
+        <Text className="text-base font-workjet-bold text-primary-foreground">Zur Startseite</Text>
       </Pressable>
     </ScrollView>
   );
@@ -529,7 +529,7 @@ export const RootStack = createNativeStackNavigator({
       options: {
         ...GLASS_HEADER_OPTIONS,
         contentStyle: NATIVE_SHEET_SURFACE_CONTENT_STYLE,
-        title: "Files",
+        title: "Dateien",
       },
     }),
     ThreadFile: createNativeStackScreen({
@@ -609,7 +609,7 @@ export const RootStack = createNativeStackNavigator({
       linking: "settings/legal",
       options: {
         ...LEGAL_DOCUMENT_HEADER_OPTIONS,
-        title: "Legal",
+        title: "Rechtliches",
       },
     }),
     ConnectOnboarding: createNativeStackScreen({
@@ -619,7 +619,7 @@ export const RootStack = createNativeStackNavigator({
         // A root-level Android formSheet does not host the native stack bar;
         // the route renders an embedded AndroidSheetHeader instead.
         ...(Platform.OS === "android" ? { headerShown: false } : SHEET_SOLID_HEADER_OPTIONS),
-        title: "Set up Workjet Connect",
+        title: "Workjet Connect einrichten",
         gestureEnabled: true,
         ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.6, 0.95],
@@ -630,7 +630,7 @@ export const RootStack = createNativeStackNavigator({
       screen: ConnectionsRouteScreen,
       linking: "connections",
       options: {
-        title: "Computers",
+        title: "Rechner",
         // Android: full page; the screen renders its own AndroidScreenHeader,
         // so the native bar stays hidden. iOS keeps the sheet.
         ...(Platform.OS === "android"

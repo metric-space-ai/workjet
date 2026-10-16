@@ -71,7 +71,7 @@ function formatElapsedSeconds(ms: number | null): string | null {
   if (ms === null) return null;
   const elapsed = Math.max(0, Math.floor((Date.now() - ms) / 1000));
   if (elapsed < 2) return null;
-  return `Running for ${elapsed}s`;
+  return `Läuft seit ${elapsed}s`;
 }
 
 export function useGitActionProgress(target: VcsActionTarget): GitActionProgress {

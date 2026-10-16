@@ -125,8 +125,8 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: !props.collapsed }}
-        accessibilityLabel={`${props.title}, ${props.threadCount} threads`}
-        accessibilityHint={props.collapsed ? "Expands the project" : "Collapses the project"}
+        accessibilityLabel={`${props.title}, ${props.threadCount} Unterhaltungen`}
+        accessibilityHint={props.collapsed ? "Klappt das Projekt aus" : "Klappt das Projekt ein"}
         className={
           compact ? "flex-1 flex-row items-center gap-2.5" : "flex-1 flex-row items-center gap-2"
         }
@@ -163,7 +163,7 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
       </Pressable>
       {showNewThreadButton ? (
         <Pressable
-          accessibilityLabel={`Create new thread in ${props.title}`}
+          accessibilityLabel={`Neue Unterhaltung in ${props.title}`}
           accessibilityRole="button"
           hitSlop={{ ...verticalHitSlop, left: 10, right: 14 }}
           onPress={handleNewThread}
@@ -207,7 +207,7 @@ export const ThreadListShowMoreRow = memo(function ThreadListShowMoreRow(props: 
   const button = (label: string, icon: "chevron.down" | "chevron.up", onPress: () => void) => (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label === "Show more" ? "Show more threads" : "Show fewer threads"}
+      accessibilityLabel={label === "Mehr zeigen" ? "Mehr zeigen" : "Weniger zeigen"}
       className="rounded-full bg-subtle"
       hitSlop={6}
       onPress={onPress}
@@ -250,8 +250,8 @@ export const ThreadListShowMoreRow = memo(function ThreadListShowMoreRow(props: 
         paddingVertical: compact ? 12 : 8,
       }}
     >
-      {showsMore ? button("Show more", "chevron.down", handleShowMore) : null}
-      {props.canShowLess ? button("Show less", "chevron.up", handleShowLess) : null}
+      {showsMore ? button("Mehr zeigen", "chevron.down", handleShowMore) : null}
+      {props.canShowLess ? button("Weniger zeigen", "chevron.up", handleShowLess) : null}
     </View>
   );
 });
@@ -259,7 +259,7 @@ export const ThreadListShowMoreRow = memo(function ThreadListShowMoreRow(props: 
 /* ─── Pending task row ───────────────────────────────────────────────── */
 
 const PENDING_TASK_MENU_ACTIONS: MenuAction[] = [
-  { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
+  { id: "delete", title: "Löschen", image: "trash", attributes: { destructive: true } },
 ];
 
 /**
@@ -296,7 +296,9 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
 
   const statusPill = (
     <View className="rounded-full bg-zinc-500/12 px-1.5 py-0.5 dark:bg-zinc-500/16">
-      <Text className="text-3xs font-workjet-bold text-zinc-600 dark:text-zinc-300">Pending</Text>
+      <Text className="text-3xs font-workjet-bold text-zinc-600 dark:text-zinc-300">
+        Ausstehend
+      </Text>
     </View>
   );
 
@@ -324,7 +326,7 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
 
   const rowContent = compact ? (
     <Pressable
-      accessibilityHint="Opens the queued task for editing"
+      accessibilityHint="Öffnet die Aufgabe"
       accessibilityLabel={pendingTask.title}
       accessibilityRole="button"
       className="bg-screen"
@@ -367,7 +369,7 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
     </Pressable>
   ) : (
     <Pressable
-      accessibilityHint="Opens the queued task for editing"
+      accessibilityHint="Öffnet die Aufgabe"
       accessibilityLabel={pendingTask.title}
       accessibilityRole="button"
       onPress={() => onSelectPendingTask(pendingTask)}
@@ -412,8 +414,8 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
 /* ─── Thread row ─────────────────────────────────────────────────────── */
 
 const THREAD_ROW_MENU_ACTIONS: MenuAction[] = [
-  { id: "archive", title: "Archive", image: "archivebox" },
-  { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
+  { id: "archive", title: "Archivieren", image: "archivebox" },
+  { id: "delete", title: "Löschen", image: "trash", attributes: { destructive: true } },
 ];
 
 export const ThreadListRow = memo(function ThreadListRow(props: {
@@ -492,9 +494,9 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   );
   const primaryAction = useMemo(
     () => ({
-      accessibilityLabel: `Archive ${thread.title}`,
+      accessibilityLabel: `${thread.title} archivieren`,
       icon: "archivebox" as const,
-      label: "Archive",
+      label: "Archivieren",
       onPress: handleArchive,
     }),
     [handleArchive, thread.title],
@@ -555,7 +557,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   const rowContent = (close: () => void) =>
     compact ? (
       <Pressable
-        accessibilityHint="Swipe left for archive and delete actions"
+        accessibilityHint="Nach links wischen für Aktionen"
         accessibilityLabel={threadAccessibilityLabel}
         accessibilityRole="button"
         className="bg-screen"
@@ -608,7 +610,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
       </Pressable>
     ) : (
       <Pressable
-        accessibilityHint="Opens the thread"
+        accessibilityHint="Öffnet die Unterhaltung"
         accessibilityLabel={threadAccessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ selected }}

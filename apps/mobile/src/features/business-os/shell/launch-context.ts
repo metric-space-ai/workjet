@@ -15,7 +15,7 @@ export function buildBusinessOsLaunchContext(
   platform: "ios" | "android",
 ) {
   if (instance.capabilityExpiresAtMs <= Date.now()) {
-    throw new Error("Business OS capability has expired. Pair this backend again.");
+    throw new Error("Zugang abgelaufen. Erneut verbinden.");
   }
   const session = {
     authenticated: true,

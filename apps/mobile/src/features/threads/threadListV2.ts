@@ -203,7 +203,7 @@ export interface ThreadListV2Item {
 
 export interface ThreadListV2Layout {
   readonly items: ThreadListV2Item[];
-  /** Settled threads beyond the render limit (behind "Show more"). */
+  /** Settled threads beyond the render limit (behind "Mehr zeigen"). */
   readonly hiddenSettledCount: number;
   /** Snoozed threads matching the current filters. */
   readonly snoozedCount: number;

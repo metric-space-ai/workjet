@@ -154,11 +154,11 @@ export function NewTaskEnvironmentPickerRouteScreen() {
       <NativeStackScreenOptions
         options={{
           headerShown: Platform.OS !== "android",
-          title: "Environment",
+          title: "Rechner",
         }}
       />
       {Platform.OS === "android" ? (
-        <AndroidScreenHeader title="Environment" onBack={() => navigation.goBack()} />
+        <AndroidScreenHeader title="Rechner" onBack={() => navigation.goBack()} />
       ) : null}
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
@@ -202,7 +202,7 @@ export function NewTaskBranchPickerRouteScreen() {
   const selectingBranchNameRef = useRef<string | null>(null);
   const allowSelectionNavigationRef = useRef(false);
   const mountedRef = useRef(true);
-  const screenTitle = flow.workspaceMode === "worktree" ? "Base branch" : "Branch";
+  const screenTitle = flow.workspaceMode === "worktree" ? "Basiszweig" : "Branch";
   const usesNativeMailSearchToolbar = Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
   const selectedBranchName =
     flow.selectedBranchName ??
@@ -268,8 +268,8 @@ export function NewTaskBranchPickerRouteScreen() {
             if (mountedRef.current && navigation.isFocused() && !isAtomCommandInterrupted(result)) {
               const error = squashAtomCommandFailure(result);
               Alert.alert(
-                "Could not switch branch",
-                error instanceof Error ? error.message : "The branch could not be checked out.",
+                "Zweig nicht gewechselt",
+                error instanceof Error ? error.message : "Zweig nicht ausgecheckt.",
               );
             }
             return;
@@ -336,7 +336,7 @@ export function NewTaskBranchPickerRouteScreen() {
       <View className="mb-3 overflow-hidden rounded-2xl">
         <ToggleRow
           onValueChange={flow.setStartFromOrigin}
-          title="Start from origin"
+          title="Von origin starten"
           value={flow.startFromOrigin}
         />
       </View>
@@ -363,12 +363,12 @@ export function NewTaskBranchPickerRouteScreen() {
           {flow.branchesLoading ? <ActivityIndicator /> : null}
           <Text className="text-center text-sm text-foreground-muted">
             {flow.branchesLoading
-              ? "Loading branches…"
+              ? "Lädt Zweige…"
               : flow.branchesError
                 ? flow.branchesError
                 : flow.branchQuery
-                  ? "No matching branches"
-                  : "No branches available"}
+                  ? "Kein passender Zweig"
+                  : "Keine Zweige"}
           </Text>
           {!flow.branchesLoading && flow.branchesError ? (
             <Pressable
@@ -376,7 +376,7 @@ export function NewTaskBranchPickerRouteScreen() {
               className="rounded-full bg-card px-4 py-2 active:opacity-70"
               onPress={flow.loadBranches}
             >
-              <Text className="text-sm font-workjet-medium text-foreground">Try again</Text>
+              <Text className="text-sm font-workjet-medium text-foreground">Erneut versuchen</Text>
             </Pressable>
           ) : null}
         </View>
@@ -421,7 +421,7 @@ export function NewTaskBranchPickerRouteScreen() {
             autoCorrect={false}
             className="h-11 rounded-xl bg-card px-4 text-base text-foreground"
             onChangeText={flow.setBranchQuery}
-            placeholder="Find a branch"
+            placeholder="Zweig suchen"
             placeholderTextColor={placeholderColor}
             style={{ color: foregroundColor, fontFamily }}
             value={flow.branchQuery}
@@ -442,7 +442,7 @@ export function NewTaskBranchPickerRouteScreen() {
             ? () => [
                 createNativeMailSearchToolbarItem({
                   onSearchTextChange: flow.setBranchQuery,
-                  placeholder: "Find a branch",
+                  placeholder: "Zweig suchen",
                   searchTextChangeId: "new-task-branch-search-text",
                   showsSearchDismissButton: true,
                 }),
@@ -455,7 +455,7 @@ export function NewTaskBranchPickerRouteScreen() {
                 autoCapitalize: "none",
                 hideNavigationBar: false,
                 obscureBackground: false,
-                placeholder: "Find a branch",
+                placeholder: "Zweig suchen",
                 onChangeText: (event) => {
                   flow.setBranchQuery(event.nativeEvent.text);
                 },

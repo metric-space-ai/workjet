@@ -21,11 +21,11 @@ describe("Business OS native security guards", () => {
     expect(settings).toContain("Gerät hinzufügen");
     expect(settings).toContain("QR-Code anzeigen");
     expect(settings).toContain("QR-Code scannen");
-    expect(settings).toContain(">Business OS</Text>");
-    expect(settings).toContain("separat verbunden");
-    expect(settings).toContain("gemeinsam für Code und Business OS");
-    expect(settings).toContain("dieser\n                Instanz");
-    expect(settings).toContain("Weitere Business-OS-Instanzen werden separat verbunden");
+    expect(settings).toContain(">Instanzen</Text>");
+    // UI-Vertrag §2: keine Erklärsätze in den Einstellungen.
+    expect(settings).not.toContain("separat verbunden");
+    expect(settings).not.toContain("gemeinsam für Code und Business OS");
+    expect(settings).not.toContain("kurzlebige QR-Code verbindet");
     expect(settings).toContain("Neuen QR-Code erstellen");
     expect(settings).toContain("QR-Code widerrufen");
     expect(settings).toContain("hasVerifiedBackendControl");
@@ -157,10 +157,10 @@ describe("Business OS native security guards", () => {
     expect(archiveRoute).toContain(
       "binding.businessOsInstanceId === selectedBusinessOsInstance?.id",
     );
-    expect(archiveRoute).toContain("All machines in");
+    expect(archiveRoute).toContain("Alle Rechner in");
     expect(provider).not.toContain("Verbinde diese Business OS erneut");
     expect(provider).not.toContain("const selectableInstances =");
-    expect(settingsPanel).toContain("Noch keine Rechner zugewiesen");
+    expect(settingsPanel).toContain('{active ? "Aktiv" : "Bereit"}');
     expect(settingsPanel).not.toContain("Erneut verbinden: Rechner-Zuordnung fehlt");
     expect(productChrome).not.toContain("environmentBindings.length === 0");
     expect(businessOsRoot).toContain("const selectableInstances = instances;");

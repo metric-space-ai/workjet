@@ -79,10 +79,10 @@ function resolveSecondaryAction(input: {
   if (input.secondaryAction === null) return null;
   if (input.secondaryAction === undefined) {
     return {
-      accessibilityLabel: `Delete ${input.threadTitle}`,
+      accessibilityLabel: `${input.threadTitle} löschen`,
       backgroundColor: "#ff2d55",
       icon: "trash",
-      label: "Delete",
+      label: "Löschen",
       onPress: () => {
         input.close();
         input.onDelete();

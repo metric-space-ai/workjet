@@ -26,10 +26,10 @@ import type { UsageChartMetric } from "./usageChartData";
 import { PROVIDER_LABEL, useProviderColors } from "./usageProviders";
 
 const WINDOW_OPTIONS = [
-  { days: 1, label: "Past 24h" },
-  { days: 7, label: "7 days" },
-  { days: 30, label: "30 days" },
-  { days: 90, label: "90 days" },
+  { days: 1, label: "24 h" },
+  { days: 7, label: "7 Tage" },
+  { days: 30, label: "30 Tage" },
+  { days: 90, label: "90 Tage" },
 ] as const;
 
 const CHART_HEIGHT = 180;
@@ -99,7 +99,7 @@ export function UsageRouteScreen() {
       {Platform.OS === "android" ? (
         <>
           <NativeStackScreenOptions options={{ headerShown: false }} />
-          <AndroidScreenHeader title="Usage" onBack={() => navigation.goBack()} />
+          <AndroidScreenHeader title="Nutzung" onBack={() => navigation.goBack()} />
         </>
       ) : null}
       <ScrollView
@@ -119,12 +119,10 @@ export function UsageRouteScreen() {
         <UsageCoverageNotice environments={environments} merged={merged} isPartial={isPartial} />
 
         {isPending ? (
-          <Text className="py-16 text-center text-base text-foreground-muted">
-            Scanning provider transcripts…
-          </Text>
+          <Text className="py-16 text-center text-base text-foreground-muted">Liest Verläufe…</Text>
         ) : environments.length === 0 ? (
           <Text className="py-16 text-center text-base text-foreground-muted">
-            Connect an environment to see usage.
+            Kein Rechner verbunden
           </Text>
         ) : (
           <>
@@ -207,7 +205,7 @@ function ChartCard(props: {
       <View className="flex-row items-start justify-between gap-3">
         <View className="min-w-0 flex-1 gap-0.5">
           <Text className="text-sm text-foreground-muted">
-            {metric === "cost" ? "Raw token cost" : "Processed tokens"}
+            {metric === "cost" ? "Token-Kosten" : "Verarbeitete Tokens"}
           </Text>
           <Text className="text-4xl font-workjet-bold tabular-nums text-foreground">
             {metric === "cost"
@@ -216,8 +214,8 @@ function ChartCard(props: {
           </Text>
           <Text className="text-sm text-foreground-muted">
             {metric === "cost"
-              ? "* if billed at full API rate"
-              : `Across ${formatCount(merged.sessions)} sessions`}
+              ? "* bei vollem API-Preis"
+              : `Über ${formatCount(merged.sessions)} Sitzungen`}
           </Text>
         </View>
         <MetricToggle metric={metric} onChange={props.onMetricChange} />
@@ -232,7 +230,7 @@ function ChartCard(props: {
         />
       ) : (
         <View style={{ height: CHART_HEIGHT }} className="items-center justify-center">
-          <Text className="text-base text-foreground-muted">No activity in this window.</Text>
+          <Text className="text-base text-foreground-muted">Keine Aktivität</Text>
         </View>
       )}
 
@@ -312,7 +310,7 @@ function ProviderSection(props: {
   );
 
   return (
-    <SettingsSection title="Providers" card>
+    <SettingsSection title="Anbieter" card>
       {ordered.map((provider, index) => {
         const share = metric === "cost" ? provider.costShare : provider.tokenShare;
         const unpriced = merged.models.some(
@@ -348,8 +346,8 @@ function ProviderSection(props: {
             </View>
             <Text className="text-sm text-foreground-muted">
               {metric === "cost"
-                ? `${formatPercent(share)} of cost · ${formatTokens(provider.totalTokens)} tokens`
-                : `${formatPercent(share)} of tokens · ${formatUsageCost(provider.costUsd, unpriced)}`}
+                ? `${formatPercent(share)} der Kosten · ${formatTokens(provider.totalTokens)} Tokens`
+                : `${formatPercent(share)} der Tokens · ${formatUsageCost(provider.costUsd, unpriced)}`}
             </Text>
           </View>
         );
@@ -368,41 +366,41 @@ function TotalsSection(props: { readonly merged: MergedUsage; readonly isPast24H
   const cachedShare = observedInput === 0 ? 0 : merged.cachedInputTokens / observedInput;
 
   return (
-    <SettingsSection title="Totals" card>
+    <SettingsSection title="Summen" card>
       <View className="flex-row flex-wrap">
         <MetricCell
-          label="Processed tokens"
+          label="Verarbeitete Tokens"
           value={formatTokens(merged.totalTokens)}
-          detail={`${formatTokens(periodAverage)} per active ${props.isPast24Hours ? "hour" : "day"}`}
+          detail={`${formatTokens(periodAverage)} je aktive ${props.isPast24Hours ? "Stunde" : "Tag"}`}
         />
         <MetricCell
-          label="Cache savings"
+          label="Cache-Ersparnis"
           value={formatUsd(merged.costQuality.cacheSavingsUsd)}
           detail={
             merged.costUsd > 0
-              ? `${(merged.costQuality.cacheSavingsUsd / merged.costUsd).toFixed(1)}x the raw cost`
-              : "vs full input rates"
+              ? `${(merged.costQuality.cacheSavingsUsd / merged.costUsd).toFixed(1)}× der Rohkosten`
+              : "ggü. vollem Eingabepreis"
           }
         />
         <MetricCell
-          label="Cached input"
+          label="Gecachte Eingabe"
           value={formatTokens(merged.cachedInputTokens)}
-          detail={`${formatPercent(cachedShare)} of observed input`}
+          detail={`${formatPercent(cachedShare)} der Eingabe`}
         />
         <MetricCell
-          label="Uncached input"
+          label="Ungecachte Eingabe"
           value={formatTokens(merged.uncachedInputTokens)}
-          detail={`${formatTokens(merged.cacheCreationTokens)} cache writes`}
+          detail={`${formatTokens(merged.cacheCreationTokens)} Cache-Schreibvorgänge`}
         />
         <MetricCell
-          label="Output"
+          label="Ausgabe"
           value={formatTokens(merged.outputTokens)}
-          detail={`incl. ${formatTokens(merged.reasoningTokens)} reasoning`}
+          detail={`inkl. ${formatTokens(merged.reasoningTokens)} Denken`}
         />
         <MetricCell
-          label="Unpriced"
+          label="Ohne Preis"
           value={formatPercent(merged.costQuality.unpricedShare)}
-          detail="of records, excluded from cost"
+          detail="der Einträge, ohne Kosten"
         />
       </View>
     </SettingsSection>
@@ -431,7 +429,7 @@ function ModelsSection(props: { readonly merged: MergedUsage }) {
   if (merged.models.length === 0) return null;
 
   return (
-    <SettingsSection title="By model" card>
+    <SettingsSection title="Nach Modell" card>
       {merged.models.map((model, index) => (
         <View
           key={`${model.provider}:${model.model}`}
@@ -450,7 +448,7 @@ function ModelsSection(props: { readonly merged: MergedUsage }) {
               {model.model}
             </Text>
             <Text className="text-sm text-foreground-muted">
-              {formatPercent(model.costShare)} of cost · {formatTokens(model.totalTokens)} tokens
+              {formatPercent(model.costShare)} der Kosten · {formatTokens(model.totalTokens)} Tokens
             </Text>
           </View>
           <Text className="text-base tabular-nums text-foreground">
@@ -489,24 +487,21 @@ function UsageCoverageNotice(props: {
   return (
     <View className="gap-1 rounded-[16px] border-continuous bg-card px-4 py-3">
       {props.isPartial ? (
-        <Text className="text-sm text-foreground-muted">
-          Some environments are still reporting. Totals are partial.
-        </Text>
+        <Text className="text-sm text-foreground-muted">Summen unvollständig</Text>
       ) : null}
       {failed.map((environment) => (
         <Text key={environment.environmentId} className="text-sm text-foreground-muted">
-          {environment.label} could not report usage.
+          {environment.label} meldet keine Nutzung.
         </Text>
       ))}
       {stale.map((environment) => (
         <Text key={environment.environmentId} className="text-sm text-foreground-muted">
-          {environment.label} runs an older server version and is excluded from totals.
+          {environment.label} ist veraltet, nicht in Summen.
         </Text>
       ))}
       {duplicateSources.length > 0 ? (
         <Text className="text-sm text-foreground-muted">
-          Counted once across environments sharing a transcript directory:{" "}
-          {duplicateSources.join(", ")}
+          Einmal gezählt bei gemeinsamem Verzeichnis: {duplicateSources.join(", ")}
         </Text>
       ) : null}
     </View>

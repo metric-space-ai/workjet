@@ -11,7 +11,6 @@ import { useThemeColor } from "../../lib/useThemeColor";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { cn } from "../../lib/cn";
-import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 
@@ -41,7 +40,6 @@ export function ConnectionEnvironmentRow(props: {
   const primaryFg = useThemeColor("--color-primary-foreground");
   const dangerFg = useThemeColor("--color-danger-foreground");
   const statusLabel = connectionStatusLabel(props.environment);
-  const statusTraceId = props.environment.connectionErrorTraceId;
   const hasConnectionFailure = props.environment.connectionError !== null;
   const isRetrying =
     props.environment.connectionState === "connecting" ||
@@ -57,8 +55,8 @@ export function ConnectionEnvironmentRow(props: {
     }
     const error = Cause.squash(result.cause);
     Alert.alert(
-      "Could not update environment",
-      error instanceof Error ? error.message : "The environment could not be updated.",
+      "Rechner nicht aktualisiert",
+      error instanceof Error ? error.message : "Rechner nicht aktualisiert.",
     );
   }, [label, url, props]);
 
@@ -94,25 +92,6 @@ export function ConnectionEnvironmentRow(props: {
               selectable={props.expanded}
             >
               {statusLabel}
-              {statusTraceId ? (
-                <>
-                  {" Trace ID: "}
-                  <Text
-                    accessibilityHint="Copies the trace ID"
-                    accessibilityRole="button"
-                    className="underline decoration-dotted"
-                    onLongPress={(event) => {
-                      event.stopPropagation();
-                      copyTextWithHaptic(statusTraceId, { target: "connection-trace-id" });
-                    }}
-                    onPress={(event) => {
-                      event.stopPropagation();
-                    }}
-                  >
-                    {statusTraceId}
-                  </Text>
-                </>
-              ) : null}
             </Text>
           ) : null}
         </View>
@@ -135,19 +114,17 @@ export function ConnectionEnvironmentRow(props: {
           className="gap-3 px-4 pb-4"
         >
           {props.environment.isRelayManaged ? (
-            <Text className="text-sm text-foreground-muted">
-              Managed by Workjet Connect. Tunnel details update automatically.
-            </Text>
+            <Text className="text-sm text-foreground-muted">Verwaltet von Workjet Connect</Text>
           ) : (
             <>
               <View className="gap-1.5">
                 <Text className="text-2xs font-workjet-bold tracking-[0.8px] uppercase text-foreground-muted">
-                  Label
+                  Name
                 </Text>
                 <TextInput
                   autoCapitalize="words"
                   autoCorrect={false}
-                  placeholder="My MacBook"
+                  placeholder="Mein MacBook"
                   value={label}
                   onChangeText={setLabel}
                   className="rounded-[14px] border border-input-border bg-input px-4 py-3 text-base text-foreground"
@@ -179,7 +156,7 @@ export function ConnectionEnvironmentRow(props: {
               >
                 <SymbolView name="checkmark" size={13} tintColor={primaryFg} type="monochrome" />
                 <Text className="text-xs font-workjet-bold tracking-[0.8px] uppercase text-primary-foreground">
-                  Save
+                  Speichern
                 </Text>
               </Pressable>
             )}

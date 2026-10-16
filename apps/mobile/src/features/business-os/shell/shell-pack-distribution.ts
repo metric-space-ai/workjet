@@ -84,7 +84,7 @@ export function validateBusinessOsShellPackDistribution(input: {
     descriptor.manifest.businessOsRevision !== input.expected.businessOsRevision ||
     descriptor.manifest.appVersion !== input.expected.appVersion
   ) {
-    fail("compatibility", "Business OS shell distribution is not compatible with this app.");
+    fail("compatibility", "Workjet aktualisieren.");
   }
   let artifactUrl: URL;
   try {

@@ -246,7 +246,7 @@ function normalizeHtu(url: string): Effect.Effect<string, CloudDpopError> {
   const normalized = normalizeDpopHtu(url);
   return normalized
     ? Effect.succeed(normalized)
-    : Effect.fail(new CloudDpopError({ message: "DPoP URL is invalid." }));
+    : Effect.fail(new CloudDpopError({ message: "DPoP-URL ungültig." }));
 }
 
 export function createDpopProofWithSigner(input: {

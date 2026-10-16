@@ -12,7 +12,8 @@ export class JourFixeReadError extends Error {
 
 export function jourFixeTransportError(failure: WorkjetProjectControlFailure) {
   return new JourFixeReadError(
-    failure.diagnostic?.reason === "request_timeout" ? "request_timeout" : failure.code,
+    failure.error?.code ??
+      (failure.diagnostic?.reason === "request_timeout" ? "request_timeout" : failure.code),
   );
 }
 

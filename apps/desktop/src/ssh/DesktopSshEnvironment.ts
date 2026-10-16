@@ -1,3 +1,5 @@
+// V4 retirement (P11-B -> C): runtime SSH environments are replaced by enrolled
+// CTOX machine peers. Keep only bootstrap transport until all legacy consumers migrate.
 import type {
   DesktopDiscoveredSshHost,
   DesktopSshEnvironmentBootstrap,

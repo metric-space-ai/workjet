@@ -1,0 +1,129 @@
+{
+  "repository": "https://github.com/metric-space-ai/ctox",
+  "pullRequest": 823,
+  "commit": "c707454b0e67ec5ec8881f68dc94813a55b4a2ac",
+  "sourceDirectory": "src/apps/business-os/kernel",
+  "files": [
+    {
+      "path": "app-api.mjs",
+      "sha256": "12467ebadeaddb50a229495b4dba23b9e28f9db57aad002544a0b9f5bd0c029e",
+      "gitBlob": "7f11a778bd5d35696399a39a29116e79810f86ea"
+    },
+    {
+      "path": "artifact-url.mjs",
+      "sha256": "98789468e156ad99b0875ab7549eebcb9c2a6f2b66f6ff0c386e8ee989fca995",
+      "gitBlob": "ea7f7e8b4edba29e5967e8159eb0f5787078bc4d"
+    },
+    {
+      "path": "cache.mjs",
+      "sha256": "4df2aaf5b1b1c85893eb2e359e539e2a9af3e837db164a3c6c88a25ea115a6cb",
+      "gitBlob": "0a4f1044d866a9ba6a1468d91a87f1db217a1ce8"
+    },
+    {
+      "path": "command-state.mjs",
+      "sha256": "c6a960d95cd2d02ba84032aa76dd2af26529ae6b1dd2c5d554108595f8dcf12e",
+      "gitBlob": "5ee9a4c362a89722ca9c7e63d9b3e4836fde53ab"
+    },
+    {
+      "path": "fake-core-runtime.mjs",
+      "sha256": "bbe2e70e345f79fb1e6b373ab5a6a836d7390395ece53844a3f464308720530b",
+      "gitBlob": "73bda53fa06081e477ab37ba0ec0456d83c191b4"
+    },
+    {
+      "path": "fake-core.mjs",
+      "sha256": "12a3e0f364019f57fb2d57d558d67e52cc3e22d3dd4dd165bf0bd0e0ce51d147",
+      "gitBlob": "727001f73431412309a103e1aaf7c7b3a5a8592c"
+    },
+    {
+      "path": "framing.mjs",
+      "sha256": "93cb9dcf63a1c25907f97b5c7207f3b1549be67a5b9387aa4394251873765f01",
+      "gitBlob": "d5786504898a3c244d8d831f9bc488a0c0e29955"
+    },
+    {
+      "path": "index.d.ts",
+      "sha256": "63cca4d4055240f93de1c2d8c60ce7e244f715c5803a5a2f56fda72f71cd2c43",
+      "gitBlob": "a48a69da4e396614f60b52e22b8d88446488d461"
+    },
+    {
+      "path": "index.mjs",
+      "sha256": "4db1b346bc7c805a984603bd6de8f7d26e03d76bace1bb6cd7e8aeea05da58a7",
+      "gitBlob": "ce93a8474ddd895864b2b9b47c5a946ae978cde6"
+    },
+    {
+      "path": "ingress.mjs",
+      "sha256": "d0e6017ea4cc47e84cebff8974a3085bc7da0f90e37db2f7f03e6d425c92d2f2",
+      "gitBlob": "5c6d27c0745eb05693df249f073fe372767c4b6e"
+    },
+    {
+      "path": "kernel.mjs",
+      "sha256": "da30487b0f9121fcab5dab3c9715a27c9193527f0cb51254e9cc6d6407404cd2",
+      "gitBlob": "1bcf0479db04c565fadb8a6bd1917461c31fe76a"
+    },
+    {
+      "path": "leader.mjs",
+      "sha256": "9211f3cbfc583300b00fb8e4d52d69c0a064eda0c5e36216ba5715a02f4de7ab",
+      "gitBlob": "25a7497646591e80a1f299111dc925358eaa7d47"
+    },
+    {
+      "path": "loader.mjs",
+      "sha256": "d81fce5bbb1208a623dafc2a0036f4cff0fb256589ee27349de7d817d2c84d4f",
+      "gitBlob": "9044556d7b0f1defad417a3629d3627d3eaa84ef"
+    },
+    {
+      "path": "migrate-v3.mjs",
+      "sha256": "34307c82250f0a67840a6562d79f29d4bd27c1b6966afb2aa23d7b2ddecf0221",
+      "gitBlob": "cf5a2c9a05f548078b5f474326c43de00c4f5cd6"
+    },
+    {
+      "path": "outbox.mjs",
+      "sha256": "7cbcb05f6d28119e064f90090a65450693a0d5b59ea6cfb7a7e262e8188e056b",
+      "gitBlob": "bfadfe74848713b864aacc0afc46b6b62e5ae49a"
+    },
+    {
+      "path": "platform.mjs",
+      "sha256": "f1730b4ccfd70b0f56dd770407dda568115901546fbe75b873a66e3207c51a77",
+      "gitBlob": "c599e26551b12a7e31bd56876536d0896e24f726"
+    },
+    {
+      "path": "scheduler.mjs",
+      "sha256": "582c85072dfee778ed0a564aa7480b9e98b773c858eb57e12c3ceee58e721110",
+      "gitBlob": "8e5574ce629da50c744c89499b504e810a5eab45"
+    },
+    {
+      "path": "schema-diff.mjs",
+      "sha256": "23bfdea072bab7bc14925134ae59f6f83e2397388d333c5d0eb81a94a0c58710",
+      "gitBlob": "667cac4c40a5b7d557d287c091758763f95f2d47"
+    },
+    {
+      "path": "shell-api.mjs",
+      "sha256": "fb4af93e668fe081ad0eded946028e7312e03d2b26f02590e35a2824d583f742",
+      "gitBlob": "4e3d991e206e30741710e461f837ef6f7be98f58"
+    },
+    {
+      "path": "snapshot.mjs",
+      "sha256": "910360a310da6e41dd0c8369509e42371b3749a3619b9c075514d44d9b654128",
+      "gitBlob": "e08bcae78f4adb55aa59f550bcee85626e1fcd59"
+    },
+    {
+      "path": "store-idb-v5.mjs",
+      "sha256": "1311b61bd0a1e1f1a86d522b1a78a73dc8626680e0ab1d61aa16d238a124a07c",
+      "gitBlob": "4c45fc51a3241070a118ba45ed5d9405e7d82cc3"
+    },
+    {
+      "path": "transport-webrtc.mjs",
+      "sha256": "cbb8b56a7408eaff6f5e8f41caa8576150974bfdd1dc47c7a1c6564da10ab805",
+      "gitBlob": "bf51282d16e895af6d138595b8ce145d9b8c5225"
+    },
+    {
+      "path": "transport.mjs",
+      "sha256": "0703725be6cdc1f5b344c238241e0757f846bd4b4615ee167801a65358d9b322",
+      "gitBlob": "089665e44869bade3018078584c422c0b93386f1"
+    },
+    {
+      "path": "values.mjs",
+      "sha256": "8e9a96280a8f1c26094fd05cc0f989ee96e802507459cd639b1a156d67d4e391",
+      "gitBlob": "c003197825bfb3fcf12d7389b99dd06018e8e7b2"
+    }
+  ],
+  "licenseSha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+}

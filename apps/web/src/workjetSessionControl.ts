@@ -3,6 +3,10 @@ import type {
   CtoxWorkjetSessionControlResult,
   DesktopCtoxBridge,
 } from "@workjet/contracts";
+import { getCtoxClient } from "./ctox/ctoxClient";
+import { localReadFailure } from "./ctox/projectReadData";
+import { readCtoxSessions } from "./ctox/sessionData";
+import { readCtoxSessionTransfer } from "./ctox/sessionTransferData";
 
 export type WorkjetSessionControlPort = NonNullable<DesktopCtoxBridge["requestSessionControl"]>;
 export type WorkjetSessionPoolPort = NonNullable<DesktopCtoxBridge["ensurePooled"]>;
@@ -23,6 +27,28 @@ export async function requestWorkjetSessionControl(
   port: WorkjetSessionControlPort | undefined = activeDesktopSessionControl(),
   ensurePooled: WorkjetSessionPoolPort | undefined = activeDesktopSessionPool(),
 ): Promise<CtoxWorkjetSessionControlResult> {
+  // V4 instance (bound kernel client): session reads are local queries (E32).
+  const api = getCtoxClient(instanceId);
+  if (api !== null && request.action === "session.transfer.status") {
+    try {
+      return {
+        _tag: "completed",
+        response: { action: request.action, outcome: readCtoxSessionTransfer(api, request) },
+      };
+    } catch (error) {
+      const failure = localReadFailure(error);
+      return {
+        _tag: "failed",
+        code: "invalid_input",
+        ...(failure._tag === "failed" && failure.error ? { error: failure.error } : {}),
+      };
+    }
+  }
+  if (api !== null && request.action === "session.list")
+    return {
+      _tag: "completed",
+      response: { action: "session.list", sessions: readCtoxSessions(api) },
+    };
   if (port === undefined) return { _tag: "failed", code: "not_active" };
   if (instanceId.trim() === "") return { _tag: "failed", code: "not_active" };
   const first = await port(instanceId, request);

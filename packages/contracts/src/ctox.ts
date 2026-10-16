@@ -1415,9 +1415,18 @@ export const CtoxWorkjetProjectControlDiagnostic = Schema.Struct({
 });
 export type CtoxWorkjetProjectControlDiagnostic = typeof CtoxWorkjetProjectControlDiagnostic.Type;
 
+export const CtoxAppReadFailure = Schema.Struct({
+  code: Schema.String.check(Schema.isMaxLength(128)),
+  reason: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128))),
+  path: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512))),
+  detail: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+});
+
 export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
   Schema.TaggedStruct("failed", {
+    /** V4 local-store/command failure; preserves the typed cause without a guest wrapper. */
+    error: Schema.optionalKey(CtoxAppReadFailure),
     diagnostic: Schema.optionalKey(CtoxWorkjetProjectControlDiagnostic),
     preparation: Schema.optionalKey(CtoxGuestPreparationDiagnostic),
     discovery: Schema.optionalKey(
@@ -1844,6 +1853,7 @@ export const CtoxWorkjetSessionControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetSessionControlResponse }),
   Schema.TaggedStruct("failed", {
     code: Schema.Literals(["invalid_input", "not_active", "guest_failed", "response_too_large"]),
+    error: Schema.optionalKey(CtoxAppReadFailure),
   }),
 ]);
 export type CtoxWorkjetSessionControlResult = typeof CtoxWorkjetSessionControlResult.Type;

@@ -1,3 +1,5 @@
+import { hasCtoxClientBinding } from "../ctox/ctoxClient";
+
 /**
  * Durable copies of the last confirmed meeting, deck and narration, so the
  * meeting room renders at once instead of waiting for a chain of CTOX
@@ -10,6 +12,7 @@ export interface JourFixeCacheBackend {
   set(key: string, value: unknown): Promise<void>;
 }
 
+const KERNEL_CACHE_PREFIX = "ctox-kernel-owned:";
 const DATABASE_NAME = "workjet-jour-fixe-cache";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "entries";
@@ -64,6 +67,7 @@ export function setJourFixeCacheBackend(next: JourFixeCacheBackend | null) {
 }
 
 export async function readJourFixeCache<T>(key: string): Promise<T | undefined> {
+  if (key.startsWith(KERNEL_CACHE_PREFIX)) return undefined;
   try {
     const value = await backend.get(key);
     return value === undefined || value === null ? undefined : (value as T);
@@ -73,6 +77,7 @@ export async function readJourFixeCache<T>(key: string): Promise<T | undefined> 
 }
 
 export async function writeJourFixeCache(key: string, value: unknown): Promise<void> {
+  if (key.startsWith(KERNEL_CACHE_PREFIX)) return;
   try {
     await backend.set(key, value);
   } catch {
@@ -80,16 +85,24 @@ export async function writeJourFixeCache(key: string, value: unknown): Promise<v
   }
 }
 
+/** V4 has one durable store: kernel docs/CAS. Never reopen the legacy user-unscoped cache. */
+function scopeCacheKey(instanceId: string, legacy: string) {
+  return !hasCtoxClientBinding(instanceId) ? legacy : `${KERNEL_CACHE_PREFIX}${legacy}`;
+}
 export const jourFixeCacheKey = {
   meeting: (instanceId: string, projectId: string, meetingId?: string) =>
-    `meeting:${instanceId}:${projectId}:${meetingId ?? ""}`,
+    scopeCacheKey(instanceId, `meeting:${instanceId}:${projectId}:${meetingId ?? ""}`),
   presentation: (instanceId: string, projectId: string, meetingId: string) =>
-    `presentation:${instanceId}:${projectId}:${meetingId}`,
+    scopeCacheKey(instanceId, `presentation:${instanceId}:${projectId}:${meetingId}`),
   narration: (
     instanceId: string,
     projectId: string,
     meetingId: string,
     deckRevision: number,
     slideId: string,
-  ) => `narration:${instanceId}:${projectId}:${meetingId}:${deckRevision}:${slideId}`,
+  ) =>
+    scopeCacheKey(
+      instanceId,
+      `narration:${instanceId}:${projectId}:${meetingId}:${deckRevision}:${slideId}`,
+    ),
 };

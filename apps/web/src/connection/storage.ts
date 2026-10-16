@@ -1,3 +1,6 @@
+import { createV4ConnectionStorageContext } from "../ctox/legacyConnectionIsolation";
+import { getWorkjetKernelMount } from "../ctox/kernelClient";
+import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import {
   ConnectionCatalogDocument,
   type ConnectionCatalogDocument as ConnectionCatalogDocumentType,
@@ -365,6 +368,8 @@ export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStor
 
 export const connectionStorageLayer = Layer.effectContext(
   Effect.gen(function* () {
+    if (getWorkjetKernelMount(readActiveWorkjetScope().selectedInstanceId) !== null)
+      return createV4ConnectionStorageContext();
     const database = yield* Effect.acquireRelease(openDatabase(), (database) =>
       Effect.sync(() => database.close()),
     );

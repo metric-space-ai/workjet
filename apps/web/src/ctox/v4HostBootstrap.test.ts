@@ -11,6 +11,9 @@ import {
   type WorkjetV4Session,
 } from "./v4HostBootstrap";
 import { commitActiveWorkjetSelection, readActiveWorkjetScope } from "../activeWorkjetScope";
+import { WORKJET_APP_ID, workjetAppManifest } from "./workjetAppManifest";
+
+const APP_VER = "bootstrap-test";
 
 const b64 = (length: number) => "A".repeat(length);
 /** Structurally valid E41 launch context (the fake core does not verify the device proof). */
@@ -65,15 +68,41 @@ function memorySessions() {
   const opened: { coreInstanceId: string; closed: boolean }[] = [];
   const openSession = vi.fn(async (_instanceId: string, payload: unknown) => {
     const coreInstanceId = (payload as ReturnType<typeof v4LaunchContext>).v4.instanceId;
+    const transport = new MemoryCoreTransport({ namespace: coreInstanceId, latencyMs: 0 });
+    // E35 Nr. 3: the active Workjet manifest and shell exist in the core before the kernel opens.
+    await transport.push("business_app_versions", [
+      {
+        id: `${WORKJET_APP_ID}@${APP_VER}`,
+        app_id: WORKJET_APP_ID,
+        app_ver: APP_VER,
+        manifest: workjetAppManifest(APP_VER),
+      },
+    ]);
+    await transport.push("business_apps", [
+      { id: WORKJET_APP_ID, title: "Workjet", active_ver: APP_VER },
+      { id: "shell", title: "Shell", active_ver: "bootstrap-shell" },
+    ]);
     const kernel = createKernel({
       instanceId: coreInstanceId,
       userId: "bootstrap-owner",
       storage: "memory",
       dbName: `${coreInstanceId}-${++sequence}-db`,
       multiTab: false,
-      transport: new MemoryCoreTransport({ namespace: coreInstanceId, latencyMs: 0 }),
+      transport,
     });
     await kernel.ready;
+    const apps = kernel.appApi(WORKJET_APP_ID, APP_VER).query<{ id: string }>("business_apps", {});
+    const off = apps.subscribe(() => {});
+    try {
+      await vi.waitFor(
+        () => {
+          if (!apps.get().some((row) => row.id === "shell")) throw new Error("shell not synced");
+        },
+        { timeout: 2_000, interval: 5 },
+      );
+    } finally {
+      off();
+    }
     const entry = { coreInstanceId, closed: false };
     opened.push(entry);
     const session: WorkjetV4Session = {
@@ -90,7 +119,7 @@ function memorySessions() {
 
 function host(reader: WorkjetLaunchContextReader, sessions = memorySessions()) {
   const created = createWorkjetV4Host({
-    appVersion: "bootstrap-test",
+    appVersion: APP_VER,
     readLaunchContext: reader,
     openSession: sessions.openSession,
   });
@@ -182,7 +211,7 @@ describe("V4 bootstrap: mount only on a V4 instance", () => {
   it("a failed V4 boot leaves the instance unmounted", async () => {
     const instanceId = `wj-boot-fail-${++sequence}`;
     const controller = createWorkjetV4Host({
-      appVersion: "bootstrap-test",
+      appVersion: APP_VER,
       readLaunchContext: async () => v4LaunchContext("core-fail"),
       openSession: async () => {
         throw new Error("transport_unavailable");

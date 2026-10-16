@@ -59,9 +59,27 @@ describe("Quellenliste über den heutigen Weg", () => {
     expect(candidates.map((entry) => [entry.id, entry.user, entry.sshAlias])).toEqual([
       ["local", null, null],
       ["ssh:lan-gpu3", "metricspace", "lan-gpu3"],
-      ["tailscale:gpu1-a6000", "deck", "ts-gpu1"],
+      // Direkt auf die tailnet-Adresse, nicht über den Alias (ProxyJump).
+      ["tailscale:gpu1-a6000", "deck", null],
       ["tailscale:nas", null, null],
     ]);
+  });
+
+  it("connects a tailnet device to its tailnet address, keeping user and port from the alias", () => {
+    const [candidate] = legacyMachineCandidates({
+      localName: null,
+      sshHosts: [host("ts-gpu1", "100.87.204.48", "deck")],
+      peers: {
+        status: "available",
+        peers: [{ id: "1", name: "gpu1-a6000", hostname: "100.87.204.48", online: true }],
+      },
+    });
+    expect(requestForCandidate(candidate!, "gpu1-a6000").target).toEqual({
+      alias: "100.87.204.48",
+      hostname: "100.87.204.48",
+      username: "deck",
+      port: 22,
+    });
   });
 
   it("builds an add request without roles; GPU stays auto-detected", () => {

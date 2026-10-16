@@ -145,8 +145,10 @@ export function legacyMachineCandidates(input: {
         entry.name === short,
     );
     if (match) claimed.add(match.id);
-    // Tailscale = SSH auf die tailnet-Adresse; Benutzer aus dem Host-Eintrag,
-    // sonst fragt die Liste nach (nie der lokale Benutzer).
+    // Tailscale = SSH direkt auf die tailnet-Adresse; Benutzer und Port aus
+    // dem Host-Eintrag, sonst fragt die Liste nach (nie der lokale Benutzer).
+    // Nicht über den Alias: dessen ProxyJump/ProxyCommand umgeht den
+    // tailnet-Weg (ts-gpu1 lief über ts-gpu3, ~250 KB/s statt LAN-direkt).
     tailnet.push({
       id: `tailscale:${short}`,
       transport: "tailscale",
@@ -154,7 +156,7 @@ export function legacyMachineCandidates(input: {
       user: match?.user ?? null,
       host: peer.hostname,
       port: match?.port ?? null,
-      sshAlias: match?.sshAlias ?? null,
+      sshAlias: null,
     });
   }
   return [

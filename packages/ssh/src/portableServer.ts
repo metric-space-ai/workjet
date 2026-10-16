@@ -207,9 +207,15 @@ export const preparePortableServer = Effect.fn("ssh.preparePortableServer")(func
     else {
       // A cut chunk keeps the prefix that arrived; ask the host where to
       // resume (or whether a parallel transfer already installed it).
-      const resumed = yield* probe();
-      if (resumed.installed) return resumed.installed;
-      offset = resumed.offset;
+      // A dropped link can fail this probe too (banner timeout on gpu1 via a
+      // jump host): that counts as one attempt without progress, not as the end.
+      const resumed = yield* probe().pipe(
+        Effect.catchTag("SshCommandError", (error) =>
+          isSshAuthFailure(error) ? Effect.fail(error) : Effect.succeed(null),
+        ),
+      );
+      if (resumed?.installed) return resumed.installed;
+      if (resumed) offset = resumed.offset;
     }
     if (offset > before) {
       stalled = 0;

@@ -24,6 +24,8 @@ const host = vi.hoisted(() => ({
   commandBytes: 0,
   /** Cut the next N binary chunks after half their bytes (a timed-out chunk). */
   cutChunks: 0,
+  /** Fail the next N non-binary probes like a dropped link. */
+  failProbes: 0,
   /** Every binary chunk arrives with zero bytes and times out. */
   dropChunks: false,
 }));
@@ -36,6 +38,14 @@ vi.mock("./command.ts", () => ({
       try: () => {
         if (typeof input.stdin === "string" && input.stdin.startsWith("printf"))
           return { stdout: "Linux:x86_64\n", stderr: "" };
+        if (
+          typeof input.stdin === "string" &&
+          input.stdin.includes("offset:%s") &&
+          host.failProbes > 0
+        ) {
+          host.failProbes--;
+          throw new Error("Connection timed out during banner exchange");
+        }
         const binary = input.stdin instanceof Uint8Array;
         let content = input.stdin;
         const command = input.remoteCommandArgs?.join(" ") ?? "";
@@ -93,6 +103,7 @@ const fixture = Effect.gen(function* () {
   host.commandBytes = 0;
   host.cutChunks = 0;
   host.dropChunks = false;
+  host.failProbes = 0;
   host.corrupt = false;
   yield* fs.makeDirectory(host.root);
   yield* fs.makeDirectory(NodePath.join(root, "package/dist"), { recursive: true });
@@ -218,6 +229,24 @@ it.effect("resumes a cut chunk at the size the host reports and reports progress
       NodePath.join(host.root, ".workjet/ssh-server"),
     )).filter((name) => name.startsWith("."));
     expect(leftovers).toEqual([]);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("rides out a failed resume probe after a cut chunk", () =>
+  Effect.gen(function* () {
+    const directory = yield* fixture;
+    yield* writeArchive(directory, 2 * PORTABLE_SERVER_CHUNK_BYTES);
+    // Arm after the first probe: cut one chunk, then fail the next probe.
+    const first = preparePortableServer(target, directory, {}, (step) =>
+      Effect.sync(() => {
+        if (step.transferredBytes === 0) {
+          host.cutChunks = 1;
+          host.failProbes = 1;
+        }
+      }),
+    );
+    const installed = yield* first;
+    expect(installed).toMatch(/package\/dist\/bin\.mjs$/);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 

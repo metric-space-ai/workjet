@@ -11,6 +11,7 @@ import {
   backgroundActivityReporterLayer,
 } from "../lib/backgroundActivityReporter";
 import { connectionPlatformLayer } from "./platform";
+import { ctoxV4ServerProxyLayer } from "../ctox/v4ServerProxy";
 
 const providedConnectionPlatformLayer = connectionPlatformLayer.pipe(
   Layer.provide(runtimeContextLayer),
@@ -28,7 +29,8 @@ type ConnectionLayerSource =
   | typeof runtimeContextLayer
   | typeof connectionPlatformLayer
   | typeof backgroundActivityObserverLayer
-  | typeof backgroundActivityReporterLayer;
+  | typeof backgroundActivityReporterLayer
+  | typeof ctoxV4ServerProxyLayer;
 
 const providedClientConnectionLayer = Layer.merge(Connection.layer, snapshotLoaderLayer).pipe(
   Layer.provideMerge(
@@ -40,7 +42,7 @@ const providedClientConnectionLayer = Layer.merge(Connection.layer, snapshotLoad
   ),
 );
 
-const connectionLayer = backgroundActivityReporterLayer.pipe(
+const connectionLayer = Layer.merge(backgroundActivityReporterLayer, ctoxV4ServerProxyLayer).pipe(
   Layer.provideMerge(providedClientConnectionLayer),
 );
 

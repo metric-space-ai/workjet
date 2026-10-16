@@ -14,7 +14,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Schedule from "effect/Schedule";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
@@ -24,6 +24,11 @@ import { forkParked } from "../serverActivation.ts";
 import { CtoxThreadBindingSource } from "./ctox/CtoxThreadBinding.ts";
 import { makeCtoxMcpTransport } from "./ctox/CtoxMcpTransport.ts";
 import { makeCtoxNativeSupervisorWorkers } from "./ctox/CtoxNativeSupervisorWorkers.ts";
+import { listCtoxV4AppPorts, subscribeCtoxV4AppPorts } from "./ctox/CtoxV4AppPorts.ts";
+import {
+  readWorkjetWorkerDispatchHead,
+  watchWorkjetWorkerDispatchIntents,
+} from "@workjet/shared/ctoxV4AppData";
 import { DecisionHubConnectionRegistry } from "./decisionHub/DecisionHubConnectionRegistry.ts";
 import {
   makeNativeSupervisorWorkerDispatch,
@@ -248,15 +253,55 @@ export class NativeSupervisorWorkerDispatch extends Context.Service<
   NativeSupervisorWorkerDispatch,
   Effect.Success<typeof make>
 >()("workjet/workjet/NativeSupervisorWorkerDispatchLive/NativeSupervisorWorkerDispatch") {}
+/**
+ * Wait before the next source cycle. V3 keeps the 5 s spacing; on V4 (C3) the live query of
+ * workjet_worker_dispatch_intents of every bound port wakes the cycle as soon as a new intent
+ * heads the queue of this environment, and a bind/unbind re-evaluates at once.
+ */
+export const makeNextNativeWorkerCycle = (environmentId: string) => {
+  const seenHeads = new WeakMap<object, string | null>();
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const wake = yield* Queue.sliding<void>(1);
+      const signal = () => {
+        Queue.offerUnsafe(wake, undefined);
+      };
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const offs = [subscribeCtoxV4AppPorts(signal)];
+          for (const port of listCtoxV4AppPorts()) {
+            const check = () => {
+              const head = readWorkjetWorkerDispatchHead(port, environmentId).intents[0];
+              const id = head?.intentId ?? null;
+              const seen = seenHeads.get(port);
+              seenHeads.set(port, id);
+              if (id !== null && id !== seen) signal();
+            };
+            offs.push(watchWorkjetWorkerDispatchIntents(port, environmentId, check));
+          }
+          return offs;
+        }),
+        (offs) =>
+          Effect.sync(() => {
+            for (const off of offs) off();
+          }),
+      );
+      yield* Effect.raceFirst(Queue.take(wake), Effect.sleep("5 seconds"));
+    }),
+  );
+};
+
 export const layer = Layer.effect(
   NativeSupervisorWorkerDispatch,
   Effect.gen(function* () {
     const service = yield* make;
+    const nextCycle = makeNextNativeWorkerCycle(yield* (yield* ServerEnvironment).getEnvironmentId);
     yield* forkParked(
       service.runCycle.pipe(
         Effect.timeout("6 minutes"),
         Effect.catchCause(() => Effect.void),
-        Effect.repeat(Schedule.spaced("5 seconds")),
+        Effect.andThen(nextCycle),
+        Effect.forever,
       ),
     );
     return service;

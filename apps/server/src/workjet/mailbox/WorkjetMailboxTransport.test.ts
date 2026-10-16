@@ -21,6 +21,7 @@ import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import type { CtoxV4AppPort, CtoxV4CommandHandle } from "@workjet/shared/ctoxV4AppData";
 import { bindCtoxV4AppPort } from "../ctox/CtoxV4AppPorts.ts";
@@ -3335,6 +3336,62 @@ group("WorkjetMailboxTransport V4", (it) => {
         assert.strictEqual(Option.getOrThrow(yield* store.getOutbound(id)).state, "delivered");
         assert.strictEqual(rows.get(id)?.status, "pending");
         assert.strictEqual(rows.get(id)?.target_environment_id, REMOTE_ENVIRONMENT);
+      } finally {
+        release();
+      }
+    }),
+  );
+
+  it.effect("C3: the live query wakes the next cycle; the 10 s poll timer is not used", () =>
+    Effect.gen(function* () {
+      const { port, rows } = memoryV4Port();
+      let listeners: Array<() => void> = [];
+      // A port whose live query re-emits like the kernel client (or the server proxy mirror).
+      const livePort: CtoxV4AppPort = {
+        ...port,
+        query: <T>(collection: string, query: { selector?: Record<string, unknown> }) => {
+          const inner = port.query<T>(collection, query);
+          return {
+            get: inner.get,
+            subscribe: (listener: (value: T[]) => void) => {
+              const emitNow = () => listener(inner.get());
+              listeners.push(emitNow);
+              emitNow();
+              return () => {
+                listeners = listeners.filter((entry) => entry !== emitNow);
+              };
+            },
+          };
+        },
+      };
+      const release = bindCtoxV4AppPort({ instanceId: "v4-wake", endpoint: BASE_URL }, livePort);
+      try {
+        const transport = yield* makeTransport({ client: noDaemon });
+        yield* transport.runCycle;
+        const nextCycle = transport.nextCycle;
+        assert.isDefined(nextCycle);
+        let woke = false;
+        yield* nextCycle!.pipe(
+          Effect.tap(() => Effect.sync(() => (woke = true))),
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        // Nothing pending: far past the V3 poll interval the loop still sleeps.
+        yield* TestClock.adjust("30 seconds");
+        yield* Effect.yieldNow;
+        assert.isFalse(woke);
+        // A replicated pending envelope wakes the cycle through the live query.
+        rows.set("e-wake", {
+          id: "e-wake",
+          target_environment_id: LOCAL_ENVIRONMENT,
+          status: "pending",
+          created_at_ms: 0,
+          expires_at_ms: 2 ** 52,
+        });
+        for (const emit of listeners) emit();
+        yield* TestClock.adjust("1 second");
+        yield* Effect.yieldNow;
+        assert.isTrue(woke);
       } finally {
         release();
       }

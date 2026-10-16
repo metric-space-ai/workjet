@@ -7,7 +7,18 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import type { CtoxV4AppPort, CtoxV4CommandState, CtoxV4Live } from "@workjet/shared/ctoxV4AppData";
-import { bindCtoxV4AppPort } from "./CtoxV4AppPorts.ts";
+import {
+  bindCtoxV4AppPort,
+  resolveCtoxV4AppPortForEndpoint,
+  resolveCtoxV4AppPortForInstance,
+  subscribeCtoxV4AppPorts,
+} from "./CtoxV4AppPorts.ts";
+import { makeCtoxV4AppProxySessions } from "./CtoxV4AppProxy.ts";
+import { serveCtoxV4Proxy, type CtoxV4ProxyRequest } from "@workjet/shared/ctoxV4AppProxy";
+import {
+  WORKJET_WORKER_DISPATCH_INTENTS,
+  WORKJET_WORKER_DISPATCH_SOURCES,
+} from "@workjet/shared/ctoxV4AppData";
 import { makeCtoxLumaConfigurationClient } from "./CtoxLumaConfigurationClient.ts";
 import { makeCtoxNativeSupervisorWorkers } from "./CtoxNativeSupervisorWorkers.ts";
 import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -188,6 +199,156 @@ describe("V4 bound: seams use the kernel client, never MCP", () => {
       } finally {
         release();
       }
+    }),
+  );
+});
+
+describe("V4 worker dispatch reads the intent queue as app data (E54.3b)", () => {
+  it.effect("poll is a local query of workjet_worker_dispatch_intents, no command, no MCP", () =>
+    Effect.gen(function* () {
+      const instanceId = `dispatch-poll-${++instanceSequence}`;
+      const { port, rows, commands } = memoryPort({});
+      const intentId = "01a14611-5de0-7000-919b-b8ecf4d8a4ce";
+      const record = {
+        contract: "ctox.workjet.worker-dispatch.v1",
+        registrationId: "reg-1",
+        revision: 2,
+        sourceEnvironmentId: "env-me",
+        sourceSupervisorThreadId: "supervisor",
+        sourceInstanceId: instanceId,
+        sourceWorkspaceId: "workjet",
+        projectId: "project",
+        ownerUserId: "owner",
+        authorityEpoch: 1,
+        state: "active",
+      };
+      rows.set(`${WORKJET_WORKER_DISPATCH_SOURCES}/reg-1`, {
+        id: "reg-1",
+        owner_user_id: "owner",
+        project_id: "project",
+        registration_id: "reg-1",
+        record,
+      });
+      const intent = {
+        intentId,
+        registrationId: "reg-1",
+        registrationRevision: 2,
+        sourceEnvironmentId: "env-me",
+        sourceSupervisorThreadId: "supervisor",
+        projectId: "project",
+        task: "Baue X",
+      };
+      const row = (id: string, revision: number, result: object | null) => ({
+        id,
+        intent_id: id,
+        registration_id: "reg-1",
+        registration_revision: revision,
+        command_id: "project/supervisor",
+        dispatch_key: id,
+        request_digest: "d",
+        intent: { ...intent, intentId: id, registrationRevision: revision },
+        result,
+      });
+      // Older revision (replaced registration) and an answered intent never reach the head.
+      rows.set(
+        `${WORKJET_WORKER_DISPATCH_INTENTS}/0`,
+        row("01a14611-0000-7000-919b-000000000000", 1, null),
+      );
+      rows.set(`${WORKJET_WORKER_DISPATCH_INTENTS}/1`, row(intentId, 2, null));
+      rows.set(
+        `${WORKJET_WORKER_DISPATCH_INTENTS}/2`,
+        row("01a14611-ffff-7000-919b-000000000000", 2, { status: "failed" }),
+      );
+      const release = bindCtoxV4AppPort({ instanceId }, port);
+      try {
+        const workers = makeCtoxNativeSupervisorWorkers({
+          connections: {
+            resolveReadyTarget: () => Effect.die("V4 must not resolve an MCP target"),
+            probe: () => Effect.die("V4 must not probe MCP"),
+          },
+          transport: {
+            probe: () => Effect.die("V4 must not probe MCP"),
+            callTool: () => Effect.die("V4 must not call MCP"),
+          } as unknown as ReturnType<typeof makeCtoxMcpTransport>,
+        });
+        const intents = yield* workers.poll(
+          { connectionId: "c" as never, instanceId },
+          "env-me" as never,
+        );
+        assert.deepStrictEqual(
+          intents.map((value) => value.intentId),
+          [intentId],
+        );
+        assert.deepStrictEqual(commands, []);
+      } finally {
+        release();
+      }
+    }),
+  );
+});
+
+describe("C3 renderer→server proxy fills and clears the server registry", () => {
+  it.effect("binds after the mirrored collections arrived and unbinds when the stream ends", () =>
+    Effect.gen(function* () {
+      const instanceId = `proxy-${++instanceSequence}`;
+      const endpoint = `https://v4-proxy-${instanceSequence}.invalid/mcp/instance`;
+      const { port: renderer } = memoryPort({});
+      renderer.put("workjet_luma_state", {
+        id: "instance",
+        revision: 3,
+        configured: true,
+        managedSystemPrompt: "p",
+        updatedAtMs: 5,
+      });
+      const sessions = makeCtoxV4AppProxySessions();
+      const changes: number[] = [];
+      const offChanges = subscribeCtoxV4AppPorts(() => changes.push(changes.length));
+      const requests: CtoxV4ProxyRequest[] = [];
+      let client: ReturnType<typeof serveCtoxV4Proxy> | null = null;
+      const session = sessions.open(
+        "attach-1",
+        { instanceId, actor: { id: "owner", role: "admin" } },
+        [endpoint],
+        (event) => {
+          if (event.type === "attached") {
+            client = serveCtoxV4Proxy(renderer, (reply) => {
+              sessions.reply({ attachId: event.attachId, reply: reply as Record<string, unknown> });
+            });
+            return;
+          }
+          requests.push(event.request as unknown as CtoxV4ProxyRequest);
+          queueMicrotask(() => client?.handle(event.request as unknown as CtoxV4ProxyRequest));
+        },
+      );
+      try {
+        assert.strictEqual(sessions.size(), 1);
+        yield* Effect.promise(async () => {
+          for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+        });
+        const bound = resolveCtoxV4AppPortForInstance(instanceId);
+        assert.isNotNull(bound);
+        assert.strictEqual(resolveCtoxV4AppPortForEndpoint(endpoint), bound);
+        assert.isTrue(changes.length > 0);
+        // Synchronous reads on the server come from the mirror of the renderer's live query.
+        const document = yield* makeCtoxLumaConfigurationClient(forbiddenHttp).read({
+          endpoint,
+          token: "",
+        });
+        assert.deepStrictEqual(document, {
+          revision: 3,
+          configuration: { managedSystemPrompt: "p" },
+          updatedAtMs: 5,
+        });
+        assert.isTrue(requests.every((request) => request.op === "subscribe"));
+        // A reply for a foreign attach id reaches nobody.
+        assert.isFalse(sessions.reply({ attachId: "other", reply: { kind: "value" } }));
+      } finally {
+        session.close();
+        offChanges();
+      }
+      assert.isNull(resolveCtoxV4AppPortForInstance(instanceId));
+      assert.isNull(resolveCtoxV4AppPortForEndpoint(endpoint));
+      assert.strictEqual(sessions.size(), 0);
     }),
   );
 });

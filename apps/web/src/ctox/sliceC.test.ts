@@ -9,6 +9,9 @@ import {
   CTOX_MAINTENANCE_RESTART,
   WORKJET_MAILBOX_ENVELOPES,
   WORKJET_WORKER_DISPATCH,
+  WORKJET_WORKER_DISPATCH_CONTRACT,
+  WORKJET_WORKER_DISPATCH_INTENTS,
+  WORKJET_WORKER_DISPATCH_SOURCES,
   acknowledgeWorkjetMailboxEnvelopes,
   callWorkjetBusinessOs,
   dispatchWorkjetWorker,
@@ -18,17 +21,29 @@ import {
   readWorkjetLumaConfiguration,
   requestWorkjetDecision,
   saveWorkjetLumaConfiguration,
+  readWorkjetWorkerDispatchHead,
   watchPendingWorkjetMailboxEnvelopes,
+  watchWorkjetWorkerDispatchIntents,
   type WorkjetMailboxEnvelopeDocument,
+  type WorkjetWorkerDispatchIntent,
+  type WorkjetWorkerDispatchIntentDocument,
+  type WorkjetWorkerDispatchSourceDocument,
+  type WorkjetWorkerSourceRegistration,
 } from "@workjet/shared/ctoxV4AppData";
+import {
+  createCtoxV4ProxyServer,
+  serveCtoxV4Proxy,
+  type CtoxV4ProxyClientApi,
+  type CtoxV4ProxyRequest,
+} from "@workjet/shared/ctoxV4AppProxy";
 import { createKernel } from "./kernel/kernel.mjs";
 import { MemoryCoreTransport } from "./kernel/fake-core.mjs";
 import type { CtoxAppApi, Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
+import { workerDispatchHandlerSource } from "./workerDispatchHandler.fixture";
 import { getCtoxClient } from "./ctoxClient";
 import {
   WORKJET_APP_ID,
-  WORKJET_FOREIGN_COLLECTIONS,
   workjetAppManifest,
   workjetForeignOwnerManifests,
 } from "./workjetAppManifest";
@@ -46,17 +61,14 @@ const APP_VER = "v4-slice-c";
  * - route `threads.ctox_approval.request` (core threads.rs request_approval → projection
  *   `ctox_task_approval_requests`, status pending|approved|rejected|cancelled),
  * - route `ctox.maintenance.restart` (E49.2: admin only, answer before the restart),
- * - the Workjet app handler `workjet.worker.dispatch` (E49.5) with `process.run`.
+ * - the instance module handler `workjet.worker.dispatch` (E54.3b): the intent queue over ctx.db
+ *   with all seven native actions, no capability (workerDispatchHandler.fixture.ts).
  */
-const WORKER_DISPATCH_HANDLER = `export default async function handle(command, ctx) {
-  const p = command.payload;
-  if (p.action === "register_source") return { source_environment_id: p.source_environment_id, project_id: p.project_id, registered: true };
-  if (p.action !== "dispatch" || typeof p.worker_id !== "string" || typeof p.brief !== "string") throw Object.assign(new Error("payload_invalid"), { code: "invalid" });
-  const run = await ctx.cap.process.run({ program: "cat", args: [], stdin: JSON.stringify({ worker_id: p.worker_id, project_id: p.project_id, brief: p.brief }), timeout_ms: 30000 });
-  return { dispatch_id: p.dispatch_id, exit_code: run.exit_code, accepted: run.exit_code === 0, echo: run.stdout };
+/** Real sha256: the kernel verifies every manifest file before it activates the app. */
+async function sha256Hex(text: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
-`;
-const HANDLER_HASH = "sha256-workjet-worker-dispatch-spec";
 
 let sequence = 0;
 const open: { kernel: Kernel; release: () => void }[] = [];
@@ -74,15 +86,19 @@ async function openV4(role: "admin" | "user" = "admin") {
     latencyMs: 0,
     user: { id: "gate-owner", role },
   });
+  const handlerText = workerDispatchHandlerSource(instanceId);
+  const handlerHash = await sha256Hex(handlerText);
   (transport as unknown as { putArtifact(hash: string, text: string): void }).putArtifact(
-    HANDLER_HASH,
-    WORKER_DISPATCH_HANDLER,
+    handlerHash,
+    handlerText,
   );
+  // The instance module `workjet` (app_id workjet) adds the handler to the Workjet manifest; it
+  // starts no process and declares no capability (E54.3b).
   const manifest = {
     ...workjetAppManifest(APP_VER),
     handlers: { [WORKJET_WORKER_DISPATCH]: "handlers/worker-dispatch.mjs" },
-    files: { "handlers/worker-dispatch.mjs": HANDLER_HASH },
-    capabilities_required: ["process.run"],
+    files: { "handlers/worker-dispatch.mjs": handlerHash },
+    capabilities_required: [],
   };
   await transport.push("business_app_versions", [
     { id: `${WORKJET_APP_ID}@${APP_VER}`, app_id: WORKJET_APP_ID, app_ver: APP_VER, manifest },
@@ -166,6 +182,49 @@ const envelope = (id: string, target: string) => ({
   payload_json: "{}",
 });
 
+const SUPERVISOR = "00000000-0000-4000-8000-0000000000aa";
+
+/** ctox-owned project row with the supervisor binding the handler checks (E54.3b.2). */
+async function seedProject(
+  transport: MemoryCoreTransport,
+  api: CtoxAppApi,
+  row: { id: string; owner_user_id: string },
+) {
+  await transport.push("workjet_projects", [
+    { ...row, status: "active", supervisor_thread_id: SUPERVISOR, authority_epoch: 1 },
+  ]);
+  await waitForRow(api, "workjet_projects", row.id, () => true);
+}
+
+const dispatched = (intent: WorkjetWorkerDispatchIntent) => ({
+  schemaVersion: 1,
+  status: "dispatched",
+  environmentId: "env-worker",
+  workerThreadId: intent.intentId,
+  computerId: "computer-1",
+  branch: `workjet/worker/${intent.intentId}`,
+  worktreePath: `/tmp/worktrees/${intent.intentId}`,
+  parent: { environmentId: intent.sourceEnvironmentId, threadId: intent.sourceSupervisorThreadId },
+  modelSelection: { instanceId: "codex", model: "gpt" },
+  enabledCapabilityIds: [],
+});
+
+const outcome = (intentId: string) => ({
+  schema: "ctox.workjet.worker-outcome.v1",
+  worker_thread_id: intentId,
+  environment_id: "env-worker",
+  computer_id: "computer-1",
+  branch: `workjet/worker/${intentId}`,
+  execution_stopped: true,
+  pull_request: {
+    provider: "github",
+    number: 7,
+    url: "https://github.com/metric-space-ai/workjet/pull/7",
+    head_oid: "a".repeat(40),
+    state: "merged",
+  },
+});
+
 describe("slice C on a V4 instance (fake core, published manifest)", () => {
   it("1 mailbox: publish, live query instead of polling, receipt as api.patch", async () => {
     const { api, transport } = await openV4();
@@ -237,7 +296,7 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
   });
 
   it("3 decision_hub → threads.ctox_approval.request plus approval read", async () => {
-    const { api, approvals, transport } = await openV4();
+    const { api, transport } = await openV4();
     const result = await requestWorkjetDecision(api, {
       decisionKey: "k-1",
       title: "Freigabe",
@@ -297,32 +356,273 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
     ).resolves.toEqual({ decisionId: "workjet-decision:k-2", status: "open" });
   });
 
-  it("4 worker dispatch runs in the Workjet app handler with process.run", async () => {
-    const { api } = await openV4();
+  it("4 worker dispatch is an intent queue in Workjet app data, all seven actions", async () => {
+    const { api, transport } = await openV4();
+    await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" });
+    const registration = (await dispatchWorkjetWorker(api, {
+      action: "register_source",
+      source_environment_id: "env-me",
+      source_supervisor_thread_id: SUPERVISOR,
+      project_id: "p-1",
+    })) as WorkjetWorkerSourceRegistration;
+    expect(registration).toMatchObject({
+      contract: WORKJET_WORKER_DISPATCH_CONTRACT,
+      revision: 1,
+      state: "active",
+      sourceEnvironmentId: "env-me",
+      sourceSupervisorThreadId: SUPERVISOR,
+      sourceInstanceId: expect.stringMatching(/^v4-slice-c-/),
+      ownerUserId: "gate-owner",
+      projectId: "p-1",
+    });
+    // Same registration again is a no-op replay (native `unchanged`).
     expect(
       await dispatchWorkjetWorker(api, {
         action: "register_source",
         source_environment_id: "env-me",
+        source_supervisor_thread_id: SUPERVISOR,
         project_id: "p-1",
       }),
-    ).toEqual({ source_environment_id: "env-me", project_id: "p-1", registered: true });
-    const result = (await dispatchWorkjetWorker(
-      api,
-      {
-        action: "dispatch",
-        dispatch_id: "d-1",
-        worker_id: "w-1",
-        project_id: "p-1",
-        brief: "Baue X",
-      },
-      "d-1",
-    )) as { accepted: boolean; echo: string };
-    expect(result.accepted).toBe(true);
-    expect(JSON.parse(result.echo)).toEqual({
-      worker_id: "w-1",
-      project_id: "p-1",
-      brief: "Baue X",
+    ).toEqual(registration);
+
+    // dispatch (supervisor side): an intent, never a process; replay keeps the same intent.
+    const dispatchArgs = {
+      action: "dispatch",
+      dispatch_key: "k-1",
+      task: "Baue X",
+      title: "X",
+    } as const;
+    const first = (await dispatchWorkjetWorker(api, dispatchArgs, { record_id: "p-1" })) as {
+      state: string;
+      intent: WorkjetWorkerDispatchIntent;
+    };
+    expect(first.state).toBe("pending");
+    expect(first.intent).toMatchObject({
+      registrationId: registration.registrationId,
+      registrationRevision: 1,
+      sourceEnvironmentId: "env-me",
+      sourceSupervisorThreadId: SUPERVISOR,
+      projectId: "p-1",
+      task: "Baue X",
     });
+    expect(first.intent.intentId).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
+    );
+    const replay = (await dispatchWorkjetWorker(api, dispatchArgs, { record_id: "p-1" })) as {
+      intent: WorkjetWorkerDispatchIntent;
+    };
+    expect(replay.intent.intentId).toBe(first.intent.intentId);
+    await expect(
+      dispatchWorkjetWorker(api, { ...dispatchArgs, task: "anders" }, { record_id: "p-1" }),
+    ).rejects.toMatchObject({ code: "conflict" });
+
+    // poll: the dispatcher reads the head of its queue locally (live query, no MCP poll).
+    const woke = vi.fn();
+    const off = watchWorkjetWorkerDispatchIntents(api, "env-me", woke);
+    try {
+      await waitForRow(api, WORKJET_WORKER_DISPATCH_INTENTS, first.intent.intentId, () => true);
+      await waitForRow(
+        api,
+        WORKJET_WORKER_DISPATCH_SOURCES,
+        registration.registrationId,
+        () => true,
+      );
+      expect(readWorkjetWorkerDispatchHead(api, "env-me").intents).toEqual([first.intent]);
+      expect(readWorkjetWorkerDispatchHead(api, "env-other").intents).toEqual([]);
+      expect(woke).toHaveBeenCalled();
+      // The handler's own poll answers the same head (native receipt shape).
+      expect(
+        await dispatchWorkjetWorker(api, { action: "poll", source_environment_id: "env-me" }),
+      ).toMatchObject({ contract: WORKJET_WORKER_DISPATCH_CONTRACT, intents: [first.intent] });
+
+      // complete: exactly-once startup acknowledgement.
+      const result = dispatched(first.intent);
+      expect(
+        await dispatchWorkjetWorker(api, {
+          action: "complete",
+          registration_id: registration.registrationId,
+          revision: 1,
+          intent_id: first.intent.intentId,
+          result,
+        }),
+      ).toEqual({
+        contract: WORKJET_WORKER_DISPATCH_CONTRACT,
+        intentId: first.intent.intentId,
+        registrationId: registration.registrationId,
+        revision: 1,
+        result,
+      });
+      await expect(
+        dispatchWorkjetWorker(api, {
+          action: "complete",
+          registration_id: registration.registrationId,
+          revision: 1,
+          intent_id: first.intent.intentId,
+          result: { schemaVersion: 1, status: "failed", reason: "create-failed" },
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+      await waitForRow<WorkjetWorkerDispatchIntentDocument>(
+        api,
+        WORKJET_WORKER_DISPATCH_INTENTS,
+        first.intent.intentId,
+        (row) => row.result !== null,
+      );
+      expect(readWorkjetWorkerDispatchHead(api, "env-me").intents).toEqual([]);
+
+      // report_outcome: immutable terminal receipt, acknowledged with provenance.
+      const receipt = outcome(first.intent.intentId);
+      expect(
+        await dispatchWorkjetWorker(api, {
+          action: "report_outcome",
+          registration_id: registration.registrationId,
+          revision: 1,
+          intent_id: first.intent.intentId,
+          receipt,
+        }),
+      ).toMatchObject({
+        provenance: "authenticated_source_report",
+        registration_revision: 1,
+        receipt,
+      });
+      await expect(
+        dispatchWorkjetWorker(api, {
+          action: "report_outcome",
+          registration_id: registration.registrationId,
+          revision: 1,
+          intent_id: first.intent.intentId,
+          receipt: { ...receipt, pull_request: { ...receipt.pull_request, state: "closed" } },
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+
+      // observe (supervisor side): acknowledgement plus reported outcome.
+      expect(
+        await dispatchWorkjetWorker(api, { action: "observe", limit: 4 }, { record_id: "p-1" }),
+      ).toMatchObject({
+        projectId: "p-1",
+        supervisorThreadId: SUPERVISOR,
+        truncated: false,
+        observations: [
+          {
+            intentId: first.intent.intentId,
+            dispatchKey: "k-1",
+            registrationCurrent: true,
+            acknowledgement: { status: "dispatched", workerThreadId: first.intent.intentId },
+            reportedOutcome: { provenance: "authenticated_source_report" },
+          },
+        ],
+      });
+
+      // revoke_source: later intents of the revoked registration never reach the head.
+      const second = (await dispatchWorkjetWorker(
+        api,
+        { action: "dispatch", dispatch_key: "k-2", task: "Baue Y" },
+        { record_id: "p-1" },
+      )) as { intent: WorkjetWorkerDispatchIntent };
+      expect(
+        await dispatchWorkjetWorker(api, {
+          action: "revoke_source",
+          registration_id: registration.registrationId,
+          revision: 1,
+        }),
+      ).toMatchObject({ state: "revoked", revision: 2 });
+      await waitForRow<WorkjetWorkerDispatchSourceDocument>(
+        api,
+        WORKJET_WORKER_DISPATCH_SOURCES,
+        registration.registrationId,
+        (row) => row.record.state === "revoked",
+      );
+      await waitForRow(api, WORKJET_WORKER_DISPATCH_INTENTS, second.intent.intentId, () => true);
+      expect(readWorkjetWorkerDispatchHead(api, "env-me").intents).toEqual([]);
+    } finally {
+      off();
+    }
+  });
+
+  it("4 a foreign supervisor session is forbidden, and nothing asks for process.run", async () => {
+    const { api, transport } = await openV4();
+    await seedProject(transport, api, { id: "p-foreign", owner_user_id: "someone-else" });
+    await expect(
+      dispatchWorkjetWorker(api, {
+        action: "register_source",
+        source_environment_id: "env-me",
+        source_supervisor_thread_id: SUPERVISOR,
+        project_id: "p-foreign",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await seedProject(transport, api, { id: "p-2", owner_user_id: "gate-owner" });
+    await expect(
+      dispatchWorkjetWorker(api, {
+        action: "register_source",
+        source_environment_id: "env-me",
+        source_supervisor_thread_id: "00000000-0000-4000-8000-00000000beef",
+        project_id: "p-2",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    expect(JSON.stringify(workerDispatchHandlerSource("x"))).not.toContain("process");
+  });
+
+  it("4 the same queue through the renderer→server proxy (C3)", async () => {
+    const { api, transport } = await openV4();
+    await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" });
+    const sent: CtoxV4ProxyRequest[] = [];
+    let client: ReturnType<typeof serveCtoxV4Proxy> | null = null;
+    const server = createCtoxV4ProxyServer({
+      actor: api.actor,
+      send: (request) => {
+        sent.push(request);
+        queueMicrotask(() => client?.handle(request));
+      },
+    });
+    client = serveCtoxV4Proxy(api as unknown as CtoxV4ProxyClientApi, (reply) =>
+      queueMicrotask(() => server.receive(reply)),
+    );
+    try {
+      await server.ready;
+      expect(sent.filter((request) => request.op === "subscribe").map((r) => r.collection)).toEqual(
+        expect.arrayContaining([WORKJET_WORKER_DISPATCH_INTENTS, WORKJET_MAILBOX_ENVELOPES]),
+      );
+      const port = server.port;
+      const registration = (await dispatchWorkjetWorker(port, {
+        action: "register_source",
+        source_environment_id: "env-me",
+        source_supervisor_thread_id: SUPERVISOR,
+        project_id: "p-1",
+      })) as WorkjetWorkerSourceRegistration;
+      const { intent } = (await dispatchWorkjetWorker(
+        api,
+        { action: "dispatch", dispatch_key: "k-proxy", task: "Baue Z" },
+        { record_id: "p-1" },
+      )) as { intent: WorkjetWorkerDispatchIntent };
+      await vi.waitFor(
+        () => {
+          if (readWorkjetWorkerDispatchHead(port, "env-me").intents.length !== 1)
+            throw new Error("intent not mirrored");
+        },
+        { timeout: 2_000, interval: 5 },
+      );
+      expect(readWorkjetWorkerDispatchHead(port, "env-me").intents).toEqual([intent]);
+      await dispatchWorkjetWorker(port, {
+        action: "complete",
+        registration_id: registration.registrationId,
+        revision: 1,
+        intent_id: intent.intentId,
+        result: { schemaVersion: 1, status: "failed", reason: "computer-unavailable" },
+      });
+      await vi.waitFor(
+        () => {
+          if (readWorkjetWorkerDispatchHead(port, "env-me").intents.length !== 0)
+            throw new Error("completion not mirrored");
+        },
+        { timeout: 2_000, interval: 5 },
+      );
+      // An unknown command type is rejected through the proxy just like on the kernel.
+      await expect(
+        callWorkjetBusinessOs(port, { kind: "command", type: "ctox.not.a.route", payload: {} }),
+      ).rejects.toMatchObject({ code: "unknown_command" });
+    } finally {
+      client.close();
+      server.close();
+    }
   });
 
   it("5 business OS adapter: query, get and command through the V4 client", async () => {

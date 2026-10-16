@@ -11,6 +11,18 @@ import type { CtoxV4AppPort } from "@workjet/shared/ctoxV4AppData";
  */
 const byInstance = new Map<string, CtoxV4AppPort>();
 const byOrigin = new Map<string, CtoxV4AppPort>();
+const listeners = new Set<() => void>();
+const changed = () => {
+  for (const listener of listeners) listener();
+};
+
+/** Bind/unbind notifications, so loops can swap their timer for a live query (C3). */
+export function subscribeCtoxV4AppPorts(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
 
 const originOf = (endpoint: string): string | null => {
   try {
@@ -28,10 +40,17 @@ export function bindCtoxV4AppPort(
   const origin = instance.endpoint === undefined ? null : originOf(instance.endpoint);
   byInstance.set(instance.instanceId, port);
   if (origin !== null) byOrigin.set(origin, port);
+  changed();
   return () => {
     if (byInstance.get(instance.instanceId) === port) byInstance.delete(instance.instanceId);
     if (origin !== null && byOrigin.get(origin) === port) byOrigin.delete(origin);
+    changed();
   };
+}
+
+/** Every bound port once (an instance may also be bound under its endpoints). */
+export function listCtoxV4AppPorts(): ReadonlyArray<CtoxV4AppPort> {
+  return [...new Set(byInstance.values())];
 }
 
 export function resolveCtoxV4AppPortForInstance(instanceId: string): CtoxV4AppPort | null {

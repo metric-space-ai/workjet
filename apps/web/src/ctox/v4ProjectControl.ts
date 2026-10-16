@@ -14,6 +14,7 @@ import {
   readLocalProjectControl,
 } from "./projectReadData";
 import { readLocalProjectFile } from "./projectFileData";
+import { GALLERY_ORDER_PREF, readAppPref, writeAppPref } from "./appPrefs";
 import { newCommandId } from "../lib/utils";
 
 const decodeFeedPost = Schema.decodeUnknownSync(CtoxWorkjetProjectFeedPost);
@@ -29,6 +30,8 @@ export function requestV4ProjectControl(
 ): Promise<CtoxWorkjetProjectControlResult> | null {
   if (request.action === "project.list")
     return new Promise((resolve) => resolve(listV4WorkjetProjects(api)));
+  // E56.2: user UI state through api.prefs (E51), before the local projection reads.
+  if (request.action === "project.gallery.order.read") return readV4GalleryOrder(api, request);
   if (isLocalProjectRead(request)) {
     if (
       request.action === "project.presentation.content.read" ||
@@ -127,33 +130,72 @@ export function readV4WorkjetProjectKpis(
   };
 }
 
-/** E49.4: the gallery order is Workjet app data (one document per actor), never a command. */
-export const WORKJET_GALLERY_ORDERS = "workjet_gallery_orders";
+/**
+ * E56.2: the gallery order is UI state of the signed-in user in the app `workjet`, kept in
+ * `api.prefs` (E51) under `gallery.order`; no Workjet collection, no write to ctox collections,
+ * never a command. The revision check of the V3 contract stays on the preference value.
+ */
 type GalleryOrderSet = Extract<
   CtoxWorkjetProjectControlRequest,
   { action: "project.gallery.order.set" }
 >;
+type GalleryOrderRead = Extract<
+  CtoxWorkjetProjectControlRequest,
+  { action: "project.gallery.order.read" }
+>;
+const decodeGalleryOrder = Schema.decodeUnknownSync(
+  Schema.Struct({
+    revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    projectIds: Schema.Array(Schema.String).check(Schema.isMaxLength(500)),
+  }),
+);
 
-/** Optimistic revision check, then a local api.patch/put; the core replicates and audits it. */
+async function currentGalleryOrder(api: CtoxAppApi) {
+  const value = await readAppPref(api, GALLERY_ORDER_PREF);
+  if (value === null) return { revision: 0, projectIds: [] as ProjectId[] };
+  try {
+    const order = decodeGalleryOrder(value);
+    return { revision: order.revision, projectIds: order.projectIds as ReadonlyArray<ProjectId> };
+  } catch {
+    throw new CtoxLocalReadError("invalid", "gallery_order_pref_invalid", GALLERY_ORDER_PREF);
+  }
+}
+
+export async function readV4GalleryOrder(
+  api: CtoxAppApi,
+  request: GalleryOrderRead,
+): Promise<CtoxWorkjetProjectControlResult> {
+  try {
+    const order = await currentGalleryOrder(api);
+    return {
+      _tag: "completed",
+      response: {
+        action: "project.gallery.order.read",
+        commandId: request.commandId,
+        contract: "ctox.workjet.project_gallery_order.v1",
+        order: { revision: order.revision, projectIds: [...order.projectIds] },
+      },
+    };
+  } catch (error) {
+    return localReadFailure(error);
+  }
+}
+
+/** Optimistic revision check against the stored preference, then `api.prefs.set`. */
 export async function writeV4GalleryOrder(
   api: CtoxAppApi,
   request: GalleryOrderSet,
 ): Promise<CtoxWorkjetProjectControlResult> {
   try {
-    const id = api.actor.id;
-    const current = api.get<{ id: string; revision?: unknown }>(WORKJET_GALLERY_ORDERS, id).get();
-    const revision = typeof current?.revision === "number" ? current.revision : 0;
-    if (revision !== request.expectedRevision)
+    const current = await currentGalleryOrder(api);
+    if (current.revision !== request.expectedRevision)
       throw new CtoxLocalReadError(
         "conflict",
         "gallery_order_revision_mismatch",
-        `${WORKJET_GALLERY_ORDERS}/${id}`,
+        GALLERY_ORDER_PREF,
       );
-    const order = { revision: revision + 1, projectIds: [...request.projectIds] };
-    const write = current
-      ? api.patch(WORKJET_GALLERY_ORDERS, id, order)
-      : api.put(WORKJET_GALLERY_ORDERS, { id, owner_user_id: id, ...order });
-    await write.local;
+    const order = { revision: current.revision + 1, projectIds: [...request.projectIds] };
+    await writeAppPref(api, GALLERY_ORDER_PREF, order);
     return {
       _tag: "completed",
       response: {

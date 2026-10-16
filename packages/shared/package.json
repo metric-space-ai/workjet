@@ -242,6 +242,10 @@
     "./ctoxV4AppData": {
       "types": "./src/ctoxV4AppData.ts",
       "import": "./src/ctoxV4AppData.ts"
+    },
+    "./ctoxV4AppProxy": {
+      "types": "./src/ctoxV4AppProxy.ts",
+      "import": "./src/ctoxV4AppProxy.ts"
     }
   },
   "scripts": {

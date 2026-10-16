@@ -30,6 +30,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetWorkerRouteVerify]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetWorkerSourceConfirm]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetWorkerEnrollComputer]: AuthOrchestrationOperateScope,
+  // The V4 app proxy carries Workjet app data and commands of a bound instance.
+  [WS_METHODS.workjetCtoxV4Attach]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetCtoxV4Reply]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getTurnDiff]: AuthOrchestrationReadScope,

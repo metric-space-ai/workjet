@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/metric-space-ai/ctox",
-  "commit": "eca39cf848e0d0159ab7e7ccd9a4395091b3b9e2",
+  "commit": "f5f3fcb11ae13deec3b45d1a9ad1391f78de12ef",
   "sourceDirectory": "src/apps/business-os/kernel",
   "files": [
     {
@@ -25,8 +25,8 @@
     },
     {
       "path": "command-inventory.generated.mjs",
-      "sha256": "56419e716f4be1c580da5aa04d2001182d9c70392ab81df39e6732bd449bfd84",
-      "gitBlob": "98da1d805764e076d8de7b34042fd42f30c059bb"
+      "sha256": "de9680ee3eb5985242c3ae82e4826157cf2061b40ad1e501fb39d6357e4685c8",
+      "gitBlob": "0b02e0289d7549b18bd1f153160fcf32d7dc233b"
     },
     {
       "path": "command-observer.mjs",
@@ -55,8 +55,8 @@
     },
     {
       "path": "fake-core.mjs",
-      "sha256": "981f82b9abf68c78c73d3dccb4fa1181217987e6c724843778c5d82909726afa",
-      "gitBlob": "41b9838d194cfb23e189eb03498668c7cba55cff"
+      "sha256": "e836b6dca24eff0f3a790c91aee5980d327a3c05d82ad53b29b57be16378bee3",
+      "gitBlob": "9242da2ade809a2f58fa788f32f111ffb6c624cf"
     },
     {
       "path": "framing.mjs",
@@ -65,13 +65,13 @@
     },
     {
       "path": "index.d.ts",
-      "sha256": "30ccae494f83fce2e2b4c19743ec42bc1b1f5d3da74c4bf1c30dae2eb99a24b4",
-      "gitBlob": "08cce0c36f639dca5ef5734bba2565cca3d62aa6"
+      "sha256": "f0f1b0fe267943f42fe138263593fd3117547f244152cfa95d9adff650704f75",
+      "gitBlob": "f57f32f636b3ab7cc4192fecca320c15eb8f93a7"
     },
     {
       "path": "index.mjs",
-      "sha256": "69fbd05f687cc4fede00d0e88d0b328ea5752e0a7ca14100a662bed77cf076d9",
-      "gitBlob": "452581aedf2d8fbd8ee5cb539f4cdd07dbe0b0a3"
+      "sha256": "80b05b63a92ca6d135efdd18bd5370bc966083d574c1d327ac43d440c7218a02",
+      "gitBlob": "3ffa1332aa4396e9ed026b302d614ede5b4e0130"
     },
     {
       "path": "ingress.mjs",
@@ -80,8 +80,8 @@
     },
     {
       "path": "kernel.mjs",
-      "sha256": "04462dbc645b29cc7210c5131191bf786ae271b5e0a0492a536f81814e0df2d0",
-      "gitBlob": "9487c9d4cb1fdd7a774163602a89a3ca23610ee8"
+      "sha256": "1d542830bd7be1a8d89e84720ea57a4a9960232e015e404f860de265779919aa",
+      "gitBlob": "44e5594a279678c07cd305acad677e42aa32bf84"
     },
     {
       "path": "leader.mjs",
@@ -137,6 +137,11 @@
       "path": "store-idb-v5.mjs",
       "sha256": "1311b61bd0a1e1f1a86d522b1a78a73dc8626680e0ab1d61aa16d238a124a07c",
       "gitBlob": "4c45fc51a3241070a118ba45ed5d9405e7d82cc3"
+    },
+    {
+      "path": "testkit.mjs",
+      "sha256": "02ca352c112fa3c9a3e798e8898bdfa31a47f889a94ad539bd500494f43aaf5d",
+      "gitBlob": "b6078dc5b8e8b9b07a46352b5e3b731e35dd1a72"
     },
     {
       "path": "transport-webrtc.mjs",

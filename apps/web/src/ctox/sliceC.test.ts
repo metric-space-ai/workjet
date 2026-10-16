@@ -37,7 +37,7 @@ import {
   type CtoxV4ProxyRequest,
 } from "@workjet/shared/ctoxV4AppProxy";
 import { createKernel } from "./kernel/kernel.mjs";
-import { MemoryCoreTransport } from "./kernel/fake-core.mjs";
+import { MemoryCoreTransport } from "./kernelTestkit";
 import type { CtoxAppApi, Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
 import { workerDispatchHandlerSource } from "./workerDispatchHandler.fixture";

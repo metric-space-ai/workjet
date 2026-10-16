@@ -1,4 +1,3 @@
-// Single test seam for the fake core. At pin eca39cf84 MemoryCoreTransport still lives in
-// kernel/fake-core.mjs; with E52 (production kernel without fake-core) it moves to
-// kernel/testkit.mjs, and only this line changes.
-export { MemoryCoreTransport } from "./kernel/fake-core.mjs";
+// Single test seam for the fake core: the kernel's explicit development/test entry (E52,
+// kernel/testkit.mjs). The production entry kernel/index.mjs no longer exports it.
+export { MemoryCoreTransport } from "./kernel/testkit.mjs";

@@ -41,6 +41,7 @@ import type { EnvironmentPresentation } from "../../state/environments";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { useBusinessOsCodeScope } from "../../businessOsCodeScope";
 import { presetConnectionState, type PresetConnectionState } from "../../workjetPresetConnection";
+import { readCachedPresetSnapshot, writeCachedPresetSnapshot } from "../../presetSnapshotCache";
 import { workerSourceProvisionRequest } from "../../workjetWorkerSourceConnection";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -48,7 +49,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { randomUUID } from "../../lib/utils";
 import { Banner } from "../ui/banner";
 import { Button } from "../ui/button";
-import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
+import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { InlineExpand } from "../ui/inline-expand";
 import { Input } from "../ui/input";
 import { Row } from "../ui/row";
@@ -1411,10 +1412,17 @@ function ScopedWorkjetSettings({
     reportFailure: false,
   });
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Zuletzt bekannte Presets sofort zeigen, bis die Instanz antwortet (~20 s nach dem Start).
+  const [cached] = useState(() => readCachedPresetSnapshot(environmentId, target.instanceId));
+  useEffect(() => {
+    if (instance.data !== null)
+      writeCachedPresetSnapshot(environmentId, target.instanceId, instance.data);
+  }, [environmentId, instance.data, target.instanceId]);
+  const shown = instance.data ?? cached;
   const configuration =
-    instance.data?.configuration === null || instance.data === null
+    shown === null || shown.configuration === null
       ? settings.workjet
-      : applyLumaInstanceDocument(settings.workjet, instance.data.configuration);
+      : applyLumaInstanceDocument(settings.workjet, shown.configuration);
   const persistInstanceConfiguration = useCallback(
     async (next: WorkjetConfiguration) => {
       if (instance.data === null || instance.isPending) throw new Error("Konfiguration lädt noch.");
@@ -1479,36 +1487,16 @@ function ScopedWorkjetSettings({
     });
   }, [action, environmentId, install]);
 
-  if (instance.data === null)
+  if (shown === null)
     return (
-      <SettingsPageContainer
+      <PresetsLoadingView
         title={
           searchableSetting(defaultSection === "prompt" ? "workjet-prompt" : "workjet-workers")
             .title
         }
-      >
-        {instance.isPending ? (
-          <EmptyLoading
-            title={uiText("Presets werden geladen", "Loading presets")}
-            slowMessage={uiText(
-              "Keine Antwort von der Instanz.",
-              "The instance is not responding.",
-            )}
-            onRetry={instance.refresh}
-          />
-        ) : (
-          <Empty>
-            <EmptyHeader>
-              <EmptyTitle>
-                {uiText("Konfiguration nicht verfügbar", "Configuration unavailable")}
-              </EmptyTitle>
-            </EmptyHeader>
-            <EmptyContent>
-              <Button onClick={instance.refresh}>{uiText("Erneut laden", "Reload")}</Button>
-            </EmptyContent>
-          </Empty>
-        )}
-      </SettingsPageContainer>
+        failed={instance.error !== null && !instance.isPending}
+        onRetry={instance.refresh}
+      />
     );
 
   return (
@@ -1545,6 +1533,34 @@ function ScopedWorkjetSettings({
 const PRESET_SILENT_RETRY_MS = 15_000;
 const PRESET_LOADING_LIMIT_MS = 10_000;
 const LAST_KNOWN_PRESET_TARGETS = new Map<string, WorkjetLumaTarget>();
+
+/**
+ * Presets ohne bekannten Stand: unter 10 s ein Skelett (kein Zustandstext),
+ * danach oder nach einem Fehler genau eine Zeile mit „Erneut“.
+ */
+export function PresetsLoadingView({
+  title,
+  failed,
+  onRetry,
+}: {
+  readonly title: string;
+  readonly failed: boolean;
+  readonly onRetry: () => void;
+}) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), PRESET_LOADING_LIMIT_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return (
+    <WorkjetPresetsUnavailableView
+      title={title}
+      state={failed || slow ? "unreachable" : "loading"}
+      onRetry={onRetry}
+      onReconnect={null}
+    />
+  );
+}
 
 export function WorkjetPresetsUnavailableView({
   title,

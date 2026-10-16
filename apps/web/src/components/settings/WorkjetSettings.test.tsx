@@ -34,6 +34,7 @@ import {
   performAutomaticWorktreeStorageAction,
   performGreppyRuntimeInstall,
   WORKJET_SETTINGS_SECTIONS,
+  PresetsLoadingView,
   WorkjetPresetsUnavailableView,
   WorkjetSettingsView,
   workjetSectionFromHash,
@@ -452,5 +453,23 @@ describe("Presets unavailable states", () => {
     expect(html).toContain('data-slot="presets-loading"');
     expect(html).not.toContain("geladen");
     expect(html).not.toContain("<button");
+  });
+});
+
+describe("Presets loading without a known state (Punkt 2)", () => {
+  it("shows a skeleton, never the sentence „Presets werden geladen“", () => {
+    const html = renderToStaticMarkup(
+      <PresetsLoadingView title="Presets" failed={false} onRetry={() => undefined} />,
+    );
+    expect(html).toContain('data-slot="presets-loading"');
+    expect(html).not.toContain("werden geladen");
+  });
+
+  it("a finished read without data is one line with Erneut", () => {
+    const html = renderToStaticMarkup(
+      <PresetsLoadingView title="Presets" failed onRetry={() => undefined} />,
+    );
+    expect(html).toContain("Instanz nicht erreichbar");
+    expect(html).toContain(">Erneut</button>");
   });
 });

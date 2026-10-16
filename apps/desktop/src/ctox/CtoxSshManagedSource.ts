@@ -20,6 +20,7 @@ import {
   MAX_CTOX_DAEMON_DESCRIPTOR_BYTES,
   type CtoxLocalDaemonRuntimeStatus,
 } from "./CtoxLocalDaemonSource.ts";
+import { isCtoxV4Instance } from "./CtoxV4Instances.ts";
 
 /**
  * Read-only discovery of CTOX daemons on SSH hosts the user has configured.
@@ -163,6 +164,8 @@ export function isCtoxSshManagedInstance(instance: CtoxManagedInstance): boolean
 export function isLaunchableCtoxSshManagedInstance(instance: CtoxManagedInstance): boolean {
   return (
     isCtoxSshManagedInstance(instance) &&
+    // E49.6: a V4 instance is reached over its V4 client only, never over an SSH launch.
+    !isCtoxV4Instance(instance.id) &&
     instance.status === "available" &&
     instance.healthSummary.dataPlaneReady === false &&
     instance.healthSummary.nativePeerObserved === false

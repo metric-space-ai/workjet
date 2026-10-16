@@ -1356,6 +1356,11 @@ export interface DesktopCtoxBridge {
   ) => Promise<CtoxWorkjetSessionControlResult>;
   /** Scheibe C: the launch context's `v4` member of exactly this instance (null on a V3 core). */
   readV4LaunchContext?: (instanceId: string) => Promise<CtoxV4LaunchContextReadResult>;
+  /** Scheibe C: tell Desktop Main which instances are V4, so it closes their SSH paths. */
+  reportV4Generation?: (
+    instanceId: string,
+    generation: "v4" | "v3" | null,
+  ) => Promise<CtoxManagedActionResult>;
   /** Register local computer ids with every warm Business OS renderer. */
   registerSessionTransferEvents?: (
     computerIds: readonly string[],

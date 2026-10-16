@@ -259,3 +259,20 @@ describe("V4 bootstrap: desktop launch-context reader", () => {
     expect(getCtoxClient("any")).toBeNull();
   });
 });
+
+describe("V4 bootstrap: Desktop Main learns the generation (E49.6)", () => {
+  it("reports the observed generation of the selected instance", async () => {
+    const instanceId = `wj-report-${++sequence}`;
+    commitActiveWorkjetSelection(instanceId);
+    const reportV4Generation = vi.fn(async () => ({ _tag: "completed" as const }));
+    const stop = startWorkjetV4HostBootstrap(
+      {
+        readV4LaunchContext: async () => ({ _tag: "completed", v4: null }),
+        reportV4Generation,
+      } as unknown as DesktopCtoxBridge,
+      APP_VER,
+    );
+    await vi.waitFor(() => expect(reportV4Generation).toHaveBeenCalledWith(instanceId, "v3"));
+    stop();
+  });
+});

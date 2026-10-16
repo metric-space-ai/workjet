@@ -47,12 +47,18 @@ import {
   CTOX_SSH_VERSION_FAILURE_MARKER,
   makeCtoxSshExec,
 } from "./CtoxSshManagedSource.ts";
+import { isCtoxV4Instance } from "./CtoxV4Instances.ts";
 
 const MAX_OUTPUT_BYTES = 65_536;
 const COMMAND_TIMEOUT = Duration.minutes(15);
 const PAUSE_FILE = "ctox-shell-fleet-pauses.json";
 const RELEASE_PAUSE_FILE = "ctox-shell-fleet-release-pause.json";
 const ROLLOUT_STATE_FILE = "ctox-shell-fleet-rollout.json";
+/** SSH administration is V3 only (E49.6): a V4 instance is never reached over SSH. */
+function isSshAdministrable(instance: CtoxManagedInstance): boolean {
+  return instance.source === "ssh_managed" && !isCtoxV4Instance(instance.id);
+}
+
 export const CTOX_SHELL_FLEET_STATUS_FILE = "ctox/shell-fleet-status.json";
 export const CTOX_SHELL_FLEET_ROLLOUT_POLICY = Object.freeze({
   startupDelay: "30 seconds",
@@ -162,7 +168,7 @@ function blockedRow(
     platform: hostPlatform(instance, host),
     architecture: hostArchitecture(instance, host),
     administrativeAccess:
-      instance.source === "local_daemon" || instance.source === "ssh_managed"
+      instance.source === "local_daemon" || isSshAdministrable(instance)
         ? instance.status === "offline"
           ? "unknown"
           : "available"
@@ -553,7 +559,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
     let stdout: string;
     if (instance.source === "local_daemon") {
       stdout = yield* localExec(["version"]);
-    } else if (instance.source === "ssh_managed") {
+    } else if (isSshAdministrable(instance)) {
       const target = yield* registry.resolveSshManagedTarget(instance.id);
       const result = yield* sshExec(
         sshInput(target, buildCtoxSshVersionCommand(target.stateRoot, target.platform)),
@@ -577,7 +583,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
     let stdout: string;
     if (instance.source === "local_daemon") {
       stdout = yield* localExec(["business-os", "rxdb", "status", "--json"]);
-    } else if (instance.source === "ssh_managed") {
+    } else if (isSshAdministrable(instance)) {
       const target = yield* registry.resolveSshManagedTarget(instance.id);
       const result = yield* sshExec(
         sshInput(target, buildCtoxSshDataPlaneStatusCommand(target.stateRoot, target.platform)),
@@ -626,7 +632,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
         catch: () => "invalid_response" as const,
       });
     }
-    if (instance.source === "ssh_managed") {
+    if (isSshAdministrable(instance)) {
       const target = yield* registry.resolveSshManagedTarget(instance.id);
       const command = buildCtoxSshShellUpdateCommand(action, target.stateRoot, target.platform);
       const result = yield* sshExec(sshInput(target, command));
@@ -649,7 +655,7 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
       yield* localExec(["start"]);
       return;
     }
-    if (instance.source === "ssh_managed") {
+    if (isSshAdministrable(instance)) {
       const target = yield* registry.resolveSshManagedTarget(instance.id);
       const result = yield* sshExec(
         sshInput(target, buildCtoxSshServiceRestartCommand(target.stateRoot, target.platform)),

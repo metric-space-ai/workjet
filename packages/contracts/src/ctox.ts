@@ -1864,6 +1864,12 @@ export const CtoxV4LaunchContextReadResult = Schema.Union([
   }),
 ]);
 export type CtoxV4LaunchContextReadResult = typeof CtoxV4LaunchContextReadResult.Type;
+/** Renderer host bootstrap → Desktop Main: the observed core generation of one instance (E49.6). */
+export const CtoxV4GenerationReportInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  generation: Schema.NullOr(Schema.Literals(["v4", "v3"])),
+});
+export type CtoxV4GenerationReportInput = typeof CtoxV4GenerationReportInput.Type;
 
 export const CtoxWorkjetSessionControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetSessionControlResponse }),

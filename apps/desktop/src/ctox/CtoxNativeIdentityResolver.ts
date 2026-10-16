@@ -13,6 +13,7 @@ import { CtoxAccountLifecycle } from "./CtoxAccountLifecycle.ts";
 import { CtoxInstanceRegistry } from "./CtoxInstanceRegistry.ts";
 import { resolveCtoxBinary } from "./CtoxLocalDaemonLaunch.ts";
 import { makeCtoxSshInviteExec, type CtoxSshInviteExec } from "./CtoxSshManagedLaunch.ts";
+import { isCtoxV4Instance } from "./CtoxV4Instances.ts";
 
 const MAX_IDENTITY_BYTES = 4096;
 const IDENTITY_TIMEOUT_MS = 20_000;
@@ -138,6 +139,8 @@ export const make = Effect.fn("CtoxNativeIdentityResolver.make")(function* (
       return { targetId, instanceId: target.daemonInstanceId, publicIdentity };
     }
     if (targetId.startsWith("ssh:")) {
+      // E49.6: no SSH identity read for a V4 instance.
+      if (isCtoxV4Instance(targetId)) return yield* new CtoxNativeIdentityError();
       const target = yield* registry.resolveSshManagedTarget(targetId);
       if (
         target.platform === "windows" ||

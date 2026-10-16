@@ -373,6 +373,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       }),
     readV4LaunchContext: (instanceId) =>
       ipcRenderer.invoke(IpcChannels.CTOX_V4_LAUNCH_CONTEXT_CHANNEL, { instanceId }),
+    reportV4Generation: (instanceId, generation) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_V4_GENERATION_CHANNEL, { instanceId, generation }),
     registerSessionTransferEvents: (computerIds) =>
       ipcRenderer.invoke(IpcChannels.CTOX_SESSION_TRANSFER_REGISTER_CHANNEL, { computerIds }),
     onSessionTransferEvent: (listener) => {

@@ -32,6 +32,20 @@ export function startWorkjetV4HostBootstrap(
     appVersion,
     readLaunchContext: desktopLaunchContextReader(read),
   });
+  // Desktop Main closes SSH instance paths for V4 instances (E49.6).
+  const report = bridge.reportV4Generation;
+  let reported: { instanceId: string | null; generation: string | null } = {
+    instanceId: null,
+    generation: null,
+  };
+  const offState = host.subscribe(() => {
+    const state = host.getState();
+    if (!report || state.instanceId === null) return;
+    if (state.instanceId === reported.instanceId && state.generation === reported.generation)
+      return;
+    reported = state;
+    void report(state.instanceId, state.generation).catch(() => {});
+  });
   const check = () => {
     // Failures stay silent (UI contract): the next reconnect or selection checks again.
     void host.sync(readActiveWorkjetScope().selectedInstanceId).catch(() => {});
@@ -54,6 +68,7 @@ export function startWorkjetV4HostBootstrap(
     }) ?? (() => {});
   check();
   return () => {
+    offState();
     offScope();
     offContext();
     offGuest();

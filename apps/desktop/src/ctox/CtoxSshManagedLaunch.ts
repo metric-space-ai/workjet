@@ -23,6 +23,7 @@ import {
   CTOX_SSH_INVITE_TIMEOUT_MS,
   MAX_CTOX_SSH_INVITE_BYTES,
 } from "./CtoxSshManagedSource.ts";
+import { isCtoxV4Instance } from "./CtoxV4Instances.ts";
 
 /**
  * Launch resolution for CTOX daemons on SSH hosts.
@@ -66,6 +67,7 @@ export const CtoxSshManagedLaunchFailureReason = Schema.Literals([
   "invalid_invite",
   "unsupported_signaling",
   "forward_failed",
+  "v4_instance",
 ]);
 export type CtoxSshManagedLaunchFailureReason = typeof CtoxSshManagedLaunchFailureReason.Type;
 
@@ -368,6 +370,8 @@ export const make = Effect.fn("CtoxSshManagedLaunch.make")(function* (
   const resolveLaunch = Effect.fn("CtoxSshManagedLaunch.resolveLaunch")(function* (
     instanceId: string,
   ) {
+    // E49.6: a V4 instance is reached over its V4 client only; no SSH launch path.
+    if (isCtoxV4Instance(instanceId)) return yield* launchError("v4_instance");
     const target = yield* registry
       .resolveSshManagedTarget(instanceId)
       .pipe(Effect.mapError(() => launchError("not_found")));

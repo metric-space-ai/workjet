@@ -10,7 +10,14 @@
  * dann als Zeile mit Balken über die acht Vertragsschritte bis grün.
  * Das Passwort dient nur der ersten Anmeldung und wird nie gespeichert.
  */
-import { KeyboardIcon, KeyRoundIcon, MonitorIcon, NetworkIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import {
+  KeyboardIcon,
+  KeyRoundIcon,
+  MonitorIcon,
+  NetworkIcon,
+  RefreshCwIcon,
+  XIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";

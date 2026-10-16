@@ -1,10 +1,11 @@
+// @effect-diagnostics nodeBuiltinImport:off - Der Gate-Test liest den vendorten Befehlsvertrag direkt.
 // V4 gate: the Workjet data layer against the vendored fake core at the kernel pin
 // (kernel/KERNEL_PIN). K-WJ-B2-proof: the active Workjet app manifest is published before the
 // kernel opens (E35 Nr. 3), the core rejects every command type without a route with
 // `unknown_command` at write time (E27.2), and the routes the core knows are exactly the Workjet
 // bridge contract (contract/wjb-command-types.json, E27.6). Read paths are local queries (E32);
 // a V3 instance (no bound client) keeps the desktop guest path unchanged.
-import { readFileSync } from "node:fs";
+import * as NodeFS from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { CommandId, EnvironmentId, ProjectId, ThreadId } from "@workjet/contracts";
 import type { CtoxWorkjetProjectControlResult, DesktopCtoxBridge } from "@workjet/contracts";
@@ -34,7 +35,7 @@ import { createComputerMembershipStore } from "../workjetComputerMembership";
 
 type BridgeEntry = { action: string; command_types: string[]; via: string };
 const CONTRACT: BridgeEntry[] = JSON.parse(
-  readFileSync(new URL("./contract/wjb-command-types.json", import.meta.url), "utf8"),
+  NodeFS.readFileSync(new URL("./contract/wjb-command-types.json", import.meta.url), "utf8"),
 );
 const CONTRACT_TYPES = new Set(CONTRACT.flatMap((entry) => entry.command_types));
 const E25 = Object.keys(E25_METHODS) as E25Method[];
@@ -149,7 +150,10 @@ async function settle(api: CtoxAppApi, type: string, payload: object) {
   try {
     return { ok: true as const, value: await executeCtoxCommand(api, type, payload) };
   } catch (error) {
-    return { ok: false as const, code: error instanceof CtoxCommandError ? error.code : String(error) };
+    return {
+      ok: false as const,
+      code: error instanceof CtoxCommandError ? error.code : String(error),
+    };
   }
 }
 
@@ -281,7 +285,10 @@ describe("V4 gate: read paths are local queries on a V4 instance (E32)", () => {
         updatedAt: timestamp,
       },
     ]);
-    const ref = { environmentId: EnvironmentId.make("gate-computer"), threadId: ThreadId.make("t") };
+    const ref = {
+      environmentId: EnvironmentId.make("gate-computer"),
+      threadId: ThreadId.make("t"),
+    };
     expect(readWorkjetThreadDetail(api, ref)?.messages.map((message) => message.text)).toEqual([
       "Gate answer",
     ]);
@@ -311,7 +318,11 @@ describe("V4 gate: read paths are local queries on a V4 instance (E32)", () => {
       },
     ]);
     const providers = completed(
-      await read({ action: "instance.providers.read", version: 1, operationId: "8d7f8a52-3c1e-4b8a-9b9e-2f4c6d1e0a11" }),
+      await read({
+        action: "instance.providers.read",
+        version: 1,
+        operationId: "8d7f8a52-3c1e-4b8a-9b9e-2f4c6d1e0a11",
+      }),
     );
     expect(providers).toMatchObject({
       action: "instance.providers.read",
@@ -345,7 +356,6 @@ describe("V4 gate: read paths are local queries on a V4 instance (E32)", () => {
       await read({
         action: "project.calendar.accounts.read",
         commandId: CommandId.make("gate-calendar"),
-        projectId: ProjectId.make("p-1"),
       }),
     );
     expect(calendar).toMatchObject({
@@ -447,7 +457,10 @@ describe("V4 gate: a V3 instance keeps the desktop guest path (no bound client)"
     }));
     const list = await listWorkjetProjects(instanceId, port);
     expect(list._tag).toBe("completed");
-    expect(port).toHaveBeenCalledWith(instanceId, expect.objectContaining({ action: "project.list" }));
+    expect(port).toHaveBeenCalledWith(
+      instanceId,
+      expect.objectContaining({ action: "project.list" }),
+    );
 
     port.mockClear();
     await readWorkjetProjectKpis(instanceId, ProjectId.make("p-1"), port);

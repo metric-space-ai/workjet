@@ -14,7 +14,10 @@ export declare class MemoryCoreTransport extends KernelTransport {
   >;
   readonly failures: Map<string, string>;
   online: boolean;
-  push(collection: string, docs: ReadonlyArray<{ id: string; [key: string]: unknown }>): Promise<string[]>;
+  push(
+    collection: string,
+    docs: ReadonlyArray<{ id: string; [key: string]: unknown }>,
+  ): Promise<string[]>;
   commandRouteKnown(body: { type?: string; app_id?: string }): boolean;
   setUser(user: { id: string; role: string; permissions?: string[] }): void;
 }

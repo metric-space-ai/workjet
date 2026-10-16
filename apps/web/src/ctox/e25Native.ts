@@ -25,8 +25,11 @@ export function isE25Method(method: string): method is E25Method {
 }
 
 export function e25DeadlineMs(method: E25Method, params: { readonly action?: unknown }): number {
-  const spec: { deadlineMs: number; openDeadlineMs?: number; checkTranscriptionDeadlineMs?: number } =
-    E25_METHODS[method];
+  const spec: {
+    deadlineMs: number;
+    openDeadlineMs?: number;
+    checkTranscriptionDeadlineMs?: number;
+  } = E25_METHODS[method];
   if (params.action === "open" && spec.openDeadlineMs !== undefined) return spec.openDeadlineMs;
   if (params.action === "check.transcription" && spec.checkTranscriptionDeadlineMs !== undefined)
     return spec.checkTranscriptionDeadlineMs;
@@ -41,7 +44,10 @@ export async function requestCtoxNative(
   options?: { readonly signal?: AbortSignal; readonly deadlineMs?: number },
 ): Promise<unknown> {
   const deadline = new AbortController();
-  const timer = setTimeout(() => deadline.abort(), options?.deadlineMs ?? e25DeadlineMs(method, params));
+  const timer = setTimeout(
+    () => deadline.abort(),
+    options?.deadlineMs ?? e25DeadlineMs(method, params),
+  );
   const forward = () => deadline.abort();
   options?.signal?.addEventListener("abort", forward, { once: true });
   try {

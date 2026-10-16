@@ -4,11 +4,17 @@
 //   node scripts/v4-vendor-kernel.mjs <path-to-ctox-checkout>
 // and commit. PROVENANCE.json records the commit, git blob and sha256 of every file;
 // apps/web/src/ctox/kernelProvenance.test.ts verifies them.
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+
+const { execFileSync } = NodeChildProcess;
+const { createHash } = NodeCrypto;
+const { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } = NodeFS;
+const { dirname, join } = NodePath;
+const { fileURLToPath } = NodeURL;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const target = join(root, "apps/web/src/ctox/kernel");
@@ -31,7 +37,7 @@ const files = listed.filter(
     (/^[^/]+\.mjs$/.test(path) || path === "index.d.ts" || /^vendor\/[^/]+\.(m?js)$/.test(path)),
 );
 for (const name of readdirSync(target))
-  if (/\.mjs$/.test(name) || name === "index.d.ts") rmSync(join(target, name));
+  if (name.endsWith(".mjs") || name === "index.d.ts") rmSync(join(target, name));
 rmSync(join(target, "vendor"), { recursive: true, force: true });
 const entries = [];
 for (const path of files.sort()) {

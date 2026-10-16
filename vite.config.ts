@@ -58,6 +58,8 @@ export default defineConfig({
       // Byte-identical CTOX kernel #823; checksum inventory in kernel/PROVENANCE.json.
       "apps/web/src/ctox/kernel/*.mjs",
       "apps/web/src/ctox/kernel/vendor/**",
+      // Byte-identical CTOX Workjet bridge contract (E27.6); sha256 in kernel/PROVENANCE.json.
+      "apps/web/src/ctox/contract/wjb-command-types.json",
       "apps/web/src/ctox/kernel/index.d.ts",
       "apps/web/src/lib/vendor/qrcodegen.ts",
       "apps/mobile/uniwind-types.d.ts",
@@ -111,6 +113,8 @@ export default defineConfig({
       "apps/web/src/ctox/stub/ctox-app-api-stub.mjs",
       "apps/web/src/ctox/kernel/*.mjs",
       "apps/web/src/ctox/kernel/vendor/**",
+      // Byte-identical CTOX Workjet bridge contract (E27.6); sha256 in kernel/PROVENANCE.json.
+      "apps/web/src/ctox/contract/wjb-command-types.json",
       "apps/web/src/ctox/kernel/index.d.ts",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],

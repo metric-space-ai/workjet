@@ -152,7 +152,7 @@ function createFakeRenewCore(
       const reply = (body: object) => ({ type: "pairing_response", id: request.id, ...body });
       if (request.method !== "device.launch.renew" || request.params.length !== 1)
         return reply({ error: { code: "device_unknown" } });
-      const params = request.params[0] as Record<string, string>;
+      const params = request.params[0] as unknown as Record<string, string>;
       if (
         Object.keys(params).sort().join(",") !== "device_id,instance_id,nonce,signature" ||
         params.nonce !== nonce

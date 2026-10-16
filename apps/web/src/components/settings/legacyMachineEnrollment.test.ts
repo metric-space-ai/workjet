@@ -191,3 +191,46 @@ describe("Einmal-Passwort", () => {
     expect(activeSshPasswordClaims()).toBe(0);
   });
 });
+
+describe("SSH sources over the desktop bridge (N6, real path)", () => {
+  it("drops git hosts and CTOX fleet hosts from what discoverSshHosts returns", async () => {
+    // Exactly what desktop:discover-ssh-hosts delivered on Welsch (16.10.).
+    const { transport } = createLegacyMachineEnrollment({
+      listSshHosts: async () => [
+        host("github.com", "github.com", "michaelwelsch"),
+        host("gh", "github.com", "git"),
+        host("gitlab.com", "gitlab.com", "git"),
+        host("ctox-fleet-rbx6", "217.182.134.181", "ubuntu"),
+        host("lan-gpu3", "192.168.1.3", "metricspace"),
+        host("ts-gpu4", "100.64.0.4", "metricspace"),
+      ],
+      localName: "Dieser Rechner",
+      isOnline: () => false,
+      add: async () => ({ status: "ok" as const }),
+    });
+    const sources = await transport.listCandidates();
+    expect(sources.candidates.map((candidate) => candidate.id)).toEqual([
+      "local",
+      "ssh:lan-gpu3",
+      "ssh:ts-gpu4",
+    ]);
+  });
+});
+
+describe("known computers in the add list (N6)", () => {
+  it("hides computers that are already set up instead of marking them „Vorhanden“", async () => {
+    const { visibleMachineCandidates } = await import("./AddMachineEnrollment");
+    const candidates = legacyMachineCandidates({
+      localName: "Dieser Rechner",
+      sshHosts: [host("lan-gpu3", "192.168.1.3", "u"), host("ts-gpu4", "100.64.0.4", "u")],
+      peers: null,
+    });
+    const visible = visibleMachineCandidates(
+      candidates,
+      "ssh",
+      new Set(),
+      (candidate) => candidate.sshAlias === "lan-gpu3",
+    );
+    expect(visible.map((candidate) => candidate.id)).toEqual(["ssh:ts-gpu4"]);
+  });
+});

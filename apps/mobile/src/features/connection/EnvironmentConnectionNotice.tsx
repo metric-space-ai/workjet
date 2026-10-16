@@ -6,44 +6,37 @@ import { SymbolView } from "../../components/AppSymbol";
 import { ActivityIndicator, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
-import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useThemeColor } from "../../lib/useThemeColor";
 
 function noticeTitle(phase: EnvironmentConnectionPhase, environmentLabel: string): string {
   switch (phase) {
     case "offline":
-      return "You are offline";
+      return "Du bist offline";
     case "connecting":
-      return `Connecting to ${environmentLabel}...`;
+      return `Verbindet mit ${environmentLabel} …`;
     case "reconnecting":
-      return `Reconnecting to ${environmentLabel}...`;
+      return `Verbindet erneut mit ${environmentLabel} …`;
     case "error":
-      return `${environmentLabel} is unavailable`;
+      return `${environmentLabel} nicht erreichbar`;
     case "available":
-      return `${environmentLabel} is disconnected`;
+      return `${environmentLabel} nicht verbunden`;
     case "connected":
       return "";
   }
 }
 
-function noticeDetail(
-  phase: EnvironmentConnectionPhase,
-  resourceName: string,
-  error: string | null,
-): string {
-  if (error) {
-    return `The app will keep retrying automatically. ${error}`;
-  }
-
+/** Kurz und deutsch, ohne Rohfehler (UI-Vertrag §2); der Rohtext bleibt in `connection.error`. */
+function noticeDetail(phase: EnvironmentConnectionPhase, error: string | null): string {
+  if (error) return "Neuer Versuch läuft automatisch.";
   switch (phase) {
     case "offline":
-      return `Cached data remains available. The ${resourceName} will load when your connection returns.`;
+      return "Gespeicherte Daten bleiben sichtbar.";
     case "connecting":
     case "reconnecting":
-      return `The ${resourceName} will load as soon as the environment is ready.`;
+      return "";
     case "available":
     case "error":
-      return `Reconnect the environment to load the ${resourceName}.`;
+      return "Umgebung neu verbinden.";
     case "connected":
       return "";
   }
@@ -58,6 +51,7 @@ export function EnvironmentConnectionNotice(props: {
   const iconColor = String(useThemeColor("--color-icon-muted"));
   const isRetrying =
     props.connection.phase === "connecting" || props.connection.phase === "reconnecting";
+  const detail = noticeDetail(props.connection.phase, props.connection.error);
 
   return (
     <View className="flex-1 items-center justify-center px-8">
@@ -76,26 +70,9 @@ export function EnvironmentConnectionNotice(props: {
         <Text className="text-center text-lg font-workjet-bold text-foreground">
           {noticeTitle(props.connection.phase, props.environmentLabel)}
         </Text>
-        <Text className="text-center text-sm leading-normal text-foreground-muted">
-          {noticeDetail(props.connection.phase, props.resourceName, props.connection.error)}
-          {props.connection.traceId ? (
-            <>
-              {" Trace ID: "}
-              <Text
-                accessibilityHint="Copies the trace ID"
-                accessibilityRole="button"
-                className="underline decoration-dotted"
-                onPress={() =>
-                  copyTextWithHaptic(props.connection.traceId!, {
-                    target: "connection-trace-id",
-                  })
-                }
-              >
-                {props.connection.traceId}
-              </Text>
-            </>
-          ) : null}
-        </Text>
+        {detail ? (
+          <Text className="text-center text-sm leading-normal text-foreground-muted">{detail}</Text>
+        ) : null}
 
         {props.connection.phase !== "offline" ? (
           <Pressable
@@ -103,7 +80,7 @@ export function EnvironmentConnectionNotice(props: {
             className="mt-1 rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
             onPress={props.onRetry}
           >
-            <Text className="text-sm font-workjet-bold text-foreground">Retry now</Text>
+            <Text className="text-sm font-workjet-bold text-foreground">Erneut versuchen</Text>
           </Pressable>
         ) : null}
       </View>

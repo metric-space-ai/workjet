@@ -191,7 +191,7 @@ function composerConnectionStatus(input: {
   readonly environmentLabel: string | null;
   readonly threadSyncPhase?: "loading" | "syncing" | null;
 }): ComposerStatusPillState | null {
-  const environmentLabel = input.environmentLabel ?? "Environment";
+  const environmentLabel = input.environmentLabel ?? "Umgebung";
 
   switch (input.connectionState) {
     case "connecting":
@@ -200,20 +200,18 @@ function composerConnectionStatus(input: {
         kind: "reconnecting",
         label:
           input.connectionError === null
-            ? `Reconnecting to ${environmentLabel}...`
-            : `Failed to connect. Retrying ${environmentLabel}...`,
+            ? `Verbindet erneut mit ${environmentLabel} …`
+            : `Neuer Versuch mit ${environmentLabel} …`,
       };
     case "offline":
-      return { kind: "unavailable", label: "You are offline" };
+      return { kind: "unavailable", label: "Du bist offline" };
     case "error":
       return {
         kind: "unavailable",
-        label: input.connectionError
-          ? `Failed to connect to ${environmentLabel}: ${input.connectionError}`
-          : `Failed to connect to ${environmentLabel}`,
+        label: `${environmentLabel} nicht erreichbar`,
       };
     case "available":
-      return { kind: "unavailable", label: `${environmentLabel} is not connected` };
+      return { kind: "unavailable", label: `${environmentLabel} nicht verbunden` };
     case "connected":
       break;
   }
@@ -223,9 +221,9 @@ function composerConnectionStatus(input: {
   // cached messages are already visible.
   switch (input.threadSyncPhase) {
     case "loading":
-      return { kind: "syncing", label: "Loading messages..." };
+      return { kind: "syncing", label: "Lädt Nachrichten …" };
     case "syncing":
-      return { kind: "syncing", label: "Syncing messages..." };
+      return { kind: "syncing", label: "Synchronisiert Nachrichten …" };
     default:
       return null;
   }

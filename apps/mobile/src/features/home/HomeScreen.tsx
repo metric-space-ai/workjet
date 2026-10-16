@@ -160,10 +160,8 @@ function deriveEmptyState(props: {
     !catalogState.hasLoadedShellSnapshot
   ) {
     return {
-      title: "Environment unavailable",
-      detail:
-        catalogState.connectionError ??
-        "The saved environment is offline. Check the URL or start the environment, then retry.",
+      title: "Umgebung nicht erreichbar",
+      detail: "Adresse prüfen oder Umgebung starten.",
       loading: false,
     };
   }
@@ -174,8 +172,8 @@ function deriveEmptyState(props: {
     catalogState.connectionError === null
   ) {
     return {
-      title: "Connecting to environment",
-      detail: "Loading projects and threads from the saved environment.",
+      title: "Verbindet mit Umgebung",
+      detail: "Lädt Projekte und Chats.",
       loading: true,
     };
   }

@@ -17,18 +17,19 @@ export function shouldShowWorkspaceConnectionStatus(state: WorkspaceState): bool
 }
 
 export function workspaceConnectionStatusLabel(state: WorkspaceState): string {
-  if (state.networkStatus === "offline") return "You are offline";
+  if (state.networkStatus === "offline") return "Du bist offline";
   if (state.connectingEnvironments.length === 1) {
-    return `Reconnecting to ${state.connectingEnvironments[0]!.environmentLabel}`;
+    return `Verbindet erneut mit ${state.connectingEnvironments[0]!.environmentLabel}`;
   }
   if (state.connectingEnvironments.length > 1) {
-    return `Reconnecting ${state.connectingEnvironments.length} environments`;
+    return `Verbindet erneut mit ${state.connectingEnvironments.length} Umgebungen`;
   }
-  if (state.connectionError !== null) return state.connectionError;
+  // Kein Rohfehler in der Kopfzeile (UI-Vertrag §2); der Rohtext bleibt im Zustand.
+  if (state.connectionError !== null) return "Verbindung fehlgeschlagen";
   if (state.hasPendingShellSnapshot) {
-    return state.hasLoadedShellSnapshot ? "Syncing threads..." : "Loading threads...";
+    return state.hasLoadedShellSnapshot ? "Synchronisiert Chats …" : "Lädt Chats …";
   }
-  return "Not connected";
+  return "Nicht verbunden";
 }
 
 /** Header-title presentation of the connection state, or null while connected. */

@@ -72,7 +72,9 @@ describe("Workjet settings information architecture (#568)", () => {
       sidebarChromeSource.indexOf("export const SidebarChromeFooter"),
     );
     expect(footerSource.split("<SidebarMenuItem").length - 1).toBe(1);
-    expect(footerSource).toContain("<span>Einstellungen</span>");
+    expect(footerSource).toContain("<span>{sidebarSettingsLabel()}</span>");
+    expect(footerSource).toContain('"Settings"');
+    expect(footerSource).toContain('"Einstellungen"');
     expect(footerSource).not.toContain('to: "/machines"');
   });
 });

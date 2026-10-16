@@ -218,6 +218,7 @@ import {
 import {
   groupThreadsByProjectTeam,
   PROJECT_TEAM_SECTIONS,
+  projectTeamSectionOf,
   projectTeamStatus,
   projectTeamHarnessLabel,
   projectTeamParentTitle,
@@ -724,6 +725,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
   projectTeam?: boolean | undefined;
+  /** Persistente Worker: sichtbares „Entfernen“ mit Rückgängig (#798). */
+  onRemoveTeamWorker?: ((threadRef: ScopedThreadRef) => void) | undefined;
   teamHarnessLabel?: string | undefined;
   teamParentTitle?: string | undefined;
   // Slim rows are either settled (action: un-settle) or merely quiet
@@ -1281,6 +1284,22 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               >
                 {props.teamParentTitle}
               </span>
+            ) : null}
+            {props.onRemoveTeamWorker ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                data-workjet-action="team.worker.remove"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onRemoveTeamWorker?.(threadRef);
+                }}
+                className="shrink-0 text-muted-foreground"
+              >
+                <XIcon aria-hidden className="size-3" />
+                <span>{workjetUiLanguage() === "en" ? "Remove" : "Entfernen"}</span>
+              </Button>
             ) : null}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
@@ -3359,6 +3378,17 @@ export default function Sidebar() {
     ],
   );
 
+  const handleRemoveTeamWorker = useCallback(
+    (threadRef: ScopedThreadRef) => {
+      scheduleUndoableThreadDelete(1, async () => {
+        const result = await deleteThread(threadRef);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          toastManager.add(sidebarFailureToast("delete", squashAtomCommandFailure(result), true));
+        }
+      });
+    },
+    [deleteThread],
+  );
   const handleThreadContextMenu = useCallback(
     (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
       void (async () => {
@@ -3972,6 +4002,11 @@ export default function Sidebar() {
                         thread={thread}
                         variant={rowVariant}
                         projectTeam={groupByTeam}
+                        onRemoveTeamWorker={
+                          groupByTeam && projectTeamSectionOf(thread) === "parents"
+                            ? handleRemoveTeamWorker
+                            : undefined
+                        }
                         teamParentTitle={
                           groupByTeam ? projectTeamParentTitle(thread, threads) : undefined
                         }

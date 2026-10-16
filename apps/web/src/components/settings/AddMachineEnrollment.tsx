@@ -111,6 +111,19 @@ export function preselectSegment(
   return "ssh";
 }
 
+/** Bereits eingerichtete Rechner erscheinen nicht (N6), statt mit Chip „Vorhanden“. */
+export function visibleMachineCandidates(
+  candidates: ReadonlyArray<MachineCandidate>,
+  segment: MachineEnrollmentTransport,
+  enrolledIds: ReadonlySet<string>,
+  isKnown: (candidate: MachineCandidate) => boolean,
+): MachineCandidate[] {
+  return candidates.filter(
+    (candidate) =>
+      candidate.transport === segment && !enrolledIds.has(candidate.id) && !isKnown(candidate),
+  );
+}
+
 export function AddMachineEnrollment({
   source,
   transport,
@@ -134,8 +147,11 @@ export function AddMachineEnrollment({
   const segment = segmentChoice ?? preselectSegment(sources.value, isKnown);
 
   const enrolledIds = new Set(entries.map((entry) => entry.candidate.id));
-  const visible = (sources.value?.candidates ?? []).filter(
-    (candidate) => candidate.transport === segment && !enrolledIds.has(candidate.id),
+  const visible = visibleMachineCandidates(
+    sources.value?.candidates ?? [],
+    segment,
+    enrolledIds,
+    isKnown,
   );
   const picked =
     pickedId === MANUAL ? null : (visible.find((candidate) => candidate.id === pickedId) ?? null);

@@ -3,14 +3,19 @@ import type { DesktopDiscoveredSshHost } from "@workjet/contracts";
 /** Git hosting: SSH gives no shell there. */
 const GIT_HOSTS = ["github.com", "gitlab.com", "bitbucket.org", "ssh.dev.azure.com"] as const;
 
-function isGitHost(name: string): boolean {
+export function isGitHost(name: string): boolean {
   const value = name.trim().toLowerCase();
   return GIT_HOSTS.some((host) => value === host || value.endsWith(`.${host}`));
 }
 
 /** CTOX-Fleet-Infrastruktur (ctox-fleet-*) ist kein Arbeitsrechner. */
-function isFleetHost(alias: string): boolean {
+export function isFleetHost(alias: string): boolean {
   return /^ctox-fleet(?:-|$)/i.test(alias.trim());
+}
+
+/** Ein SSH-Host, der kein Arbeitsrechner ist (Git-Hosting, CTOX-Fleet). */
+export function isNonComputerSshHost(alias: string, hostname: string | null): boolean {
+  return isGitHost(alias) || (hostname !== null && isGitHost(hostname)) || isFleetHost(alias);
 }
 
 /**

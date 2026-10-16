@@ -10,6 +10,7 @@
  * (`ctox.machine.enroll.begin/cancel`, Dokument `machine_enrollments/<id>`)
  * getauscht; die UI bleibt.
  */
+import { isNonComputerSshHost } from "../../sshAliasCandidates";
 import type {
   DesktopDiscoveredSshHost,
   DesktopTailscalePeers,
@@ -67,7 +68,14 @@ export function legacyMachineCandidates(input: {
   readonly peers: DesktopTailscalePeers | null;
 }): ReadonlyArray<MachineCandidate> {
   const ssh: MachineCandidate[] = input.sshHosts
-    .filter((host) => host.source === "ssh-config" && !WILDCARD.test(host.alias))
+    // Git-Hosts und CTOX-Fleet sind keine Rechner (N6); Shell-lose Blöcke
+    // filtert schon die Desktop-Erkennung (packages/ssh).
+    .filter(
+      (host) =>
+        host.source === "ssh-config" &&
+        !WILDCARD.test(host.alias) &&
+        !isNonComputerSshHost(host.alias, host.hostname),
+    )
     .map((host) => ({
       id: `ssh:${host.alias}`,
       transport: "ssh" as const,

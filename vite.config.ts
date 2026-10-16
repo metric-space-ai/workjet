@@ -57,6 +57,7 @@ export default defineConfig({
       "apps/web/src/ctox/stub/ctox-app-api-stub.mjs",
       // Byte-identical CTOX kernel #823; checksum inventory in kernel/PROVENANCE.json.
       "apps/web/src/ctox/kernel/*.mjs",
+      "apps/web/src/ctox/kernel/vendor/**",
       "apps/web/src/ctox/kernel/index.d.ts",
       "apps/web/src/lib/vendor/qrcodegen.ts",
       "apps/mobile/uniwind-types.d.ts",
@@ -109,6 +110,7 @@ export default defineConfig({
       "apps/web/src/ctox/stub/index.d.ts",
       "apps/web/src/ctox/stub/ctox-app-api-stub.mjs",
       "apps/web/src/ctox/kernel/*.mjs",
+      "apps/web/src/ctox/kernel/vendor/**",
       "apps/web/src/ctox/kernel/index.d.ts",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],

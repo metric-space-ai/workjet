@@ -88,7 +88,7 @@ describe("App API hooks local first render", () => {
       ...api,
       query: <T,>(collection: string, query: Query) => track(api.query<T>(collection, query)),
       get: <T,>(collection: string, id: string) => track(api.get<T>(collection, id)),
-      metrics: track(api.metrics),
+      metrics: { ...track(api.metrics), commands: api.metrics.commands },
       command: (type, payload) => {
         const handle = api.command(type, payload);
         return { ...handle, status: track(handle.status) };

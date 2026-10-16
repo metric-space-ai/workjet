@@ -14,6 +14,16 @@ export class CtoxCommandError extends Error {
   }
 }
 
+/** A write rejection carries the Core code (K-WJ-B2 `unknown_command`), never a free-text reason. */
+function rejectionCode(state: CommandState): string | undefined {
+  const typed = (state as { code?: unknown }).code;
+  if (typeof typed === "string" && typed) return typed;
+  const error = state.error;
+  if (typeof error !== "string") return undefined;
+  const match = /^([a-z][a-z0-9_]*):/.exec(error);
+  return match ? match[1] : error;
+}
+
 /** Observe command execution, not merely the write ACK. Detaching never cancels durable work.
  * A done enqueue-command is not proof its agent task finished; that task owns its callbacks/projection.
  */
@@ -32,14 +42,14 @@ export function observeCtoxCommand(
     if (!settled && (runtimeStatus === "cancelled" || runtimeStatus === "rejected")) {
       settled = true;
       off?.();
-      callbacks.onFailed(state.error ?? runtimeStatus);
+      callbacks.onFailed(rejectionCode(state) ?? runtimeStatus);
       return;
     }
     if (settled || (state.status !== "done" && state.status !== "failed")) return;
     settled = true;
     off?.();
     if (state.status === "done") callbacks.onComplete(state.result);
-    else callbacks.onFailed(state.error ?? "command_failed");
+    else callbacks.onFailed(rejectionCode(state) ?? "command_failed");
   };
   off = handle.status.subscribe(receive);
   if (settled) off();

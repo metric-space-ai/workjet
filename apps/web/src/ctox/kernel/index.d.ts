@@ -59,7 +59,12 @@ export interface FieldOperators {
 }
 
 export type WriteResult = {
-  status: 'accepted' | 'rejected' | 'migrated';
+  status: 'accepted' | 'merged' | 'rejected' | 'migrated';
+  code?: CtoxErrorCode;
+  gen?: number;
+  client_seq?: string;
+  /** Receipt alone cannot clear the outbox; wait for the canonical page. */
+  requires_page?: boolean;
   rev?: string;
   reason?: string;
   archived_ref?: string;
@@ -79,7 +84,7 @@ export interface WriteHandle<Extra = {}> {
 }
 
 export type CommandState = {
-  status: 'queued' | 'accepted' | 'running' | 'done' | 'failed';
+  status: 'queued' | 'accepted' | 'running' | 'done' | 'failed' | 'cancelled' | 'rejected';
   progress?: number;
   result?: unknown;
   error?: string;
@@ -94,17 +99,31 @@ export interface CommandHandle {
   cancel(): boolean;
 }
 
-export type CtoxErrorCode = 'invalid' | 'forbidden' | 'not_found' | 'conflict' | 'revoked' | 'expired' | 'quota' | 'unavailable';
+export type CtoxErrorCode = 'invalid' | 'forbidden' | 'not_found' | 'conflict' | 'revoked' | 'expired' | 'quota' | 'unavailable' | 'stale_base' | 'migration_required' | 'locally_modified' | 'token_expired' | 'token_used';
 export declare class CtoxError extends Error {
   readonly name: 'CtoxError';
   readonly code: CtoxErrorCode;
   readonly path?: string;
-  constructor(code: CtoxErrorCode, message?: string, extra?: { path?: string });
+  readonly reason?: string;
+  readonly detail?: string;
+  constructor(code: CtoxErrorCode, message?: string, extra?: { path?: string; reason?: string; detail?: string });
 }
 
 export type StatusItem = { level: 'info' | 'warn' | 'error'; code: string; text: string; ref?: string };
 
+/** Unix epoch milliseconds, first observation of each stage; null = not observed.
+ * queued = local durable queue, sent = first transport dispatch, acked = validated
+ * Core receipt (including rejection), completed = canonical terminal state or rejection.
+ * Observational per-tab ring, creation order, at most 500; not durable or a completion authority.
+ */
+export type CommandTiming = Readonly<{command_id:string; queued:number; sent:number|null; acked:number|null; completed:number|null}>;
+/** Bridge adapter hook: forward timing snapshots here, never command payloads.
+ * Exceptions are isolated from the data path. Cross-tab updates can repeat; key by command_id.
+ */
+export interface CommandDiagnostics { onCommandTiming?(timing:CommandTiming):void | Promise<void>; }
+export interface CommandMetrics extends LiveDoc<Metrics> { readonly commands:ReadonlyArray<CommandTiming>; }
 export type Metrics = {
+  commands: ReadonlyArray<CommandTiming>;
   timing?: {push_latency_ms:number;clock_offset_ms:number;clock_uncertainty_ms:number;samples:number};
   backlog: number;
   outbox: { count: number; oldest_ms: number };
@@ -165,10 +184,32 @@ export interface FileUploadHandle extends WriteHandle<{ ref: string }> {
   upload: { progress: LiveDoc<{ sent: number; total: number }> };
 }
 /** §10.2a Nr. 4 + §16.10. Metadaten = Dokumente der Collection `files`. */
+export type FileInfo = { id: string; ref: string; name: string | null; mime: string; size: number };
+/** CAP-3b (#844): Ergebnis von files.get – Text nur für UTF-8 ≤ 512 KiB, sonst Bytes; nie Base64. */
+export type FileGetResult = ({ found: true } & FileInfo & ({ text: string } | { bytes: Uint8Array })) | { found: false; ref: string | null; id?: string };
 export interface FilesApi {
-  /** Lokaler Blob-Cache, sonst Spur 4 (Prüfung beim Empfang). Fehler: not_found | unavailable | revoked. */
+  /** E30: own file, readable desktop_files row with the same id (including read export), or BlobRef in a readable canonical document; otherwise forbidden. list/delete remain own-app only. */
+  /** E26: byte range, end exclusive. Invalid bounds reject with CtoxError invalid/path range. */
+  get(sel: ({ ref: string } | { id: string }) & { range: { start: number; end: number } }): Promise<({ found: true } & FileInfo & { bytes: Uint8Array }) | { found: false; ref: string | null; id?: string }>;
+  get(sel: ({ ref: string } | { id: string }) & { range?: { start: number; end: number } }): Promise<FileGetResult>;
+  /** @deprecated Altform (K-1): Blob aus dem Cache bzw. über Spur 4. */
   get(ref: string): Promise<Blob>;
+  /** CAP-3b: put(bytes | {text}, {name, mime}) → {id, ref} nach lokalem Commit; Upload über Spur 4. */
+  put(content: Uint8Array | ArrayBuffer | { text: string }, meta?: { id?: string; name?: string; mime?: string }): Promise<{ id: string; ref: string }>;
+  /** @deprecated Altform (K-1): Blob mit Upload-Handle. */
   put(blob: Blob, meta?: { id?: string; name?: string; mime?: string }): FileUploadHandle;
+  list(): Promise<{ files: FileInfo[] }>;
+  delete(sel: { ref: string } | { id: string }): Promise<{ deleted: boolean; id?: string }>;
+}
+/** #830 / CATALOG §6: Responses-förmige Antwort von model.run. */
+export type ModelResponse = {
+  id: string; object: 'response'; model: string; status: 'completed' | 'failed';
+  output: Array<{ type: 'message'; role: 'assistant'; content: Array<{ type: 'output_text'; text: string }> }>;
+  output_text: string; usage?: { input_tokens: number; output_tokens: number };
+};
+export interface ModelApi {
+  /** Nur mit `model` in capabilities_required; Fake-Core deterministisch, echter Weg über die App-Laufzeit (#830). */
+  run(req: { model?: string; input?: string | Array<{ role: string; content: string | Array<{ type: string; text?: string }> }>; prompt?: string; [k: string]: unknown }): Promise<ModelResponse>;
 }
 
 export interface CtoxAppApi {
@@ -183,7 +224,11 @@ export interface CtoxAppApi {
   remove(collection: string, id: string): WriteHandle;
   // Befehle – Dokument mit gepushtem Status
   /** opts.record_id (§16.19 Nr. 8): optionaler Bezug des Befehls auf einen Datensatz. */
-  command(type: string, payload: object, opts?: { record_id?: string }): CommandHandle;
+  /** E26: idempotency_key ≤128 characters per app + actor; SHA-256(app|user|key) → UUIDv8; repeat reuses stored intent/state. */
+  /** opts.on_complete/on_failed: Rückruf-Befehlstypen der eigenen App (§16.39 Nr. 3), als Felder am Befehlsdokument.
+   *  §16.44: ctox.coding.turn {app_id, draft_id, base_draft_rev, prompt, model?, turn_id?}, ctox.coding.cancel {turn_id};
+   *  Ablehnung im write_result {status:'rejected', code, reason}. */
+  command(type: string, payload: object, opts?: { record_id?: string; on_complete?: string; on_failed?: string; idempotency_key?: string }): CommandHandle;
   // Priorität (E1) – reiner Hinweis
   setVisible(collections: string[]): void;
   // Zustand – nur an die Zustandszone der Shell (Anf. 27)
@@ -192,10 +237,11 @@ export interface CtoxAppApi {
     clear(code: string): void;
   };
   // Messwerte (lesend, für die Zustandszone; Apps zeigen sie nicht selbst). Leser-Tabs: link = Zustand des Leiters.
-  metrics: LiveDoc<Metrics>;
+  metrics: CommandMetrics;
   shell: ShellApi;
   actor: Actor;
   files: FilesApi;
+  model: ModelApi;
 }
 
 /** §10.2a Nr. 1 – jede App exportiert mount(). */
@@ -300,7 +346,24 @@ export type CollectionDiff = {
   migration: { from_ver: string; migrate_fn?: string; steps?: MigrationStep[] } | null;
 };
 /** §16.22 A4. files: Pfad → Text, null = im Entwurf gelöscht. */
-export type DraftInfo = { base_app_ver: string | null; files: Record<string, string | Uint8Array | null>; manifest: Record<string, unknown>; updated_at: number };
+export interface DraftWriteHandle extends Promise<void> {
+  local: Promise<void>;
+  result: Promise<{ status: 'accepted'; rev: string } | { status: 'rejected'; code: string; reason?: string }>;
+}
+export type DraftInfo = { base_app_ver: string | null; files: Record<string, string | Uint8Array | null>; manifest: Record<string, unknown>; updated_at: number ; /** Bestätigte Revision der app_drafts-Zeile (= base_draft_rev für ctox.coding.turn, §16.44); null, solange Änderungen ausstehen oder der Entwurf neu und noch unbestätigt ist. */ rev: string | null };
+/** §16.44: Plattform-Collection coding_turns/<turn_id> (schreibt nur der Core; messages/tool_events erst am Turn-Ende). */
+export type CodingTurn = {
+  id: string; app_id: string; draft_id: string; user_id: string; command_id: string; origin_app: string; base_draft_rev: string;
+  prompt: string; model: string | null;
+  state: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'conflict';
+  messages: Array<{ role: 'user' | 'assistant'; text: string; at_ms: number }>;
+  tool_events: Array<{ kind: string; path?: string; at_ms: number }>;
+  draft_rev_after: string | null; changed_files: string[];
+  patch?: { ref: string; file_id: string };
+  error?: { status: 'failed'; code: string; reason: string; detail?: string };
+  callback: { on_complete: string | null; on_failed: string | null };
+  created_at_ms: number; updated_at_ms: number; finished_at_ms?: number;
+};
 
 /** §10.2a Nr. 7 + §16.22. Entwürfe je (App, Nutzer); im Kernel lokal in IDB meta `draft:<app>` (IDB je Instanz+Nutzer, §16.7). */
 export interface SourceApi {
@@ -312,7 +375,9 @@ export interface SourceApi {
     /** A4 – null, wenn kein eigener Entwurf. */
     info(): Promise<DraftInfo | null>;
     /** Recht apps.source.edit (gilt für alle schreibenden Entwurfsaufrufe). `manifest.json` → invalid (§16.26). */
-    write(path: string, content: ArtifactContent): Promise<void>;
+    /** §16.44-Ergänzung (3): {local, result}; result = vom Core bestätigte Revision {status:'accepted', rev} bzw. rejected{code};
+     *  awaitbar wie bisher (wartet auf den lokalen Commit). */
+    write(path: string, content: ArtifactContent): DraftWriteHandle;
     /** A7 – not_found, wenn die Datei nicht existiert. */
     remove(path: string): Promise<void>;
     /** A7 – not_found (Quelle fehlt), conflict (Ziel existiert). Verweise im Manifest (entry, handlers, styles) wandern mit (§16.26). */
@@ -374,7 +439,10 @@ export interface ShellKernelApi {
   };
   /** §16.39 Nr. 2: SW-Nachrichten; im Browser automatisch an navigator.serviceWorker gebunden. */
   libs: {
-    onSwMessage(data: { type: 'ctox:lib-miss'; lib: string; major: string; path: string; ver: string; sha?: string | null; reason?: string } | { type: 'ctox:lib-hit'; hits: Array<{ lib: string; major: string; ver: string; path: string; sha?: string; n?: number; last_ms?: number }> }, port?: { postMessage(m: unknown): void }): Promise<unknown>;
+    /** §16.50: bedient lib-miss unabhängig vom auslösenden Client (Fenster/Worker). Antwort über den Port:
+     *  {type:'ctox:lib-ready', lib, ver, path, sha, mime, size, body: ArrayBuffer} (sha256-geprüft) oder {type:'ctox:lib-abort', reason}
+     *  (hash_mismatch | not_found | manifest | invalid | artifact_missing | timeout – vor den 15 s des SW). */
+    onSwMessage(data: { type: 'ctox:lib-miss'; lib: string; major: string; path: string; ver: string; sha?: string | null; reason?: string; client_id?: string; client_type?: string } | { type: 'ctox:lib-hit'; hits: Array<{ lib: string; major: string; ver: string; path: string; sha?: string; n?: number; last_ms?: number }> }, port?: { postMessage(m: unknown): void }): Promise<unknown>;
     resolve(name: string, major: string | number): string | null;
     enforceBudget(): Promise<string[]>;
     readonly byteBudget: number;
@@ -386,7 +454,7 @@ export interface ShellKernelApi {
   releaseApp(appId: string, opts: { base_app_ver: string; channel?: string }): CommandHandle;
   removeApp(appId: string, opts: { base_app_ver: string }): CommandHandle;
   source(appId: string): SourceApi;
-  metrics: LiveDoc<Metrics>;
+  metrics: CommandMetrics;
   leader: LiveDoc<{ isLeader: boolean; leader_gen: number; tab_id: string }>;
   identity: {
     readonly instance_id: string;
@@ -419,6 +487,7 @@ export declare function createShellKernel(kernel: StubKernel): ShellKernelApi;
 // ============================================================================================================
 
 export interface StubKernelOptions {
+  diagnostics?: CommandDiagnostics;
   instanceId?: string;
   userId?: string;
   /** Standard: `ctox-<instanceId>-<userId>` (§16.7). */
@@ -452,6 +521,8 @@ export interface StubKernelOptions {
   deviceId?: string;
   /** Fake-Core: Gerätekennung für die deterministische device_id (Standard 'browser'). */
   deviceLabel?: string;
+  /** Fake-Core: Laufzeit des simulierten Coding-Agent-Turns (§16.44, Standard 60 ms). */
+  codingDelayMs?: number;
   /** false = Ein-Tab-Betrieb erzwingen. */
   multiTab?: boolean;
 }
@@ -598,13 +669,13 @@ export interface Subscription {
 }
 export interface KernelPage {
   epoch: string; collection: string; scope_hash: string; gen: number;
-  cursor_to: string; head_seq?: string; complete: boolean; backlog?: number;
-  package_id?:string; seq_from?:string; seq_to?:string; sig?:string; core_sent_at_ms?:number;
-  docs: Array<{collection?:string; id:string; data?:unknown; doc?:unknown;
-    deleted?:boolean; op?:'put'|'delete'|'unproject'; seq:string; rev:string}>;
+  type?: 'page'|'live'; cursor_to?: string; head_seq?: string; complete: boolean; backlog?: number;
+  package_id?:string; seq_from?:string; seq_to?:string; sig?:string|number[]; core_sent_at_ms?:number;
+  docs: Array<{collection?:string; id:string; data?:unknown; doc?:unknown; body?:unknown;
+    deleted?:boolean; op?:'put'|'upsert'|'delete'|'unproject'; seq:string; rev:string}>;
 }
 export interface KernelWrite {
-  op_id:string; prev_op_id?:string|null; collection:string; id:string;
+  op_id:string; prev_op_id?:string|null; client_seq?:string; collection:string; id:string;
   base_rev:string|null; base_seq:string; gen:number; schema_ver:number; app_ver:string;
   app_id:string; op:'put'|'patch'|'delete'; body:unknown;
 }
@@ -685,4 +756,81 @@ export interface ArtifactBinding {
   readonly libs: Readonly<Record<string, string>>;
   readonly root: string;
   url(path: string): string;
+  /** §16.50: gleich-ursprüngliche Worker-URL unter der gebundenen Lib-Wurzel `/~a/lib:<name>@<M.m>[~lib:…]/<path>` (nie data:/blob:); nicht gebunden → not_found. */
+  workerUrl(lib: string, path: string): string;
 }
+
+// ---- E38.4 v4 browser entry (boot.mjs) ----
+/** P4-a hello offer exactly as decodeHelloFrame (rxdb/src/hello.mjs) accepts it. */
+export interface V4HelloOffer {
+  type:'hello'; protocol_ver:4; bootstrap_ver:number; app_api_ver:{min:string;max:string};
+  /** Must equal V4LaunchContext.v4.instanceId. */
+  instance_id:string; capabilities:string[];
+  /** Minted by the daemon for this authenticated HTTP session; single use (fresh nonce per launch-context fetch). */
+  device_proof:{device_id:string;public_key:string;nonce:string;signature:string};
+  /** Every collection the browser may subscribe to; hello_ok.scope_tokens[i] answers scopes_wanted[i]. */
+  scopes_wanted:string[];
+  /** Without a host zstd adapter only ['gzip'] is usable. */
+  transport:{codecs:('gzip'|'zstd')[];max_frame_bytes:number;fragmentation:boolean;reassembly:boolean};
+}
+/**
+ * Response of GET /api/business-os/launch-context (credentials same-origin). V2 fields (session, config,
+ * designTemplates) stay untouched; v4 reads ONLY the `v4` member. Unknown members are ignored. No business data.
+ */
+export interface V4LaunchContext {
+  v4:{
+    instanceId:string;
+    userId:string;
+    /** actor.id === userId. */
+    actor:{id:string;role:string;[key:string]:unknown};
+    signaling:{
+      /** ws:/wss: signaling endpoints, tried in order. */
+      urls:string[];
+      room:string;
+      /** This browser's signaling peer id. */
+      peerId:string;
+      /** The daemon's native v4 peer id; the browser sends it the SDP offer. */
+      nativePeerId:string;
+      /** Signaling join token (query `token`). */
+      token:string;
+      iceServers:{urls:string|string[];username?:string;credential?:string}[];
+    };
+    hello:{offer:V4HelloOffer};
+    /** Instance signing keys: verify stream packages (key_id) and scope tokens. Ed25519 raw public key, base64url (43 chars). */
+    packageKeys:{keyId:string;alg:'Ed25519';publicKey:string}[];
+  };
+}
+export type BootV4Reason='invalid_options'|'launch_context_unavailable'|'launch_context_invalid'|'package_verifier_missing'|'hello_rejected'|'transport_unavailable';
+export declare class BootV4Error extends CtoxError {
+  readonly name:'BootV4Error';
+  /** invalid (invalid_options) | unavailable | invalid | forbidden (package_verifier_missing, hello_rejected) | unavailable (transport). */
+  readonly reason:BootV4Reason;
+}
+export interface BootV4Options {
+  /** Default '/api/business-os/launch-context'. */
+  launchContextUrl?:string;
+  /** Optional. Absent: createLoader loads the activated shell version via kernel.loadModule('shell', ver) (manifest entry,
+   * v4/frame/index.js). Present but not a function: BootV4Error reason 'invalid_options'. */
+  resolveShell?:(version:string,artifacts:ShellKernelApi['artifacts'])=>ShellModule|Promise<ShellModule>;
+  fetchImpl?:typeof fetch;
+  /** Host/test seam; default: built-in signaling client (WebSocket + RTCPeerConnection + createReliableChannels). */
+  createPeer?:WebRTCTransportOptions['createPeer'];
+  codecs?:WebRTCTransportOptions['codecs'];
+  subtle?:SubtleCrypto;
+  handshakeTimeoutMs?:number;
+  /** Additional loader/kernel options; identity, actor, transport and resolveShell always come from the launch context. */
+  loaderOptions?:Partial<Omit<LoaderOptions,'instanceId'|'userId'|'actor'|'transport'|'resolveShell'>>;
+  /** Test/host seam; default createLoader. */
+  loaderFactory?:(options:LoaderOptions)=>Promise<KernelLoader>;
+}
+export interface BootV4Result {
+  readonly loader:KernelLoader;
+  readonly kernel:Kernel;
+  readonly transport:WebRTCKernelTransport;
+  readonly launchContext:Readonly<V4LaunchContext['v4']>;
+}
+/** Leader tabs resolve after the authenticated hello; follower tabs after the loader is up. Never falls back to V2/HTTP data. */
+export declare function bootV4(options?:BootV4Options):Promise<BootV4Result>;
+export declare function parseV4LaunchContext(payload:unknown):Readonly<V4LaunchContext['v4']>;
+export declare function fetchV4LaunchContext(url?:string,fetchImpl?:typeof fetch):Promise<Readonly<V4LaunchContext['v4']>>;
+export declare const DEFAULT_LAUNCH_CONTEXT_URL:'/api/business-os/launch-context';

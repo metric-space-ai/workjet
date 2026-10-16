@@ -1,7 +1,6 @@
 {
   "repository": "https://github.com/metric-space-ai/ctox",
-  "pullRequest": 823,
-  "commit": "c707454b0e67ec5ec8881f68dc94813a55b4a2ac",
+  "commit": "5b1e50d37bc9c2017b97c4e7adf017b27244afb0",
   "sourceDirectory": "src/apps/business-os/kernel",
   "files": [
     {
@@ -15,24 +14,39 @@
       "gitBlob": "ea7f7e8b4edba29e5967e8159eb0f5787078bc4d"
     },
     {
+      "path": "boot.mjs",
+      "sha256": "8448e27e26498eeaa1da25a815d2bbe976b25e16a1a0468c38caf096249bd175",
+      "gitBlob": "f11fc17170e15dd72ed279cb4530efb978e6156f"
+    },
+    {
       "path": "cache.mjs",
       "sha256": "4df2aaf5b1b1c85893eb2e359e539e2a9af3e837db164a3c6c88a25ea115a6cb",
       "gitBlob": "0a4f1044d866a9ba6a1468d91a87f1db217a1ce8"
     },
     {
+      "path": "command-observer.mjs",
+      "sha256": "0455b598a458e5f88bb028b9f0ba3ccaee6721dce170af0944774da60c8969aa",
+      "gitBlob": "43028970747174bc3f6b5188d4d233f2059fc271"
+    },
+    {
       "path": "command-state.mjs",
-      "sha256": "c6a960d95cd2d02ba84032aa76dd2af26529ae6b1dd2c5d554108595f8dcf12e",
-      "gitBlob": "5ee9a4c362a89722ca9c7e63d9b3e4836fde53ab"
+      "sha256": "8dd87a6d15a91cd701c1e9a727c1e0234f95f4a0312ee7a9a9b0f69de5b0f276",
+      "gitBlob": "ecbdb55e48cdec06f810850a504a91a92f2f82a8"
+    },
+    {
+      "path": "command-timings.mjs",
+      "sha256": "3ae8b0811d277a9178eac5f8c6448af1871c2c27ede437184836fbe6e8f12362",
+      "gitBlob": "73be29546da04dc5cc022eba50b007db7d37a197"
     },
     {
       "path": "fake-core-runtime.mjs",
-      "sha256": "bbe2e70e345f79fb1e6b373ab5a6a836d7390395ece53844a3f464308720530b",
-      "gitBlob": "73bda53fa06081e477ab37ba0ec0456d83c191b4"
+      "sha256": "ec760b6c0641dce56528c9464429fa08f78813cacedbeb61a0d22d09459ec023",
+      "gitBlob": "0e4e3cb9f8a696c836fc3888b2628b87b4d6f52c"
     },
     {
       "path": "fake-core.mjs",
-      "sha256": "12a3e0f364019f57fb2d57d558d67e52cc3e22d3dd4dd165bf0bd0e0ce51d147",
-      "gitBlob": "727001f73431412309a103e1aaf7c7b3a5a8592c"
+      "sha256": "c3903f4370f609c8ca63b0a42c4cf3a3caee210842f2e06e9f5acb87a70df403",
+      "gitBlob": "36fcad7e00736884af0b77e4ee68dc0381a9eada"
     },
     {
       "path": "framing.mjs",
@@ -41,13 +55,13 @@
     },
     {
       "path": "index.d.ts",
-      "sha256": "63cca4d4055240f93de1c2d8c60ce7e244f715c5803a5a2f56fda72f71cd2c43",
-      "gitBlob": "a48a69da4e396614f60b52e22b8d88446488d461"
+      "sha256": "a7855c746d3751a0396160f48d8b9314b8dc6b3ab4ef784c00066cdf72aacce9",
+      "gitBlob": "246336dff69338f11b2eb151153df4928c14d1f8"
     },
     {
       "path": "index.mjs",
-      "sha256": "4db1b346bc7c805a984603bd6de8f7d26e03d76bace1bb6cd7e8aeea05da58a7",
-      "gitBlob": "ce93a8474ddd895864b2b9b47c5a946ae978cde6"
+      "sha256": "69fbd05f687cc4fede00d0e88d0b328ea5752e0a7ca14100a662bed77cf076d9",
+      "gitBlob": "452581aedf2d8fbd8ee5cb539f4cdd07dbe0b0a3"
     },
     {
       "path": "ingress.mjs",
@@ -56,8 +70,8 @@
     },
     {
       "path": "kernel.mjs",
-      "sha256": "da30487b0f9121fcab5dab3c9715a27c9193527f0cb51254e9cc6d6407404cd2",
-      "gitBlob": "1bcf0479db04c565fadb8a6bd1917461c31fe76a"
+      "sha256": "0f24081aad92c426a66c46bb834c377a7f7bf63c2dbd66ca4f9bc6a93d4f7f15",
+      "gitBlob": "133c87e4f18e819ade2357c0f88366b53697efa0"
     },
     {
       "path": "leader.mjs",
@@ -66,8 +80,8 @@
     },
     {
       "path": "loader.mjs",
-      "sha256": "d81fce5bbb1208a623dafc2a0036f4cff0fb256589ee27349de7d817d2c84d4f",
-      "gitBlob": "9044556d7b0f1defad417a3629d3627d3eaa84ef"
+      "sha256": "489be7614e37ac3da9d5172709d078aff8ef4ea3c9f9f405b42e1899d83e0cb4",
+      "gitBlob": "7bd9caa3e35539fee5939461b6e6f5371f9abb54"
     },
     {
       "path": "migrate-v3.mjs",
@@ -76,8 +90,8 @@
     },
     {
       "path": "outbox.mjs",
-      "sha256": "7cbcb05f6d28119e064f90090a65450693a0d5b59ea6cfb7a7e262e8188e056b",
-      "gitBlob": "bfadfe74848713b864aacc0afc46b6b62e5ae49a"
+      "sha256": "1c65ed9b74c7bac5e626500e1dd5175a6c1714c492ea40e0dbc668b270a596fd",
+      "gitBlob": "26456ed5135affa68914929258c4f5ae9357e52c"
     },
     {
       "path": "platform.mjs",
@@ -93,6 +107,11 @@
       "path": "schema-diff.mjs",
       "sha256": "23bfdea072bab7bc14925134ae59f6f83e2397388d333c5d0eb81a94a0c58710",
       "gitBlob": "667cac4c40a5b7d557d287c091758763f95f2d47"
+    },
+    {
+      "path": "session.mjs",
+      "sha256": "e1528bc421bfb2b1e248d9a81af124be831cd5412fa050c5ab18c39df3660465",
+      "gitBlob": "69a45ed697ea7b31b7d95ad924c994a80a5943d4"
     },
     {
       "path": "shell-api.mjs",
@@ -111,18 +130,34 @@
     },
     {
       "path": "transport-webrtc.mjs",
-      "sha256": "cbb8b56a7408eaff6f5e8f41caa8576150974bfdd1dc47c7a1c6564da10ab805",
-      "gitBlob": "bf51282d16e895af6d138595b8ce145d9b8c5225"
+      "sha256": "2f283c9db65a19fc5943977c19d396a5a5ee5ca04287f0decf9e29d5066c2009",
+      "gitBlob": "cba23b70b05ab4e22e52bbf07fa0ee1e53c2b3ee"
     },
     {
       "path": "transport.mjs",
-      "sha256": "0703725be6cdc1f5b344c238241e0757f846bd4b4615ee167801a65358d9b322",
-      "gitBlob": "089665e44869bade3018078584c422c0b93386f1"
+      "sha256": "e5b3a94794aec96faab38f70ce17a64414a8849fe528b6177b573823458307be",
+      "gitBlob": "b30cb151e7b648f6bae156566f351257dcccd2be"
     },
     {
       "path": "values.mjs",
-      "sha256": "8e9a96280a8f1c26094fd05cc0f989ee96e802507459cd639b1a156d67d4e391",
-      "gitBlob": "c003197825bfb3fcf12d7389b99dd06018e8e7b2"
+      "sha256": "f58d741212c130a5ff93f4bed3caf3bc5102a92cd3fcad331b035475948d18ea",
+      "gitBlob": "baff6e591285b8e3ef53b0b44c44682f658e3121"
+    },
+    {
+      "path": "vendor/async-timeout.js",
+      "sha256": "7c768b9a2ddbb48c36352dd32f21f3bc4e771db5b411f39d18d20bf8deccf083",
+      "gitBlob": "33a791265e93d7b94d9296948ab473c97fc1263b"
+    },
+    {
+      "path": "vendor/hello.mjs",
+      "sha256": "84149b2559dc727c7eb4d965125cd37e643f41ab5b8a43229f7afffe8a7c3237",
+      "gitBlob": "939f2431b54c2f814aa461af58fe169fa1e1ead9"
+    }
+  ],
+  "contracts": [
+    {
+      "path": "tests/sync_v4_e25/wjb-command-types.json",
+      "sha256": "b801cd7835571656dd075def87adfc11ce2ba85f8ac0ab5f3ca8a73beac87852"
     }
   ],
   "licenseSha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"

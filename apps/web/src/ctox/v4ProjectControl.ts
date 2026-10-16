@@ -27,7 +27,8 @@ export function requestV4ProjectControl(
   api: CtoxAppApi,
   request: CtoxWorkjetProjectControlRequest,
 ): Promise<CtoxWorkjetProjectControlResult> | null {
-  if (request.action === "project.list") return Promise.resolve(listV4WorkjetProjects(api));
+  if (request.action === "project.list")
+    return new Promise((resolve) => resolve(listV4WorkjetProjects(api)));
   if (isLocalProjectRead(request)) {
     if (
       request.action === "project.presentation.content.read" ||
@@ -47,8 +48,9 @@ export function requestV4ProjectControl(
     }
   }
   if (request.action === "project.kpis.read") {
-    const result = readV4WorkjetProjectKpis(api, request.projectId);
-    return Promise.resolve(
+    return new Promise<CtoxWorkjetProjectControlResult>((resolve) =>
+      resolve(readV4WorkjetProjectKpis(api, request.projectId)),
+    ).then((result) =>
       result._tag === "completed" && result.response.action === "project.kpis.read"
         ? { ...result, response: { ...result.response, commandId: request.commandId } }
         : result,
@@ -96,38 +98,30 @@ export function requestV4ProjectControl(
 }
 
 export function listV4WorkjetProjects(api: CtoxAppApi): CtoxWorkjetProjectControlResult {
-  try {
-    const projects = readLocalWorkjetProjects(api);
-    return {
-      _tag: "completed",
-      response: { action: "project.list", projects, count: projects.length, truncated: false },
-    };
-  } catch (error) {
-    return localReadFailure(error);
-  }
+  const projects = readLocalWorkjetProjects(api);
+  return {
+    _tag: "completed",
+    response: { action: "project.list", projects, count: projects.length, truncated: false },
+  };
 }
 
 export function readV4WorkjetProjectKpis(
   api: CtoxAppApi,
   projectId: ProjectId,
 ): CtoxWorkjetProjectControlResult {
-  try {
-    const kpis = readLocalWorkjetKpis(api, projectId) ?? {
-      project_id: projectId,
-      revision: 0,
-      items: [],
-    };
-    return {
-      _tag: "completed",
-      response: {
-        action: "project.kpis.read",
-        commandId: newCommandId(),
-        projectId,
-        contract: "ctox.workjet.project_kpis.v1",
-        kpis,
-      },
-    };
-  } catch (error) {
-    return localReadFailure(error);
-  }
+  const kpis = readLocalWorkjetKpis(api, projectId) ?? {
+    project_id: projectId,
+    revision: 0,
+    items: [],
+  };
+  return {
+    _tag: "completed",
+    response: {
+      action: "project.kpis.read",
+      commandId: newCommandId(),
+      projectId,
+      contract: "ctox.workjet.project_kpis.v1",
+      kpis,
+    },
+  };
 }

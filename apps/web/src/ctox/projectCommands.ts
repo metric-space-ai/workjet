@@ -1,19 +1,22 @@
 import type { CtoxWorkjetProjectControlRequest } from "@workjet/contracts";
 import { useCtoxCommand } from "./hooks";
 
-type ProjectMutationAction =
-  | "project.create"
-  | "project.configure"
-  | "project.init"
-  | "project.chat.create"
-  | "project.worker.add"
-  | "project.supervisor.bind"
-  | "project.supervisor.turn.submit"
-  | "project.supervisor.turn.input"
-  | "project.supervisor.turn.cancel"
-  | "project.kpis.configure"
-  | "project.kpis.refresh"
-  | "project.gallery.order.set";
+export const PROJECT_MUTATION_ACTIONS = [
+  "project.create",
+  "project.configure",
+  "project.init",
+  "project.chat.create",
+  "project.worker.add",
+  "project.supervisor.bind",
+  "project.supervisor.turn.submit",
+  "project.supervisor.turn.input",
+  "project.supervisor.turn.cancel",
+  "project.kpis.configure",
+  "project.kpis.refresh",
+] as const;
+type ProjectMutationAction = (typeof PROJECT_MUTATION_ACTIONS)[number];
+// project.gallery.order.set is not a command in V4: gallery order is a Workjet field written by
+// api.patch (E49.4) and has no route in the Workjet bridge contract (wjb-command-types.json).
 export type CtoxProjectMutation = Extract<
   CtoxWorkjetProjectControlRequest,
   { action: ProjectMutationAction }
@@ -27,10 +30,7 @@ export function useCtoxProjectCommands(instanceId: string | null) {
   return {
     ...controls,
     submit: (request: CtoxProjectMutation) => {
-      const type =
-        request.action === "project.create" || request.action === "project.configure"
-          ? "ctox.workjet.project.upsert"
-          : `ctox.workjet.${request.action}`;
+      const type = projectCommandType(request.action);
       return controls.command(
         type,
         request,
@@ -38,4 +38,11 @@ export function useCtoxProjectCommands(instanceId: string | null) {
       );
     },
   };
+}
+
+/** Core platform route (E40) for a project mutation; checked against wjb-command-types.json. */
+export function projectCommandType(action: ProjectMutationAction): string {
+  return action === "project.create" || action === "project.configure"
+    ? "ctox.workjet.project.upsert"
+    : `ctox.workjet.${action}`;
 }

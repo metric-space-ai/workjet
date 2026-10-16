@@ -1,3 +1,4 @@
+import { createCommandTimings } from './command-timings.mjs';
 import { PLATFORM_COLLECTIONS, PLATFORM_APP_ID } from './platform.mjs';
 import { artifactUrl, utf8Base64, bytesBase64 } from './artifact-url.mjs';
 import { takeoverV3Database } from './migrate-v3.mjs';
@@ -7,10 +8,10 @@ import { KernelTransport, decimalSeq, seqGreater, maxSeq, checkpointKey } from '
 import { MemoryCoreTransport } from './fake-core.mjs';
 import { assertLeader, acquireGeneration } from './leader.mjs';
 // Local App API 4.0 kernel. Derived from the reviewed executable contract; no legacy runtime imports.
-import { CtoxError, StaleLeader, cloneValue, deepFreeze, deepEqual, jsonEq, liveEqual, mergePatch, fnv1a, uuidv7, sha256Hex, hasBlob, isBlob, isPlainObject } from './values.mjs';
+import { CtoxError, StaleLeader, cloneValue, deepFreeze, deepEqual, jsonEq, liveEqual, mergePatch, fnv1a, uuidv7, sha256Js, sha256Hex, hasBlob, isBlob, isPlainObject } from './values.mjs';
 import { compileQuery, runCompiledQuery, normalizeJson, validateSchema } from './app-api.mjs';
 import { openBackend, deleteBackend } from './store-idb-v5.mjs';
-import { emptyBase, byOpId, docKey, nsName, applyOp, recompute } from './outbox.mjs';
+import { emptyBase, byOpId, enqueueWrite, reserveWrites, docKey, nsName, applyOp, recompute } from './outbox.mjs';
 import { checkCommandTransition } from './command-state.mjs';
 import { SCHEMA_FILE, parseCollectionsFile, classifyCollections, applyMigrationSteps, manifestCollectionsToParsed, parsedToManifestCollections } from './schema-diff.mjs';
 export { CtoxError, uuidv7, sha256Hex, sha256Js } from './values.mjs';
@@ -83,6 +84,7 @@ async function importModuleText(text) {
 // Vom Kern berechnete bzw. geschützte Manifest-Felder: weder per setManifest änderbar noch vom Basis-Manifest geerbt.
 const MANIFEST_FIELDS_PROTECTED = new Set(['app_id', 'app_ver', 'files', 'generations', 'retires', 'provenance', 'author', 'created_at']);
 const MANIFEST_FIELDS_COMPUTED = new Set([...MANIFEST_FIELDS_PROTECTED, 'title', 'entry', 'handlers', 'capabilities_required', 'min_app_api', 'layout', 'styles', 'collections']);
+const HASH_MISMATCH = Symbol('hash_mismatch');
 export function createKernel(opts = {}) {
   const instanceId = opts.instanceId;
   const userId = opts.userId ?? opts.actor?.id;
@@ -141,6 +143,7 @@ export function createKernel(opts = {}) {
   const timers = new Set(), tasks = new Set(), deadlineCancels = new Set();
   const inflight = new Map(); // docKey -> op_id
   const inflightOps = new Set();
+  const reservedOps = new Set();
   const skipBeforeCommit = new Set();
   const uploadProgress = new Map(), uploadsDone = new Set();
   const activationListeners = new Set();
@@ -253,7 +256,11 @@ export function createKernel(opts = {}) {
       const appId = rec.collection === 'business_apps' ? rec.id : visible(r)?.app_id;
       if (appId) scheduleActivation(appId);
     }
-    if (rec.collection === 'business_commands') notify('commands');
+    if (rec.collection === 'business_commands') {
+      if (rec.pending && rec.lseq) commandTimings.mark(rec.id, 'queued');
+      if (!rec.pending && ['done','failed','cancelled','rejected'].includes(r.data?.status)) commandTimings.mark(rec.id, 'completed');
+      notify('commands');
+    }
     return true;
   }
   function setCheckpoint(cp) {
@@ -293,6 +300,14 @@ export function createKernel(opts = {}) {
   }
 
   // ---- Metriken ----
+  const commandTimings = createCommandTimings((value, broadcast, patch) => {
+    notify('metrics');
+    if (broadcast) post({type:'command_timing', value:patch});
+    try {
+      const observed = opts.diagnostics?.onCommandTiming?.(value);
+      if (observed != null) Promise.resolve(observed).catch(() => {});
+    } catch { /* diagnostics cannot affect writes */ }
+  });
   async function refreshOutboxStat() {
     if (!db || closed) return;
     const next = await db.outboxStat();
@@ -331,24 +346,27 @@ export function createKernel(opts = {}) {
     if (!jsonEq(view, collectionsView)) { collectionsView = view; return true; }
     return false;
   }
-  function trackScope(collection, scope, patch) {
+  // report=false: der Aufrufer meldet selbst, nachdem auch Checkpoint und Rückstand nachgezogen sind (K-BF1).
+  function trackScope(collection, scope, patch, report = true) {
     const key = checkpointKey(scope);
     let e = collScopes.get(collection);
     if (!e || e.key !== key) { e = { key, gen: scope.gen ?? genOf(collection), backlog: 0, complete: false, error: null, state: null, since_ms: Date.now() }; collScopes.set(collection, e); }
     Object.assign(e, patch);
-    if (refreshCollections()) netChanged();
+    if (refreshCollections() && report) netChanged();
   }
   function untrackCollection(collection) { if (collScopes.delete(collection) && refreshCollections()) netChanged(); }
   let followerNet = null;
   const metricsLive = makeLive(['metrics'], () => {
     const net = isLeader || !followerNet ? { link, backlog: (fakeCore?.backlog ?? 0) + extraBacklog, collections: collectionsView } : followerNet;
     return {
+      commands: commandTimings.snapshot(),
       backlog: net.backlog,
       collections: cloneValue(net.collections ?? {}),
       outbox: { count: outboxStat.count, oldest_ms: outboxStat.oldest_at ? Math.max(0, Date.now() - outboxStat.oldest_at) : 0 },
       link: { ...net.link }, ...(timing?{timing:{...timing}}:{}),
     };
   });
+  Object.defineProperty(metricsLive, 'commands', {get: () => { guardAlive(); return deepFreeze(commandTimings.snapshot()); }});
   let knownGen = 0;
   const leaderLive = makeLive(['leader'], () => ({ isLeader, leader_gen: isLeader ? myGen : knownGen, tab_id: tabId }));
 
@@ -387,6 +405,7 @@ export function createKernel(opts = {}) {
 
   // ---- Laden, Leiterwahl ----
   async function loadFromStorage() {
+    for (const e of await db.all('outbox')) if (e.client_seq != null) reservedOps.add(e.op_id);
     const docs = await db.all('docs');
     for (const r of docs) mirrorPut(r);
     const metas = await db.all('meta');
@@ -435,13 +454,30 @@ export function createKernel(opts = {}) {
         await deliver();schedulePump();
       }).catch(error=>{if(!closed){link={...link,state:'offline'};netChanged();zoneReport('kernel',{level:'error',code:'transport.connect',text:error.message},'kernel');}});
   }
+  // §16.50 Nr. 3: Leitermeldung an den SW – beim Start, bei jedem Leiterwechsel (Erwerb und Verlust) und nach
+  // controllerchange. Nur ein Hinweis für das Routing von Lib-Misses, keine Autorität (die Generation bleibt im IDB).
+  // Ohne navigator.serviceWorker (Node, Worker) oder ohne controller ein No-op.
+  const swContainer = (() => { try { return globalThis.navigator?.serviceWorker ?? null; } catch { return null; } })();
+  let swHintStarted = false, swHintLast = null;
+  function sendLeaderHint(force = false) {
+    if (!swContainer || (!force && (!swHintStarted || swHintLast === isLeader))) return;
+    let controller = null;
+    try { controller = swContainer.controller; } catch { /* kein SW */ }
+    if (!controller) return;
+    try { controller.postMessage({ type: 'ctox:kernel', leader: isLeader }); swHintLast = isLeader; } catch { /* SW weg */ }
+  }
+  const onControllerChange = () => { if (!closed && swHintStarted) sendLeaderHint(true); };
+  try { swContainer?.addEventListener?.('controllerchange', onControllerChange); } catch { /* kein SW */ }
   async function becomeLeader() {
     if (closed) return;
     myGen = await acquireGeneration(db);
     isLeader = true;
+    for (const e of await db.all('outbox')) if (e.client_seq != null) reservedOps.add(e.op_id);
+    sendLeaderHint();
     // Ein neuer Leiter hat alles gelesen, was der alte geschrieben hat (gemeinsame IDB).
     for (const r of await db.all('docs')) mirrorPut(r);
     for (const m of await db.all('meta')) if (m.key.startsWith('activation:')) applyActivationLocal(m, false);
+    await settleAwaitingPages();
     notify('leader');
     post({ type: 'leader', gen: myGen });
     if (!transportConnected) {
@@ -457,6 +493,7 @@ export function createKernel(opts = {}) {
     isLeader = false;
     for (const op of inflightOps) inflightOps.delete(op);
     inflight.clear();
+    sendLeaderHint();
     notify('leader');
     const rel = releaseLock; releaseLock = null;
     if (rel) rel();
@@ -501,6 +538,7 @@ export function createKernel(opts = {}) {
         await refreshOutboxStat();
         break;
       }
+      case 'command_timing': commandTimings.merge(msg.value); break;
       case 'outbox': await refreshOutboxStat(); if (isLeader) schedulePump(); break;
       case 'priority': if(isLeader)transport.priority?.({app_id:msg.app_id,collections:msg.collections});break;
       case 'subscribe': if(isLeader && typeof msg.collection==='string')await subscribeCollection(msg.collection,'P1');break;
@@ -515,7 +553,7 @@ export function createKernel(opts = {}) {
       case 'rpc': {
         if (!isLeader) break;
         try {
-          const value = msg.name==='fetchBlob' ? await fetchBlob(...msg.args) : await simImpl[msg.name](...msg.args);
+          const value = msg.name==='fetchBlob' ? await fetchBlob(...msg.args) : msg.name==='fetchRange' ? await fetchRange(...msg.args) : await simImpl[msg.name](...msg.args);
           post({ type: 'rpc_done', reqId: msg.reqId, value: value === undefined ? null : value });
         } catch (e) {
           post({ type: 'rpc_done', reqId: msg.reqId, error: { code: e?.code, message: String(e?.message ?? e) } });
@@ -545,11 +583,13 @@ export function createKernel(opts = {}) {
     local.catch(() => {});
     return { op_id, local, result, cancel: cancelFn };
   }
-  function localWrite(app, op, collection, id, body) {
+  function localWrite(app, op, collection, id, body, createOnly = false) {
     const op_id = uuidv7();
     let resolveResult;
     const result = new Promise((r) => { resolveResult = r; });
     let entry = null;
+    let reused = false;
+    let ownCommandQueued = false;
     // Synchroner Teil: prüfen und optimistisch in den Spiegel (lokal sofort sichtbar, Flag pending).
     const prepare = () => {
       guardAlive();
@@ -570,11 +610,11 @@ export function createKernel(opts = {}) {
       entry = {
         op_id, prev_op_id: cur?.pending && cur.rev?.startsWith('op:') ? cur.rev.slice(3) : null,
         collection: ns, id, op, body: clean, base_rev: cur?.rev ?? null, base_seq: decimalSeq(cur?.base?.seq ?? '0'),
-        gen: genOf(ns), schema_ver: 1, app_id: app.id, app_ver: app.ver, created_at: Date.now(), origin_tab: tabId,
+        gen: genOf(ns), ...writeVersion(app, collection), app_id: app.id, created_at: Date.now(), origin_tab: tabId,
       };
       waiters.set(op_id, resolveResult);
       const base = cur?.base ?? emptyBase();
-      mirrorPut({ collection: ns, id, data: st.data, deleted: st.deleted, rev: `op:${op_id}`, seq: base.seq, pending: true, base });
+      if (!createOnly || !visible(cur)) mirrorPut({ collection: ns, id, data: st.data, deleted: st.deleted, rev: `op:${op_id}`, seq: base.seq, pending: true, base });
     };
     const persist = async () => {
       if (skipBeforeCommit.has(op_id)) {
@@ -589,11 +629,25 @@ export function createKernel(opts = {}) {
       const rec = await db.tx(async (t) => {
         if(isLeader)await assertGen(t);
         const stored = await t.get('docs', [ns, id]);
-        await t.put('outbox', entry); // docs + outbox in EINER Transaktion
+        // E26: the IDB transaction arbitrates concurrent tabs and reloads.
+        // Reuse the original operation/result, never enqueue another command.
+        if (createOnly && visible(stored)) {
+          reused = true;
+          waiters.delete(op_id);
+          const pending = (await t.outboxFor(ns, id)).sort(byOpId).at(-1);
+          if (pending) {
+            const previous = waiters.get(pending.op_id);
+            waiters.set(pending.op_id, (value) => { previous?.(value); resolveResult(value); });
+          } else resolveResult({ status: 'accepted', rev: stored.rev, seq: stored.seq });
+          return stored;
+        }
+        await enqueueWrite(t, entry); // preserve E26 reuse plus durable enqueue/client order
         const r = recompute(ns, id, stored?.base ?? emptyBase(), await t.outboxFor(ns, id));
         await putDoc(t, r);
         return r;
       });
+      ownCommandQueued = !reused; // E26: a reused create-only command is not this handle's queue entry
+      if (ns === 'business_commands' && rec.pending) commandTimings.mark(id, 'queued'); // E14 command timings
       mirrorPut(rec);
       post({ type: 'docs', keys: [[ns, id]], local_seq: rec.lseq });
       post({ type: 'outbox' });
@@ -616,7 +670,7 @@ export function createKernel(opts = {}) {
       },
     );
     const localDone = committed.then(() => undefined);
-    return handleFor(op_id, localDone, result, () => cancelWrite(op_id, () => entry));
+    return handleFor(op_id, localDone, result, () => reused || (createOnly && !ownCommandQueued) ? false : cancelWrite(op_id, () => entry));
   }
   function normalizeJsonPatch(p) {
     if(!isPlainObject(p))throw new CtoxError('invalid','patch must be an object',{path:''});
@@ -627,13 +681,13 @@ export function createKernel(opts = {}) {
     if (closed || loggedOut) return false;
     const e = getEntry();
     if (!e) { skipBeforeCommit.add(op_id); return true; } // noch nicht vorbereitet
-    // nur vor dem Senden: Leiter weiß es exakt; ein Leser nur, wenn der Leiter offline ist.
-    const canCancel = isLeader ? !inflightOps.has(op_id) : (followerNet?.link?.state ?? 'online') !== 'online';
+    // Only the leader can synchronously prove that no durable dispatch was reserved.
+    const canCancel = isLeader && !pumping && !inflightOps.has(op_id) && !reservedOps.has(op_id);
     if (!canCancel) return false;
     track((async () => {
       const rec = await db.tx(async (t) => {
         const queued = await t.get('outbox', op_id);
-        if (!queued || queued.sent_gen) return null;
+        if (!queued || queued.sent_gen || queued.client_seq != null) return null;
         await t.del('outbox', op_id);
         const stored = await t.get('docs', [e.collection, e.id]);
         const r = recompute(e.collection, e.id, stored?.base ?? emptyBase(), await t.outboxFor(e.collection, e.id));
@@ -652,6 +706,10 @@ export function createKernel(opts = {}) {
     return true;
   }
   function handleWriteResult(info, result) {
+    if (info.collection === 'business_commands') {
+      commandTimings.mark(info.id, 'acked');
+      if (result.status === 'rejected') commandTimings.mark(info.id, 'completed');
+    }
     const res = waiters.get(info.op_id);
     if (res) { waiters.delete(info.op_id); res(cloneValue(result)); }
     if (result.status === 'rejected' && result.reason !== 'cancelled') {
@@ -674,18 +732,25 @@ export function createKernel(opts = {}) {
     try {
       do {
         pumpAgain = false;
-        const entries = (await db.all('outbox')).sort(byOpId);
+        const entries = await db.tx(async t => { await assertGen(t); return reserveWrites(t); });
+        for (const e of entries) if (e.client_seq != null) reservedOps.add(e.op_id);
+        // P8's bounded gap buffer holds 64 positions. A blocked document head
+        // must not let thousands of later commands exhaust it after reconnect.
+        const floor = entries.find(e => e.client_seq != null)?.client_seq;
         const first = new Map();
         for (const e of entries) { const k = docKey(e.collection, e.id); if (!first.has(k)) first.set(k, e); }
         for (const [k, e] of first) {
           if (inflight.has(k) || !isLeader || link.state !== 'online') continue;
+          if (e.awaiting_page) continue;
+          if (e.client_seq != null && BigInt(e.client_seq) >= BigInt(floor) + 64n) continue;
           inflight.set(k, e.op_id);
           inflightOps.add(e.op_id);
           if (e.op === 'upload') setUploadProgress(e.id, Math.floor((uploadProgress.get(e.id)?.total ?? 0) / 2), uploadProgress.get(e.id)?.total ?? 0, true);
           later(() => track(confirm(k, e)), latencyMs);
         }
       } while (pumpAgain);
-    } finally { pumping = false; }
+    } catch (err) { if (err instanceof StaleLeader) stepDown(); else throw err; }
+    finally { pumping = false; }
   }
   async function subscribeCollection(collection,priority='P2') {
     if (!isLeader || closed || !transportConnected) return;
@@ -704,8 +769,8 @@ export function createKernel(opts = {}) {
     const scope = { ...page, epoch: page.epoch ?? opts.epoch ?? '1', scope_hash: page.scope_hash ?? opts.scopeHash ?? 'local', gen: page.gen ?? genOf(page.collection) };
     const expected=expectedScopes.get(page.collection)??{scope_hash:opts.scopeHash??'local',epoch:opts.epoch??'1'};
     if(scope.scope_hash !== expected.scope_hash || String(scope.epoch) !== String(expected.epoch)) throw new CtoxError('revoked', 'Unexpected scope or epoch');
-    if(!Number.isSafeInteger(scope.gen) || scope.gen!==genOf(page.collection))throw new CtoxError('invalid','Page generation does not match collection namespace');
-    const cursor = decimalSeq(page.cursor_to ?? page.head_seq ?? '0');
+    if(!Number.isSafeInteger(scope.gen) || scope.gen!==(expected.gen??genOf(page.collection)))throw new CtoxError('invalid','Page generation does not match collection namespace');
+    const cursor = decimalSeq(page.cursor_to ?? page.seq_to ?? page.head_seq ?? '0');
     const out = await db.tx(async (t) => {
       await assertGen(t);
       const key = checkpointKey(scope), previous = await t.get('meta', key);
@@ -720,10 +785,10 @@ export function createKernel(opts = {}) {
           const deleted = change.deleted || change.op === 'delete' || change.op === 'unproject';
           // K-1c Punkt 10: Befehlsdokumente nur in erlaubter Richtung; ein beendeter Befehl bleibt beendet (genau einmal)
           if (ns === 'business_commands' && !deleted && old?.base?.data) {
-            const bad = checkCommandTransition(old.base.data, change.data ?? change.doc);
+            const bad = checkCommandTransition(old.base.data, change.data ?? change.doc ?? change.body);
             if (bad) { refused.push({ id: change.id, ...bad }); continue; }
           }
-          const base = {data: deleted ? null : cloneValue(change.data ?? change.doc),deleted:!!deleted,seq,rev:change.rev};
+          const base = {data: deleted ? null : cloneValue(change.data ?? change.doc ?? change.body),deleted:!!deleted,seq,rev:change.rev,gen:scope.gen};
           const rec = recompute(ns,change.id,base,await t.outboxFor(ns,change.id));
           await putDoc(t,rec); recs.push(rec);
         }
@@ -731,71 +796,138 @@ export function createKernel(opts = {}) {
       await t.put('meta',{key,...scope,cursor_to:maxSeq(previous?.cursor_to ?? '0',cursor),complete:seqGreater(previous?.cursor_to??'0',cursor)?previous.complete:!!page.complete});
       const cp=maxSeq((await t.get('meta','checkpoint'))?.value ?? '0',cursor);
       await t.put('meta',{key:'checkpoint',value:cp});
-      return {recs,cp,refused};
+      // A receipt is not a document. Only the normal, scope-checked page can
+      // release a merged/migrated optimistic operation, including after restart.
+      const settled=[];
+      for(const entry of await t.all('outbox')) {
+        if(entry.collection!==page.collection || !entry.pending_result)continue;
+        const row=await t.get('docs',[entry.collection,entry.id]);
+        if(!canonicalReady(row?.base,entry.pending_result))continue;
+        settled.push(await settleWrite(t,entry,row.base,entry.pending_result));
+      }
+      return {recs,cp,refused,settled};
     }).catch(err => { if(err instanceof StaleLeader){stepDown();return null;} throw err; });
     if(!out)return;
     for (const r of out.refused) zoneReport('kernel', { level: 'warn', code: `command.${r.code}`, text: `Befehl ${r.id}: ${r.message} – Zustellung verworfen`, ref: r.id }, 'kernel');
     for(const rec of out.recs)mirrorPut(rec);
+    for(const completed of out.settled)publishWrite(completed);
+    if(out.settled.length)await refreshOutboxStat();
     scopeCursors.set(page.collection,maxSeq(scopeCursors.get(page.collection)??'0',cursor));notify('checkpoint');
+    // K-BF1: erst Checkpoint, Rückstand und Collection-Zustand vollständig nachziehen, dann genau EINE Meldung an die
+    // Folger. Vorher meldete trackScope() die neuen Collection-Zustände mit dem alten extraBacklog („alle live, backlog N“).
     scopeBacklog.set(checkpointKey(scope),Math.max(0,Number(page.backlog??0)));
-    trackScope(page.collection, scope, { backlog: Math.max(0, Number(page.backlog ?? 0)), complete: !!page.complete, error: null });
-    setCheckpoint(out.cp); extraBacklog=[...scopeBacklog.values()].reduce((a,b)=>a+b,0); netChanged();
+    setCheckpoint(out.cp); extraBacklog=[...scopeBacklog.values()].reduce((a,b)=>a+b,0);
+    trackScope(page.collection, scope, { backlog: Math.max(0, Number(page.backlog ?? 0)), complete: !!page.complete, error: null }, false);
+    netChanged();
     post({type:'docs',keys:out.recs.map(r=>[r.collection,r.id]),checkpoint:out.cp});
+    await settleAwaitingPages(page.collection);
+  }
+  async function settleAwaitingPages(collection) {
+    let touched=false;
+    for (const entry of await db.all('outbox')) if (entry.awaiting_page && (!collection || entry.collection===collection)) {await applyResult(entry,entry.awaiting_page);touched=true;}
+    if(touched){await refreshOutboxStat();schedulePump();}
   }
   async function receiveResult(message) {
     const entry=await db.get('outbox',message.op_id);
-    if(entry){await applyResult(entry,message);const key=docKey(entry.collection,entry.id);if(inflight.get(key)===entry.op_id)inflight.delete(key);inflightOps.delete(entry.op_id);await refreshOutboxStat();schedulePump();}
+    if(entry && message.client_seq!==undefined && message.client_seq!==entry.client_seq)throw new CtoxError('invalid','write_result client_seq mismatch');
+    if(entry){await applyResult(entry,message);await refreshOutboxStat();schedulePump();}
   }
   async function confirm(k,e) {
     let awaitingResult=false;
     try {
       // Mark dispatch and validate the generation in one durable transaction.
-      const sent = await db.tx(async t=>{await assertGen(t);const entry=await t.get('outbox',e.op_id);if(!entry)return false;await t.put('outbox',{...entry,sent_gen:myGen});return true;});
+      const sent = await db.tx(async t=>{await assertGen(t);const entry=await t.get('outbox',e.op_id);if(!entry)return false;await t.put('outbox',{...entry,sent_gen:myGen});return entry;});
       if(!sent || closed || !isLeader)return;
+      e = sent;
       if(e.op==='upload') {
         const blob=await db.get('blobs',e.id); await transport.upload(e.id,blob.blob);
         await db.tx(async t=>{await assertGen(t);await t.del('outbox',e.op_id);await t.put('blobs',{...blob,pinned:false});await t.put('meta',{key:`upload_done:${e.id}`,ref:e.id});await bumpLocalSeq(t);});
         setUploadProgress(e.id,blob.size,blob.size,true); uploadsDone.add(e.id);notify('uploads');post({type:'upload_done',ref:e.id});
       } else {
         if(!subscriptions.has(e.collection))await subscribeCollection(e.collection);
-        const result=await transport.write(cloneValue(e));
-        if(result)await applyResult(e,result);
+        if (e.collection === 'business_commands' && !e.pending_result) {
+          commandTimings.mark(e.id, 'sent');
+        }
+        const result=e.pending_result??await transport.write(cloneValue(e));
+        if(result)awaitingResult=!await applyResult(e,result);
         else awaitingResult=true;
       }
     } catch(err) {
       if(err instanceof StaleLeader)stepDown();
       else if(err?.code==='unavailable'){link={...link,state:'offline'};netChanged();}
-      else zoneReport(e.app_id,{level:'error',code:'transport.write',text:String(err.message)},'kernel');
+      else {
+        // An invalid receipt/scope needs a new admitted page or reconnect,
+        // not an immediate resend loop of the same durable input.
+        awaitingResult=true;
+        zoneReport(e.app_id,{level:'error',code:err?.code??'transport.write',text:String(err.message)},'kernel');
+      }
     } finally {
       if(!awaitingResult){if(inflight.get(k)===e.op_id)inflight.delete(k);inflightOps.delete(e.op_id);}
       await refreshOutboxStat(); if(!awaitingResult && link.state==='online')schedulePump();
     }
   }
+  function canonicalReady(base,result) {
+    return !!base && !!result.seq && (result.gen===undefined || base.gen===result.gen) && !seqGreater(result.seq,base.seq??'0');
+  }
+  async function settleWrite(t,e,base,res) {
+    await t.del('outbox',e.op_id);
+    const rec=recompute(e.collection,e.id,base,await t.outboxFor(e.collection,e.id));await putDoc(t,rec);
+    const info={op_id:e.op_id,app_id:e.app_id,collection:e.collection,id:e.id};
+    delete res.type;delete res.client_seq;delete res.requires_page;
+    await t.put('meta',{key:`result:${e.op_id}`,info,result:res});
+    return {rec,res,info};
+  }
+  function publishWrite(out) {
+    mirrorPut(out.rec);setCheckpoint(out.rec.base.seq);
+    const key=docKey(out.info.collection,out.info.id);
+    if(inflight.get(key)===out.info.op_id)inflight.delete(key);
+    inflightOps.delete(out.info.op_id);
+    reservedOps.delete(out.info.op_id);
+    handleWriteResult(out.info,out.res);
+    post({type:'docs',keys:[[out.info.collection,out.info.id]]});post({type:'write_result',info:out.info,result:out.res});
+    schedulePump();
+  }
   async function applyResult(e,result) {
     const out=await db.tx(async t=>{
       await assertGen(t);
-      if(!(await t.get('outbox',e.op_id)))return null;
+      const queued=await t.get('outbox',e.op_id);if(!queued)return null;
       const stored=await t.get('docs',[e.collection,e.id]); let base=stored?.base??emptyBase();
       const res={...result};delete res.doc;delete res.deleted;
-      if(!['accepted','rejected','migrated'].includes(res.status))throw new CtoxError('invalid','Invalid write result');
+      if(!['accepted','merged','rejected','migrated'].includes(res.status))throw new CtoxError('invalid','Invalid write result');
+      const canonical=res.requires_page || res.status==='merged' || res.status==='migrated';
+      if(canonical && res.status!=='rejected') {
+        if(BigInt(decimalSeq(res.seq))===0n)throw new CtoxError('invalid','Canonical receipt needs a positive sequence');
+        if(res.gen!==undefined && res.gen!==e.gen && res.status!=='migrated')throw new CtoxError('conflict','Write receipt generation changed');
+        if(!canonicalReady(base,res)) {
+          await t.put('outbox',{...e,pending_result:res});
+          return {replay:true,res};
+        }
+      }
       if(res.status==='rejected'){
         res.archived_ref=`archive_local:${e.op_id}`;
         await t.put('archive_local',{...e,ref:res.archived_ref,reason:res.reason,rejected_at:Date.now()});
-      } else if(!seqGreater(base.seq??'0',result.seq??'0')) {
+      } else if(!canonical && !seqGreater(base.seq??'0',result.seq??'0')) {
         const state=result.doc!==undefined ? {data:result.doc,deleted:!!result.deleted} : applyOp(base,e);
-        base={...state,rev:res.rev,seq:decimalSeq(res.seq)};
+        base={...state,rev:res.rev,seq:decimalSeq(res.seq),gen:e.gen};
       }
-      await t.del('outbox',e.op_id);
-      const rec=recompute(e.collection,e.id,base,await t.outboxFor(e.collection,e.id));await putDoc(t,rec);
-      await t.put('meta',{key:`result:${e.op_id}`,info:{op_id:e.op_id,app_id:e.app_id,collection:e.collection,id:e.id},result:res});
-      return {rec,res};
+      return settleWrite(t,e,base,res);
     });
-    if(!out)return;
-    mirrorPut(out.rec);setCheckpoint(out.rec.base.seq);
-    const info={op_id:e.op_id,app_id:e.app_id,collection:e.collection,id:e.id};handleWriteResult(info,out.res);
-    post({type:'docs',keys:[[e.collection,e.id]]});post({type:'write_result',info,result:out.res});
+    if(!out)return true;
+    if(e.collection === 'business_commands') commandTimings.mark(e.id, 'acked');
+    if(out.replay) {
+      // Explicit replay uses the SAME signed page path, without regressing any
+      // durable checkpoint. A no-write command replay still needs its older row.
+      const known=expectedScopes.get(e.collection);
+      const scope=(!known || (out.res.gen!==undefined && known.gen!==out.res.gen)?await transport.scope?.(e.collection):known)??{collection:e.collection,epoch:opts.epoch??'1',scope_hash:opts.scopeHash??'local',gen:e.gen};
+      if(out.res.gen!==undefined && scope.gen!==out.res.gen)throw new CtoxError('migration_required','Canonical receipt requires a current native scope',{path:e.collection});
+      expectedScopes.set(e.collection,scope);
+      await transport.subscribe({...scope,checkpoint_seq:String(BigInt(out.res.seq)-1n),priority:'P1'});
+      return false;
+    }
+    publishWrite(out);
     const dw=doubleWrite.get(e.collection);
     if(fakeCore && dw && out.res.status!=='rejected')await corePush(dw.ns_new,[out.rec.base.deleted ? {id:e.id,_deleted:true} : {...dw.migrate(cloneValue(out.rec.base.data)),id:e.id}]);
+    return true;
   }
   const corePush = async (collection, docs) => {
     if(!fakeCore)throw new CtoxError('unavailable','Test core not configured');
@@ -828,7 +960,20 @@ export function createKernel(opts = {}) {
     const collections=new Set(message.collections??[]),rows=await db.tx(async t=>{await assertGen(t);const changed=[];for(const row of await t.all('docs'))if(collections.has(row.collection)){const revoked={...row,data:null,base:emptyBase(),deleted:true,revoked:true};await putDoc(t,revoked);changed.push(revoked);}for(const hash of message.artifacts??[])await t.del('artifacts',hash);await t.put('meta',{key:'rights_ver',value:message.rights_ver});return changed;});
     for(const row of rows)mirrorPut(row);post({type:'docs',keys:rows.map(r=>[r.collection,r.id])});
   }
-  function schemaFor(app, collection) { const owner=SYSTEM_COLLECTIONS.has(collection)?PLATFORM_APP_ID:app.id;const ver=owner===app.id?app.ver:activations.get(owner)?.activated_ver??visible(mirrorGet('business_apps',owner))?.active_ver;return versionDoc(owner,ver)?.manifest?.collections?.[collection]?.schema??(owner===PLATFORM_APP_ID?PLATFORM_SCHEMAS[collection]??null:null); }
+  function collectionVersion(app,collection) {
+    const owner=SYSTEM_COLLECTIONS.has(collection)?PLATFORM_APP_ID:app.id;
+    const ver=owner===app.id?app.ver:activations.get(owner)?.activated_ver??visible(mirrorGet('business_apps',owner))?.active_ver;
+    const manifest=versionDoc(owner,ver)?.manifest;
+    return {owner,ver,definition:manifest?.collections?.[collection],gen:manifest?.generations?.[collection]};
+  }
+  function schemaFor(app, collection) { const {owner,definition}=collectionVersion(app,collection);return definition?.schema??(owner===PLATFORM_APP_ID?PLATFORM_SCHEMAS[collection]??null:null); }
+  function writeVersion(app,collection) {
+    const {owner,ver,definition,gen}=collectionVersion(app,collection);
+    // Wire versions describe the collection owner, never the calling app.
+    // The fixed platform bootstrap version is not the sender's app version.
+    // An outdated bootstrap is rejected/migrated by the core's registry CAS.
+    return {schema_ver:definition?.schema?.version??1,app_ver:ver??(owner===PLATFORM_APP_ID?PLATFORM_APP.ver:app.ver),...(gen===undefined?{}:{gen})};
+  }
   // §16.19 Nr. 3: shell_preferences – eine Zeile je Nutzer (id = actor.id), lesen und schreiben nur die eigene.
   function ownRowOk(collection, id) {
     if (!OWN_ROW_COLLECTIONS.has(collection)) return true;
@@ -936,7 +1081,8 @@ export function createKernel(opts = {}) {
       // Jeder Zweig endet in setActivation; kein Warten ohne Ende (K-1c Punkt 0). Transport offline → Fehler nach oben.
       let content = null;
       for (let attempt = 0; attempt < 2 && content === null; attempt++) {
-        let got = await transport.artifact(hash).then(artifactContent).catch((error) => { if (error?.code === 'unavailable') throw error; return null; });
+        let got = await transport.artifact(hash).then(artifactContent).catch((error) => { if (error?.code === 'unavailable') throw error; return error?.reason === 'hash_mismatch' ? HASH_MISMATCH : null; });
+        if (got === HASH_MISMATCH) { simRecord.refetches++; continue; }
         if (got == null) { await setActivation(appId, { target_ver: ver, state: 'failed', error: `artifact_missing:${path}` }); return; }
         if (corruptNextFetch > 0) { corruptNextFetch--; got = typeof got === 'string' ? `${got}\n/* beschädigt */` : Uint8Array.from([...got, 0]); }
         if ((await sha256Hex(got)) === hash) content = got;
@@ -946,6 +1092,8 @@ export function createKernel(opts = {}) {
       await db.tx(async (t) => { await assertGen(t); await t.put('artifacts', { hash, content, app_id: appId, app_ver: ver, path, stored_at: Date.now() }); });
     }
     await setActivation(appId, { target_ver: ver, state: 'fetched' });
+    // E43.2: a transport that grants capabilities in hello_ok reports null until then; never judge before the grant.
+    if ((manifest.capabilities_required ?? []).some((c) => !capabilities.has(c)) && transport.capabilities === null) { await waitUntil(() => transport.capabilities !== null || closed); if (closed) return; }
     const missing = (manifest.capabilities_required ?? []).filter((c) => !capabilities.has(c) && !(transport.capabilities ?? []).includes(c)); // Katalog-Primitive des Core (§16.29)
     if (missing.length || compareVer(manifest.min_app_api ?? '4.0', APP_API_VERSION) > 0) {
       await setActivation(appId, { target_ver: ver, state: 'failed', error: `needs_update:${missing.join(',') || `app_api ${manifest.min_app_api}`}` });
@@ -1099,6 +1247,14 @@ export function createKernel(opts = {}) {
     if (broadcast) post({ type: 'upload', ref, sent, total });
   }
 
+  async function fetchRange(ref, range) {
+    guardAlive();
+    if (!isLeader || link.state !== 'online') throw new CtoxError('unavailable', 'File not cached and leader offline');
+    const bytes = new Uint8Array(await (await transport.blob(ref, range)).arrayBuffer());
+    if (bytes.length !== range.end - range.start) throw new CtoxError('invalid', 'Incomplete file range');
+    return bytes;
+  }
+
   async function fetchBlob(ref) {
     guardAlive();
     if(!isLeader || link.state!=='online')throw new CtoxError('unavailable','File not cached and leader offline');
@@ -1148,8 +1304,130 @@ export function createKernel(opts = {}) {
       }),
       openFile(ref) { simRecord.openedFiles.push({ app_id: appId, ref }); },
     });
+    // ---- K-1g: files nach CAP-3b (#844) – Ergebnisse immer Objekte, nie Base64, nur Dateien der eigenen App ----
+    const FILE_TEXT_MAX = 512 * 1024;
+    const fileDocs = () => [...(mirror.get('files')?.values() ?? [])].map((r) => visible(r)).filter(Boolean);
+    function ownFile(sel) {
+      if (!isPlainObject(sel) || (typeof sel.id !== 'string' && typeof sel.ref !== 'string')) throw new CtoxError('invalid', 'files: {id} oder {ref} nötig', { path: 'ref' });
+      const docs = fileDocs().filter((d) => (sel.id ? d.id === sel.id : d.ref === sel.ref));
+      const mine = docs.find((d) => d.owner_app === appId);
+      if (!mine && docs.length) throw new CtoxError('forbidden', 'Datei gehört einer anderen App', { path: sel.id ? 'id' : 'ref' });
+      return mine ?? null;
+    }
+    // E30: a CAS hash is not authority. Only canonical, still-readable rows
+    // grant access; an optimistic reference cannot mint a read grant.
+    async function readableFile(sel) {
+      guardAlive();
+      if (!isPlainObject(sel) || (typeof sel.id !== 'string' && typeof sel.ref !== 'string')) throw new CtoxError('invalid', 'files: {id} oder {ref} nötig', {path:'ref'});
+      const docs = fileDocs().filter(d => sel.id ? d.id === sel.id : d.ref === sel.ref);
+      for (const d of docs) {
+        if (d.owner_app !== appId) continue;
+        const row = mirrorGet('files',d.id), base = row?.base;
+        if (row?.revoked) continue;
+        if (!base?.deleted && base?.data?.owner_app === appId && base.data.ref === d.ref) return d;
+        // files.put proves local bytes in the blob transaction, durably across
+        // reload. A plain optimistic files row cannot claim another app's CAS.
+        if (row?.pending && !base?.data && (await db.get('meta',`file-owner:${JSON.stringify([appId,d.id])}`))?.ref === d.ref) return d;
+      }
+      const currentManifest = owner => {
+        const ver = visible(mirrorGet('business_apps',owner))?.active_ver ?? activations.get(owner)?.activated_ver;
+        return versionDoc(owner,ver)?.manifest;
+      };
+      const caller = versionDoc(appId,app.ver)?.manifest;
+      const ownReferenceRows = new Set(['shell_preferences','app_drafts']);
+      function readableNamespace(ns) {
+        const c = ns.replace(/@g[1-9][0-9]*$/,'');
+        if (caller?.collections?.[c]) return ns === resolveNs(app,c);
+        const f = caller?.foreign_collections?.[c];
+        const owner = f?.owner_app ?? f?.app ?? f?.owner;
+        const om = owner && currentManifest(owner);
+        return !!(f?.ops?.includes('read') && om?.collections?.[c] && om?.exports?.[c]?.includes('read') && ns === nsName(c,om.generations?.[c] ?? 1));
+      }
+      const canonicalRows = [];
+      for (const [ns, rows] of mirror) {
+        const declared = readableNamespace(ns);
+        if (!declared && ns !== 'business_commands' && !ownReferenceRows.has(ns)) continue;
+        for (const row of rows.values()) if (!row.deleted && !row.revoked && !row.base?.deleted && row.base?.data && ownRowOk(ns,row.id)) {
+          const d = row.base.data;
+          // Standard API handles already expose own command results and own
+          // platform rows; they need no foreign-collection declaration.
+          if (declared || ownReferenceRows.has(ns) || (ns === 'business_commands' && d.app_id === appId && d.actor_id === userId)) canonicalRows.push([ns,d]);
+        }
+      }
+      const desktop = canonicalRows.find(([ns,d]) => ns.replace(/@g[1-9][0-9]*$/,'') === 'desktop_files' && d.id === sel.id && !d.is_deleted)?.[1];
+      if (desktop) {
+        const ref = [desktop.ref,desktop.content_ref,docs[0]?.ref].find(v => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v));
+        if (typeof ref !== 'string' || !/^[a-f0-9]{64}$/.test(ref)) throw new CtoxError('unavailable','Desktop file has no CAS reference',{path:'id'});
+        const meta = fileDocs().find(d => d.ref === ref);
+        return {...meta,id:desktop.id,ref,name:desktop.name ?? meta?.name,mime:desktop.mime ?? desktop.mime_type ?? meta?.mime,size:desktop.size ?? desktop.size_bytes ?? meta?.size};
+      }
+      const ref = docs[0]?.ref ?? sel.ref;
+      const containsRef = value => value !== null && typeof value === 'object' && (value.ref === ref || value.blob_ref === ref || Object.values(value).some(containsRef));
+      if (typeof ref === 'string' && /^[a-f0-9]{64}$/.test(ref) && canonicalRows.some(([,d]) => containsRef(d))) return docs[0] ?? {ref,id:ref,name:null};
+      throw new CtoxError('forbidden','File needs ownership or a readable reference',{path:sel.id ? 'id' : 'ref'});
+    }
+    const fileInfo = (d) => ({ id: d.id, ref: d.ref, name: d.name ?? null, mime: d.mime ?? 'application/octet-stream', size: d.size ?? 0 });
+    async function fileBytes(content) {
+      if (isPlainObject(content) && typeof content.text === 'string') return { bytes: new TextEncoder().encode(content.text), text: true };
+      if (content instanceof ArrayBuffer) return { bytes: new Uint8Array(content.slice(0)), text: false };
+      if (ArrayBuffer.isView(content)) return { bytes: new Uint8Array(content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength)), text: false };
+      throw new CtoxError('invalid', 'files.put: Inhalt muss Uint8Array/ArrayBuffer oder {text} sein', { path: 'content' });
+    }
     const files = Object.freeze({
-      async get(ref) {
+      /** CAP-3b: put(bytes | {text}, {name, mime}) → {id, ref} nach lokalem Commit (Upload über Spur 4). Blob = Altform (Handle). */
+      put(content, meta = {}) {
+        if (isBlob(content)) return putBlob(content, meta);
+        return (async () => {
+          guardAlive();
+          const { bytes, text } = await fileBytes(content);
+          const mime = String(meta.mime ?? (text ? 'text/plain; charset=utf-8' : 'application/octet-stream'));
+          const id = typeof meta.id === 'string' && meta.id ? meta.id : uuidv7();
+          const h = putBlob(new Blob([bytes], { type: mime }), { ...meta, id, mime, name: meta.name ?? 'datei' });
+          const ref = await h.ref;
+          await h.local;
+          return { id, ref };
+        })();
+      },
+      /** CAP-3b: get({id|ref}) → {found, id, ref, name, size, mime, text? | bytes?}; Text nur für UTF-8 ≤ 512 KiB. String = Altform (Blob). */
+      async get(sel) {
+        if (typeof sel === 'string') return getBlob((await readableFile({ref:sel})).ref);
+        guardAlive();
+        let d = await readableFile(sel);
+        if (sel.range !== undefined && !Number.isSafeInteger(d.size)) d = {...d,size:(await getBlob(d.ref)).size};
+        if (!d) return { found: false, ref: sel.ref ?? null, ...(sel.id ? { id: sel.id } : {}) };
+        if (sel.range !== undefined) {
+          const {start, end} = sel.range ?? {};
+          if (!isPlainObject(sel.range) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end > d.size) throw new CtoxError('invalid', 'Byte range outside file', {path:'range'});
+          const local = await db.get('blobs', d.ref);
+          let bytes;
+          if (local) {
+            // The immutable cached Blob was verified on full receipt/upload.
+            await db.tx(t => t.put('blobs', {...local, last_used:Date.now()}));
+            bytes = new Uint8Array(await local.blob.slice(start, end).arrayBuffer());
+          } else bytes = isLeader ? await fetchRange(d.ref, sel.range) : await callLeader('fetchRange', [d.ref, sel.range]);
+          return {found:true, ...fileInfo(d), bytes};
+        }
+        const bytes = new Uint8Array(await (await getBlob(d.ref)).arrayBuffer());
+        let text;
+        if (bytes.byteLength <= FILE_TEXT_MAX) { try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { text = undefined; } }
+        return { found: true, ...fileInfo(d), size: bytes.byteLength, ...(text !== undefined ? { text } : { bytes }) };
+      },
+      /** CAP-3b: list() → {files:[{id, ref, name, mime, size}]} – nur die eigene App. */
+      async list() {
+        guardAlive();
+        return { files: fileDocs().filter((d) => d.owner_app === appId).map(fileInfo).sort((a, b) => (a.id < b.id ? -1 : 1)) };
+      },
+      /** CAP-3b: delete({id|ref}) → {deleted, id?} – nur die eigene App. */
+      async delete(sel) {
+        guardAlive();
+        const d = ownFile(sel);
+        if (!d) return { deleted: false };
+        const r = await localWrite(app, 'delete', 'files', d.id, null).local.then(() => true, () => false);
+        return { deleted: r, id: d.id };
+      },
+    });
+    async function getBlob(ref) {
+      {
         guardAlive();
         const local = await db.get('blobs', ref);
         if (local) {
@@ -1160,8 +1438,10 @@ export function createKernel(opts = {}) {
         const fetched=await db.get('blobs',ref);
         if(!fetched)throw new CtoxError('unavailable','File unavailable after leader fetch');
         return fetched.blob;
-      },
-      put(blob, meta = {}) {
+      }
+    }
+    function putBlob(blob, meta = {}) {
+      {
         let metaHandle = null, uploadOp = null, cancelledEarly = false, refValue = null, resolveResult;
         const result = new Promise((r) => { resolveResult = r; });
         const progressTag = () => `upload:${refValue}`;
@@ -1194,6 +1474,7 @@ export function createKernel(opts = {}) {
             const existing = await t.get('blobs', ref);
             await t.put('blobs', { ref, blob, size: blob.size, type: blob.type, pinned: true, last_used: Date.now(), ...(existing ? {} : {}) });
             await t.put('outbox', { op_id, collection: '__blobs', id: ref, op: 'upload', body: null, app_id: appId, app_ver: app.ver, created_at: Date.now(), origin_tab: tabId });
+            await t.put('meta',{key:`file-owner:${JSON.stringify([appId,id])}`,ref});
           });
           if(cancelledEarly){await db.tx(async t=>{await t.del('outbox',op_id);const b=await t.get('blobs',ref);if(b)await t.put('blobs',{...b,pinned:false});});return;}
           post({ type: 'outbox' });
@@ -1222,8 +1503,8 @@ export function createKernel(opts = {}) {
             return cancelled;
           },
         };
-      },
-    });
+      }
+    }
     const actorApi = Object.freeze({
       get id() { return actor.id; },
       get display_name() { return actor.display_name; },
@@ -1257,10 +1538,18 @@ export function createKernel(opts = {}) {
       remove(collection, id) { return localWrite(app, 'delete', collection, id, null); },
       command(type, payload = {}, commandOptions={}) {
         if (typeof type !== 'string' || !type) throw new CtoxError('invalid', 'Befehlstyp fehlt', { path: 'type' });
-        const id = uuidv7();
+        const key = commandOptions.idempotency_key;
+        if (key !== undefined && (typeof key !== 'string' || key.length > 128)) throw new CtoxError('invalid', 'idempotency_key must be a string of at most 128 characters', { path: 'idempotency_key' });
+        // UUIDv8: first 128 SHA-256 bits, RFC variant/version bits normalized.
+        const hash = key === undefined ? null : sha256Js(new TextEncoder().encode(`${appId}|${actor.id}|${key}`));
+        const id = hash === null ? uuidv7() : `${hash.slice(0,8)}-${hash.slice(8,12)}-8${hash.slice(13,16)}-${((parseInt(hash[16],16)&3)|8).toString(16)}${hash.slice(17,20)}-${hash.slice(20,32)}`;
         const write = localWrite(app, 'put', 'business_commands', id, {
-          id, ...(commandOptions.record_id===undefined?{}:{record_id:commandOptions.record_id}), type, payload, status: 'queued', app_id: appId, actor_id: actor.id, created_at: new Date().toISOString(),
-        });
+          id, ...(commandOptions.record_id===undefined?{}:{record_id:commandOptions.record_id}),
+          // §16.39 Nr. 3: Rückruf-Befehlstypen der auslösenden App als Felder am Befehlsdokument (Core-PR #848 liest sie dort)
+          ...(typeof commandOptions.on_complete === 'string' ? { on_complete: commandOptions.on_complete } : {}),
+          ...(typeof commandOptions.on_failed === 'string' ? { on_failed: commandOptions.on_failed } : {}),
+          type, payload, status: 'queued', app_id: appId, actor_id: actor.id, created_at: new Date().toISOString(),
+        }, key !== undefined);
         const status = makeLive(['c:business_commands', 'commands'], () => {
           const d = visible(mirrorGet('business_commands', id));
           if (!d) {
@@ -1290,6 +1579,17 @@ export function createKernel(opts = {}) {
       shell,
       actor: actorApi,
       files,
+      /** #830/CATALOG §6: model.run(request) → Responses-förmige Antwort; nur mit `model` in capabilities_required.
+       *  Fake-Core: deterministische simulierte Antwort; sonst unavailable (der Modellweg gehört der App-Laufzeit, kein Ersatz). */
+      model: Object.freeze({
+        async run(req) {
+          guardAlive();
+          const declared = versionDoc(appId, app.ver)?.manifest?.capabilities_required ?? [];
+          if (!declared.includes('model') && !declared.includes('model.run')) throw new CtoxError('forbidden', 'model nicht in capabilities_required', { path: 'model' });
+          if (!fakeCore) throw new CtoxError('unavailable', 'model.run läuft über die App-Laufzeit (#830); kein Ersatzweg im Kernel');
+          return fakeCore.runtime.modelRun(appId, req);
+        },
+      }),
     });
   }
 
@@ -1337,7 +1637,7 @@ export function createKernel(opts = {}) {
     const files = {};
     for (const [p, c] of Object.entries(old.files ?? {})) files[p] = c === null ? null : await storeDraftContent(appId, p, c);
     const d = Object.prototype.hasOwnProperty.call(old, 'base_app_ver') ? { app_id: appId, base_app_ver: old.base_app_ver, files, manifest: old.manifest ?? {} } : { ...freshDraft(appId), files };
-    await writeDraft(appId, d);
+    await writeDraft(appId, d).local;
     await db.tx((t) => t.del('meta', `draft:${appId}`));
   }
   /** Eigener Entwurf (files = Hashes) oder null. */
@@ -1363,7 +1663,7 @@ export function createKernel(opts = {}) {
   }
   function writeDraft(appId, d) {
     const doc = { id: draftId(appId), app_id: appId, user_id: actor.id, base_app_ver: d.base_app_ver ?? null, files: d.files, manifest_fields: d.manifest ?? {}, updated_at_ms: Date.now() };
-    return localWrite(PLATFORM_APP, 'put', 'app_drafts', doc.id, doc).local;
+    return localWrite(PLATFORM_APP, 'put', 'app_drafts', doc.id, doc);
   }
   // Lese-Ändere-Schreib-Schritt auf dem eigenen Entwurf: Spiegel lesen, ändern und optimistisch schreiben geschieht
   // synchron (localWrite.prepare), damit parallele Aufrufe (auch anderer Tabs über den Spiegel) kein Update verlieren.
@@ -1373,7 +1673,29 @@ export function createKernel(opts = {}) {
     const doc = draftDoc(appId);
     const d = doc ? docToDraft(doc) : freshDraft(appId);
     mutate(d);
-    await writeDraft(appId, d);
+    const h = writeDraft(appId, d);
+    await h.local;
+    return h;
+  }
+  /** §16.44-Ergänzung (3): {local, result}; result = vom Core bestätigte Revision {status:'accepted', rev} bzw. rejected{code}. */
+  function draftHandle(work) {
+    const local = work.then(() => undefined);
+    const result = work.then(async (h) => {
+      const r = await h.result;
+      return r.status === 'rejected' ? { status: 'rejected', code: r.code ?? r.reason, reason: r.reason } : { status: 'accepted', rev: r.rev };
+    }, (e) => ({ status: 'rejected', code: e?.code ?? 'local_error', reason: String(e?.message ?? e) }));
+    // Ein echtes Promise (auf den lokalen Commit) mit den Feldern local und result: `await`, `.catch` und
+    // assert.rejects bleiben wie bisher (Shell-Quelltextmodus nutzt write(...).catch).
+    local.catch(() => {}); // wer nur result liest, erzeugt keinen unbehandelten Fehler; await/.catch sehen ihn weiterhin
+    local.local = local;
+    local.result = result;
+    return local;
+  }
+  // §16.44-Ergänzung (2): Revision nur für eine bestätigte, nicht gelöschte Zeile ohne ausstehende Änderungen (sonst null)
+  function confirmedDraftRev(appId) {
+    const r = mirrorGet('app_drafts', draftId(appId));
+    if (!r || r.pending || !r.base?.data || r.base.deleted) return null;
+    return r.base.rev ?? null;
   }
   async function baseSchemaOf(appId, base) {
     if (!base) return { collections: {}, migrations: {} };
@@ -1419,15 +1741,18 @@ export function createKernel(opts = {}) {
           if (!d) return null;
           const files = {};
           for (const [p, h] of Object.entries(d.files)) files[p] = h === null ? null : await draftContent(h);
-          return { base_app_ver: d.base_app_ver, files, manifest: d.manifest, updated_at: d.updated_at };
+          // rev = Revision der app_drafts-Zeile im Core (base_draft_rev für ctox.coding.turn, §16.44)
+          return { base_app_ver: d.base_app_ver, files, manifest: d.manifest, updated_at: d.updated_at, rev: confirmedDraftRev(appId) };
         },
         // Text oder Bytes (Binärdateien wie PNG-Icons bleiben Bytes, Hash beim publish über die Bytes)
-        async write(path, content) {
-          requirePerm('apps.source.edit');
-          if (typeof path !== 'string' || !path || content == null) throw new CtoxError('invalid', 'path und Inhalt nötig', { path: 'path' });
-          noManifestFile(path);
-          const hash = await storeDraftContent(appId, path, await artifactContent(content));
-          await draftMutate(appId, (d) => { d.files[path] = hash; });
+        write(path, content) {
+          return draftHandle((async () => {
+            requirePerm('apps.source.edit');
+            if (typeof path !== 'string' || !path || content == null) throw new CtoxError('invalid', 'path und Inhalt nötig', { path: 'path' });
+            noManifestFile(path);
+            const hash = await storeDraftContent(appId, path, await artifactContent(content));
+            return draftMutate(appId, (d) => { d.files[path] = hash; });
+          })());
         },
         // A7
         async remove(path) {
@@ -1621,17 +1946,23 @@ export function createKernel(opts = {}) {
   /** §16.39 Bindung je MOUNT: einmal beim Mount, eingefroren; url(path) synchron. */
   function bindArtifacts(appId, ver, o = {}) {
     const b = makeBinding(appId, ver, o);
-    return Object.freeze({ ...b, url: (path) => b.root + encPath(path) });
+    // §16.50: Worker (Monaco u. a.) immer gleich-ursprünglich unter der gebundenen Lib-Wurzel, nie data:/blob:
+    const workerUrl = (lib, path) => {
+      if (typeof lib !== 'string' || !b.libs[lib]) throw new CtoxError('not_found', `Bibliothek ${lib} ist in dieser Bindung nicht gebunden`, { path: 'lib' });
+      return `/~a/${LIB_PREFIX}${lib}@${b.libs[lib]}${libSuffix(b.libs, lib)}/${encPath(path)}`;
+    };
+    return Object.freeze({ ...b, url: (path) => b.root + encPath(path), workerUrl });
   }
   const contentBytes = (c) => (typeof c === 'string' ? new TextEncoder().encode(c).byteLength : c?.byteLength ?? 0);
   // SW-Miss (Vertrag v4/sw.js 9b414f663): genau diese eine Datei über Spur 4 holen, sha256 prüfen, in artifacts ablegen.
   const libInflight = new Map();
-  async function libFetchLeader(lib, major, path, ver) {
+  async function libFetchLeader(lib, major, path, ver, sha = null) {
     // §16.39 LIBS2: genau die Minor aus der URL holen, nie die gerade aktive
     const v = typeof ver === 'string' && /^\d+\.\d+$/.test(ver) && ver.split('.')[0] === String(major) ? ver : null;
     if (!v) return { ok: false, reason: 'invalid' };
     const hash = versionDoc(`${LIB_PREFIX}${lib}`, v)?.manifest?.files?.[path];
     if (!hash) return { ok: false, reason: versionDoc(`${LIB_PREFIX}${lib}`, v) ? 'not_found' : 'manifest' };
+    if (sha && sha !== hash) return { ok: false, reason: 'hash_mismatch' }; // §16.50: erwartete sha256 des SW passt nicht → Fehler statt Auslieferung
     await writeFilesMeta(`${LIB_PREFIX}${lib}`, v, versionDoc(`${LIB_PREFIX}${lib}`, v).manifest.files); // K-1d: Zuordnung der Bibliotheks-Minor
     if (!libInflight.has(hash)) {
       libInflight.set(hash, (async () => {
@@ -1692,14 +2023,31 @@ export function createKernel(opts = {}) {
     return hitFlush ?? Promise.resolve();
   }
   /** Nachrichten des Service Workers (ctox:lib-hit, ctox:lib-miss); Antwort auf lib-miss über den übergebenen Port. */
+  // §16.50: Der Kernel bedient ctox:lib-miss unabhängig davon, welcher Client (Fenster, Worker, Client ohne Kernel) den
+  // Miss im SW ausgelöst hat; Antwort an den SW mit der Datei (sha256-geprüft) oder einem Grund, spätestens vor dessen 15 s.
+  const LIB_MISS_ANSWER_MS = opts.libMissAnswerMs ?? 14000;
   async function onSwMessage(data, port) {
     if (closed || !data || typeof data !== 'object') return;
     if (data.type === 'ctox:lib-hit') { await noteLibHits(data.hits ?? data.shas); return; }
     if (data.type !== 'ctox:lib-miss') return;
+    let timer;
+    const timeout = new Promise((r) => { timer = setTimeout(() => r({ ok: false, reason: 'timeout' }), LIB_MISS_ANSWER_MS); });
     let r;
-    try { r = await callLeader('libFetch', [String(data.lib), String(data.major), String(data.path), data.ver ?? null]); } catch (e) { r = { ok: false, reason: e?.code ?? 'unavailable' }; }
-    try { port?.postMessage(r.ok ? { type: 'ctox:lib-ready' } : { type: 'ctox:lib-abort', reason: r.reason }); } catch { /* Port zu */ }
-    return r;
+    try {
+      r = await Promise.race([callLeader('libFetch', [String(data.lib), String(data.major), String(data.path), data.ver ?? null, typeof data.sha === 'string' ? data.sha : null]), timeout]);
+    } catch (e) { r = { ok: false, reason: e?.code ?? 'unavailable' }; } finally { clearTimeout(timer); }
+    let msg = { type: 'ctox:lib-abort', reason: r.reason, lib: data.lib, ver: data.ver ?? null, path: data.path }, transfer = [];
+    if (r.ok) {
+      const row = await db.get('artifacts', r.hash);
+      const bytes = row ? (typeof row.content === 'string' ? new TextEncoder().encode(row.content) : new Uint8Array(row.content)) : null;
+      if (bytes && (await sha256Hex(bytes)) === r.hash) {
+        const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        msg = { type: 'ctox:lib-ready', lib: data.lib, ver: r.ver, path: data.path, sha: r.hash, mime: artifactMime(data.path), size: bytes.byteLength, body };
+        transfer = [body];
+      } else msg = { ...msg, reason: 'hash_mismatch' };
+    }
+    try { port?.postMessage(msg, transfer); } catch { /* Port zu */ }
+    return { ...r, reply: msg.type };
   }
   const swMessageListener = (ev) => { void onSwMessage(ev.data, ev.ports?.[0]); };
   try { globalThis.navigator?.serviceWorker?.addEventListener?.('message', swMessageListener); } catch { /* kein SW */ }
@@ -1865,7 +2213,7 @@ export function createKernel(opts = {}) {
       }
       return { status: 'accepted', rev: ver, diff: diff.map(({ name, kind }) => ({ name, kind })) };
     },
-    libFetch(lib, major, path, ver) { return libFetchLeader(lib, major, path, ver); },
+    libFetch(lib, major, path, ver, sha) { return libFetchLeader(lib, major, path, ver, sha); },
     // §16.45 „Neu verbinden“: voller Neuaufbau des Transports im Leiter (nie Seiten-Reload); alle Bereiche neu abonniert
     async reconnect() {
       guardAlive();
@@ -1970,6 +2318,8 @@ export function createKernel(opts = {}) {
     agentOutcome: (fn) => fakeCore?.runtime.setAgentOutcome(fn),
     /** Fake-Core: Write eines anderen Clients direkt an den Core (z. B. doppelte Befehls-id). */
     coreWrite: (entry) => fakeCore?.write(entry),
+    /** Fake-Core: Plattform-Allowlist für process.run (CAP-3d; Name → Pfad oder {program|interpreter+script, env}). */
+    setProcessAllowlist: (map) => { if (fakeCore) fakeCore.core.processAllowlist = map ? cloneValue(map) : null; },
     coreLog: () => [...(fakeCore?.runtime.log ?? [])],
     /** Fake-Core: wie oft sich der Transport verbunden hat (kernel.reconnect = voller Neuaufbau). */
     get transportConnects() { return fakeCore?.connects ?? 0; },
@@ -2019,6 +2369,8 @@ export function createKernel(opts = {}) {
     lockAbort?.abort();
     const rel = releaseLock; releaseLock = null; rel?.();
     isLeader = false;
+    sendLeaderHint(); // Schließen ist ein Leiterverlust (§16.50 Nr. 3)
+    try { swContainer?.removeEventListener?.('controllerchange', onControllerChange); } catch { /* kein SW */ }
     for (const l of [...allLives]) l.dispose();
     allLives.clear();
     activationListeners.clear();
@@ -2110,6 +2462,8 @@ export function createKernel(opts = {}) {
     }
     await elect();
     guardAlive();
+    swHintStarted = true;
+    sendLeaderHint(true); // §16.50 Nr. 3: Startmeldung, auch für Leser (leader:false)
     if (!isLeader) post({ type: 'hello' });
     loaded = true;
     for (const r of preReady.splice(0)) r();
@@ -2131,6 +2485,6 @@ export function createStubKernel(opts = {}) {
   // K-1c Punkt 4: coreNamespace = ein Core je Instanz für mehrere Nutzer (eigene DB je Nutzer, §16.7); der Core kennt
   // dann den Nutzer (Rolle, Rechte) und setzt Zeilen-, Collection- und Befehlsrechte durch.
   const shared = typeof opts.coreNamespace === 'string' && opts.coreNamespace;
-  const transport = new MemoryCoreTransport({namespace:shared?opts.coreNamespace:namespace,latencyMs:opts.latencyMs,user:shared?{...actor,...(opts.coreUser??{}),id:actor.id}:null,everyMs:opts.everyMs,agentDelayMs:opts.agentDelayMs,deviceLabel:opts.deviceLabel});
+  const transport = new MemoryCoreTransport({namespace:shared?opts.coreNamespace:namespace,latencyMs:opts.latencyMs,user:shared?{...actor,...(opts.coreUser??{}),id:actor.id}:null,everyMs:opts.everyMs,agentDelayMs:opts.agentDelayMs,deviceLabel:opts.deviceLabel,codingDelayMs:opts.codingDelayMs});
   return createKernel({instanceId:'stub',userId:'local',...opts,actor,transport});
 }

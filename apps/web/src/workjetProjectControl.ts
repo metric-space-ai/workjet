@@ -292,7 +292,7 @@ export function readWorkjetProjectKpis(
   port: WorkjetProjectControlPort | undefined = activeDesktopProjectControl(),
 ): Promise<CtoxWorkjetProjectControlResult> {
   const api = getCtoxClient(instanceId);
-  if (api !== null) return Promise.resolve(readV4WorkjetProjectKpis(api, projectId));
+  if (api !== null) return new Promise((resolve) => resolve(readV4WorkjetProjectKpis(api, projectId)));
   if (!port) return Promise.resolve({ _tag: "failed", code: "not_active" });
   const revision = readActiveWorkjetScope().selectionRevision;
   const key = instanceId;

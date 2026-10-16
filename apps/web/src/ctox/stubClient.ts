@@ -46,21 +46,31 @@ export async function openStubCtoxClient(
         return {
           ...value,
           collections: {},
+          commands: [],
           link: { ...value.link, state: value.link.state === "online" ? "online" : "offline" },
         };
       },
       subscribe: (callback) => legacy.metrics.subscribe(() => callback(api.metrics.get())),
+      commands: [],
     },
+    // Legacy stub fixture (pre-K-WJ-2 files API); only the forms below are modelled.
     files: {
       ...legacy.files,
-      put: (blob, meta) => {
+      put: ((blob: Blob, meta?: { id?: string; name?: string; mime?: string }) => {
+        if (!(blob instanceof Blob)) throw new Error("legacy_stub_put_requires_blob");
         const handle = legacy.files.put(blob, meta);
         return {
           ...handle,
           result: handle.result.then((value) => ({ ...normalizeResult(value), ref: value.ref })),
         };
-      },
-    },
+      }) as CtoxAppApi["files"]["put"],
+      list: () => Promise.reject(new Error("legacy_stub_files_list_unsupported")),
+      delete: () => Promise.reject(new Error("legacy_stub_files_delete_unsupported")),
+    } as unknown as CtoxAppApi["files"],
+    // Legacy stub fixture: model.run (#830) is not modelled.
+    model: {
+      run: () => Promise.reject(new Error("legacy_stub_model_unsupported")),
+    } as unknown as CtoxAppApi["model"],
   };
   const unbind = bindCtoxClient(options.instanceId, api);
   let closed = false;

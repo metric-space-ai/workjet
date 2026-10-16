@@ -2,7 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, type ProjectOverview } from "@workjet/contracts";
 import {
+  isGenericGithubPreview,
   ProjectOverviewCard,
+  showsProjectCardMonogram,
   projectCardCrew,
   projectCardJourFixeLabel,
   projectCardMonogram,
@@ -517,5 +519,55 @@ describe("whole card opens the project (WP-K2)", () => {
     ];
     expect(projectCardCrew(local, threads)).toEqual({ workers: 3, disrupted: 1 });
     expect(projectCardCrew(null, threads)).toBeNull();
+  });
+});
+
+describe("project card preview fallback (N3/N4)", () => {
+  const github: GalleryProject = {
+    key: "instance:metric",
+    id: "metric",
+    title: "Metric",
+    local: null,
+    native: true,
+    configuration: {
+      id: ProjectId.make("metric"),
+      title: "Metric",
+      publicUrl: null,
+      repoUrl: "https://github.com/metric-space-ai/metric",
+      exitModel: null,
+    },
+  };
+
+  it("puts 'Bewerten' into the header next to the menu, never over the preview", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard project={github} onOpen={() => {}} ctoxInstanceId="welsch" />,
+    );
+    const rate = markup.indexOf(">Bewerten<");
+    const preview = markup.indexOf("data-workjet-project-preview");
+    expect(rate).toBeGreaterThan(-1);
+    expect(preview).toBeGreaterThan(rate);
+    expect(markup).not.toContain("absolute bottom-2 left-2");
+    expect(markup.match(/>Bewerten</g)).toHaveLength(1);
+  });
+
+  it("treats GitHub's generic 1200x630 Octocat card as no preview", () => {
+    expect(isGenericGithubPreview(1200, 630)).toBe(true);
+    expect(isGenericGithubPreview(1200, 600)).toBe(false);
+    expect(isGenericGithubPreview(0, 0)).toBe(false);
+  });
+
+  it("falls back to the monogram when the preview failed, even beside an exit stamp", () => {
+    expect(
+      showsProjectCardMonogram({ hasContent: false, exitValued: true, previewFailed: true }),
+    ).toBe(true);
+    expect(
+      showsProjectCardMonogram({ hasContent: false, exitValued: false, previewFailed: false }),
+    ).toBe(true);
+    expect(
+      showsProjectCardMonogram({ hasContent: false, exitValued: true, previewFailed: false }),
+    ).toBe(false);
+    expect(
+      showsProjectCardMonogram({ hasContent: true, exitValued: false, previewFailed: true }),
+    ).toBe(false);
   });
 });

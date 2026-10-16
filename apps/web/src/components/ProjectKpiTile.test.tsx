@@ -55,10 +55,13 @@ describe("KPI tile on the project card", () => {
       for (const state of ["nicht berechnet", "not calculated", "nicht festgelegt", "not set"])
         expect(markup).not.toContain(state);
     }
-    // Defined but not calculated: only the KPI's own sentence (two lines), no „—“.
-    expect(tile(1, false)).toMatch(/>Revenue this month<\/dt>/);
-    expect(tile(1, false)).toContain("line-clamp-2");
-    expect(tile(1, false)).not.toMatch(/>—<\/dd>/);
+    // Without a value (here: source missing) value and label drop, no „—“, no „prüft…“ (N2).
+    expect(tile(1, false)).not.toMatch(/<dt/);
+    expect(tile(1, false)).not.toMatch(/<dd/);
+    expect(tile(1, false)).not.toContain("prüft");
+    // With a value the label stays (two lines).
+    expect(tile(0, false)).toMatch(/>Active users<\/dt>/);
+    expect(tile(0, false)).toContain("line-clamp-2");
   });
 
   it("collapsed: a toggle with aria-expanded=false and an inert editor", () => {
@@ -89,5 +92,30 @@ describe("KPI tile on the project card", () => {
     const markup = tile(0, false, false);
     expect(markup).not.toContain("aria-expanded");
     expect(markup).not.toContain("textarea");
+  });
+});
+
+describe("KPI tile while calculating (N2)", () => {
+  it("shows a quiet skeleton instead of a state text", () => {
+    const resolving = {
+      ...kpis,
+      items: [
+        kpis.items[0]!,
+        { ...kpis.items[1]!, result: { status: "resolving" } },
+      ],
+    } as PromptedProjectKpis;
+    const markup = renderToStaticMarkup(
+      <ProjectKpiTile
+        projectId="p1"
+        index={1}
+        kpis={resolving}
+        expanded={false}
+        onExpandedChange={() => {}}
+      />,
+    );
+    expect(markup).toContain('data-slot="skeleton"');
+    expect(markup).toContain('data-workjet-kpi-status="resolving"');
+    expect(markup).not.toContain("prüft");
+    expect(markup).not.toContain("Revenue this month");
   });
 });

@@ -8,6 +8,7 @@ import {
 } from "../projectKpis";
 import { workjetUiLanguage } from "../workjetProjectControl";
 import { Button } from "./ui/button";
+import { Skeleton } from "./ui/skeleton";
 import { Textarea } from "./ui/textarea";
 
 export const KPI_PROMPT_MAX = 1_024;
@@ -17,7 +18,6 @@ const TEXT = {
     edit: (n: number) => `Kennzahl ${n} bearbeiten`,
     title: (n: number) => `Kennzahl ${n}`,
     close: "Schließen",
-    checking: "prüft…",
     prompt: (n: number) => `Satz für Kennzahl ${n}`,
     placeholder: "Was soll diese Kennzahl messen?",
     save: "Speichern",
@@ -34,7 +34,6 @@ const TEXT = {
     edit: (n: number) => `Edit metric ${n}`,
     title: (n: number) => `Metric ${n}`,
     close: "Close",
-    checking: "checking…",
     prompt: (n: number) => `Sentence for metric ${n}`,
     placeholder: "What should this metric measure?",
     save: "Save",
@@ -138,26 +137,23 @@ export function ProjectKpiTile({
       ? metric.detail
       : null;
   const shown = metric && !dirty ? metric.value : "—";
-  // Without a value a defined KPI shows the stable chip „prüft…“ instead of a bare label
-  // (UI contract §7, Audit A-27); an undefined slot shows nothing.
-  const value =
-    shown === "—" ? (
-      record ? (
-        <dd className="order-first min-w-0" data-workjet-kpi-status={metric?.status ?? "pending"}>
-          <span className="inline-flex h-7 items-center text-[11px] text-muted-foreground">
-            {text.checking}
-          </span>
-        </dd>
-      ) : null
-    ) : (
-      <dd
-        className="order-first min-w-0 break-words pe-4 text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]"
-        data-workjet-kpi-status={metric?.status ?? "unconfigured"}
-        title={metric?.message ?? undefined}
-      >
-        {shown}
-      </dd>
-    );
+  const hasValue = shown !== "—";
+  // UI-Vertrag §7 (#773): kein Zustandstext als Wert. Während der Berechnung steht ein
+  // dezentes Skelett; nach Fehler oder ohne Wert fallen Wert und Beschriftung weg.
+  const loading = !hasValue && record !== undefined && metric?.status === "resolving";
+  const value = hasValue ? (
+    <dd
+      className="order-first min-w-0 break-words pe-4 text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]"
+      data-workjet-kpi-status={metric?.status ?? "unconfigured"}
+      title={metric?.message ?? undefined}
+    >
+      {shown}
+    </dd>
+  ) : loading ? (
+    <dd className="order-first min-w-0 pe-4" data-workjet-kpi-status="resolving" aria-busy="true">
+      <Skeleton className="h-7 w-16 rounded" />
+    </dd>
+  ) : null;
   const nearLimit = draft.length >= KPI_PROMPT_MAX * 0.9;
   return (
     <div
@@ -174,14 +170,18 @@ export function ProjectKpiTile({
       <div className="relative flex min-h-11.5 min-w-0 flex-col gap-0.5">
         {/* The label uses the full column width and up to two lines instead of an
             ellipsis; only the value keeps room for the chevron. */}
-        <dt
-          className={`min-h-4 min-w-0 break-words text-[11px] leading-4 text-muted-foreground line-clamp-2 ${
-            value === null ? "pe-4" : ""
-          }`}
-          title={label || undefined}
-        >
-          {label}
-        </dt>
+        {hasValue ? (
+          <dt
+            className="min-h-4 min-w-0 break-words text-[11px] leading-4 text-muted-foreground line-clamp-2"
+            title={label || undefined}
+          >
+            {label}
+          </dt>
+        ) : loading ? (
+          <dt className="min-h-4 min-w-0">
+            <Skeleton className="h-3 w-20 rounded" />
+          </dt>
+        ) : null}
         {value}
         {editable && (
           <button

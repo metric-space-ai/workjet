@@ -1,4 +1,4 @@
-import type { WorkjetConnectionSummary } from "@workjet/contracts";
+import { WorkjetConnectionId, type WorkjetConnectionSummary } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { presetConnectionState, presetReadyConnection } from "./workjetPresetConnection";
@@ -11,7 +11,9 @@ const source = (
   reason: string | null = null,
 ) =>
   ({
-    connectionId: `ctox-dev-worker-source:${tenant}:${suffix}-7dcd-4c64-a0b7-e800251eb9a1`,
+    connectionId: WorkjetConnectionId.make(
+      `ctox-dev-worker-source:${tenant}:${suffix}-7dcd-4c64-a0b7-e800251eb9a1`,
+    ),
     instanceId: "welsch.ctox.dev",
     displayName: "Workjet worker source",
     source: "ctox_dev",
@@ -34,7 +36,10 @@ describe("Presets connection state", () => {
   });
 
   it("prefers the canonical tenant connection", () => {
-    const canonical = { ...source("aaaaaaaa", "ready"), connectionId: `ctox-dev:${tenant}` };
+    const canonical = {
+      ...source("aaaaaaaa", "ready"),
+      connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`),
+    };
     expect(presetReadyConnection([source("00000000", "ready"), canonical], selected)).toBe(
       canonical,
     );
@@ -84,7 +89,12 @@ describe("Presets connection state", () => {
     expect(presetConnectionState([], selected, answered)).toEqual({ kind: "missing" });
     expect(
       presetConnectionState(
-        [{ ...source("aaaaaaaa", "ready"), connectionId: "ctox-dev:other" }],
+        [
+          {
+            ...source("aaaaaaaa", "ready"),
+            connectionId: WorkjetConnectionId.make("ctox-dev:other"),
+          },
+        ],
         selected,
         answered,
       ),

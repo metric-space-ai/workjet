@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/metric-space-ai/ctox",
-  "commit": "5b1e50d37bc9c2017b97c4e7adf017b27244afb0",
+  "commit": "eca39cf848e0d0159ab7e7ccd9a4395091b3b9e2",
   "sourceDirectory": "src/apps/business-os/kernel",
   "files": [
     {
@@ -20,8 +20,13 @@
     },
     {
       "path": "cache.mjs",
-      "sha256": "4df2aaf5b1b1c85893eb2e359e539e2a9af3e837db164a3c6c88a25ea115a6cb",
-      "gitBlob": "0a4f1044d866a9ba6a1468d91a87f1db217a1ce8"
+      "sha256": "ffb50d0f74815e72298d34eed37290ab2538103298e4f61f82787bbcdacd54fb",
+      "gitBlob": "79743d1c1c8c27ce8fe0ea528bb2f73e54bc4310"
+    },
+    {
+      "path": "command-inventory.generated.mjs",
+      "sha256": "56419e716f4be1c580da5aa04d2001182d9c70392ab81df39e6732bd449bfd84",
+      "gitBlob": "98da1d805764e076d8de7b34042fd42f30c059bb"
     },
     {
       "path": "command-observer.mjs",
@@ -29,9 +34,14 @@
       "gitBlob": "43028970747174bc3f6b5188d4d233f2059fc271"
     },
     {
+      "path": "command-routing.mjs",
+      "sha256": "6b626e4f270ed4b63a89328c392d143d748b23b232bb71bff60821a7106babec",
+      "gitBlob": "dd394092006dd5d42b4e4e105f9106ae00fb2d5d"
+    },
+    {
       "path": "command-state.mjs",
-      "sha256": "8dd87a6d15a91cd701c1e9a727c1e0234f95f4a0312ee7a9a9b0f69de5b0f276",
-      "gitBlob": "ecbdb55e48cdec06f810850a504a91a92f2f82a8"
+      "sha256": "2ce8750403314edeb231d982b98a71a0e0a59d57b0ea65a0d7fa9d3ee3b023ae",
+      "gitBlob": "e159582bf5743d7596232a3a723228639d682508"
     },
     {
       "path": "command-timings.mjs",
@@ -40,13 +50,13 @@
     },
     {
       "path": "fake-core-runtime.mjs",
-      "sha256": "ec760b6c0641dce56528c9464429fa08f78813cacedbeb61a0d22d09459ec023",
-      "gitBlob": "0e4e3cb9f8a696c836fc3888b2628b87b4d6f52c"
+      "sha256": "68256b110bfd35b891570b25ca814768277065eabc9d3c01b29ec14bb1ce486f",
+      "gitBlob": "5b39a2135726213f1404a981d88cb16a71cceec0"
     },
     {
       "path": "fake-core.mjs",
-      "sha256": "c3903f4370f609c8ca63b0a42c4cf3a3caee210842f2e06e9f5acb87a70df403",
-      "gitBlob": "36fcad7e00736884af0b77e4ee68dc0381a9eada"
+      "sha256": "981f82b9abf68c78c73d3dccb4fa1181217987e6c724843778c5d82909726afa",
+      "gitBlob": "41b9838d194cfb23e189eb03498668c7cba55cff"
     },
     {
       "path": "framing.mjs",
@@ -55,8 +65,8 @@
     },
     {
       "path": "index.d.ts",
-      "sha256": "a7855c746d3751a0396160f48d8b9314b8dc6b3ab4ef784c00066cdf72aacce9",
-      "gitBlob": "246336dff69338f11b2eb151153df4928c14d1f8"
+      "sha256": "30ccae494f83fce2e2b4c19743ec42bc1b1f5d3da74c4bf1c30dae2eb99a24b4",
+      "gitBlob": "08cce0c36f639dca5ef5734bba2565cca3d62aa6"
     },
     {
       "path": "index.mjs",
@@ -70,8 +80,8 @@
     },
     {
       "path": "kernel.mjs",
-      "sha256": "0f24081aad92c426a66c46bb834c377a7f7bf63c2dbd66ca4f9bc6a93d4f7f15",
-      "gitBlob": "133c87e4f18e819ade2357c0f88366b53697efa0"
+      "sha256": "04462dbc645b29cc7210c5131191bf786ae271b5e0a0492a536f81814e0df2d0",
+      "gitBlob": "9487c9d4cb1fdd7a774163602a89a3ca23610ee8"
     },
     {
       "path": "leader.mjs",
@@ -130,8 +140,8 @@
     },
     {
       "path": "transport-webrtc.mjs",
-      "sha256": "2f283c9db65a19fc5943977c19d396a5a5ee5ca04287f0decf9e29d5066c2009",
-      "gitBlob": "cba23b70b05ab4e22e52bbf07fa0ee1e53c2b3ee"
+      "sha256": "0a6dbf37aa403c155a6eacc7240404dd4cf0214b10cd29e61e8434d698b279e4",
+      "gitBlob": "da903acd3af597087879d80f88414c7bb87a4900"
     },
     {
       "path": "transport.mjs",
@@ -140,8 +150,8 @@
     },
     {
       "path": "values.mjs",
-      "sha256": "f58d741212c130a5ff93f4bed3caf3bc5102a92cd3fcad331b035475948d18ea",
-      "gitBlob": "baff6e591285b8e3ef53b0b44c44682f658e3121"
+      "sha256": "37c752bcfe4af9d27f7ebf59ec81c7be84a50dc4cf2ee23d5e2b0f1a27d13abd",
+      "gitBlob": "51cd32fc1509dcf8b2b1c0c9ac9845a47ed23399"
     },
     {
       "path": "vendor/async-timeout.js",

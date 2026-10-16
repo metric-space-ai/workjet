@@ -22,6 +22,9 @@ import {
   CtoxWorkjetSessionControlInput,
   CtoxWorkjetSessionControlResult,
   CtoxWorkjetSessionEventsRegistrationInput,
+  CtoxV4GenerationReportInput,
+  CtoxV4LaunchContextReadInput,
+  CtoxV4LaunchContextReadResult,
   CtoxManagedActionResult,
   CtoxManagedActivationInput,
   CtoxManagedGuestResult,
@@ -66,6 +69,7 @@ import * as CtoxShellFleet from "../../ctox/CtoxShellFleet.ts";
 import * as IpcChannels from "../channels.ts";
 import { CtoxControlDeviceStatus } from "@workjet/contracts";
 import type * as DesktopIpc from "../DesktopIpc.ts";
+import { setCtoxInstanceGeneration } from "../../ctox/CtoxV4Instances.ts";
 
 function encodeSafe<A, I>(schema: Schema.Codec<A, I>, value: A): Effect.Effect<I> {
   return Schema.encodeUnknownEffect(schema)(value).pipe(Effect.orDie);
@@ -855,6 +859,46 @@ export const requestSessionControl: DesktopIpc.DesktopIpcMethod<
     }),
 };
 
+export const readV4LaunchContext: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_V4_LAUNCH_CONTEXT_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxV4LaunchContextReadInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxV4LaunchContextReadResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      return yield* manager
+        .readV4LaunchContext(input.value.instanceId)
+        .pipe(Effect.flatMap((result) => encodeSafe(CtoxV4LaunchContextReadResult, result)));
+    }),
+};
+
+export const reportV4Generation: DesktopIpc.DesktopIpcMethod<never, never> = {
+  channel: IpcChannels.CTOX_V4_GENERATION_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxV4GenerationReportInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None")
+        return yield* encodeSafe(CtoxManagedActionResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      setCtoxInstanceGeneration(input.value.instanceId, input.value.generation);
+      return yield* encodeSafe(CtoxManagedActionResult, { _tag: "completed" });
+    }),
+};
+
 export const registerSessionTransferEvents: DesktopIpc.DesktopIpcMethod<
   never,
   CtoxGuestManager.CtoxGuestManager
@@ -1134,6 +1178,8 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   requestProjectControl,
   requestComputerControl,
   requestSessionControl,
+  readV4LaunchContext,
+  reportV4Generation,
   registerSessionTransferEvents,
   openApp,
   openSettings,

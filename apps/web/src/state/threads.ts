@@ -7,16 +7,30 @@ import {
   type EnvironmentThreadState,
   createThreadEnvironmentAtoms,
 } from "@workjet/client-runtime/state/threads";
-import type { EnvironmentId, ThreadId } from "@workjet/contracts";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@workjet/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentSnapshotAtom } from "./shell";
+import { ctoxThreadStateAtom } from "../ctox/threadReadAtoms";
+import { gateCtoxReadFamily } from "../ctox/v4GatedAtoms";
 
 export const threadEnvironment = createThreadEnvironmentAtoms(connectionAtomRuntime);
-export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
+const legacyEnvironmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
+/** Scheibe C: thread state reads the local kernel on a V4 instance, the environment RPC on V3. */
+const gatedThreadState = gateCtoxReadFamily(
+  (ref: ScopedThreadRef) => legacyEnvironmentThreads.stateAtom(ref.environmentId, ref.threadId),
+  ctoxThreadStateAtom,
+);
+export const environmentThreads = {
+  ...legacyEnvironmentThreads,
+  stateAtom: (environmentId: EnvironmentId, threadId: ThreadId) =>
+    gatedThreadState({ environmentId, threadId }) as ReturnType<
+      typeof legacyEnvironmentThreads.stateAtom
+    >,
+};
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
   environmentThreads.stateAtom,
 );

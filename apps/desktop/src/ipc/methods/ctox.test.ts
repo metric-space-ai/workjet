@@ -303,6 +303,7 @@ function removalCleanupLayer(
     requestSessionControl: () => Effect.die("unused"),
     registerSessionTransferEvents: () => Effect.die("unused"),
     guestInstanceOrigin: () => Effect.die("unused"),
+    readV4LaunchContext: () => Effect.die("unused"),
   });
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
     account: Effect.die("unused"),
@@ -609,6 +610,7 @@ describe("CTOX IPC methods", () => {
         requestSessionControl: () => Effect.die("unused"),
         registerSessionTransferEvents: () => Effect.die("unused"),
         guestInstanceOrigin: () => Effect.die("unused"),
+        readV4LaunchContext: () => Effect.die("unused"),
       });
 
       return Effect.gen(function* () {
@@ -668,6 +670,7 @@ describe("CTOX IPC methods", () => {
       requestSessionControl: () => Effect.die("unused"),
       registerSessionTransferEvents: () => Effect.die("unused"),
       guestInstanceOrigin: () => Effect.die("unused"),
+      readV4LaunchContext: () => Effect.die("unused"),
     });
 
     return Effect.gen(function* () {
@@ -1238,6 +1241,7 @@ describe("CTOX app rail IPC methods", () => {
       requestSessionControl: () => Effect.die("unused"),
       registerSessionTransferEvents: () => Effect.die("unused"),
       guestInstanceOrigin: () => Effect.die("unused"),
+      readV4LaunchContext: () => Effect.die("unused"),
       ...overrides,
     });
   }

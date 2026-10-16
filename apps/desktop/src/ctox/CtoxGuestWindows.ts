@@ -261,6 +261,7 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
         inWindow((guests) => guests.requestProjectControl(id, request)),
       requestSessionControl: (id, request) =>
         inWindow((guests) => guests.requestSessionControl(id, request)),
+      readV4LaunchContext: (id) => inWindow((guests) => guests.readV4LaunchContext(id)),
       registerSessionTransferEvents: (ids) =>
         inWindow((guests) => guests.registerSessionTransferEvents(ids)),
       guestInstanceOrigin: (id) =>

@@ -1850,6 +1850,27 @@ export const CtoxWorkjetSessionControlInput = Schema.Struct({
 });
 export type CtoxWorkjetSessionControlInput = typeof CtoxWorkjetSessionControlInput.Type;
 
+/**
+ * Scheibe C (E38.3/E41): the `v4` member of the instance's authenticated launch context, read by
+ * the warm guest of exactly this instance. `null` means the instance reports no V4 (V3 core).
+ * Only the `v4` member crosses IPC; the V2 session fields stay in the guest.
+ */
+export const CtoxV4LaunchContextReadInput = Schema.Struct({ instanceId: CtoxManagedInstanceId });
+export type CtoxV4LaunchContextReadInput = typeof CtoxV4LaunchContextReadInput.Type;
+export const CtoxV4LaunchContextReadResult = Schema.Union([
+  Schema.TaggedStruct("completed", { v4: Schema.Unknown }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["invalid_input", "not_active", "guest_failed", "response_too_large"]),
+  }),
+]);
+export type CtoxV4LaunchContextReadResult = typeof CtoxV4LaunchContextReadResult.Type;
+/** Renderer host bootstrap → Desktop Main: the observed core generation of one instance (E49.6). */
+export const CtoxV4GenerationReportInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  generation: Schema.NullOr(Schema.Literals(["v4", "v3"])),
+});
+export type CtoxV4GenerationReportInput = typeof CtoxV4GenerationReportInput.Type;
+
 export const CtoxWorkjetSessionControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetSessionControlResponse }),
   Schema.TaggedStruct("failed", {

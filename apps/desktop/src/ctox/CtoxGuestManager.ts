@@ -16,6 +16,7 @@ import type {
   CtoxWorkjetSessionControlRequest,
   CtoxWorkjetSessionControlResult,
   CtoxWorkjetSessionTransferEvent,
+  CtoxV4LaunchContextReadResult,
   WorkjetDeviceWebRtcRequestV1,
 } from "@workjet/contracts";
 import {
@@ -259,6 +260,10 @@ export class CtoxGuestManager extends Context.Service<
       instanceId: string,
       request: CtoxWorkjetSessionControlRequest,
     ) => Effect.Effect<CtoxWorkjetSessionControlResult>;
+    /** Scheibe C: `v4` member of this instance's launch context, read by its warm guest. */
+    readonly readV4LaunchContext: (
+      instanceId: string,
+    ) => Effect.Effect<CtoxV4LaunchContextReadResult>;
     readonly registerSessionTransferEvents: (
       computerIds: readonly string[],
     ) => Effect.Effect<CtoxManagedActionResult>;
@@ -298,6 +303,25 @@ export type CtoxGuestAppsObservation =
 const MAX_DEVICE_CONTROL_RESPONSE_BYTES = 512 * 1024;
 const MAX_PROJECT_CONTROL_RESPONSE_BYTES = 256 * 1024;
 const MAX_SESSION_CONTROL_RESPONSE_BYTES = 256 * 1024;
+const MAX_V4_LAUNCH_CONTEXT_BYTES = 64 * 1024;
+/**
+ * Same-origin authenticated control-plane read (E38.3) inside the guest; only the `v4` member
+ * leaves the guest. A missing member is a V3 core (`null`).
+ */
+const GUEST_V4_LAUNCH_CONTEXT_EXPRESSION = `(async () => {
+  const response = await fetch("/api/business-os/launch-context", {
+    method: "GET",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) return { status: "failed" };
+  const body = await response.json();
+  return {
+    status: "completed",
+    v4: body !== null && typeof body === "object" && body.v4 !== undefined ? body.v4 : null,
+  };
+})()`;
 
 // Fixed, renderer-independent expression: reads only bounded module identity
 // data from the guest's own app state. Never interpolates untrusted input.
@@ -2554,6 +2578,46 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return { _tag: "completed", response: decoded.value };
       });
 
+    const readV4LaunchContext = (
+      instanceId: string,
+    ): Effect.Effect<CtoxV4LaunchContextReadResult> =>
+      Effect.gen(function* (): Generator<
+        Effect.Effect<unknown>,
+        CtoxV4LaunchContextReadResult,
+        never
+      > {
+        const state = yield* SynchronizedRef.get(stateRef);
+        const pooled = state.pool.get(instanceId);
+        if (pooled === undefined || pooled.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
+        const pending = yield* Effect.tryPromise({
+          try: () =>
+            pooled.view.webContents.executeJavaScript(GUEST_V4_LAUNCH_CONTEXT_EXPRESSION, true),
+          catch: () => undefined,
+        }).pipe(
+          Effect.orElseSucceed(() => undefined),
+          Effect.timeoutOption("15 seconds"),
+        );
+        if (Option.isNone(pending)) return { _tag: "failed", code: "guest_failed" };
+        const current = yield* SynchronizedRef.get(stateRef);
+        if (current.pool.get(instanceId) !== pooled || pooled.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
+        const raw = pending.value as { readonly status?: unknown; readonly v4?: unknown } | null;
+        if (typeof raw !== "object" || raw === null || raw.status !== "completed") {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        const encodedLength = yield* Effect.try({
+          try: () => Buffer.byteLength(encodeUnknownJson(raw.v4 ?? null), "utf8"),
+          catch: () => MAX_V4_LAUNCH_CONTEXT_BYTES + 1,
+        }).pipe(Effect.orElseSucceed(() => MAX_V4_LAUNCH_CONTEXT_BYTES + 1));
+        if (encodedLength > MAX_V4_LAUNCH_CONTEXT_BYTES) {
+          return { _tag: "failed", code: "response_too_large" };
+        }
+        return { _tag: "completed", v4: raw.v4 ?? null };
+      });
+
     const projectControlWithRecovery = (
       instanceId: string,
       request: CtoxWorkjetProjectControlRequest,
@@ -2656,6 +2720,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       requestProjectControl,
       requestComputerControl,
       requestSessionControl,
+      readV4LaunchContext,
       guestInstanceOrigin,
       registerSessionTransferEvents,
     });

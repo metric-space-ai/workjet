@@ -22,6 +22,8 @@ export async function openStubCtoxClient(
   const legacy = kernel.appApi("workjet", appVersion);
   const api: CtoxAppApi = {
     ...legacy,
+    // Kernel pin eca39cf84 adds the read-only navigation probe; the dev stub knows no targets.
+    shell: { ...legacy.shell, canNavigate: () => false },
     put: (collection, doc) => {
       const handle = legacy.put(collection, doc);
       return { ...handle, result: handle.result.then(normalizeResult) };

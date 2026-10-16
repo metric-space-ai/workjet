@@ -17,10 +17,39 @@ import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
+import { ctoxLumaReads } from "../ctox/lumaReadData";
+import { ctoxGatewayReads } from "../ctox/gatewayReadData";
+import { ctoxCalendarReads } from "../ctox/calendarReadData";
+import { gateCtoxReadFamily } from "../ctox/v4GatedAtoms";
 
-export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
+const legacyServerEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
   initialConfigValueAtom: environmentSession.initialConfigValueAtom,
 });
+const gated = <K extends keyof typeof legacyServerEnvironment & keyof typeof v4Reads>(key: K) =>
+  gateCtoxReadFamily(
+    legacyServerEnvironment[key] as (input: unknown) => Atom.Atom<unknown>,
+    v4Reads[key] as (input: unknown) => Atom.Atom<unknown>,
+  ) as unknown as (typeof legacyServerEnvironment)[K];
+const v4Reads = {
+  lumaConfiguration: ctoxLumaReads.lumaConfiguration,
+  calendarAccounts: ctoxCalendarReads.calendarAccounts,
+  ...ctoxGatewayReads,
+};
+/**
+ * Scheibe C: Luma, calendar accounts and gateway reads come from the local kernel on a V4
+ * instance (bound kernel client) and from the unchanged environment RPC on V3.
+ */
+export const serverEnvironment = {
+  ...legacyServerEnvironment,
+  lumaConfiguration: gated("lumaConfiguration"),
+  calendarAccounts: gated("calendarAccounts"),
+  workjetGatewayStatus: gated("workjetGatewayStatus"),
+  workjetGatewayCatalog: gated("workjetGatewayCatalog"),
+  workjetGatewayHealth: gated("workjetGatewayHealth"),
+  workjetGatewayModelChecks: gated("workjetGatewayModelChecks"),
+  workjetGatewayModels: gated("workjetGatewayModels"),
+  workjetGatewayAccountModels: gated("workjetGatewayAccountModels"),
+};
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,

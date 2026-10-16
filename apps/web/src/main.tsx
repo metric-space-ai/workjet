@@ -16,6 +16,8 @@ import {
   syncDocumentWindowControlsOverlayClass,
 } from "./lib/windowControlsOverlay";
 import { AppRoot } from "./AppRoot";
+import { APP_VERSION } from "./branding";
+import { startWorkjetV4HostBootstrap } from "./ctox/v4HostWiring";
 import { clerkAppearance } from "./components/clerk/clerkAppearance";
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
@@ -26,6 +28,8 @@ const router = getRouter(history);
 if (isElectron) {
   syncDocumentElectronPlatformClasses(navigator.platform);
   syncDocumentWindowControlsOverlayClass();
+  // Scheibe C: direct V4 client only where the instance's launch context reports V4.
+  startWorkjetV4HostBootstrap(window.desktopBridge?.ctox, APP_VERSION);
 }
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;

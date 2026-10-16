@@ -35,7 +35,7 @@ export function plainPreview(raw: string | null | undefined, max = 420): string 
 
 /**
  * A disruption in one plain sentence plus one action; the raw error stays in `details`
- * (shown only behind "Details").
+ * (never rendered in the feed; listed under Einstellungen › Diagnose).
  */
 export function disruptionContent(input: {
   readonly name: string;

@@ -43,6 +43,7 @@ import {
   type FeedSourceRow,
 } from "./ProjectFeedSettings";
 import { Button } from "./ui/button";
+import { recordWorkerErrors } from "../workerErrorLog";
 
 const toneDotClasses: Record<string, string> = {
   red: "bg-destructive",
@@ -211,6 +212,28 @@ export function ProjectOverviewView(props: {
       prefs.sources[feedSourceOf(item.kind)] &&
       (windowStart === null || Date.parse(item.at) >= windowStart),
   );
+  // Raw error text goes to Einstellungen › Diagnose › Letzte Fehler, never into the feed.
+  const rawErrorSignature = allFeed
+    .filter((item) => item.details)
+    .map((item) => `${item.id}\u0000${item.at}\u0000${item.details}`)
+    .join("\u0001");
+  useEffect(() => {
+    recordWorkerErrors(
+      allFeed.flatMap((item) =>
+        item.details
+          ? [
+              {
+                key: `${item.author}\u0000${item.details}`,
+                worker: item.author,
+                raw: item.details,
+                at: item.at,
+              },
+            ]
+          : [],
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the raw-error signature
+  }, [rawErrorSignature]);
   // Zustellung: desktop alert for disruptions that appear while the overview is open.
   const seenDisruptions = useRef<Set<string> | null>(null);
   useEffect(() => {
@@ -573,7 +596,7 @@ type FeedItem = {
   readonly openItems?: readonly string[];
   readonly sources?: readonly ProjectFeedSource[];
   readonly actionLabel?: string | null;
-  /** Raw error text; shown only behind "Details". */
+  /** Raw error text; never rendered in the feed, listed under Einstellungen › Diagnose. */
   readonly details?: string | null;
   /** Further chats of the same worker with the same error, folded into this card. */
   readonly alsoThreads?: readonly ProjectOwnerOverview["members"][number][];
@@ -1264,19 +1287,6 @@ function FeedCard(props: {
               </a>
             ))}
           </div>
-        ) : null}
-        {item.details ? (
-          <details
-            className="mt-1.5 text-[12px] text-muted-foreground"
-            data-workjet-feed-details=""
-          >
-            <summary className="w-fit cursor-pointer select-none hover:text-foreground">
-              {text.feedDetails}
-            </summary>
-            <pre className="mt-1 max-h-40 overflow-auto rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[12px] whitespace-pre-wrap [overflow-wrap:anywhere]">
-              {item.details}
-            </pre>
-          </details>
         ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {props.onOpen ? (

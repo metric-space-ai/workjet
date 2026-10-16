@@ -41,6 +41,7 @@ import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
 import { SupportBundleSection } from "./SupportBundleSection";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useWorkerErrorLog } from "../../workerErrorLog";
 import "./resourceTelemetryDiagnostics.css";
 
 const NUMBER_FORMAT = new Intl.NumberFormat();
@@ -75,6 +76,12 @@ function formatRelative(value: DateTime.Utc | null): string {
 
 function formatRelativeNoWrap(value: DateTime.Utc | null): string {
   return formatRelative(value).replaceAll(" ", "\u00a0");
+}
+
+function formatRelativeIsoNoWrap(iso: string): string {
+  const relative = formatRelativeTime(iso);
+  if (!relative) return "";
+  return (relative.suffix ? `vor ${relative.value}` : "gerade eben").replaceAll(" ", "\u00a0");
 }
 
 function shortenTraceId(traceId: string): string {
@@ -861,6 +868,7 @@ export function DiagnosticsSettingsPanel() {
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
   });
+  const workerErrors = useWorkerErrorLog();
   const [resourceWindowMs, setResourceWindowMs] = useState(15 * 60_000);
   const selectedResourceWindow =
     RESOURCE_HISTORY_WINDOWS.find((option) => option.windowMs === resourceWindowMs) ??
@@ -1219,6 +1227,23 @@ export function DiagnosticsSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection title="Letzte Fehler">
+        {workerErrors.length > 0 ? (
+          <DiagnosticsTable headers={["Worker", "Ursache", "Ende"]}>
+            {workerErrors.map((entry) => (
+              <tr key={entry.key} data-workjet-worker-error="">
+                <td className="px-4 py-3 align-top text-xs font-medium text-foreground first:sm:pl-5">
+                  {entry.worker}
+                </td>
+                <td className="max-w-[360px] px-4 py-3 align-top text-muted-foreground">
+                  <ExpandableText text={entry.raw} />
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 align-top font-mono tabular-nums text-muted-foreground last:sm:pr-5">
+                  {formatRelativeIsoNoWrap(entry.at)}
+                </td>
+              </tr>
+            ))}
+          </DiagnosticsTable>
+        ) : null}
         {data && data.latestFailures.length > 0 ? (
           <DiagnosticsTable headers={["Span", "Ursache", "Dauer", "Ende"]}>
             {data.latestFailures.map((failure) => (
@@ -1238,7 +1263,7 @@ export function DiagnosticsSettingsPanel() {
               </tr>
             ))}
           </DiagnosticsTable>
-        ) : (
+        ) : workerErrors.length > 0 ? null : (
           <EmptyRows label={isInitialLoading ? "Lädt …" : "Keine Fehler"} />
         )}
       </SettingsSection>

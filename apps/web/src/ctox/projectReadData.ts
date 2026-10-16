@@ -13,7 +13,6 @@ import { useCtoxClient } from "./hooks";
 import { createLiveStore } from "./liveStore";
 
 export const PROJECT_READ_COLLECTIONS = {
-  "project.gallery.order.read": "workjet_gallery_orders",
   "project.exit_model.read": "workjet_exit_assessments",
   "project.jour_fixe.meeting.read": "workjet_jour_fixe_meetings",
   "project.presentation.read": "workjet_presentations",
@@ -70,7 +69,6 @@ function definition(api: CtoxAppApi, request: CtoxWorkjetProjectControlRequest) 
   if (action === "instance.grok.read" || action === "instance.grok.poll")
     selector.owner_user_id = api.actor.id;
   if (request.action === "instance.grok.poll") selector.login_id = request.loginId;
-  if (action === "project.gallery.order.read") selector.owner_user_id = api.actor.id;
   if (request.action === "project.calendar.events.read") selector.account_id = request.accountId;
   if (request.action === "project.jour_fixe.meeting.read" && request.meetingId === undefined)
     selector.is_current = true;
@@ -112,11 +110,7 @@ function domainResponse(api: CtoxAppApi, request: CtoxWorkjetProjectControlReque
     ...("threadId" in request ? { threadId: request.threadId } : {}),
   };
   let facts: object;
-  if (action === "project.gallery.order.read") {
-    if (rows.length !== 1)
-      throw new CtoxLocalReadError("not_found", "projection_not_unique", collection);
-    facts = { contract: "ctox.workjet.project_gallery_order.v1", order: rows[0] };
-  } else if (action === "project.exit_model.read") {
+  if (action === "project.exit_model.read") {
     if (rows.length !== 1)
       throw new CtoxLocalReadError("not_found", "projection_not_unique", collection);
     facts = { assessment: rows[0] };

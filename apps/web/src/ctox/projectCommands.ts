@@ -15,8 +15,8 @@ export const PROJECT_MUTATION_ACTIONS = [
   "project.kpis.refresh",
 ] as const;
 type ProjectMutationAction = (typeof PROJECT_MUTATION_ACTIONS)[number];
-// project.gallery.order.set is not a command in V4: gallery order is a Workjet field written by
-// api.patch (E49.4) and has no route in the Workjet bridge contract (wjb-command-types.json).
+// project.gallery.order.set is not a command in V4: gallery order is user UI state in api.prefs
+// (E51/E56.2) and has no route in the Workjet bridge contract (wjb-command-types.json).
 export type CtoxProjectMutation = Extract<
   CtoxWorkjetProjectControlRequest,
   { action: ProjectMutationAction }

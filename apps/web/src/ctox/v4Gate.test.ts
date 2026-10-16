@@ -13,7 +13,8 @@ import { createKernel } from "./kernel/kernel.mjs";
 import { MemoryCoreTransport } from "./kernelTestkit";
 import type { CtoxAppApi, Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
-import { getCtoxClient } from "./ctoxClient";
+import { bindCtoxClient, getCtoxClient } from "./ctoxClient";
+import { withFakeAppPrefs } from "./appPrefs.fixture";
 import { CtoxCommandError, executeCtoxCommand } from "./commands";
 import {
   WORKJET_APP_ID,
@@ -476,8 +477,28 @@ describe("V4 gate: a V3 instance keeps the desktop guest path (no bound client)"
 });
 
 describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", () => {
-  it("V4: gallery order set is a local api.patch, read back locally, never a command", async () => {
+  it("V4: gallery order is user UI state in api.prefs (E56.2), never a collection or command", async () => {
     const { instanceId, api } = await openGate({ routes: [] });
+    const { api: prefsApi, rows } = withFakeAppPrefs(api);
+    const command = vi.fn(() => {
+      throw new Error("gallery order must not send a command");
+    });
+    const guarded = Object.create(prefsApi, { command: { value: command } }) as CtoxAppApi;
+    open.push({
+      kernel: { close: async () => {} } as unknown as Kernel,
+      release: bindCtoxClient(instanceId, guarded),
+    });
+    const read = (id: string) =>
+      requestWorkjetProjectControl(
+        instanceId,
+        { action: "project.gallery.order.read", commandId: CommandId.make(id) },
+        noGuest,
+      );
+    // Nothing stored yet reads as the empty order at revision 0.
+    expect(await read("gate-gallery-empty")).toMatchObject({
+      _tag: "completed",
+      response: { action: "project.gallery.order.read", order: { revision: 0, projectIds: [] } },
+    });
     const set = (expectedRevision: number, ids: string[]) =>
       requestWorkjetProjectControl(
         instanceId,
@@ -503,24 +524,32 @@ describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", (
       _tag: "failed",
       error: { code: "conflict", reason: "gallery_order_revision_mismatch" },
     });
-    const read = await requestWorkjetProjectControl(
-      instanceId,
-      { action: "project.gallery.order.read", commandId: CommandId.make("gate-gallery-read") },
-      noGuest,
-    );
-    expect(read).toMatchObject({
+    expect(await read("gate-gallery-read")).toMatchObject({
       _tag: "completed",
       response: {
         action: "project.gallery.order.read",
         order: { revision: 2, projectIds: ["p-1", "p-2"] },
       },
     });
-    // The order is a local document write (api.patch), not a business command.
-    expect(
-      api.get<{ revision: number }>("workjet_gallery_orders", api.actor.id).get(),
-    ).toMatchObject({
+    // Stored as app_user_preferences row <app>/<user>/gallery.order, nowhere else.
+    expect([...rows.keys()]).toEqual([`workjet/${api.actor.id}/gallery.order`]);
+    expect(rows.get(`workjet/${api.actor.id}/gallery.order`)?.value).toEqual({
       revision: 2,
+      projectIds: ["p-1", "p-2"],
     });
+    expect(command).not.toHaveBeenCalled();
+    expect(JSON.stringify(workjetAppManifest(APP_VER))).not.toContain("gallery");
+  });
+
+  it("V4: without api.prefs the gallery order is unavailable, with no collection fallback", async () => {
+    const { instanceId } = await openGate({ routes: [] });
+    expect(
+      await requestWorkjetProjectControl(
+        instanceId,
+        { action: "project.gallery.order.read", commandId: CommandId.make("gate-gallery-np") },
+        noGuest,
+      ),
+    ).toMatchObject({ _tag: "failed", error: { code: "unavailable", reason: "prefs_unavailable" } });
   });
 
   it("E54.3b: the manifest owns exactly the five Workjet collections", () => {

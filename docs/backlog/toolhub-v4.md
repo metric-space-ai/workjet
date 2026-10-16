@@ -29,7 +29,7 @@ Business-OS-Werkzeug und das `ctox-toolhub`-Skill (Agentenweg, nicht UI).
 ## Was V4 bräuchte
 
 1. CTOX-Plattformrouten `ctox.toolhub.{connections,catalog,tools,connect,
-   disconnect,credential.submit,oauth.complete,ui.resolve}` im
+disconnect,credential.submit,oauth.complete,ui.resolve}` im
    Befehlsinventar (Vorschlag E40), über den v4-Befehlsweg statt Gast-JS.
 2. Projektion `toolhub_connections` / `ui_requests` als Collection-Read.
 3. Geheimnisse nur im Kern; OAuth führt der Kern aus, das Login-Fenster

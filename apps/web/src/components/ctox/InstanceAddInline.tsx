@@ -328,6 +328,7 @@ export function InstanceAddPanel({
             placeholder="workjet://pair?payload=…"
             rows={3}
             spellCheck={false}
+            disabled={v4Redeem?.phase === "running"}
             ref={inviteField}
             value={invite}
             onChange={(event) => {

@@ -548,17 +548,20 @@ function JourFixeRoomContent({
           {/* One navigation line: the breadcrumb carries the date; no back arrow or
               repeated heading below it (Audit A-50). */}
           <WorkspaceBreadcrumbItem current>
-            Regeltermin ·{" "}
-            <time dateTime={new Date(meeting.scheduledAt).toISOString()}>
-              {new Intl.DateTimeFormat("de-DE", {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZone: meeting.timezone,
-              }).format(meeting.scheduledAt)}
-              {meeting.timezone !== new Intl.DateTimeFormat().resolvedOptions().timeZone
-                ? ` · ${meeting.timezone}`
-                : ""}
-            </time>
+            {/* One text node: the flex item would drop the space after „·“. */}
+            <span className="truncate">
+              Regeltermin ·{" "}
+              <time dateTime={new Date(meeting.scheduledAt).toISOString()}>
+                {new Intl.DateTimeFormat("de-DE", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                  timeZone: meeting.timezone,
+                }).format(meeting.scheduledAt)}
+                {meeting.timezone !== new Intl.DateTimeFormat().resolvedOptions().timeZone
+                  ? ` · ${meeting.timezone}`
+                  : ""}
+              </time>
+            </span>
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
       </WorkjetHeaderContent>
@@ -1201,7 +1204,7 @@ function JourFixeRoomContent({
                 role="tab"
                 aria-selected={panel === name}
                 onClick={() => setPanel(name)}
-                className={`rounded-md border-b-2 px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                className={`rounded-md border-b-2 px-2.5 py-1.5 text-sm whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   panel === name
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"

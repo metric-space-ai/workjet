@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import { workjetUiLanguage } from "../../workjetProjectControl";
 import { InstanceProviderSection } from "./InstanceProviderSection";
 import { useInstanceProviders } from "./useInstanceProviders";
+import { instanceXaiQuota } from "./WorkjetModelsQuota";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@workjet/client-runtime/connection";
 import { safeErrorLogAttributes } from "@workjet/client-runtime/errors";
@@ -18,7 +19,6 @@ import {
   ProviderDriverKind,
   type ProviderInstanceConfig,
   type ProviderInstanceId,
-  type WorkjetNativeProviderAccount,
 } from "@workjet/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@workjet/contracts/settings";
 import {
@@ -466,15 +466,6 @@ function ScopedWorkjetGatewayAccountsSection({
       {/* Verbrauch has its own page (Einstellungen › Verbrauch); no second copy here. */}
     </>
   );
-}
-
-/** Echte Grok-Quota der Instanz, sofern ihr Anbieterregister sie meldet (Audit C 2). */
-export function instanceXaiQuota(
-  registry: { readonly accounts: ReadonlyArray<WorkjetNativeProviderAccount> } | undefined | null,
-): WorkjetNativeProviderAccount["reportedQuota"] {
-  return registry?.accounts.find(
-    (account) => account.provider === "xai" && account.reportedQuota?.state === "reported",
-  )?.reportedQuota;
 }
 
 function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {

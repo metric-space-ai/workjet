@@ -191,7 +191,24 @@ const ReportedQuota = Schema.Union([
         : "Reported quota windows are inconsistent.",
     ),
   ),
+  // Gateway-reported subscription period (ctox#872, Grok): one consumed share 0..100.
+  Schema.Struct({
+    state: Schema.Literal("reported"),
+    period: Schema.Literals(["weekly", "monthly"]),
+    used_percent: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
+    observedAtMs: Revision,
+    resetAtMs: Revision,
+  }).check(
+    Schema.makeFilter((quota) =>
+      Number.isFinite(quota.used_percent) &&
+      quota.resetAtMs > quota.observedAtMs &&
+      quota.resetAtMs - quota.observedAtMs <= 40 * 86_400_000
+        ? true
+        : "Reported quota period is inconsistent.",
+    ),
+  ),
 ]);
+export type WorkjetNativeReportedQuota = typeof ReportedQuota.Type;
 export const WorkjetNativeProviderAccount = Schema.Struct({
   id: Id,
   holder: Schema.Struct({ kind: Schema.Literal("ctox_instance"), id: Id }),

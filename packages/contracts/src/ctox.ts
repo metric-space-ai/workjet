@@ -859,7 +859,26 @@ export const CtoxWorkjetProjectFeedPost = Schema.Struct({
 });
 export type CtoxWorkjetProjectFeedPost = typeof CtoxWorkjetProjectFeedPost.Type;
 
+/**
+ * Retry of a failed CTOX plan step (ctox#872, Audit B #24). The action is the
+ * core business command type and the payload its exact payload, so the shell
+ * dispatches it unchanged. Older cores answer unsupported/core_outdated.
+ */
+export const WorkjetPlanStepRetryRequest = Schema.Struct({
+  action: Schema.Literal("ctox.plan.step.retry"),
+  commandId: CommandId,
+  payload: Schema.Struct({ step_id: CtoxProjectText(256) }),
+});
+export type WorkjetPlanStepRetryRequest = typeof WorkjetPlanStepRetryRequest.Type;
+export const WorkjetPlanStepRetryResponse = Schema.Struct({
+  action: Schema.Literal("ctox.plan.step.retry"),
+  commandId: CommandId,
+  status: Schema.Literal("pending"),
+});
+export type WorkjetPlanStepRetryResponse = typeof WorkjetPlanStepRetryResponse.Type;
+
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
+  WorkjetPlanStepRetryRequest,
   ...WorkjetInstanceGrokRequests,
   ...WorkjetNativeProviderRequests,
   WorkjetNativeModelCheckRequest,
@@ -1073,6 +1092,7 @@ export const CtoxWorkjetProjectInitStep = Schema.Struct({
 export type CtoxWorkjetProjectInitStep = typeof CtoxWorkjetProjectInitStep.Type;
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
+  WorkjetPlanStepRetryResponse,
   WorkjetInstanceGrokResponse,
   WorkjetNativeProviderResponse,
   WorkjetNativeModelCheckResponse,

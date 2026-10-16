@@ -167,13 +167,51 @@ export function normalizeModelsQuota(
     });
 }
 
-/** Adapt the native Claude utilization receipt to the same qualified gateway evidence. */
+type NativeReportedQuota = Extract<
+  NonNullable<WorkjetNativeProviderAccount["reportedQuota"]>,
+  { state: "reported" }
+>;
+
+/** Reset instants of a reported native quota, for both the window and the period form. */
+export function nativeQuotaResets(quota: NativeReportedQuota): number[] {
+  return "windows" in quota ? quota.windows.map((window) => window.resetAtMs) : [quota.resetAtMs];
+}
+
+/**
+ * Adapt a native reported quota to the same qualified gateway evidence: the Claude
+ * utilization windows, and the gateway-reported weekly/monthly period (ctox#872, Grok),
+ * which renders like the local Kimi/Grok bars ("Woche", "Monat").
+ */
 export function normalizeNativeModelsQuota(
   provider: string,
   quota: WorkjetNativeProviderAccount["reportedQuota"],
   now: number,
 ) {
   if (quota?.state !== "reported") return [];
+  if (!("windows" in quota))
+    return normalizeModelsQuota(
+      provider,
+      [
+        {
+          name: quota.period,
+          remainingPercent: null,
+          observedAtMs: quota.observedAtMs,
+          resetsAtMs: quota.resetAtMs,
+          modelPattern: null,
+          notInPlan: false,
+          unlimited: false,
+          toolOnly: false,
+          boostPermille: null,
+          source: {
+            field: "used_percent",
+            value: quota.used_percent,
+            windowSeconds: null,
+            status: null,
+          },
+        },
+      ],
+      now,
+    );
   return normalizeModelsQuota(
     provider,
     quota.windows.map((window) => ({
@@ -194,5 +232,20 @@ export function normalizeNativeModelsQuota(
       },
     })),
     now,
+  );
+}
+
+/**
+ * The instance's Grok quota as its provider registry reports it (Audit C 2):
+ * a reading, else a read failure; "unknown" and older registries without the
+ * field yield nothing.
+ */
+export function instanceXaiQuota(
+  registry: { readonly accounts: ReadonlyArray<WorkjetNativeProviderAccount> } | undefined | null,
+): WorkjetNativeProviderAccount["reportedQuota"] {
+  const xai = registry?.accounts.filter((account) => account.provider === "xai") ?? [];
+  return (
+    xai.find((account) => account.reportedQuota?.state === "reported")?.reportedQuota ??
+    xai.find((account) => account.reportedQuota?.state === "unavailable")?.reportedQuota
   );
 }

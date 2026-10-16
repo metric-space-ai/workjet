@@ -37,7 +37,7 @@ import {
   type CtoxV4ProxyRequest,
 } from "@workjet/shared/ctoxV4AppProxy";
 import { createKernel } from "./kernel/kernel.mjs";
-import { MemoryCoreTransport } from "./kernel/fake-core.mjs";
+import { MemoryCoreTransport } from "./kernelTestkit";
 import type { CtoxAppApi, Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
 import { workerDispatchHandlerSource } from "./workerDispatchHandler.fixture";
@@ -73,6 +73,9 @@ async function sha256Hex(text: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** Read by the instance-module handler, not by the Workjet app itself. */
+const HANDLER_READS = ["workjet_project_chats", "business_users"] as const;
+
 let sequence = 0;
 const open: { kernel: Kernel; release: () => void }[] = [];
 afterEach(async () => {
@@ -82,14 +85,14 @@ afterEach(async () => {
   }
 });
 
-async function openV4(role: "admin" | "user" = "admin") {
+async function openV4(role: "admin" | "chef" | "user" = "admin") {
   const instanceId = `v4-slice-c-${++sequence}`;
   const transport = new MemoryCoreTransport({
     namespace: instanceId,
     latencyMs: 0,
     user: { id: "gate-owner", role },
   });
-  const handlerText = workerDispatchHandlerSource(instanceId);
+  const handlerText = workerDispatchHandlerSource();
   const handlerHash = await sha256Hex(handlerText);
   (transport as unknown as { putArtifact(hash: string, text: string): void }).putArtifact(
     handlerHash,
@@ -97,15 +100,41 @@ async function openV4(role: "admin" | "user" = "admin") {
   );
   // The instance module `workjet` (app_id workjet) adds the handler to the Workjet manifest; it
   // starts no process and declares no capability (E54.3b).
+  // Its handler also reads the supervisor chats and the business users (Shell v4, ctox #924).
+  const base = workjetAppManifest(APP_VER);
   const manifest = {
-    ...workjetAppManifest(APP_VER),
+    ...base,
+    foreign_collections: {
+      ...base.foreign_collections,
+      ...Object.fromEntries(
+        HANDLER_READS.map((collection) => [collection, { owner_app: "ctox", ops: ["read"] }]),
+      ),
+    },
     handlers: { [WORKJET_WORKER_DISPATCH]: "handlers/worker-dispatch.mjs" },
     files: { "handlers/worker-dispatch.mjs": handlerHash },
     capabilities_required: [],
   };
+  const owners = workjetForeignOwnerManifests("v4-slice-c").map((row) =>
+    row.app_id !== "ctox"
+      ? row
+      : {
+          ...row,
+          manifest: {
+            ...row.manifest,
+            collections: {
+              ...row.manifest.collections,
+              ...Object.fromEntries(HANDLER_READS.map((name) => [name, { class: "eager" }])),
+            },
+            exports: {
+              ...row.manifest.exports,
+              ...Object.fromEntries(HANDLER_READS.map((name) => [name, ["read"]])),
+            },
+          },
+        },
+  );
   await transport.push("business_app_versions", [
     { id: `${WORKJET_APP_ID}@${APP_VER}`, app_id: WORKJET_APP_ID, app_ver: APP_VER, manifest },
-    ...workjetForeignOwnerManifests("v4-slice-c"),
+    ...owners,
   ]);
   await transport.push("business_apps", [
     { id: "ctox", title: "Crew", active_ver: "v4-slice-c" },
@@ -187,17 +216,64 @@ const envelope = (id: string, target: string) => ({
 
 const SUPERVISOR = "00000000-0000-4000-8000-0000000000aa";
 
-/** ctox-owned project row with the supervisor binding the handler checks (E54.3b.2). */
+/**
+ * ctox-owned rows the handler checks (ctox #924): the project (owner, status), the supervisor chat
+ * of the actor in that project, and optionally the actor's business user (role, capability epoch).
+ */
 async function seedProject(
   transport: MemoryCoreTransport,
   api: CtoxAppApi,
-  row: { id: string; owner_user_id: string },
+  row: { id: string; owner_user_id: string; status?: string },
+  chat: { thread_id?: string; owner_user_id?: string; project_id?: string } | null = {},
 ) {
-  await transport.push("workjet_projects", [
-    { ...row, status: "active", supervisor_thread_id: SUPERVISOR, authority_epoch: 1 },
-  ]);
+  await seedBusinessUser(transport, {});
+  await transport.push("workjet_projects", [{ status: "active", ...row }]);
   await waitForRow(api, "workjet_projects", row.id, () => true);
+  if (chat === null) return;
+  const thread = chat.thread_id ?? SUPERVISOR;
+  const id = `chat-${row.id}-${thread}`;
+  await transport.push("workjet_project_chats", [
+    { id, thread_id: thread, owner_user_id: row.owner_user_id, project_id: row.id, ...chat },
+  ]);
 }
+
+/** The actor's persisted business user (handler `currentActor`): active chef/admin. */
+async function seedBusinessUser(
+  transport: MemoryCoreTransport,
+  row: { active?: boolean; role?: string; capability_epoch?: number },
+) {
+  await transport.push("business_users", [
+    { id: "gate-owner", user_id: "gate-owner", active: true, role: "admin", ...row },
+  ]);
+}
+
+/** Source rows are keyed by owner+project, so wait for them by registration id. */
+async function waitForSource(
+  api: CtoxAppApi,
+  registrationId: string,
+  ok: (row: WorkjetWorkerDispatchSourceDocument) => boolean,
+) {
+  const live = api.query<WorkjetWorkerDispatchSourceDocument>(WORKJET_WORKER_DISPATCH_SOURCES, {
+    selector: { registration_id: registrationId },
+  });
+  const off = live.subscribe(() => {});
+  try {
+    await vi.waitFor(
+      () => {
+        const row = live.get()[0];
+        if (row === undefined || !ok(row)) throw new Error(`source ${registrationId} not synced`);
+      },
+      { timeout: 2_000, interval: 5 },
+    );
+  } finally {
+    off();
+  }
+}
+
+const scope = (project: string, thread = SUPERVISOR) => ({
+  project_id: project,
+  source_supervisor_thread_id: thread,
+});
 
 const dispatched = (intent: WorkjetWorkerDispatchIntent) => ({
   schemaVersion: 1,
@@ -374,7 +450,9 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
       state: "active",
       sourceEnvironmentId: "env-me",
       sourceSupervisorThreadId: SUPERVISOR,
-      sourceInstanceId: expect.stringMatching(/^v4-slice-c-/),
+      sourceInstanceId: "local",
+      sourceWorkspaceId: "local",
+      authorityEpoch: 0,
       ownerUserId: "gate-owner",
       projectId: "p-1",
     });
@@ -394,8 +472,9 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
       dispatch_key: "k-1",
       task: "Baue X",
       title: "X",
+      ...scope("p-1"),
     } as const;
-    const first = (await dispatchWorkjetWorker(api, dispatchArgs, { record_id: "p-1" })) as {
+    const first = (await dispatchWorkjetWorker(api, dispatchArgs)) as {
       state: string;
       intent: WorkjetWorkerDispatchIntent;
     };
@@ -411,12 +490,12 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
     expect(first.intent.intentId).toMatch(
       /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
     );
-    const replay = (await dispatchWorkjetWorker(api, dispatchArgs, { record_id: "p-1" })) as {
+    const replay = (await dispatchWorkjetWorker(api, dispatchArgs)) as {
       intent: WorkjetWorkerDispatchIntent;
     };
     expect(replay.intent.intentId).toBe(first.intent.intentId);
     await expect(
-      dispatchWorkjetWorker(api, { ...dispatchArgs, task: "anders" }, { record_id: "p-1" }),
+      dispatchWorkjetWorker(api, { ...dispatchArgs, task: "anders" }),
     ).rejects.toMatchObject({ code: "conflict" });
 
     // poll: the dispatcher reads the head of its queue locally (live query, no MCP poll).
@@ -424,12 +503,7 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
     const off = watchWorkjetWorkerDispatchIntents(api, "env-me", woke);
     try {
       await waitForRow(api, WORKJET_WORKER_DISPATCH_INTENTS, first.intent.intentId, () => true);
-      await waitForRow(
-        api,
-        WORKJET_WORKER_DISPATCH_SOURCES,
-        registration.registrationId,
-        () => true,
-      );
+      await waitForSource(api, registration.registrationId, () => true);
       expect(readWorkjetWorkerDispatchHead(api, "env-me").intents).toEqual([first.intent]);
       expect(readWorkjetWorkerDispatchHead(api, "env-other").intents).toEqual([]);
       expect(woke).toHaveBeenCalled();
@@ -499,7 +573,7 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
 
       // observe (supervisor side): acknowledgement plus reported outcome.
       expect(
-        await dispatchWorkjetWorker(api, { action: "observe", limit: 4 }, { record_id: "p-1" }),
+        await dispatchWorkjetWorker(api, { action: "observe", limit: 4, ...scope("p-1") }),
       ).toMatchObject({
         projectId: "p-1",
         supervisorThreadId: SUPERVISOR,
@@ -508,6 +582,7 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
           {
             intentId: first.intent.intentId,
             dispatchKey: "k-1",
+            executionKey: `workjet-supervisor:p-1:${SUPERVISOR}`,
             registrationCurrent: true,
             acknowledgement: { status: "dispatched", workerThreadId: first.intent.intentId },
             reportedOutcome: { provenance: "authenticated_source_report" },
@@ -516,11 +591,12 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
       });
 
       // revoke_source: later intents of the revoked registration never reach the head.
-      const second = (await dispatchWorkjetWorker(
-        api,
-        { action: "dispatch", dispatch_key: "k-2", task: "Baue Y" },
-        { record_id: "p-1" },
-      )) as { intent: WorkjetWorkerDispatchIntent };
+      const second = (await dispatchWorkjetWorker(api, {
+        action: "dispatch",
+        dispatch_key: "k-2",
+        task: "Baue Y",
+        ...scope("p-1"),
+      })) as { intent: WorkjetWorkerDispatchIntent };
       expect(
         await dispatchWorkjetWorker(api, {
           action: "revoke_source",
@@ -528,9 +604,8 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
           revision: 1,
         }),
       ).toMatchObject({ state: "revoked", revision: 2 });
-      await waitForRow<WorkjetWorkerDispatchSourceDocument>(
+      await waitForSource(
         api,
-        WORKJET_WORKER_DISPATCH_SOURCES,
         registration.registrationId,
         (row) => row.record.state === "revoked",
       );
@@ -541,27 +616,174 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
     }
   });
 
-  it("4 a foreign supervisor session is forbidden, and nothing asks for process.run", async () => {
-    const { api, transport } = await openV4();
-    await seedProject(transport, api, { id: "p-foreign", owner_user_id: "someone-else" });
-    await expect(
+  describe("4 the handler refuses every source outside the actor's supervisor scope", () => {
+    const register = (api: CtoxAppApi, project: string, thread = SUPERVISOR) =>
       dispatchWorkjetWorker(api, {
         action: "register_source",
         source_environment_id: "env-me",
-        source_supervisor_thread_id: SUPERVISOR,
-        project_id: "p-foreign",
-      }),
-    ).rejects.toMatchObject({ code: "forbidden" });
-    await seedProject(transport, api, { id: "p-2", owner_user_id: "gate-owner" });
-    await expect(
-      dispatchWorkjetWorker(api, {
-        action: "register_source",
-        source_environment_id: "env-me",
-        source_supervisor_thread_id: "00000000-0000-4000-8000-00000000beef",
-        project_id: "p-2",
-      }),
-    ).rejects.toMatchObject({ code: "forbidden" });
-    expect(JSON.stringify(workerDispatchHandlerSource("x"))).not.toContain("process");
+        ...scope(project, thread),
+      });
+    /** The client only surfaces the code; the handler's reason stays on the core's command row. */
+    const expectForbidden = async (
+      transport: MemoryCoreTransport,
+      call: Promise<unknown>,
+      reason: string,
+    ) => {
+      await expect(call).rejects.toMatchObject({ code: "forbidden" });
+      const core = (
+        transport as unknown as {
+          core: { docs: Map<string, { collection: string; data: Record<string, unknown> }> };
+        }
+      ).core;
+      const errors = [...core.docs.values()]
+        .filter((row) => row.collection === "business_commands")
+        .map((row) => row.data)
+        .filter((doc) => doc.type === WORKJET_WORKER_DISPATCH && doc.status === "failed")
+        .map((doc) => doc.error);
+      expect(errors).toContain(`forbidden: ${reason}`);
+    };
+
+    it("a project of another owner", async () => {
+      const { api, transport } = await openV4();
+      await seedProject(transport, api, { id: "p-foreign", owner_user_id: "someone-else" });
+      await expectForbidden(
+        transport,
+        register(api, "p-foreign"),
+        "project is unavailable to this user",
+      );
+    });
+
+    it("a project that is not active", async () => {
+      const { api, transport } = await openV4();
+      await seedProject(transport, api, {
+        id: "p-1",
+        owner_user_id: "gate-owner",
+        status: "archived",
+      });
+      await expectForbidden(transport, register(api, "p-1"), "project is archived");
+    });
+
+    it("an unregistered supervisor thread", async () => {
+      const { api, transport } = await openV4();
+      await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" });
+      await expectForbidden(
+        transport,
+        register(api, "p-1", "00000000-0000-4000-8000-00000000beef"),
+        "source supervisor is not registered natively",
+      );
+      // The same holds for dispatch and observe: the scope travels in the payload.
+      await expectForbidden(
+        transport,
+        dispatchWorkjetWorker(api, {
+          action: "dispatch",
+          dispatch_key: "k-x",
+          task: "Baue X",
+          ...scope("p-1", "00000000-0000-4000-8000-00000000beef"),
+        }),
+        "source supervisor is not registered natively",
+      );
+      await expectForbidden(
+        transport,
+        dispatchWorkjetWorker(api, {
+          action: "observe",
+          ...scope("p-1", "00000000-0000-4000-8000-00000000beef"),
+        }),
+        "source supervisor is not registered natively",
+      );
+    });
+
+    it("a supervisor chat of another user", async () => {
+      const { api, transport } = await openV4();
+      await seedProject(
+        transport,
+        api,
+        { id: "p-1", owner_user_id: "gate-owner" },
+        { owner_user_id: "someone-else" },
+      );
+      await expectForbidden(
+        transport,
+        register(api, "p-1"),
+        "source supervisor is not registered natively",
+      );
+    });
+
+    it("a supervisor chat of another project", async () => {
+      const { api, transport } = await openV4();
+      await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" }, null);
+      await seedProject(transport, api, { id: "p-2", owner_user_id: "gate-owner" });
+      await expectForbidden(
+        transport,
+        register(api, "p-1"),
+        "source supervisor belongs to another project",
+      );
+    });
+
+    it("an inactive business user", async () => {
+      const { api, transport } = await openV4();
+      await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" });
+      await seedBusinessUser(transport, { active: false });
+      await expectForbidden(
+        transport,
+        register(api, "p-1"),
+        "worker source actor authority is no longer current",
+      );
+    });
+
+    it("a business user without chef or admin role", async () => {
+      const { api, transport } = await openV4("admin");
+      await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" });
+      await seedBusinessUser(transport, { role: "user" });
+      await expectForbidden(
+        transport,
+        register(api, "p-1"),
+        "worker source actor authority is no longer current",
+      );
+    });
+
+    it("a business user role that differs from the command role", async () => {
+      const { api, transport } = await openV4("admin");
+      await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" });
+      await seedBusinessUser(transport, { role: "chef" });
+      await expectForbidden(transport, register(api, "p-1"), "dispatch role changed");
+    });
+
+    it("a missing business user", async () => {
+      const { api, transport } = await openV4();
+      await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" });
+      await transport.push("business_users", [
+        { id: "gate-owner", user_id: "gate-owner", is_deleted: true },
+      ]);
+      await expectForbidden(
+        transport,
+        register(api, "p-1"),
+        "worker source actor is not a persisted native user",
+      );
+    });
+
+    it("a chef may register but not dispatch without the supervisor lease (E54.3c)", async () => {
+      const { api, transport } = await openV4("chef");
+      await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" });
+      await seedBusinessUser(transport, { role: "chef" });
+      await expect(register(api, "p-1")).resolves.toMatchObject({ state: "active" });
+      await expectForbidden(
+        transport,
+        dispatchWorkjetWorker(api, {
+          action: "dispatch",
+          dispatch_key: "k-chef",
+          task: "Baue X",
+          ...scope("p-1"),
+        }),
+        "worker dispatch requires the supervisor lease (admin until projected, E54.3c)",
+      );
+    });
+
+    it("an active chef/admin carries the capability epoch, and nothing asks for process.run", async () => {
+      const { api, transport } = await openV4("admin");
+      await seedProject(transport, api, { id: "p-1", owner_user_id: "gate-owner" });
+      await seedBusinessUser(transport, { capability_epoch: 7 });
+      await expect(register(api, "p-1")).resolves.toMatchObject({ authorityEpoch: 7 });
+      expect(JSON.stringify(workerDispatchHandlerSource())).not.toContain("process");
+    });
   });
 
   it("4 the same queue through the renderer→server proxy (C3)", async () => {
@@ -591,11 +813,12 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
         source_supervisor_thread_id: SUPERVISOR,
         project_id: "p-1",
       })) as WorkjetWorkerSourceRegistration;
-      const { intent } = (await dispatchWorkjetWorker(
-        api,
-        { action: "dispatch", dispatch_key: "k-proxy", task: "Baue Z" },
-        { record_id: "p-1" },
-      )) as { intent: WorkjetWorkerDispatchIntent };
+      const { intent } = (await dispatchWorkjetWorker(api, {
+        action: "dispatch",
+        dispatch_key: "k-proxy",
+        task: "Baue Z",
+        ...scope("p-1"),
+      })) as { intent: WorkjetWorkerDispatchIntent };
       await vi.waitFor(
         () => {
           if (readWorkjetWorkerDispatchHead(port, "env-me").intents.length !== 1)

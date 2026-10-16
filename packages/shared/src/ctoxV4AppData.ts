@@ -371,10 +371,14 @@ export const WORKJET_WORKER_DISPATCH_SOURCES = "workjet_worker_dispatch_sources"
 export const WORKJET_WORKER_DISPATCH_INTENTS = "workjet_worker_dispatch_intents";
 export const WORKJET_WORKER_DISPATCH_OUTCOMES = "workjet_worker_dispatch_outcomes";
 export const WORKJET_WORKER_DISPATCH_CONTRACT = "ctox.workjet.worker-dispatch.v1";
-/** Native bound of unanswered intents per owner and authority epoch. */
+/** Native bound of unanswered intents per owner and authority epoch (handler answers `conflict`). */
 export const WORKJET_WORKER_DISPATCH_PENDING_LIMIT = 128;
 
-/** The seven actions of the native tool (mcp_workjet_worker_dispatch.rs `Request`), 1:1. */
+/**
+ * The seven actions of the native tool (mcp_workjet_worker_dispatch.rs `Request`). As in the Shell
+ * v4 handler (ctox #924), register_source, dispatch and observe carry `project_id` and
+ * `source_supervisor_thread_id` in the payload; the supervisor scope is never a `record_id`.
+ */
 export type WorkjetWorkerDispatchArgs =
   | {
       readonly action: "register_source";
@@ -410,8 +414,15 @@ export type WorkjetWorkerDispatchArgs =
       readonly title?: string;
       readonly computer_id?: string;
       readonly worker_profile_id?: string;
+      readonly project_id: string;
+      readonly source_supervisor_thread_id: string;
     }
-  | { readonly action: "observe"; readonly limit?: number };
+  | {
+      readonly action: "observe";
+      readonly limit?: number;
+      readonly project_id: string;
+      readonly source_supervisor_thread_id: string;
+    };
 export type WorkjetWorkerDispatchAction = WorkjetWorkerDispatchArgs["action"];
 export const WORKJET_WORKER_DISPATCH_ACTIONS: ReadonlyArray<WorkjetWorkerDispatchAction> = [
   "register_source",
@@ -450,13 +461,20 @@ export interface WorkjetWorkerDispatchIntent {
   readonly computerId?: string;
   readonly workerProfileId?: string;
 }
-/** Row of `workjet_worker_dispatch_sources` (native columns; record_json → `record`). */
+/**
+ * Row of `workjet_worker_dispatch_sources` (native columns; record_json → `record`). The handler keys
+ * it by a hash of owner and project (one row per supervisor project), not by `registration_id`.
+ */
 export interface WorkjetWorkerDispatchSourceDocument {
   readonly id: string;
   readonly owner_user_id: string;
   readonly project_id: string;
   readonly registration_id: string;
   readonly record: WorkjetWorkerSourceRegistration;
+  readonly state?: WorkjetWorkerSourceRegistration["state"];
+  readonly revision?: number;
+  readonly source_environment_id?: string;
+  readonly updated_at_ms?: number;
 }
 /** Row of `workjet_worker_dispatch_intents`; `result` stays `null` until `complete`. */
 export interface WorkjetWorkerDispatchIntentDocument {
@@ -469,6 +487,12 @@ export interface WorkjetWorkerDispatchIntentDocument {
   readonly request_digest: string;
   readonly intent: WorkjetWorkerDispatchIntent;
   readonly result: Readonly<Record<string, unknown>> | null;
+  readonly owner_user_id?: string;
+  readonly project_id?: string;
+  readonly source_environment_id?: string;
+  readonly status?: "pending" | "completed";
+  readonly created_at_ms?: number;
+  readonly updated_at_ms?: number;
 }
 /** Row of `workjet_worker_dispatch_outcomes` (immutable once written). */
 export interface WorkjetWorkerDispatchOutcomeDocument {
@@ -486,8 +510,7 @@ export interface WorkjetWorkerDispatchOutcomeDocument {
 export function dispatchWorkjetWorker(
   api: CtoxV4AppPort,
   args: WorkjetWorkerDispatchArgs,
-  /** `record_id` = project of a supervisor `dispatch`/`observe` (replaces the native session). */
-  options?: { readonly idempotency_key?: string; readonly record_id?: string },
+  options?: { readonly idempotency_key?: string },
 ): Promise<unknown> {
   return runCtoxV4Command(
     api,
@@ -499,8 +522,8 @@ export function dispatchWorkjetWorker(
 
 const pendingIntents = (sourceEnvironmentId: string): CtoxV4Query => ({
   selector: { "intent.sourceEnvironmentId": sourceEnvironmentId, result: null },
-  // Intent ids are UUIDv7 from the instance handler: ascending id = queue order (native rowid).
-  sort: [{ intent_id: "asc" }],
+  // Intent ids are content hashes; the handler's queue order (native rowid) is created_at_ms, then id.
+  sort: [{ created_at_ms: "asc" }, { id: "asc" }],
 });
 
 /**
@@ -518,13 +541,11 @@ export function readWorkjetWorkerDispatchHead(
     )
     .get();
   for (const row of rows) {
-    const source = api
-      .get<WorkjetWorkerDispatchSourceDocument>(
-        WORKJET_WORKER_DISPATCH_SOURCES,
-        row.registration_id,
-      )
-      .get();
-    const record = source?.record;
+    const record = api
+      .query<WorkjetWorkerDispatchSourceDocument>(WORKJET_WORKER_DISPATCH_SOURCES, {
+        selector: { registration_id: row.registration_id },
+      })
+      .get()[0]?.record;
     if (
       record === undefined ||
       record.state !== "active" ||

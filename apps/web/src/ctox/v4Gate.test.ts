@@ -14,7 +14,8 @@ import { MemoryCoreTransport } from "./kernelTestkit";
 import type { CtoxAppApi, Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
 import { bindCtoxClient, getCtoxClient } from "./ctoxClient";
-import { withFakeAppPrefs } from "./appPrefs.fixture";
+import { withStubAppPrefs } from "./appPrefsStub.fixture";
+import { writeAppPref } from "./appPrefs";
 import { CtoxCommandError, executeCtoxCommand } from "./commands";
 import {
   WORKJET_APP_ID,
@@ -479,7 +480,8 @@ describe("V4 gate: a V3 instance keeps the desktop guest path (no bound client)"
 describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", () => {
   it("V4: gallery order is user UI state in api.prefs (E56.2), never a collection or command", async () => {
     const { instanceId, api } = await openGate({ routes: [] });
-    const { api: prefsApi, rows } = withFakeAppPrefs(api);
+    const { api: prefsApi, prefsOf, close } = await withStubAppPrefs(api);
+    open.push({ kernel: { close } as unknown as Kernel, release: () => {} });
     const command = vi.fn(() => {
       throw new Error("gallery order must not send a command");
     });
@@ -531,12 +533,16 @@ describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", (
         order: { revision: 2, projectIds: ["p-1", "p-2"] },
       },
     });
-    // Stored as app_user_preferences row <app>/<user>/gallery.order, nowhere else.
-    expect([...rows.keys()]).toEqual([`workjet/${api.actor.id}/gallery.order`]);
-    expect(rows.get(`workjet/${api.actor.id}/gallery.order`)?.value).toEqual({
+    // Stored through the real E51 api.prefs: for the app workjet and this user only.
+    expect(prefsOf("workjet").get("gallery.order")).toEqual({
       revision: 2,
       projectIds: ["p-1", "p-2"],
     });
+    expect(prefsOf("other-app").get("gallery.order")).toBeNull();
+    // E51 bounds come from the stub: an oversized value is refused as quota before any write.
+    await expect(
+      writeAppPref(prefsApi, "gallery.order", { blob: "x".repeat(20_000) }),
+    ).rejects.toMatchObject({ code: "quota", reason: "pref_write_rejected" });
     expect(command).not.toHaveBeenCalled();
     expect(JSON.stringify(workjetAppManifest(APP_VER))).not.toContain("gallery");
   });

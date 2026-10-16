@@ -1,19 +1,16 @@
 import type { CtoxAppApi } from "./ctoxClient";
+import type { PreferencesApi } from "./stub-e51/index";
 import { CtoxLocalReadError } from "./projectReadData";
 
 /**
- * Per-user UI state of the calling app (E51): `api.prefs.get(key)` → JSON | null,
- * `api.prefs.set(key, json)` → receipt, `api.prefs.delete(key)`. Always for the signed-in user and
- * the calling app; stored by the platform in `app_user_preferences`, never as app business data.
- * The pinned kernel (eca39cf84) does not type `prefs` yet, so the shape is declared here from the
- * E51 contract; get/set may answer synchronously or with a promise, the receipt may be a write
- * handle (`{ local, result }`) or a write result.
+ * Per-user UI state of the calling app (E51), shape as in the CTOX Sync v4 stub at 93a322c8
+ * (`stub-e51/index.d.ts`): `get(key)` answers the JSON value or `null` synchronously, `set` and
+ * `delete` answer a write handle (`local`, `result`), and an invalid key or an oversized value
+ * throws a `CtoxError` (`invalid` | `quota`) before anything is written. Always for the signed-in
+ * user and the calling app; stored by the platform in `app_user_preferences`, never as app data.
+ * The pinned kernel does not carry `prefs` yet (ctox #912), so a kernel without it has none.
  */
-export interface CtoxAppPrefs {
-  get(key: string): unknown;
-  set(key: string, value: unknown): unknown;
-  delete(key: string): unknown;
-}
+export type CtoxAppPrefs = PreferencesApi;
 type WithPrefs = CtoxAppApi & { readonly prefs?: CtoxAppPrefs };
 
 /** E56.2: the Workjet gallery order is UI state of the app `workjet`. */
@@ -28,28 +25,25 @@ function prefsOf(api: CtoxAppApi, key: string): CtoxAppPrefs {
   return prefs;
 }
 
-export async function readAppPref(api: CtoxAppApi, key: string): Promise<unknown> {
-  return (await prefsOf(api, key).get(key)) ?? null;
+export function readAppPref(api: CtoxAppApi, key: string): unknown {
+  return prefsOf(api, key).get(key) ?? null;
 }
 
 export async function writeAppPref(api: CtoxAppApi, key: string, value: unknown): Promise<void> {
-  const receipt = (await prefsOf(api, key).set(key, value)) as
-    | { readonly local?: Promise<void>; readonly result?: Promise<unknown> }
-    | { readonly status?: string; readonly code?: string }
-    | null
-    | undefined;
-  let result: unknown = receipt;
-  if (receipt && typeof receipt === "object" && "result" in receipt && receipt.result) {
-    await receipt.local;
-    result = await receipt.result;
-  }
-  const status = (result as { status?: unknown } | null | undefined)?.status;
-  if (status === "rejected") {
-    const code = (result as { code?: unknown }).code;
+  const prefs = prefsOf(api, key);
+  let handle: ReturnType<CtoxAppPrefs["set"]>;
+  try {
+    handle = prefs.set(key, value);
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
     throw new CtoxLocalReadError(
-      typeof code === "string" && code ? code : "rejected",
+      typeof code === "string" && code ? code : "invalid",
       "pref_write_rejected",
       key,
     );
   }
+  await handle.local;
+  const result = await handle.result;
+  if (result.status === "rejected")
+    throw new CtoxLocalReadError(result.code ?? "rejected", "pref_write_rejected", key);
 }

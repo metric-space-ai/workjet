@@ -99,11 +99,11 @@ const pathOf = (doc: unknown, path: string): unknown => {
 const same = (left: unknown, right: unknown): boolean =>
   left !== undefined &&
   (left === right ||
-  (typeof left === "object" &&
-    left !== null &&
-    typeof right === "object" &&
-    right !== null &&
-    JSON.stringify(left) === JSON.stringify(right)));
+    (typeof left === "object" &&
+      left !== null &&
+      typeof right === "object" &&
+      right !== null &&
+      JSON.stringify(left) === JSON.stringify(right)));
 const comparable = (left: unknown, right: unknown) =>
   (typeof left === "number" && typeof right === "number") ||
   (typeof left === "string" && typeof right === "string");
@@ -140,7 +140,10 @@ function matches(value: unknown, condition: unknown): boolean {
       case "$in":
         return Array.isArray(operand) && operand.some((entry) => same(value, entry));
       case "$nin":
-        return value === undefined || (Array.isArray(operand) && !operand.some((entry) => same(value, entry)));
+        return (
+          value === undefined ||
+          (Array.isArray(operand) && !operand.some((entry) => same(value, entry)))
+        );
       case "$exists":
         return (value !== undefined) === Boolean(operand);
       default:

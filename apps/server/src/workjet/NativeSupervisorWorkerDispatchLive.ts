@@ -295,9 +295,7 @@ export const layer = Layer.effect(
   NativeSupervisorWorkerDispatch,
   Effect.gen(function* () {
     const service = yield* make;
-    const nextCycle = makeNextNativeWorkerCycle(
-      yield* (yield* ServerEnvironment).getEnvironmentId,
-    );
+    const nextCycle = makeNextNativeWorkerCycle(yield* (yield* ServerEnvironment).getEnvironmentId);
     yield* forkParked(
       service.runCycle.pipe(
         Effect.timeout("6 minutes"),

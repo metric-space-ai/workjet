@@ -549,7 +549,10 @@ describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", (
         { action: "project.gallery.order.read", commandId: CommandId.make("gate-gallery-np") },
         noGuest,
       ),
-    ).toMatchObject({ _tag: "failed", error: { code: "unavailable", reason: "prefs_unavailable" } });
+    ).toMatchObject({
+      _tag: "failed",
+      error: { code: "unavailable", reason: "prefs_unavailable" },
+    });
   });
 
   it("E54.3b: the manifest owns exactly the five Workjet collections", () => {

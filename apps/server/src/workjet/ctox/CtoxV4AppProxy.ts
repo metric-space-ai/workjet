@@ -85,9 +85,7 @@ export function ctoxV4AppProxyAttachStream<E>(
   return Stream.callback<CtoxV4ProxyAttachEvent>((queue) =>
     Effect.gen(function* () {
       const attachId = yield* newAttachId;
-      const resolved = yield* endpoints.pipe(
-        Effect.orElseSucceed((): ReadonlyArray<string> => []),
-      );
+      const resolved = yield* endpoints.pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
       yield* Effect.acquireRelease(
         Effect.sync(() =>
           sessions.open(attachId, input, resolved, (event) => {

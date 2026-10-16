@@ -250,7 +250,10 @@ describe("V4 worker dispatch reads the intent queue as app data (E54.3b)", () =>
         result,
       });
       // Older revision (replaced registration) and an answered intent never reach the head.
-      rows.set(`${WORKJET_WORKER_DISPATCH_INTENTS}/0`, row("01a14611-0000-7000-919b-000000000000", 1, null));
+      rows.set(
+        `${WORKJET_WORKER_DISPATCH_INTENTS}/0`,
+        row("01a14611-0000-7000-919b-000000000000", 1, null),
+      );
       rows.set(`${WORKJET_WORKER_DISPATCH_INTENTS}/1`, row(intentId, 2, null));
       rows.set(
         `${WORKJET_WORKER_DISPATCH_INTENTS}/2`,
@@ -285,64 +288,69 @@ describe("V4 worker dispatch reads the intent queue as app data (E54.3b)", () =>
 });
 
 describe("C3 renderer→server proxy fills and clears the server registry", () => {
-  it("binds after the mirrored collections arrived and unbinds when the stream ends", async () => {
-    const instanceId = `proxy-${++instanceSequence}`;
-    const endpoint = `https://v4-proxy-${instanceSequence}.invalid/mcp/instance`;
-    const { port: renderer } = memoryPort({});
-    renderer.put("workjet_luma_state", {
-      id: "instance",
-      revision: 3,
-      configured: true,
-      managedSystemPrompt: "p",
-      updatedAtMs: 5,
-    });
-    const sessions = makeCtoxV4AppProxySessions();
-    const changes: number[] = [];
-    const offChanges = subscribeCtoxV4AppPorts(() => changes.push(changes.length));
-    const requests: CtoxV4ProxyRequest[] = [];
-    let client: ReturnType<typeof serveCtoxV4Proxy> | null = null;
-    const session = sessions.open(
-      "attach-1",
-      { instanceId, actor: { id: "owner", role: "admin" } },
-      [endpoint],
-      (event) => {
-        if (event.type === "attached") {
-          client = serveCtoxV4Proxy(renderer, (reply) => {
-            sessions.reply({ attachId: event.attachId, reply: reply as Record<string, unknown> });
-          });
-          return;
-        }
-        requests.push(event.request as unknown as CtoxV4ProxyRequest);
-        queueMicrotask(() => client?.handle(event.request as unknown as CtoxV4ProxyRequest));
-      },
-    );
-    try {
-      assert.strictEqual(sessions.size(), 1);
-      for (let turn = 0; turn < 20; turn++) await Promise.resolve();
-      const bound = resolveCtoxV4AppPortForInstance(instanceId);
-      assert.isNotNull(bound);
-      assert.strictEqual(resolveCtoxV4AppPortForEndpoint(endpoint), bound);
-      assert.isTrue(changes.length > 0);
-      // Synchronous reads on the server come from the mirror of the renderer's live query.
-      const document = await Effect.runPromise(
-        makeCtoxLumaConfigurationClient(forbiddenHttp).read({ endpoint, token: "" }),
-      );
-      assert.deepStrictEqual(document, {
+  it.effect("binds after the mirrored collections arrived and unbinds when the stream ends", () =>
+    Effect.gen(function* () {
+      const instanceId = `proxy-${++instanceSequence}`;
+      const endpoint = `https://v4-proxy-${instanceSequence}.invalid/mcp/instance`;
+      const { port: renderer } = memoryPort({});
+      renderer.put("workjet_luma_state", {
+        id: "instance",
         revision: 3,
-        configuration: { managedSystemPrompt: "p" },
+        configured: true,
+        managedSystemPrompt: "p",
         updatedAtMs: 5,
       });
-      assert.isTrue(requests.every((request) => request.op === "subscribe"));
-      // A reply for a foreign attach id reaches nobody.
-      assert.isFalse(sessions.reply({ attachId: "other", reply: { kind: "value" } }));
-    } finally {
-      session.close();
-      offChanges();
-    }
-    assert.isNull(resolveCtoxV4AppPortForInstance(instanceId));
-    assert.isNull(resolveCtoxV4AppPortForEndpoint(endpoint));
-    assert.strictEqual(sessions.size(), 0);
-  });
+      const sessions = makeCtoxV4AppProxySessions();
+      const changes: number[] = [];
+      const offChanges = subscribeCtoxV4AppPorts(() => changes.push(changes.length));
+      const requests: CtoxV4ProxyRequest[] = [];
+      let client: ReturnType<typeof serveCtoxV4Proxy> | null = null;
+      const session = sessions.open(
+        "attach-1",
+        { instanceId, actor: { id: "owner", role: "admin" } },
+        [endpoint],
+        (event) => {
+          if (event.type === "attached") {
+            client = serveCtoxV4Proxy(renderer, (reply) => {
+              sessions.reply({ attachId: event.attachId, reply: reply as Record<string, unknown> });
+            });
+            return;
+          }
+          requests.push(event.request as unknown as CtoxV4ProxyRequest);
+          queueMicrotask(() => client?.handle(event.request as unknown as CtoxV4ProxyRequest));
+        },
+      );
+      try {
+        assert.strictEqual(sessions.size(), 1);
+        yield* Effect.promise(async () => {
+          for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+        });
+        const bound = resolveCtoxV4AppPortForInstance(instanceId);
+        assert.isNotNull(bound);
+        assert.strictEqual(resolveCtoxV4AppPortForEndpoint(endpoint), bound);
+        assert.isTrue(changes.length > 0);
+        // Synchronous reads on the server come from the mirror of the renderer's live query.
+        const document = yield* makeCtoxLumaConfigurationClient(forbiddenHttp).read({
+          endpoint,
+          token: "",
+        });
+        assert.deepStrictEqual(document, {
+          revision: 3,
+          configuration: { managedSystemPrompt: "p" },
+          updatedAtMs: 5,
+        });
+        assert.isTrue(requests.every((request) => request.op === "subscribe"));
+        // A reply for a foreign attach id reaches nobody.
+        assert.isFalse(sessions.reply({ attachId: "other", reply: { kind: "value" } }));
+      } finally {
+        session.close();
+        offChanges();
+      }
+      assert.isNull(resolveCtoxV4AppPortForInstance(instanceId));
+      assert.isNull(resolveCtoxV4AppPortForEndpoint(endpoint));
+      assert.strictEqual(sessions.size(), 0);
+    }),
+  );
 });
 
 describe("V3 (no binding): seams keep today's MCP route", () => {

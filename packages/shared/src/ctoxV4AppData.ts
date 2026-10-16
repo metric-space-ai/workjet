@@ -383,7 +383,11 @@ export type WorkjetWorkerDispatchArgs =
       readonly project_id: string;
       readonly expected_revision?: number;
     }
-  | { readonly action: "revoke_source"; readonly registration_id: string; readonly revision: number }
+  | {
+      readonly action: "revoke_source";
+      readonly registration_id: string;
+      readonly revision: number;
+    }
   | { readonly action: "poll"; readonly source_environment_id: string }
   | {
       readonly action: "complete";
@@ -515,7 +519,10 @@ export function readWorkjetWorkerDispatchHead(
     .get();
   for (const row of rows) {
     const source = api
-      .get<WorkjetWorkerDispatchSourceDocument>(WORKJET_WORKER_DISPATCH_SOURCES, row.registration_id)
+      .get<WorkjetWorkerDispatchSourceDocument>(
+        WORKJET_WORKER_DISPATCH_SOURCES,
+        row.registration_id,
+      )
       .get();
     const record = source?.record;
     if (

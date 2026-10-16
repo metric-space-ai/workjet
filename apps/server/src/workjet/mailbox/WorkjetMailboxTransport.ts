@@ -2066,8 +2066,9 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
         Queue.offerUnsafe(wake, undefined);
       };
       // A bind or unbind re-evaluates at once (V4 takes over, or V3 resumes its timer).
-      yield* Effect.acquireRelease(Effect.sync(() => subscribeCtoxV4AppPorts(signal)), (off) =>
-        Effect.sync(off),
+      yield* Effect.acquireRelease(
+        Effect.sync(() => subscribeCtoxV4AppPorts(signal)),
+        (off) => Effect.sync(off),
       );
       const port = lastEndpoint === null ? null : resolveCtoxV4AppPortForEndpoint(lastEndpoint);
       if (port === null) {

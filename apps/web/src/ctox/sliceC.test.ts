@@ -44,7 +44,6 @@ import { workerDispatchHandlerSource } from "./workerDispatchHandler.fixture";
 import { getCtoxClient } from "./ctoxClient";
 import {
   WORKJET_APP_ID,
-  WORKJET_FOREIGN_COLLECTIONS,
   workjetAppManifest,
   workjetForeignOwnerManifests,
 } from "./workjetAppManifest";
@@ -297,7 +296,7 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
   });
 
   it("3 decision_hub → threads.ctox_approval.request plus approval read", async () => {
-    const { api, approvals, transport } = await openV4();
+    const { api, transport } = await openV4();
     const result = await requestWorkjetDecision(api, {
       decisionKey: "k-1",
       title: "Freigabe",
@@ -406,7 +405,9 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
       projectId: "p-1",
       task: "Baue X",
     });
-    expect(first.intent.intentId).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
+    expect(first.intent.intentId).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
+    );
     const replay = (await dispatchWorkjetWorker(api, dispatchArgs, { record_id: "p-1" })) as {
       intent: WorkjetWorkerDispatchIntent;
     };
@@ -420,7 +421,12 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
     const off = watchWorkjetWorkerDispatchIntents(api, "env-me", woke);
     try {
       await waitForRow(api, WORKJET_WORKER_DISPATCH_INTENTS, first.intent.intentId, () => true);
-      await waitForRow(api, WORKJET_WORKER_DISPATCH_SOURCES, registration.registrationId, () => true);
+      await waitForRow(
+        api,
+        WORKJET_WORKER_DISPATCH_SOURCES,
+        registration.registrationId,
+        () => true,
+      );
       expect(readWorkjetWorkerDispatchHead(api, "env-me").intents).toEqual([first.intent]);
       expect(readWorkjetWorkerDispatchHead(api, "env-other").intents).toEqual([]);
       expect(woke).toHaveBeenCalled();

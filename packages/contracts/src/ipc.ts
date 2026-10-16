@@ -394,8 +394,19 @@ export const DesktopSshEnvironmentBootstrapSchema = Schema.Struct({
 /**
  * Live step of one `ensureSshEnvironment` call, pushed while it runs so the
  * add-computer row moves past „Verbinden“ (copying reports bytes).
+ *
+ * `updating` / `updated` / `update-failed` come later, from the idle-gated
+ * replacement of an outdated remote backend (orange dot while it runs, one
+ * failure line with „Erneut“ when it fails).
  */
-export type DesktopSshEnvironmentProgressPhase = "connecting" | "copying" | "starting" | "pairing";
+export type DesktopSshEnvironmentProgressPhase =
+  | "connecting"
+  | "copying"
+  | "starting"
+  | "pairing"
+  | "updating"
+  | "updated"
+  | "update-failed";
 
 export interface DesktopSshEnvironmentProgress {
   readonly alias: string;

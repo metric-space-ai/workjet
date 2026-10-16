@@ -44,6 +44,13 @@ import { sshLocalForwardExitFailure, spawnSshLocalForwardProcess } from "./local
 import { buildManagedRemoteNodeScript, SSH_NODE_VERSION } from "./remoteNode.ts";
 import { REMOTE_PROCESS_START_SCRIPT } from "./remoteProcess.ts";
 import { preparePortableServer } from "./portableServer.ts";
+import {
+  buildRemoteUpdateScript,
+  parseRemoteUpdateOutput,
+  type RemoteUpdateCheck,
+  type RemoteUpdateStop,
+  runRemoteServerUpdate,
+} from "./remoteUpdate.ts";
 
 export const DEFAULT_REMOTE_PORT = 3773;
 const REMOTE_PORT_SCAN_WINDOW = 200;
@@ -169,6 +176,7 @@ export interface SshEnvironmentManagerShape {
 const RemoteLaunchResult = Schema.Struct({
   remotePort: Schema.Number,
   serverKind: Schema.optional(Schema.Literals(["external", "managed"])),
+  outdated: Schema.optional(Schema.Boolean),
 });
 
 const RemotePairingResult = Schema.Struct({
@@ -602,7 +610,18 @@ if [ -z "$REMOTE_PORT" ]; then
     exit 1
   fi
 fi
-printf '{"remotePort":%s,"serverKind":"%s"}\\n' "$REMOTE_PORT" "\${REMOTE_MANAGED:-managed}"
+# A reused own backend that runs another bundled server than this app ships
+# is reported as outdated; the client replaces it once it is idle.
+REMOTE_OUTDATED=""
+EXPECTED_SCRIPT=@@WORKJET_NODE_SCRIPT_PATH@@
+if [ -n "$EXPECTED_SCRIPT" ] && [ "\${REMOTE_MANAGED:-managed}" = "managed" ] && [ -n "$REMOTE_PID" ]; then
+  RUNNING_ARGS="$(ps -o args= -p "$REMOTE_PID" 2>/dev/null || true)"
+  case "$RUNNING_ARGS" in
+    ''|*"$EXPECTED_SCRIPT"*) ;;
+    *) REMOTE_OUTDATED=',"outdated":true' ;;
+  esac
+fi
+printf '{"remotePort":%s,"serverKind":"%s"%s}\\n' "$REMOTE_PORT" "\${REMOTE_MANAGED:-managed}" "$REMOTE_OUTDATED"
 `;
 
 export const REMOTE_PAIRING_SCRIPT = `set -eu
@@ -683,6 +702,7 @@ export function buildRemoteLaunchScript(input?: RemoteWorkjetRunnerOptions): str
     WORKJET_READY_TIMEOUT_MS: String(REMOTE_READY_TIMEOUT_MS),
     WORKJET_REUSE_READY_TIMEOUT_MS: String(REMOTE_REUSE_READY_TIMEOUT_MS),
     WORKJET_READY_PROBE_TIMEOUT_MS: String(SSH_READY_PROBE_TIMEOUT_MS),
+    WORKJET_NODE_SCRIPT_PATH: shellSingleQuote(input?.nodeScriptPath?.trim() || ""),
   });
 }
 
@@ -722,7 +742,12 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
     runner?: RemoteWorkjetRunnerOptions,
     remoteStateNamespace?: string,
   ): Effect.fn.Return<
-    { readonly remotePort: number; readonly remoteServerKind: "external" | "managed" | null },
+    {
+      readonly remotePort: number;
+      readonly remoteServerKind: "external" | "managed" | null;
+      /** The reused own backend runs another bundled server than this app ships. */
+      readonly remoteServerOutdated: boolean;
+    },
     SshCommandError | SshInvalidTargetError | SshLaunchError,
     ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
   > {
@@ -765,11 +790,13 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       ...sshTargetLogFields(target),
       remotePort: parsed.remotePort,
       remoteServerKind: parsed.serverKind ?? null,
+      remoteServerOutdated: parsed.outdated === true,
       stateKey: remoteStateKey(target, remoteStateNamespace),
     });
     return {
       remotePort: parsed.remotePort,
       remoteServerKind: parsed.serverKind ?? null,
+      remoteServerOutdated: parsed.outdated === true,
     };
   },
 );
@@ -853,6 +880,50 @@ export const stopRemoteServer = Effect.fn("ssh/tunnel.stopRemoteServer")(functio
     stateKey: remoteStateKey(target, remoteStateNamespace),
   });
 });
+
+/**
+ * One step of the idle-gated backend update: `check` only reads the backend's
+ * activity, `stop` re-checks it and terminates the own outdated backend.
+ */
+export const runRemoteServerUpdateStep = Effect.fn("ssh/tunnel.runRemoteServerUpdateStep")(
+  function* (
+    target: DesktopSshEnvironmentTarget,
+    mode: "check" | "stop",
+    expectedNodeScriptPath: string,
+    input?: SshAuthOptions,
+    remoteStateNamespace?: string,
+  ): Effect.fn.Return<
+    RemoteUpdateCheck | RemoteUpdateStop,
+    SshCommandError | SshInvalidTargetError | SshLaunchError,
+    ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+  > {
+    const result = yield* runSshCommand(target, {
+      remoteCommandArgs: ["sh", "-s", "--", remoteStateKey(target, remoteStateNamespace), mode],
+      stdin: buildRemoteUpdateScript(expectedNodeScriptPath),
+      timeoutMs: 2 * 60 * 1_000,
+      ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
+      ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
+      ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
+    });
+    const state = parseRemoteUpdateOutput(result.stdout);
+    if (state === null || (mode === "check" && state === "stopped"))
+      return yield* new SshLaunchError({
+        message: "The SSH host did not report the Workjet backend update state.",
+        stdout: result.stdout,
+      });
+    if (mode === "stop" && state === "idle")
+      return yield* new SshLaunchError({
+        message: "The SSH host did not stop the Workjet backend.",
+        stdout: result.stdout,
+      });
+    yield* Effect.logInfo("ssh.remoteServer.update.step", {
+      ...sshTargetLogFields(target),
+      mode,
+      state,
+    });
+    return state as RemoteUpdateCheck | RemoteUpdateStop;
+  },
+);
 
 const readRemoteServerLogTail = Effect.fn("ssh/tunnel.readRemoteServerLogTail")(function* (
   target: DesktopSshEnvironmentTarget,
@@ -1084,6 +1155,12 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     Deferred.Deferred<SshTunnelEntry, SshEnvironmentEffectError>
   >();
   const authSecrets = new Map<string, string>();
+  /** Keys whose current backend was reported outdated at launch. */
+  const outdatedRemoteServers = new Set<string>();
+  /** Latest live-step listener per target, used by the background update. */
+  const progressListeners = new Map<string, SshEnvironmentProgressListener>();
+  /** Idle-gated update per target: running (waiting or updating), failed or done. */
+  const remoteUpdates = new Map<string, "running" | "failed" | "done">();
 
   const closeTunnelEntry = Effect.fn("ssh/tunnel.closeTunnelEntry")(function* (
     entry: SshTunnelEntry,
@@ -1278,6 +1355,8 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
         ),
     });
     const remotePort = remoteLaunch.remotePort;
+    if (remoteLaunch.remoteServerOutdated) outdatedRemoteServers.add(input.key);
+    else outdatedRemoteServers.delete(input.key);
     yield* Effect.logDebug("ssh.environment.remotePort.ready", {
       ...sshTargetLogFields(input.resolvedTarget),
       key: input.key,
@@ -1433,6 +1512,105 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     );
   });
 
+  /**
+   * Replaces an outdated own backend once it is idle. Runs in the tunnel's
+   * scope: closing the connection ends the waiting. A failed attempt is
+   * reported and restarted by the next ensure (the row's „Erneut“).
+   */
+  const startRemoteUpdate = Effect.fn("ssh/tunnel.startRemoteUpdate")(function* (
+    entry: SshTunnelEntry,
+    runner: RemoteWorkjetRunnerOptions | undefined,
+  ) {
+    const key = entry.key;
+    const expected = runner?.nodeScriptPath?.trim();
+    if (!expected || !outdatedRemoteServers.has(key)) return;
+    const state = remoteUpdates.get(key);
+    if (state === "running") return;
+    const report = (phase: "updating" | "updated" | "update-failed") => {
+      const listener = progressListeners.get(key);
+      return listener
+        ? listener({ phase }).pipe(Effect.catchCause(() => Effect.void))
+        : Effect.void;
+    };
+    if (state === "done") {
+      outdatedRemoteServers.delete(key);
+      return;
+    }
+    remoteUpdates.set(key, "running");
+    const step = (mode: "check" | "stop") =>
+      runWithSshAuth({
+        key,
+        target: entry.target,
+        operation: (auth) =>
+          runRemoteServerUpdateStep(
+            entry.target,
+            mode,
+            expected,
+            auth,
+            options.remoteStateNamespace,
+          ),
+      });
+    let movedPort = false;
+    const update = runRemoteServerUpdate({
+      check: step("check") as Effect.Effect<
+        RemoteUpdateCheck,
+        SshEnvironmentEffectError,
+        SshEnvironmentEffectContext
+      >,
+      stop: step("stop") as Effect.Effect<
+        RemoteUpdateStop,
+        SshEnvironmentEffectError,
+        SshEnvironmentEffectContext
+      >,
+      restart: Effect.gen(function* () {
+        const relaunched = yield* runWithSshAuth({
+          key,
+          target: entry.target,
+          operation: (auth) =>
+            launchOrReuseRemoteServer(entry.target, auth, runner, options.remoteStateNamespace),
+        });
+        if (relaunched.remoteServerOutdated)
+          return yield* new SshLaunchError({
+            message: "The restarted Workjet backend still runs the previous version.",
+            stdout: "",
+          });
+        movedPort = relaunched.remotePort !== entry.remotePort;
+      }),
+      report,
+    }).pipe(
+      Effect.tap((outcome) =>
+        Effect.gen(function* () {
+          remoteUpdates.set(key, "done");
+          outdatedRemoteServers.delete(key);
+          yield* Effect.logInfo("ssh.remoteServer.update.finished", {
+            ...sshTargetLogFields(entry.target),
+            outcome,
+            movedPort,
+          });
+          // Same remote port: the local forward reaches the new backend and
+          // the clients reconnect on their own. Another port needs a new forward.
+          if (movedPort) yield* releaseTunnelEntry(entry, { retainAuthSecret: true });
+        }),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.sync(() => remoteUpdates.set(key, "failed")).pipe(
+          Effect.andThen(
+            Effect.logWarning("ssh.remoteServer.update.failed", {
+              ...sshTargetLogFields(entry.target),
+              cause,
+            }),
+          ),
+        ),
+      ),
+      Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          if (remoteUpdates.get(key) === "running") remoteUpdates.delete(key);
+        }),
+      ),
+    );
+    yield* update.pipe(Effect.forkScoped, Effect.provideService(Scope.Scope, entry.scope));
+  });
+
   const ensureEnvironment = Effect.fn("ssh/tunnel.ensureEnvironment")(function* (
     target: DesktopSshEnvironmentTarget,
     requestOptions?: SshEnvironmentEnsureOptions,
@@ -1485,7 +1663,9 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       runner = { ...runner, nodeScriptPath };
     }
     yield* report({ phase: "starting" });
+    if (progress) progressListeners.set(key, progress);
     const entry = yield* ensureTunnelEntry(key, resolvedTarget, runner);
+    yield* startRemoteUpdate(entry, runner);
     if (requestOptions?.issuePairingToken) yield* report({ phase: "pairing" });
 
     const pairingResult = requestOptions?.issuePairingToken

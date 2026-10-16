@@ -1033,7 +1033,7 @@ function waitForGuestNavigationCommit(
             reason: isAllowedCtoxTopFrameNavigation(url, launchOrigin)
               ? "http_status"
               : "unexpected_origin",
-            httpResponseCode,
+            httpStatus: httpResponseCode,
           });
         };
         const onDidFailLoad = (

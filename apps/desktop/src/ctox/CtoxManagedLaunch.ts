@@ -207,15 +207,38 @@ function isTrustedManagedLaunchTarget(url: URL, controlOrigin: string): boolean 
   }
 }
 
-function buildCanonicalLaunchUrl(target: URL, config: Record<string, unknown>): string | undefined {
+/**
+ * Server diagnostics the guest page never reads from `ctox_config`. The web
+ * shell takes `ice_servers` first and only falls back to `iceServers`
+ * (business-os/shared/sync.js), so the camelCase duplicate is dropped when the
+ * snake_case list is present. `native_rxdb_peer_status` alone grew past 20 KB
+ * and pushed the launch URL into HTTP 414 (URI Too Long).
+ */
+const GUEST_UNUSED_LAUNCH_CONFIG_KEYS = ["native_rxdb_peer_status", "ice_diagnostics"] as const;
+
+/** Conservative URL budget; common proxies reject request lines above 8–16 KB. */
+export const MAX_CTOX_LAUNCH_URL_LENGTH = 8_192;
+
+export function guestLaunchConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...config };
+  for (const key of GUEST_UNUSED_LAUNCH_CONFIG_KEYS) delete out[key];
+  if (Array.isArray(out.ice_servers)) delete out.iceServers;
+  return out;
+}
+
+export function buildCanonicalLaunchUrl(
+  target: URL,
+  config: Record<string, unknown>,
+): string | undefined {
   try {
     const launchUrl = new URL(target.href);
     launchUrl.hash = "";
     launchUrl.searchParams.set(
       "ctox_config",
-      Buffer.from(encodeUnknownJson(config), "utf8").toString("base64url"),
+      Buffer.from(encodeUnknownJson(guestLaunchConfig(config)), "utf8").toString("base64url"),
     );
-    return launchUrl.toString();
+    const href = launchUrl.toString();
+    return href.length > MAX_CTOX_LAUNCH_URL_LENGTH ? undefined : href;
   } catch {
     return undefined;
   }

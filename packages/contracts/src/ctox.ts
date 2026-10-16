@@ -1369,6 +1369,7 @@ export const CtoxGuestPreparationReason = Schema.Literals([
   "load_url",
   "navigation_setup",
   "unexpected_origin",
+  "http_status",
 ]);
 export const CtoxGuestPreparationDiagnostic = Schema.Struct({
   stage: Schema.Literals([

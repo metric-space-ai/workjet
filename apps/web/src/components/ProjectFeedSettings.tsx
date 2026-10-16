@@ -108,7 +108,8 @@ export function useFeedPreferences(projectId: string, persistence?: FeedPersiste
   const seq = useRef(0);
   useEffect(() => {
     if (!undo) return;
-    const timer = setTimeout(() => setUndo(null), 8000);
+    // Lang genug zum Lesen und Klicken (#798: „verschwindet unter 5 s“).
+    const timer = setTimeout(() => setUndo(null), 10_000);
     return () => clearTimeout(timer);
   }, [undo]);
   const writeLocal = (next: FeedPreferences) => {
@@ -553,14 +554,13 @@ export function FeedSettingsButton(props: {
   return (
     <Button
       type="button"
-      size="icon-sm"
+      size="sm"
       variant="ghost"
-      aria-label={label}
-      title={label}
       onClick={props.onClick}
       data-workjet-action="project.feed.settings"
     >
       <SlidersHorizontalIcon aria-hidden className="size-4" />
+      {label}
     </Button>
   );
 }

@@ -614,9 +614,25 @@ function AppearanceRows() {
           <Select
             value={colorScheme}
             onValueChange={(value) => {
-              if (!isColorSchemeChoice(value)) return;
+              if (!isColorSchemeChoice(value) || value === colorScheme) return;
+              const previous = colorScheme;
               setTheme(value);
               setAppearanceMode(value);
+              // Sofort wirksam, mit Rückgängig (UI-Regel, #798).
+              toastManager.add(
+                stackedThreadToast({
+                  type: "success",
+                  title: `${searchableSetting("color-scheme").title}: ${COLOR_SCHEME_LABELS[value]}`,
+                  timeout: 8_000,
+                  actionProps: {
+                    children: workjetUiLanguage() === "en" ? "Undo" : "Rückgängig",
+                    onClick: () => {
+                      setTheme(previous);
+                      setAppearanceMode(previous);
+                    },
+                  },
+                }),
+              );
             }}
           >
             <SelectTrigger aria-label={searchableSetting("color-scheme").title} className="w-40">

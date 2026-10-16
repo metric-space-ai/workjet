@@ -81,7 +81,7 @@ function ProjectCreatePanel(props: { readonly initial: ProjectCreateSource }) {
             status: (
               <ProjectCreateRequirementLine
                 text="Keine Instanz verbunden"
-                actionLabel="Einstellungen › Instanzen"
+                actionLabel="Instanz verbinden"
                 onAction={() => {}}
               />
             ),
@@ -118,17 +118,20 @@ function ProjectCreatePanel(props: { readonly initial: ProjectCreateSource }) {
           Name
           <Input aria-label="Projektname" value={noInstance ? "" : title} onChange={() => {}} />
         </label>
-        <div className="grid gap-1 text-sm">
-          <span>Instanz</span>
-          <Select value={noInstance ? "" : "welsch"}>
-            <SelectTrigger aria-label="Instanz" disabled={noInstance}>
-              <SelectValue>{noInstance ? "Keine Instanz verbunden" : "welsch"}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectItem value="welsch">welsch</SelectItem>
-            </SelectPopup>
-          </Select>
-        </div>
+        {/* Wie im Produkt (A-65): ohne Instanz keine Auswahl, nur die Statuszeile. */}
+        {noInstance ? null : (
+          <div className="grid gap-1 text-sm">
+            <span>Instanz</span>
+            <Select value="welsch">
+              <SelectTrigger aria-label="Instanz">
+                <SelectValue>welsch</SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="welsch">welsch</SelectItem>
+              </SelectPopup>
+            </Select>
+          </div>
+        )}
       </div>
     </InlinePanel>
   );

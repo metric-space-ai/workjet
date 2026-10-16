@@ -318,8 +318,7 @@ describe("C3 renderer→server proxy fills and clears the server registry", () =
     );
     try {
       assert.strictEqual(sessions.size(), 1);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      for (let turn = 0; turn < 20; turn++) await Promise.resolve();
       const bound = resolveCtoxV4AppPortForInstance(instanceId);
       assert.isNotNull(bound);
       assert.strictEqual(resolveCtoxV4AppPortForEndpoint(endpoint), bound);

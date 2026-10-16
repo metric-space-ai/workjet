@@ -48,6 +48,11 @@ export function bindCtoxV4AppPort(
   };
 }
 
+/** Every bound port once (an instance may also be bound under its endpoints). */
+export function listCtoxV4AppPorts(): ReadonlyArray<CtoxV4AppPort> {
+  return [...new Set(byInstance.values())];
+}
+
 export function resolveCtoxV4AppPortForInstance(instanceId: string): CtoxV4AppPort | null {
   return byInstance.get(instanceId) ?? null;
 }

@@ -49,7 +49,12 @@ function v4LaunchContext(coreInstanceId: string) {
             signature: b64(86),
           },
           scopes_wanted: ["workjet_projects"],
-          transport: { codecs: ["gzip"], max_frame_bytes: 16384, fragmentation: true, reassembly: true },
+          transport: {
+            codecs: ["gzip"],
+            max_frame_bytes: 16384,
+            fragmentation: true,
+            reassembly: true,
+          },
         },
       },
       packageKeys: [{ keyId: "key-1", alg: "Ed25519", publicKey: b64(43) }],

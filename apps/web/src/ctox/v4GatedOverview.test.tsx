@@ -30,7 +30,7 @@ describe("V4 gate: project overview sources", () => {
     const requestProjectControl = vi.fn();
     window.desktopBridge = {
       ctox: { requestProjectControl } as unknown as DesktopCtoxBridge,
-    } as typeof window.desktopBridge;
+    } as NonNullable<typeof window.desktopBridge>;
     const { instanceId, seed } = await openV4();
     await seed("workjet_project_kpis", [{ id: "p-1", project_id: "p-1", revision: 7, items: [] }]);
     const view = await renderOverview(instanceId, "p-1");
@@ -48,7 +48,7 @@ describe("V4 gate: project overview sources", () => {
     }));
     window.desktopBridge = {
       ctox: { requestProjectControl } as unknown as DesktopCtoxBridge,
-    } as typeof window.desktopBridge;
+    } as NonNullable<typeof window.desktopBridge>;
     const instanceId = `v3-overview-${Date.now()}`;
     const { commitActiveWorkjetSelection } = await import("../activeWorkjetScope");
     commitActiveWorkjetSelection(instanceId);

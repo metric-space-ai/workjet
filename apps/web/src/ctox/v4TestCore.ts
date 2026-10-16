@@ -6,7 +6,11 @@ import { MemoryCoreTransport } from "./kernel/fake-core.mjs";
 import type { Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
 import { getCtoxClient } from "./ctoxClient";
-import { WORKJET_APP_ID, WORKJET_FOREIGN_COLLECTIONS, workjetAppManifest } from "./workjetAppManifest";
+import {
+  WORKJET_APP_ID,
+  WORKJET_FOREIGN_COLLECTIONS,
+  workjetAppManifest,
+} from "./workjetAppManifest";
 import { commitActiveWorkjetSelection } from "../activeWorkjetScope";
 
 const APP_VER = "v4-consumers";
@@ -92,4 +96,3 @@ export async function openV4(select = true) {
   };
   return { instanceId, release, seed };
 }
-

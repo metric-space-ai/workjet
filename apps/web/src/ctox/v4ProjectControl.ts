@@ -141,9 +141,7 @@ export async function writeV4GalleryOrder(
 ): Promise<CtoxWorkjetProjectControlResult> {
   try {
     const id = api.actor.id;
-    const current = api
-      .get<{ id: string; revision?: unknown }>(WORKJET_GALLERY_ORDERS, id)
-      .get();
+    const current = api.get<{ id: string; revision?: unknown }>(WORKJET_GALLERY_ORDERS, id).get();
     const revision = typeof current?.revision === "number" ? current.revision : 0;
     if (revision !== request.expectedRevision)
       throw new CtoxLocalReadError(

@@ -46,7 +46,10 @@ export function startWorkjetV4HostBootstrap(
   const offContext = subscribeActiveWorkjetHostContext(check);
   const offGuest =
     bridge.onGuestState?.((event) => {
-      if (event.state === "warm" && event.instanceId === readActiveWorkjetScope().selectedInstanceId)
+      if (
+        event.state === "warm" &&
+        event.instanceId === readActiveWorkjetScope().selectedInstanceId
+      )
         check();
     }) ?? (() => {});
   check();

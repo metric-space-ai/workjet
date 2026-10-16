@@ -18,6 +18,40 @@ function makeTempHomeDir() {
 }
 
 describe("ssh config", () => {
+  it.effect("skips host blocks without a shell (RemoteCommand, ProxyCommand only)", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homeDir = yield* makeTempHomeDir();
+      const sshDir = path.join(homeDir, ".ssh");
+      yield* fs.makeDirectory(sshDir, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(sshDir, "config"),
+        [
+          "Host tunnel-only",
+          "  RemoteCommand tmux attach",
+          "Host proxy-helper",
+          "  ProxyCommand nc %h %p",
+          "Host jumped",
+          "  HostName jumped.example.com",
+          "  ProxyCommand ssh bastion -W %h:%p",
+          "Host plain",
+          "  HostName plain.example.com",
+          "  RemoteCommand none",
+          "Match host *.internal",
+          "  RemoteCommand echo",
+          "Host last",
+          "",
+        ].join("\n"),
+      );
+      const hosts = yield* discoverSshHosts({ homeDir });
+      assert.deepEqual(
+        hosts.map((host) => host.alias),
+        ["jumped", "last", "plain"],
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("discovers ssh config hosts across included files", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

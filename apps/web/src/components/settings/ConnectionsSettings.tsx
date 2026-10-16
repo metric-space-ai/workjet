@@ -1,3 +1,4 @@
+import { sshAliasCandidates } from "../../sshAliasCandidates";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   DesktopDiscoveredSshHost,
@@ -184,15 +185,23 @@ export function useComputerConnections({
   }, [desktopBridge, discoverSshHosts]);
   const discovered = sshHostsQuery.data ?? EMPTY_DISCOVERED_SSH_HOSTS;
   /** Aliases from ~/.ssh/config that are not a row yet. */
+  const savedSshHostnames = useMemo(
+    () =>
+      new Set(
+        [...savedSshTargets.values()]
+          .map((target) => target.hostname.trim().toLowerCase())
+          .filter((hostname) => hostname.length > 0),
+      ),
+    [savedSshTargets],
+  );
   const sshAliases = useMemo(
     () =>
-      discovered.filter(
-        (target) =>
-          target.source === "ssh-config" &&
-          !savedSshKeys.has(target.alias) &&
-          !savedSshKeys.has(formatDesktopSshTarget(target)),
+      sshAliasCandidates(
+        discovered,
+        { keys: savedSshKeys, hostnames: savedSshHostnames },
+        formatDesktopSshTarget,
       ),
-    [discovered, savedSshKeys],
+    [discovered, savedSshKeys, savedSshHostnames],
   );
   /** known_hosts entries: suggestions for the address field, never rows. */
   const knownHosts = useMemo(

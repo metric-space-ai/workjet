@@ -62,7 +62,12 @@ export async function declineSecretRequest(
 function settle(
   result: Awaited<ReturnType<typeof requestWorkjetProjectControl>>,
 ): SecretRequestOutcome {
-  if (result._tag !== "completed") return { ok: false, reason: result.code };
+  if (result._tag !== "completed")
+    return {
+      ok: false,
+      // The Core answers a route it does not serve yet with `unavailable` (V4 before M7).
+      reason: result.error?.code === "unavailable" ? "unavailable" : result.code,
+    };
   const response = result.response;
   if (
     response.action !== "secret.request.fulfill" &&

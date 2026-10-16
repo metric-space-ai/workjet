@@ -7,9 +7,11 @@
  * Aufbau: Statuspunkt, Name (darunter höchstens eine kurze Meta-Zeile),
  * Chips, Aktiv-Schalter, Papierkorb mit eingebauter Bestätigung, ⋯-Menü
  * für Seltenes (Bearbeiten, Reparieren, Neu prüfen). Ein Objekt hat genau
- * eine Zeile. Die Bestätigung steht inline in der Zeile, nie als Dialog
- * (drei Orte: Dev, Ops, Einstellungen; keine Popups). Unter 640 px rutscht
- * sie unter die Zeile, damit alle Knöpfe ganz sichtbar bleiben.
+ * eine Zeile. Die Bestätigung liegt als Overlay in der Zeile, nie als Dialog
+ * (drei Orte: Dev, Ops, Einstellungen; keine Popups). Der Inhalt darunter
+ * bleibt im Fluss (nur unsichtbar), damit die Zeile weder springt noch ihre
+ * Höhe ändert (Audit C#48). Der Papierkorb ist in der Zeile nur ein Icon mit
+ * Tooltip (Audit C#11); im ⋯-Menü bleibt das rote Wort.
  */
 import { WORKJET_STATUS_DOT_CLASS } from "../../workjetStatus";
 import { ChevronDownIcon, EllipsisVerticalIcon, Trash2Icon } from "lucide-react";
@@ -115,9 +117,11 @@ function Row({
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-[13.5px] sm:flex-nowrap",
+        "relative flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-[13.5px] sm:flex-nowrap",
+        "data-[confirming=true]:[&>*:not([data-slot=row-confirm])]:invisible",
         className,
       )}
+      data-confirming={canDelete && confirmingDelete ? "true" : undefined}
       data-slot="row"
     >
       {status !== undefined ? <RowStatusDot status={status} label={statusLabel} /> : null}
@@ -166,47 +170,6 @@ function Row({
           {chips}
         </div>
       ) : null}
-      {canDelete && confirmingDelete ? (
-        <div
-          className="order-last flex w-full flex-wrap items-center justify-end gap-1.5 sm:order-none sm:w-auto sm:flex-nowrap"
-          data-slot="row-confirm"
-          role="group"
-        >
-          <span className="min-w-0 text-xs text-muted-foreground">
-            {deleteConfirmTitle ?? `${deleteLabel}?`}
-          </span>
-          {deleteOptions?.length ? (
-            deleteOptions.map((option) => (
-              <Button
-                key={option.label}
-                size="xs"
-                variant="destructive"
-                disabled={option.disabled}
-                onClick={() => {
-                  setConfirmingDelete(false);
-                  option.onSelect();
-                }}
-              >
-                {option.label}
-              </Button>
-            ))
-          ) : (
-            <Button
-              size="xs"
-              variant="destructive"
-              onClick={() => {
-                setConfirmingDelete(false);
-                onDelete?.();
-              }}
-            >
-              {deleteLabel}
-            </Button>
-          )}
-          <Button size="xs" variant="outline" onClick={() => setConfirmingDelete(false)}>
-            Abbrechen
-          </Button>
-        </div>
-      ) : null}
       {showActions ? (
         <div className="flex shrink-0 items-center gap-1" data-slot="row-actions">
           {onActiveChange !== undefined ? (
@@ -217,16 +180,15 @@ function Row({
               onCheckedChange={(checked) => onActiveChange(checked === true)}
             />
           ) : null}
-          {canDelete && !confirmingDelete ? (
+          {canDelete ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
                     aria-label={deleteLabel}
-                    size="xs"
-                    // Icon plus word: a secondary action, so `outline` (Vertrag §2:
-                    // `ghost` only for bare icon buttons with a tooltip).
-                    variant="outline"
+                    size="icon-sm"
+                    // Bare icon with tooltip (Vertrag §2, Audit C#11).
+                    variant="ghost"
                     onClick={() => {
                       // Undoable deletes run at once; the caller offers „Rückgängig“.
                       if (undoableDelete && onDelete) onDelete();
@@ -236,8 +198,6 @@ function Row({
                 }
               >
                 <Trash2Icon />
-                {/* Icons explain themselves: the word is always visible, also on touch. */}
-                <span>{deleteLabel}</span>
               </TooltipTrigger>
               <TooltipPopup>{deleteLabel}</TooltipPopup>
             </Tooltip>
@@ -266,6 +226,57 @@ function Row({
               </MenuPopup>
             </Menu>
           ) : null}
+        </div>
+      ) : null}
+      {canDelete && confirmingDelete ? (
+        <div
+          className="absolute inset-0 flex min-w-0 items-center justify-end gap-1.5 px-3"
+          data-slot="row-confirm"
+          role="group"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setConfirmingDelete(false);
+          }}
+        >
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
+            {deleteConfirmTitle ?? `${deleteLabel}?`}
+          </span>
+          {deleteOptions?.length ? (
+            deleteOptions.map((option) => (
+              <Button
+                key={option.label}
+                className="shrink-0"
+                size="xs"
+                variant="destructive"
+                disabled={option.disabled}
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  option.onSelect();
+                }}
+              >
+                {option.label}
+              </Button>
+            ))
+          ) : (
+            <Button
+              className="shrink-0"
+              size="xs"
+              variant="destructive"
+              onClick={() => {
+                setConfirmingDelete(false);
+                onDelete?.();
+              }}
+            >
+              {deleteLabel}
+            </Button>
+          )}
+          <Button
+            className="shrink-0"
+            size="xs"
+            variant="outline"
+            onClick={() => setConfirmingDelete(false)}
+          >
+            Abbrechen
+          </Button>
         </div>
       ) : null}
     </div>

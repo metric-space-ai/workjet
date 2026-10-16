@@ -109,6 +109,20 @@ export const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
   const aliases = new Set<string>();
   const directory = path.dirname(resolvedPath);
   const raw = yield* fs.readFileString(resolvedPath);
+  // Ein Host-Block ohne Shell (RemoteCommand, oder nur ein ProxyCommand ohne
+  // HostName) ist kein Rechner und erscheint nicht in der Liste.
+  let block: {
+    aliases: string[];
+    remoteCommand: boolean;
+    proxyCommand: boolean;
+    hostName: boolean;
+  } | null = null;
+  const flushBlock = () => {
+    if (block !== null && !(block.remoteCommand || (block.proxyCommand && !block.hostName))) {
+      for (const alias of block.aliases) aliases.add(alias);
+    }
+    block = null;
+  };
 
   for (const line of raw.split(/\r?\n/u)) {
     const stripped = stripInlineComment(line);
@@ -118,6 +132,16 @@ export const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
 
     const [directive = "", ...rawArgs] = splitDirectiveArgs(stripped);
     const normalizedDirective = directive.toLowerCase();
+    if (block !== null) {
+      const value = rawArgs.join(" ").trim().toLowerCase();
+      if (normalizedDirective === "remotecommand" && value !== "none") block.remoteCommand = true;
+      if (normalizedDirective === "proxycommand" && value !== "none") block.proxyCommand = true;
+      if (normalizedDirective === "hostname") block.hostName = true;
+    }
+    if (normalizedDirective === "match") {
+      flushBlock();
+      continue;
+    }
     if (normalizedDirective === "include") {
       for (const includePattern of rawArgs) {
         const resolvedPattern = yield* resolveSshConfigIncludePattern(
@@ -144,13 +168,16 @@ export const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
       continue;
     }
 
+    flushBlock();
+    block = { aliases: [], remoteCommand: false, proxyCommand: false, hostName: false };
     for (const alias of rawArgs) {
       if (alias.length === 0 || hasSshPattern(alias)) {
         continue;
       }
-      aliases.add(alias);
+      block.aliases.push(alias);
     }
   }
+  flushBlock();
 
   return [...aliases].toSorted((left, right) => left.localeCompare(right));
 });

@@ -18,6 +18,26 @@ export interface ComputerMembershipSnapshot {
   readonly computers: ReadonlyArray<CtoxWorkjetComputerProjection>;
   readonly pendingComputerId: string | null;
   readonly error: string | null;
+  /**
+   * Ab wann die Fehlerzeile sichtbar ist (UI-Vertrag: still wiederholen, erst nach
+   * 2 min zeigen). Bleibt über stille Wiederholungen stehen; null nach Erfolg.
+   */
+  readonly failureVisibleAtMs?: number | null;
+}
+
+/** Nach dieser Dauer ununterbrochener Fehler erscheint die Zeile. */
+export const MEMBERSHIP_FAILURE_GRACE_MS = 120_000;
+/** Abstand der stillen Wiederholungen nach einem Fehler. */
+export const MEMBERSHIP_SILENT_RETRY_MS = 30_000;
+/** Fehler, die nur der Nutzer beheben kann: Zeile sofort, keine stille Wiederholung. */
+const USER_ACTION_CODES = new Set(["authentication_required", "unsupported", "query_unsupported"]);
+
+class MembershipFailure extends Error {
+  readonly code: string;
+  constructor(code: string) {
+    super(membershipError(code));
+    this.code = code;
+  }
 }
 
 function membershipError(code: string): string {
@@ -45,12 +65,16 @@ function membershipError(code: string): string {
   }
 }
 
-/** A blocked instance must not leave the list „prüft…“ forever. */
-export const MEMBERSHIP_DEADLINE_MS = 20_000;
+/**
+ * A blocked instance must not leave the list loading forever. The desktop waits up to
+ * 45 s for the CTOX guest; a shorter deadline here discarded answers that arrived
+ * between 20 and 45 s (Welsch, 16.10.: computer.list took 9–45 s).
+ */
+export const MEMBERSHIP_DEADLINE_MS = 50_000;
 function withDeadline<T>(work: Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error(membershipError("unreachable"))),
+      () => reject(new MembershipFailure("unreachable")),
       MEMBERSHIP_DEADLINE_MS,
     );
     work.then(
@@ -84,7 +108,14 @@ export function createComputerMembershipStore() {
   const select = (instanceId: string | null) => {
     if (snapshot.instanceId === instanceId) return;
     generation++;
-    publish({ instanceId, phase: "loading", computers: [], pendingComputerId: null, error: null });
+    publish({
+      instanceId,
+      phase: "loading",
+      computers: [],
+      pendingComputerId: null,
+      error: null,
+      failureVisibleAtMs: null,
+    });
   };
   const refresh = async (instanceId: string, bridge: DesktopCtoxBridge | undefined) => {
     select(instanceId);
@@ -93,7 +124,7 @@ export function createComputerMembershipStore() {
     // Changing instances clears the previous inventory in select(); a failed refresh also clears it.
     publish({ ...snapshot, phase: "loading", error: null, pendingComputerId: null });
     try {
-      if (!bridge?.requestComputerControl) throw new Error(membershipError("unsupported"));
+      if (!bridge?.requestComputerControl) throw new MembershipFailure("unsupported");
       let result = await withDeadline(
         bridge.requestComputerControl(instanceId, {
           action: "computer.list",
@@ -112,25 +143,39 @@ export function createComputerMembershipStore() {
         );
       }
       if (revision !== generation) return;
-      if (result._tag === "failed") throw new Error(membershipError(result.code));
-      if (result.response.action !== "computer.list")
-        throw new Error(membershipError("guest_failed"));
+      if (result._tag === "failed") throw new MembershipFailure(result.code);
+      if (result.response.action !== "computer.list") throw new MembershipFailure("guest_failed");
       publish({
         instanceId,
         phase: "ready",
         computers: result.response.computers,
         pendingComputerId: null,
         error: null,
+        failureVisibleAtMs: null,
       });
     } catch (error) {
       if (revision !== generation) return;
+      const code = error instanceof MembershipFailure ? error.code : "guest_failed";
+      const userAction = USER_ACTION_CODES.has(code);
+      const now = Date.now();
+      const previous = snapshot.instanceId === instanceId ? snapshot.failureVisibleAtMs : null;
       publish({
         instanceId,
         phase: "failed",
         computers: [],
         pendingComputerId: null,
         error: error instanceof Error ? error.message : membershipError("guest_failed"),
+        failureVisibleAtMs: userAction
+          ? now
+          : Math.min(previous ?? Number.POSITIVE_INFINITY, now + MEMBERSHIP_FAILURE_GRACE_MS),
       });
+      if (!userAction) {
+        // Still wiederholen; ein neuer Aufruf (Fokus, Instanzwechsel) überholt diesen.
+        setTimeout(() => {
+          if (revision === generation && snapshot.phase === "failed")
+            void refresh(instanceId, bridge);
+        }, MEMBERSHIP_SILENT_RETRY_MS);
+      }
     }
   };
   const changeAssignment = async (

@@ -34,6 +34,7 @@ import {
   performAutomaticWorktreeStorageAction,
   performGreppyRuntimeInstall,
   WORKJET_SETTINGS_SECTIONS,
+  WorkjetPresetsUnavailableView,
   WorkjetSettingsView,
   workjetSectionFromHash,
 } from "./WorkjetSettings";
@@ -409,5 +410,47 @@ describe("Workjet Greppy runtime settings", () => {
     expect(failureToast).not.toHaveProperty("description");
     expect(JSON.stringify(failureToast)).not.toContain(internalText);
     expect(greppyOperationFailureDescription(new Error(internalText))).not.toContain(internalText);
+  });
+});
+
+describe("Presets unavailable states", () => {
+  const render = (
+    state: "loading" | "authentication" | "unreachable" | "missing" | "no-instance",
+    reconnect: (() => void) | null = () => undefined,
+  ) =>
+    renderToStaticMarkup(
+      <WorkjetPresetsUnavailableView
+        title="Presets"
+        state={state}
+        onRetry={() => undefined}
+        onReconnect={reconnect}
+      />,
+    );
+
+  it("shows exactly one line with one action for every non-ready state", () => {
+    const cases = [
+      ["authentication", "Anmeldung der Instanz abgelaufen", "Neu verbinden"],
+      ["unreachable", "Instanz nicht erreichbar", "Erneut"],
+      ["missing", "Instanz nicht verbunden", "Verbinden"],
+    ] as const;
+    for (const [state, text, action] of cases) {
+      const html = render(state);
+      expect(html).toContain(text);
+      expect(html.match(/data-slot="banner"/g)).toHaveLength(1);
+      expect(html.match(/<button/g)).toHaveLength(1);
+      expect(html).toContain(`>${action}</button>`);
+      expect(html).not.toContain("Instanz wird geladen");
+    }
+  });
+
+  it("falls back to Erneut when the desktop cannot reconnect", () => {
+    expect(render("authentication", null)).toContain(">Erneut</button>");
+  });
+
+  it("loads as a quiet skeleton without any status text", () => {
+    const html = render("loading");
+    expect(html).toContain('data-slot="presets-loading"');
+    expect(html).not.toContain("geladen");
+    expect(html).not.toContain("<button");
   });
 });

@@ -7,7 +7,12 @@ import {
   type WorkjetComputer,
 } from "@workjet/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { MEMBERSHIP_DEADLINE_MS, createComputerMembershipStore } from "./workjetComputerMembership";
+import {
+  MEMBERSHIP_DEADLINE_MS,
+  MEMBERSHIP_FAILURE_GRACE_MS,
+  MEMBERSHIP_SILENT_RETRY_MS,
+  createComputerMembershipStore,
+} from "./workjetComputerMembership";
 import type { OperationalComputerEnrollment } from "./computerCapabilityEnrollment";
 
 function deferredResult() {
@@ -305,5 +310,49 @@ describe("instance computer membership", () => {
     pending.resolve({ _tag: "failed", code: "timeout" });
     expect(await first).toBe(false);
     expect(store.getSnapshot().error).toContain("noch nicht bestätigt");
+  });
+});
+
+describe("silent membership retries (N7)", () => {
+  it("shows the failure line only after two minutes of transient failures, then retries silently", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = createComputerMembershipStore();
+      const request = port()
+        .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
+        .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
+        .mockResolvedValueOnce(listed([projection]));
+      const started = Date.now();
+      await store.refresh("managed:welsch", bridge(request));
+      const first = store.getSnapshot();
+      expect(first.phase).toBe("failed");
+      expect(first.failureVisibleAtMs).toBe(started + MEMBERSHIP_FAILURE_GRACE_MS);
+      await vi.advanceTimersByTimeAsync(MEMBERSHIP_SILENT_RETRY_MS);
+      // The second failure keeps the first deadline instead of pushing it back.
+      expect(store.getSnapshot().failureVisibleAtMs).toBe(first.failureVisibleAtMs);
+      await vi.advanceTimersByTimeAsync(MEMBERSHIP_SILENT_RETRY_MS);
+      expect(store.getSnapshot()).toMatchObject({
+        phase: "ready",
+        computers: [projection],
+        failureVisibleAtMs: null,
+      });
+      expect(request).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows failures that need the user at once and does not loop on them", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = createComputerMembershipStore();
+      const request = port().mockResolvedValue({ _tag: "failed", code: "authentication_required" });
+      await store.refresh("managed:welsch", bridge(request));
+      expect(store.getSnapshot().failureVisibleAtMs).toBeLessThanOrEqual(Date.now());
+      await vi.advanceTimersByTimeAsync(MEMBERSHIP_SILENT_RETRY_MS * 3);
+      expect(request).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

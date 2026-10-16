@@ -689,7 +689,7 @@ export function WorkjetComputersSettingsView({
     membership && membership.phase !== "failed"
       ? membership.computers.filter((entry) => entry.status === "assigned")
       : [];
-  const membershipUnreachable = membership?.phase === "failed";
+  const membershipUnreachable = useMembershipFailureVisible(membership);
   const stateFor = (computer: WorkjetComputer) => {
     const connecting = connectingEnvironmentIds?.includes(computer.environmentId) ?? false;
     const disconnected =
@@ -2106,4 +2106,37 @@ export function WorkjetComputersSettings({
       </SettingsSection>
     </SettingsPageContainer>
   );
+}
+
+/**
+ * Die Fehlerzeile „Rechnerliste nicht abrufbar“ erscheint erst, wenn die Ablage
+ * sie freigibt (Nutzeraktion sofort, sonst nach 2 min stiller Wiederholung).
+ * Ohne Zeitstempel (ältere Aufrufer, Fixtures) gilt ein Fehler als sichtbar.
+ */
+export function membershipFailureVisible(
+  membership: Pick<ComputerMembershipSnapshot, "phase" | "failureVisibleAtMs"> | null | undefined,
+  now: number,
+): boolean {
+  if (!membership) return false;
+  const visibleAt = membership.failureVisibleAtMs;
+  if (visibleAt === undefined) return membership.phase === "failed";
+  return visibleAt !== null && now >= visibleAt;
+}
+
+function useMembershipFailureVisible(
+  membership: Pick<ComputerMembershipSnapshot, "phase" | "failureVisibleAtMs"> | null | undefined,
+): boolean {
+  const [now, setNow] = useState(() => Date.now());
+  const visibleAt = membership?.failureVisibleAtMs ?? null;
+  useEffect(() => {
+    if (visibleAt === null) return;
+    const wait = visibleAt - Date.now();
+    if (wait <= 0) {
+      setNow(Date.now());
+      return;
+    }
+    const timer = window.setTimeout(() => setNow(Date.now()), wait);
+    return () => window.clearTimeout(timer);
+  }, [visibleAt]);
+  return membershipFailureVisible(membership, now);
 }

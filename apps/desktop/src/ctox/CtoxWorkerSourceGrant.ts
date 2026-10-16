@@ -202,8 +202,10 @@ export const WORKER_SOURCE_RENEW_AFTER_MS = 20 * 60 * 60 * 1000;
 
 /**
  * Eine Worker-Quelle wird still neu ausgestellt, wenn sie eine Anmeldung
- * braucht oder ihr Token älter als 20 h ist. Ohne bekannten Ausstellzeitpunkt
- * (vor diesem App-Start ausgestellt) gilt sie als alt.
+ * braucht, nicht erreichbar war oder ihr Token älter als 20 h ist. Ohne
+ * bekannten Ausstellzeitpunkt (vor diesem App-Start ausgestellt) gilt sie als
+ * alt. Nur „unsupported“ (falsche Instanz oder fehlende Werkzeuge) bleibt
+ * stehen: ein neues Token ändert daran nichts.
  */
 export function workerSourceNeedsRenewal(
   connection: {
@@ -216,7 +218,29 @@ export function workerSourceNeedsRenewal(
 ): boolean {
   if (connection.source !== "ctox_dev") return false;
   if (workerSourceGrantIdentity(connection.connectionId) === undefined) return false;
-  if (connection.status === "needs_auth") return true;
-  if (connection.status !== "ready") return false;
+  if (connection.status === "unsupported") return false;
+  if (connection.status !== "ready") return true;
   return issuedAtMs === undefined || nowMs - issuedAtMs >= WORKER_SOURCE_RENEW_AFTER_MS;
+}
+
+/**
+ * Bestehende Worker-Quelle eines Mandanten, die eine Neuverbindung unter
+ * derselben Verbindungs-ID erneuert, statt eine weitere anzulegen. Nicht
+ * bereite Quellen zuerst, sonst die mit der kleinsten ID (stabil).
+ */
+export function workerSourceToRenewInPlace<
+  T extends { readonly connectionId: string; readonly source: string; readonly status: string },
+>(connections: readonly T[], tenantId: string): T | undefined {
+  return connections
+    .filter(
+      (connection) =>
+        connection.source === "ctox_dev" &&
+        connection.status !== "unsupported" &&
+        workerSourceGrantIdentity(connection.connectionId)?.tenantId === tenantId,
+    )
+    .toSorted(
+      (left, right) =>
+        Number(left.status === "ready") - Number(right.status === "ready") ||
+        left.connectionId.localeCompare(right.connectionId),
+    )[0];
 }

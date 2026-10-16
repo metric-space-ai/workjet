@@ -27,6 +27,7 @@ import {
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   CheckCircle2Icon,
+  CloudOffIcon,
   KeyRoundIcon,
   RefreshCwIcon,
   TerminalIcon,
@@ -39,7 +40,7 @@ import { useEnvironmentSettings } from "../../hooks/useSettings";
 import type { EnvironmentPresentation } from "../../state/environments";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { useBusinessOsCodeScope } from "../../businessOsCodeScope";
-import { ctoxConnectionMatchesSelectedInstance } from "../../workjetCtoxConnections";
+import { presetConnectionState, type PresetConnectionState } from "../../workjetPresetConnection";
 import { workerSourceProvisionRequest } from "../../workjetWorkerSourceConnection";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -51,6 +52,7 @@ import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../u
 import { InlineExpand } from "../ui/inline-expand";
 import { Input } from "../ui/input";
 import { Row } from "../ui/row";
+import { Skeleton } from "../ui/skeleton";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
@@ -1294,22 +1296,20 @@ export function WorkjetSettings({
           input: {},
         }),
   );
-  const matches =
+  // Nur die ersten 10 s ohne jede Antwort gelten als Laden (UI-Vertrag §1.3).
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), PRESET_LOADING_LIMIT_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const connectionState: PresetConnectionState =
     scope.phase === "ready"
-      ? (connections.data?.connections ?? []).filter(
-          (connection) =>
-            connection.status === "ready" &&
-            ctoxConnectionMatchesSelectedInstance(connection, scope.presentationInstanceId),
-        )
-      : [];
-  const connection =
-    matches.length === 1
-      ? matches[0]
-      : matches.find(
-          (entry) =>
-            entry.connectionId ===
-            `ctox-dev:${scope.presentationInstanceId?.replace(/^managed:/, "")}`,
-        );
+      ? presetConnectionState(connections.data?.connections, scope.presentationInstanceId, {
+          answered: connections.data !== null,
+          slow: slow || connections.error !== null,
+        })
+      : { kind: "loading" };
+  const connection = connectionState.kind === "ready" ? connectionState.connection : undefined;
   const liveTarget =
     scope.phase === "ready" && connection !== undefined
       ? { connectionId: connection.connectionId, instanceId: connection.instanceId }
@@ -1331,14 +1331,9 @@ export function WorkjetSettings({
   const target =
     liveTarget ??
     (lastKnownKey === null ? null : (LAST_KNOWN_PRESET_TARGETS.get(lastKnownKey) ?? null));
-  const authenticationRequired =
-    scope.phase === "ready" &&
-    presetConnectionNeedsAuthentication(
-      connections.data?.connections,
-      scope.presentationInstanceId,
-    );
-  // Still wiederholen statt einen Zustandstext zu zeigen.
+  // Still wiederholen; die Zeile steht trotzdem, sobald der Zustand feststeht.
   const refreshConnections = connections.refresh;
+  const authenticationRequired = connectionState.kind === "authentication";
   useEffect(() => {
     if (liveConnectionId !== null || authenticationRequired || scope.phase === "blocked") return;
     const timer = window.setInterval(refreshConnections, PRESET_SILENT_RETRY_MS);
@@ -1371,7 +1366,13 @@ export function WorkjetSettings({
     return (
       <WorkjetPresetsUnavailableView
         title={searchableSetting(promptPage ? "workjet-prompt" : "workjet-workers").title}
-        state={noInstance ? "no-instance" : authenticationRequired ? "authentication" : "loading"}
+        state={
+          noInstance
+            ? "no-instance"
+            : connectionState.kind === "ready"
+              ? "loading"
+              : connectionState.kind
+        }
         onRetry={refreshConnections}
         onReconnect={reconnect}
         reconnecting={reconnecting}
@@ -1542,28 +1543,8 @@ function ScopedWorkjetSettings({
 }
 
 const PRESET_SILENT_RETRY_MS = 15_000;
+const PRESET_LOADING_LIMIT_MS = 10_000;
 const LAST_KNOWN_PRESET_TARGETS = new Map<string, WorkjetLumaTarget>();
-
-/** Nur eine bestätigt fehlende Berechtigung zeigt eine Zeile; alles andere wiederholt still. */
-export function presetConnectionNeedsAuthentication(
-  entries:
-    | ReadonlyArray<
-        Parameters<typeof ctoxConnectionMatchesSelectedInstance>[0] & {
-          readonly status: string;
-          readonly reason: string | null;
-        }
-      >
-    | undefined,
-  instanceId: Parameters<typeof ctoxConnectionMatchesSelectedInstance>[1],
-): boolean {
-  const matching = (entries ?? []).filter((entry) =>
-    ctoxConnectionMatchesSelectedInstance(entry, instanceId),
-  );
-  if (matching.some((entry) => entry.status === "ready")) return false;
-  return matching.some(
-    (entry) => entry.status === "needs_auth" || entry.reason === "authentication-required",
-  );
-}
 
 export function WorkjetPresetsUnavailableView({
   title,
@@ -1573,11 +1554,18 @@ export function WorkjetPresetsUnavailableView({
   reconnecting = false,
 }: {
   readonly title: string;
-  readonly state: "loading" | "authentication" | "no-instance";
+  readonly state: "loading" | "authentication" | "unreachable" | "missing" | "no-instance";
   readonly onRetry: () => void;
   readonly onReconnect: (() => void) | null;
   readonly reconnecting?: boolean;
 }) {
+  const reconnectAction = (label: string) =>
+    onReconnect
+      ? {
+          label: reconnecting ? uiText("Verbindet …", "Connecting …") : label,
+          onClick: onReconnect,
+        }
+      : { label: uiText("Erneut", "Retry"), onClick: onRetry };
   return (
     <SettingsPageContainer title={title}>
       {state === "no-instance" ? (
@@ -1592,27 +1580,26 @@ export function WorkjetPresetsUnavailableView({
           </EmptyContent>
         </Empty>
       ) : state === "authentication" ? (
-        <Banner
-          icon={KeyRoundIcon}
-          {...(onReconnect
-            ? {
-                action: {
-                  label: reconnecting
-                    ? uiText("Verbindet …", "Connecting …")
-                    : uiText("Neu verbinden", "Reconnect"),
-                  onClick: onReconnect,
-                },
-              }
-            : {})}
-        >
+        <Banner icon={KeyRoundIcon} action={reconnectAction(uiText("Neu verbinden", "Reconnect"))}>
           {uiText("Anmeldung der Instanz abgelaufen", "Instance sign-in expired")}
         </Banner>
+      ) : state === "missing" ? (
+        <Banner icon={KeyRoundIcon} action={reconnectAction(uiText("Verbinden", "Connect"))}>
+          {uiText("Instanz nicht verbunden", "Instance not connected")}
+        </Banner>
+      ) : state === "unreachable" ? (
+        <Banner
+          icon={CloudOffIcon}
+          action={{ label: uiText("Erneut", "Retry"), onClick: onReconnect ?? onRetry }}
+        >
+          {uiText("Instanz nicht erreichbar", "Instance unreachable")}
+        </Banner>
       ) : (
-        <EmptyLoading
-          title={uiText("Instanz wird geladen", "Loading instance")}
-          slowMessage={uiText("Keine Antwort von der Instanz.", "The instance is not responding.")}
-          onRetry={onRetry}
-        />
+        <div aria-busy="true" className="flex flex-col gap-2" data-slot="presets-loading">
+          <Skeleton className="h-9 w-full rounded-lg" />
+          <Skeleton className="h-9 w-full rounded-lg" />
+          <Skeleton className="h-9 w-2/3 rounded-lg" />
+        </div>
       )}
     </SettingsPageContainer>
   );

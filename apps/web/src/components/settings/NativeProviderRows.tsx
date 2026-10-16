@@ -200,7 +200,9 @@ function NativeAccountRow({
         name={
           <span className="flex min-w-0 items-center gap-2">
             {ProviderIcon ? <ProviderIcon className="size-4 shrink-0" /> : null}
-            <span className="truncate">{accountName}</span>
+            <span className="truncate" title={accountName}>
+              {accountName}
+            </span>
           </span>
         }
         meta={<span className={ProviderIcon ? "pl-6" : undefined}>Instanz {label}</span>}

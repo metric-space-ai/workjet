@@ -114,8 +114,32 @@ const CARD_OWN_ACTION_SELECTOR = [
 ].join(",");
 /** A pointer that moved further than this between press and release dragged, not clicked. */
 const CARD_CLICK_SLOP_PX = 6;
-/** Silent retry of a preview image that failed to load. */
-const PREVIEW_RETRY_MS = 5 * 60_000;
+/**
+ * Silent retries of a preview image that failed to load. GitHub's social-preview
+ * renderer answers bursts of uncached repositories with HTTP 429, so the first
+ * retry comes quickly and later ones back off.
+ */
+const PREVIEW_RETRY_MS = [15_000, 60_000, 5 * 60_000] as const;
+
+/**
+ * GitHub answers private or unknown repositories with its generic 1200×630 Octocat
+ * card; real repository cards are 2:1. The generic card counts as no preview.
+ */
+/**
+ * Without a preview and without content the card shows its monogram. A preview that
+ * failed (or was GitHub's generic card) always falls back to it, even beside a stamp.
+ */
+export function showsProjectCardMonogram(input: {
+  readonly hasContent: boolean;
+  readonly exitValued: boolean;
+  readonly previewFailed: boolean;
+}): boolean {
+  return !input.hasContent && (!input.exitValued || input.previewFailed);
+}
+
+export function isGenericGithubPreview(width: number, height: number): boolean {
+  return width > 0 && height > 0 && Math.abs(width / height - 2) > 0.05;
+}
 
 export function ProjectOverviewCard({
   project,
@@ -164,6 +188,8 @@ export function ProjectOverviewCard({
   const t = (de: string, english: string) => (en ? english : de);
   const [editing, setEditing] = useState<"exit" | "configure" | null>(null);
   const [failedPreviewImage, setFailedPreviewImage] = useState<string | null>(null);
+  const [previewAttempts, setPreviewAttempts] = useState(0);
+  const [genericPreviewImage, setGenericPreviewImage] = useState<string | null>(null);
   const pressedAt = useRef<{ readonly x: number; readonly y: number } | null>(null);
   /** Which card action failed last, so "Erneut versuchen" repeats exactly that one. */
   const lastFailed = useRef<"refresh" | "archive">("archive");
@@ -230,7 +256,14 @@ export function ProjectOverviewCard({
     websiteHost != null && project.title.trim().toLowerCase() === websiteHost.toLowerCase();
   const archived = overview.archived === true;
   const shownPreview =
-    !archived && preview !== null && failedPreviewImage !== preview.image ? preview : null;
+    !archived &&
+    preview !== null &&
+    failedPreviewImage !== preview.image &&
+    genericPreviewImage !== preview.image
+      ? preview
+      : null;
+  // A preview that exists but did not load falls back to the monogram like an empty card.
+  const previewFailed = !archived && preview !== null && shownPreview === null;
   const hasPreview = shownPreview !== null;
   const jourFixe = configuration?.jourFixe ?? overview.tokenBudget?.jourFixe ?? null;
   const jourFixeLabel = projectCardJourFixeLabel(jourFixe, en ? "en" : "de");
@@ -262,9 +295,13 @@ export function ProjectOverviewCard({
   // card shows its content instead of an empty area.
   useEffect(() => {
     if (failedPreviewImage === null) return;
-    const timer = window.setTimeout(() => setFailedPreviewImage(null), PREVIEW_RETRY_MS);
+    const delay = PREVIEW_RETRY_MS[Math.min(previewAttempts, PREVIEW_RETRY_MS.length - 1)];
+    const timer = window.setTimeout(() => {
+      setPreviewAttempts((attempts) => attempts + 1);
+      setFailedPreviewImage(null);
+    }, delay);
     return () => window.clearTimeout(timer);
-  }, [failedPreviewImage]);
+  }, [failedPreviewImage, previewAttempts]);
   // Only one card editor (Exit-Bewertung / Konfigurieren) is open across the
   // gallery: opening one closes every other InlineExpand, like the KPI tiles.
   useSingleInlineExpand(editing !== null, (open) => {
@@ -471,6 +508,18 @@ export function ProjectOverviewCard({
           )}
         </div>
         {tokenBudget}
+        {/* Mit Vorschaubild sitzt „Bewerten“ im Kopf neben ⋯, nie über dem Bild (N3). */}
+        {canRate && hasPreview && editing === null ? (
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => setEditing("exit")}
+            className="shrink-0"
+            data-workjet-action={`project.exit_model.rate:${project.key}`}
+          >
+            {t("Bewerten", "Rate")}
+          </Button>
+        ) : null}
         {reorderHandle}
         {hasMenuEntries && (
           <Menu>
@@ -611,6 +660,14 @@ export function ProjectOverviewCard({
             decoding="async"
             referrerPolicy="no-referrer"
             onError={() => setFailedPreviewImage(shownPreview.image)}
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              if (
+                shownPreview.kind === "github" &&
+                isGenericGithubPreview(image.naturalWidth, image.naturalHeight)
+              )
+                setGenericPreviewImage(shownPreview.image);
+            }}
             className={
               shownPreview.kind === "logo"
                 ? "pointer-events-none size-full object-contain p-12"
@@ -625,17 +682,6 @@ export function ProjectOverviewCard({
             onEdit={archived ? undefined : () => setEditing("exit")}
             editLabel={t("Exit-Bewertung bearbeiten", "Edit exit valuation")}
           />
-          {canRate && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditing("exit")}
-              className="absolute bottom-2 left-2 z-10"
-              data-workjet-action={`project.exit_model.rate:${project.key}`}
-            >
-              {t("Bewerten", "Rate")}
-            </Button>
-          )}
         </div>
       ) : (
         // Ohne Vorschau keine leere Fläche: nächster Regeltermin und Worker, soweit
@@ -707,7 +753,12 @@ export function ProjectOverviewCard({
                 </Button>
               )}
             </div>
-          ) : exitValued ? null : (
+          ) : null}
+          {showsProjectCardMonogram({
+            hasContent: jourFixeLabel !== null || crew != null || canRate,
+            exitValued,
+            previewFailed,
+          }) ? (
             <div
               className="flex min-h-20 flex-1 items-center justify-center"
               data-workjet-project-card-monogram=""
@@ -719,7 +770,7 @@ export function ProjectOverviewCard({
                 {projectCardMonogram(project.title)}
               </span>
             </div>
-          )}
+          ) : null}
           {exitValued ? (
             <div className="relative h-20" data-workjet-project-stamp-row="">
               <ProjectExitModelSummary

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { InstanceProviderSection } from "./InstanceProviderSection";
+import { InstanceProviderSection, instanceProviderSectionHasRows } from "./InstanceProviderSection";
 import type { useInstanceProviders } from "./useInstanceProviders";
 import type { InstanceGrokAccountPresentation } from "./WorkjetModelsProviders";
 import type { WorkjetProjectControlFailure } from "../../workjetProjectControl";
@@ -72,5 +72,47 @@ describe("independent instance account capabilities", () => {
       expect(html).not.toContain("Account metadata unavailable");
       expect(html).not.toContain("data-workjet-provider-management-unavailable");
     }
+  });
+});
+
+describe("instance heading without rows (N5)", () => {
+  const providers = (registry: unknown, connectionFailure?: WorkjetProjectControlFailure) =>
+    ({ registry, connectionFailure }) as Pick<
+      ReturnType<typeof useInstanceProviders>,
+      "registry" | "connectionFailure"
+    >;
+  const none = { failure: undefined, unsupportedProviders: undefined, grok: { row: null } };
+
+  it("drops the heading when neither Grok nor any account has a row", () => {
+    expect(
+      instanceProviderSectionHasRows({ ...none, providers: providers({ accounts: [] }) }),
+    ).toBe(false);
+    expect(
+      instanceProviderSectionHasRows({
+        ...none,
+        providers: providers(undefined, { _tag: "failed", code: "timeout" }),
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps it for accounts, a Grok row, a loading row or an actionable line", () => {
+    expect(
+      instanceProviderSectionHasRows({ ...none, providers: providers({ accounts: [{}] }) }),
+    ).toBe(true);
+    expect(
+      instanceProviderSectionHasRows({
+        ...none,
+        grok: { row: <span /> },
+        providers: providers({ accounts: [] }),
+      }),
+    ).toBe(true);
+    expect(instanceProviderSectionHasRows({ ...none, providers: providers(undefined) })).toBe(true);
+    expect(
+      instanceProviderSectionHasRows({
+        ...none,
+        failure: { _tag: "failed", code: "authentication_required" },
+        providers: providers(undefined),
+      }),
+    ).toBe(true);
   });
 });

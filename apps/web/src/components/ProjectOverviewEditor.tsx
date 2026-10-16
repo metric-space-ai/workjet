@@ -1,4 +1,4 @@
-import { createContext, useContext, useId, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { Checkbox } from "./ui/checkbox";
 import { OptionSelect } from "./ui/option-select";
 import {
@@ -197,9 +197,12 @@ export function failedCardSave(
   };
 }
 
+/** So lange bleibt „Rückgängig“ nach einem gespeicherten Feld stehen. */
+export const CARD_UNDO_MS = 5_000;
+
 /**
  * Rückseite der Galeriekarte: jedes Feld speichert sofort (Text beim Verlassen,
- * Auswahl beim Wählen), danach „Gespeichert · Rückgängig“ (#728). Kein
+ * Auswahl beim Wählen), danach 5 s lang nur „Rückgängig“ (#728, N8). Kein
  * Speichern/Abbrechen; „Fertig“ (oder Esc) schließt die Karte.
  */
 export function ProjectCardConfigEditor({
@@ -244,6 +247,12 @@ export function ProjectCardConfigEditor({
 
   // Ein abgelehnter Wert darf nicht im Feld stehen bleiben, als wäre er
   // gespeichert (#736): Felder zurück auf den gespeicherten Stand, Wiederholen anbieten.
+  useEffect(() => {
+    if (previous === null) return;
+    const timer = window.setTimeout(() => setPrevious(null), CARD_UNDO_MS);
+    return () => window.clearTimeout(timer);
+  }, [previous]);
+
   const failSave = (next: ProjectCardConfigurationValues) => {
     const outcome = failedCardSave(saved, next);
     setDraft(outcome.draft);
@@ -268,9 +277,8 @@ export function ProjectCardConfigEditor({
         setPrevious(undo ? null : saved);
         setSaved(next);
         setDraft(next);
-        setMessage(
-          undo ? editorText("Rückgängig gemacht", "Undone") : editorText("Gespeichert", "Saved"),
-        );
+        // Kein Zustandstext (N8): Erfolg zeigt nur „Rückgängig“ für 5 s.
+        setMessage("");
         setFailed(null);
       } else failSave(next);
     } catch {
@@ -427,7 +435,7 @@ export function ProjectCardConfigEditor({
         data-workjet-project-card-config-actions=""
         role="status"
       >
-        {pending ? editorText("Speichert …", "Saving …") : message}
+        {pending ? null : message}
         {!pending && failed !== null ? (
           <Button
             type="button"

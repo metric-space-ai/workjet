@@ -13,6 +13,7 @@ import {
   WORKER_SOURCE_RENEW_AFTER_MS,
   workerSourceGrantIdentity,
   workerSourceNeedsRenewal,
+  workerSourceToRenewInPlace,
 } from "./CtoxWorkerSourceGrant.ts";
 
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
@@ -193,8 +194,9 @@ describe("worker source silent renewal", () => {
   const now = 1_000_000_000_000;
   const ready = { connectionId, source: "ctox_dev", status: "ready" };
 
-  it("renews connections that need sign-in, regardless of age", () => {
-    expect(workerSourceNeedsRenewal({ ...ready, status: "needs_auth" }, now, now)).toBe(true);
+  it("renews connections that need sign-in, are offline or failed, regardless of age", () => {
+    for (const status of ["needs_auth", "offline", "error"])
+      expect(workerSourceNeedsRenewal({ ...ready, status }, now, now)).toBe(true);
   });
 
   it("renews ready grants after 20 hours and ones issued before this app start", () => {
@@ -213,5 +215,40 @@ describe("worker source silent renewal", () => {
     expect(workerSourceNeedsRenewal({ ...ready, status: "unsupported" }, undefined, now)).toBe(
       false,
     );
+  });
+});
+
+describe("worker source reconnect in place", () => {
+  const other = "99999999-2222-3333-4444-555555555555";
+  const id = (tenantId: string, suffix: string) =>
+    `ctox-dev-worker-source:${tenantId}:${suffix}-bbbb-cccc-dddd-eeeeeeeeeeee`;
+  const entry = (connectionId: string, status: string) => ({
+    connectionId,
+    source: "ctox_dev",
+    status,
+  });
+
+  it("reuses an existing source of the tenant, non-ready first, then by stable ID", () => {
+    const rows = [
+      entry(id(tenant, "cccccccc"), "ready"),
+      entry(id(tenant, "bbbbbbbb"), "needs_auth"),
+      entry(id(tenant, "aaaaaaaa"), "ready"),
+      entry(id(other, "00000000"), "needs_auth"),
+      entry(`ctox-dev:${tenant}`, "needs_auth"),
+    ];
+    expect(workerSourceToRenewInPlace(rows, tenant)?.connectionId).toBe(id(tenant, "bbbbbbbb"));
+    expect(
+      workerSourceToRenewInPlace(
+        rows.filter((row) => row.status === "ready"),
+        tenant,
+      )?.connectionId,
+    ).toBe(id(tenant, "aaaaaaaa"));
+  });
+
+  it("creates a new source only when the tenant has none or only unsupported ones", () => {
+    expect(workerSourceToRenewInPlace([], tenant)).toBeUndefined();
+    expect(
+      workerSourceToRenewInPlace([entry(id(tenant, "aaaaaaaa"), "unsupported")], tenant),
+    ).toBeUndefined();
   });
 });

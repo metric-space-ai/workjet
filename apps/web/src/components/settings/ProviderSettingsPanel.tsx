@@ -468,7 +468,6 @@ function ScopedWorkjetGatewayAccountsSection({
   );
 }
 
-
 function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
   const { discovery } = useCtoxMode();
   const instance =

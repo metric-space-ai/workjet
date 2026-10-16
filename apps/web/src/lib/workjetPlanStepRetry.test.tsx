@@ -11,7 +11,9 @@ import {
 } from "./workjetPlanStepRetry";
 
 function port(
-  answer: (request: CtoxWorkjetProjectControlRequest) => Awaited<ReturnType<WorkjetProjectControlPort>>,
+  answer: (
+    request: CtoxWorkjetProjectControlRequest,
+  ) => Awaited<ReturnType<WorkjetProjectControlPort>>,
 ) {
   const seen: CtoxWorkjetProjectControlRequest[] = [];
   const control: WorkjetProjectControlPort = async (_instanceId, request) => {

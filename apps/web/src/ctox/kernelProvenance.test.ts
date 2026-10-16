@@ -29,3 +29,13 @@ it("keeps every vendored kernel file, the license and the contract byte-identica
       contract.sha256,
     );
 });
+
+it("keeps the pinned Shell v4 worker dispatch handler byte-identical (ctox #924)", () => {
+  const pin = read("./contract/workjet-dispatch/PIN.md").toString("utf8");
+  const rows = [...pin.matchAll(/^\| *([\w.-]+\.js) *\|[^|]*\| *([0-9a-f]{64}) *\|$/gm)];
+  expect(rows.map((row) => row[1]).sort()).toEqual(
+    ["dispatch.js", "outcome-contract.js", "sha256.js", "workjet.worker.dispatch.js"].sort(),
+  );
+  for (const [, file, hash] of rows)
+    expect(sha256(read(`./contract/workjet-dispatch/${file}`)), file).toBe(hash);
+});

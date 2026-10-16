@@ -61,6 +61,8 @@ export default defineConfig({
       // Byte-identical CTOX Workjet bridge contract (E27.6); sha256 in kernel/PROVENANCE.json.
       "apps/web/src/ctox/contract/wjb-command-types.json",
       "apps/web/src/ctox/kernel/index.d.ts",
+      // Byte-identical Shell v4 worker dispatch handler (ctox #924); sha256 in its PIN.md.
+      "apps/web/src/ctox/contract/workjet-dispatch/*.js",
       "apps/web/src/lib/vendor/qrcodegen.ts",
       "apps/mobile/uniwind-types.d.ts",
       "*.icon/**",
@@ -116,6 +118,8 @@ export default defineConfig({
       // Byte-identical CTOX Workjet bridge contract (E27.6); sha256 in kernel/PROVENANCE.json.
       "apps/web/src/ctox/contract/wjb-command-types.json",
       "apps/web/src/ctox/kernel/index.d.ts",
+      // Byte-identical Shell v4 worker dispatch handler (ctox #924); sha256 in its PIN.md.
+      "apps/web/src/ctox/contract/workjet-dispatch/*.js",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
     jsPlugins: ["./oxlint-plugin-workjet/index.ts"],

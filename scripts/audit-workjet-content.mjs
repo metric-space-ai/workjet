@@ -616,9 +616,31 @@ async function vendoredKernelFiles(root) {
   }
 }
 
+/**
+ * The Shell v4 worker dispatch handler (ctox #924) is likewise a byte copy of Core code, used only
+ * as the fake-core test handler. Exactly the files whose sha256 its PIN.md table pins are skipped;
+ * kernelProvenance.test.ts proves they are unmodified.
+ */
+const VENDORED_DISPATCH_DIR = "apps/web/src/ctox/contract/workjet-dispatch";
+async function vendoredDispatchFiles(root) {
+  try {
+    const pin = await NodeFSP.readFile(
+      NodePath.join(root, VENDORED_DISPATCH_DIR, "PIN.md"),
+      "utf8",
+    );
+    return [...pin.matchAll(/^\| *([\w.-]+\.js) *\|[^|]*\| *[0-9a-f]{64} *\|$/gm)].map(
+      ([, file]) => `${VENDORED_DISPATCH_DIR}/${file}`,
+    );
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
 /** Audit the bounded Workjet product surfaces from a repository root. */
 export async function auditWorkjetContent(root = repoRoot) {
   const vendored = await vendoredKernelFiles(root);
+  for (const file of await vendoredDispatchFiles(root)) vendored.add(file);
   const sourceFiles = (
     await Promise.all(AUDITED_SOURCE_ROOTS.map((directory) => collectFiles(root, directory)))
   )

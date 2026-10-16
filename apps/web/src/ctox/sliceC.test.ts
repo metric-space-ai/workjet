@@ -30,6 +30,7 @@ import {
   WORKJET_APP_ID,
   WORKJET_FOREIGN_COLLECTIONS,
   workjetAppManifest,
+  workjetForeignOwnerManifests,
 } from "./workjetAppManifest";
 import {
   ctoxSignalingEndpoints,
@@ -85,23 +86,11 @@ async function openV4(role: "admin" | "user" = "admin") {
   };
   await transport.push("business_app_versions", [
     { id: `${WORKJET_APP_ID}@${APP_VER}`, app_id: WORKJET_APP_ID, app_ver: APP_VER, manifest },
-    {
-      id: "ctox@v4-slice-c",
-      app_id: "ctox",
-      app_ver: "v4-slice-c",
-      manifest: {
-        app_id: "ctox",
-        app_ver: "v4-slice-c",
-        min_app_api: "4.0",
-        collections: Object.fromEntries(
-          [...new Set(WORKJET_FOREIGN_COLLECTIONS)].map((name) => [name, { class: "eager" }]),
-        ),
-        handlers: {},
-      },
-    },
+    ...workjetForeignOwnerManifests("v4-slice-c"),
   ]);
   await transport.push("business_apps", [
     { id: "ctox", title: "Crew", active_ver: "v4-slice-c" },
+    { id: "ctox-platform", title: "Platform", active_ver: "v4-slice-c" },
     { id: WORKJET_APP_ID, title: "Workjet", active_ver: APP_VER },
     { id: "shell", title: "Shell", active_ver: "v4-slice-c-shell" },
   ]);
@@ -131,7 +120,7 @@ async function openV4(role: "admin" | "user" = "admin") {
     transport,
   });
   await kernel.ready;
-  const apps = kernel.appApi(WORKJET_APP_ID, APP_VER).query<{ id: string }>("business_apps", {});
+  const apps = kernel.appApi("fixture-probe", "0").query<{ id: string }>("business_apps", {});
   const off = apps.subscribe(() => {});
   try {
     await vi.waitFor(() => {
@@ -259,7 +248,19 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
       environmentId: "env-me",
     });
     expect(result).toEqual({ decisionId: "workjet-decision:k-1", status: "open" });
-    expect(approvals[0]).toMatchObject({ prompt: "Weiter?", reviewer_user_id: "reviewer" });
+    // At pin eca39cf84 the approval request is a Core platform route (E39/E42): the fake Core
+    // answers it itself without app dispatch, so the test plays the Core projection.
+    await transport.push(CTOX_APPROVAL_REQUESTS, [
+      {
+        id: "workjet-decision:k-1",
+        approval_request_id: "workjet-decision:k-1",
+        status: "pending",
+        reviewer_user_id: "reviewer",
+        prompt: "Weiter?",
+        target_module: "workjet",
+        updated_at_ms: 1,
+      },
+    ]);
     await waitForRow(api, CTOX_APPROVAL_REQUESTS, "workjet-decision:k-1", () => true);
     expect(readWorkjetDecision(api, "workjet-decision:k-1")).toMatchObject({ status: "open" });
     await transport.push(CTOX_APPROVAL_REQUESTS, [
@@ -280,7 +281,7 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
     });
   });
 
-  it("3 without the approval route the core rejects with unknown_command", async () => {
+  it("3 the approval request is a Core platform route, never an app handler (E42)", async () => {
     const { api, transport } = await openV4();
     transport.handlers.delete(CTOX_APPROVAL_REQUEST);
     await expect(
@@ -293,7 +294,7 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
         threadId: "t",
         environmentId: "e",
       }),
-    ).rejects.toMatchObject({ code: "unknown_command" });
+    ).resolves.toEqual({ decisionId: "workjet-decision:k-2", status: "open" });
   });
 
   it("4 worker dispatch runs in the Workjet app handler with process.run", async () => {

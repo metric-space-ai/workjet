@@ -98,7 +98,7 @@ function memorySessions() {
       transport,
     });
     await kernel.ready;
-    const apps = kernel.appApi(WORKJET_APP_ID, APP_VER).query<{ id: string }>("business_apps", {});
+    const apps = kernel.appApi("fixture-probe", "0").query<{ id: string }>("business_apps", {});
     const off = apps.subscribe(() => {});
     try {
       await vi.waitFor(

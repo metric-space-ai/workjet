@@ -19,6 +19,7 @@ import {
   WORKJET_APP_ID,
   WORKJET_FOREIGN_COLLECTIONS,
   workjetAppManifest,
+  workjetForeignOwnerManifests,
 } from "./workjetAppManifest";
 import { E25_METHODS, requestCtoxNative, type E25Method } from "./e25Native";
 import { PROJECT_MUTATION_ACTIONS, projectCommandType } from "./projectCommands";
@@ -71,24 +72,10 @@ async function openGate(options: { routes?: Iterable<string>; publishManifest?: 
     ]);
     // Owner of the foreign collections Workjet reads (app ctox, K-WJ-1). At this kernel pin
     // PLATFORM_COLLECTIONS lacks devices/machine_enrollments, so the fixture owner carries them.
-    await transport.push("business_app_versions", [
-      {
-        id: "ctox@v4-gate",
-        app_id: "ctox",
-        app_ver: "v4-gate",
-        manifest: {
-          app_id: "ctox",
-          app_ver: "v4-gate",
-          min_app_api: "4.0",
-          collections: Object.fromEntries(
-            [...new Set(WORKJET_FOREIGN_COLLECTIONS)].map((name) => [name, { class: "eager" }]),
-          ),
-          handlers: {},
-        },
-      },
-    ]);
+    await transport.push("business_app_versions", [...workjetForeignOwnerManifests("v4-gate")]);
     await transport.push("business_apps", [
       { id: "ctox", title: "Crew", active_ver: "v4-gate" },
+      { id: "ctox-platform", title: "Platform", active_ver: "v4-gate" },
       { id: WORKJET_APP_ID, title: "Workjet", active_ver: APP_VER },
       { id: "shell", title: "Shell", active_ver: "v4-gate-shell" },
     ]);
@@ -105,7 +92,7 @@ async function openGate(options: { routes?: Iterable<string>; publishManifest?: 
   await kernel.ready;
   if (options.publishManifest !== false) {
     // The published app/shell facts replicate from the core; the kernel never assumes them.
-    const apps = kernel.appApi(WORKJET_APP_ID, APP_VER).query<{ id: string }>("business_apps", {});
+    const apps = kernel.appApi("fixture-probe", "0").query<{ id: string }>("business_apps", {});
     const off = apps.subscribe(() => {});
     try {
       await vi.waitFor(
@@ -203,22 +190,21 @@ describe("V4 gate: manifest and command contract (E35 Nr. 3, K-WJ-B2, E27.6)", (
 
 describe("V4 gate: the six E25 methods (E25, E26, E27.1)", () => {
   for (const method of E25) {
-    it(`${method} runs as a typed core command and returns the result value`, async () => {
+    // At pin eca39cf84 every `ctox.workjet.*.v1` type is a Core platform route (E39/E42
+    // command inventory); the fake Core answers it itself with an explicit Core outcome.
+    it(`${method} runs as a typed core platform command and returns the result value`, async () => {
       const { api } = await openGate();
-      const params = { action: "probe", nullable: null };
-      // E27.1: the result is a value, replaced as a whole; null fields stay.
-      await expect(requestCtoxNative(api, method, params)).resolves.toEqual({
-        route: method,
-        payload: params,
-        nullable: null,
+      await expect(
+        requestCtoxNative(api, method, { action: "probe", nullable: null }),
+      ).resolves.toEqual({
+        route: "core",
+        type: method,
       });
     });
-    it(`${method} without its core route is unknown_command`, async () => {
-      const { api } = await openGate({
-        routes: [...CONTRACT_TYPES].filter((type) => type !== method),
-      });
-      await expect(requestCtoxNative(api, method, { action: "probe" })).rejects.toMatchObject({
-        code: "unknown_command",
+    it(`${method} needs no app handler or simulated route (platform routing)`, async () => {
+      const { api } = await openGate({ routes: [] });
+      await expect(requestCtoxNative(api, method, { action: "probe" })).resolves.toMatchObject({
+        route: "core",
       });
     });
   }
@@ -529,15 +515,33 @@ describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", (
         order: { revision: 2, projectIds: ["p-1", "p-2"] },
       },
     });
-    // No route exists (routes: []), and no business command was written for the order.
-    expect(api.query("business_commands", {}).get()).toEqual([]);
+    // The order is a local document write (api.patch), not a business command.
+    expect(
+      api.get<{ revision: number }>("workjet_gallery_orders", api.actor.id).get(),
+    ).toMatchObject({
+      revision: 2,
+    });
   });
 
-  it("V4: the gallery order collection is owned by the Workjet app, not read-only foreign", () => {
+  it("E42.3: the manifest owns only mailbox envelopes and Luma state", () => {
     const manifest = workjetAppManifest(APP_VER);
-    expect(manifest.collections).toHaveProperty("workjet_gallery_orders");
-    expect(manifest.foreign_collections).not.toHaveProperty("workjet_gallery_orders");
-    expect(manifest.collections).toHaveProperty("workjet_project_feed");
+    expect(Object.keys(manifest.collections).sort()).toEqual(
+      ["workjet_luma_state", "workjet_mailbox_envelopes"].sort(),
+    );
+    for (const read of [
+      "workjet_projects",
+      "workjet_project_kpis",
+      "workjet_project_feed",
+      "workjet_worker_profiles",
+      "ctox_task_approval_requests",
+    ])
+      expect(manifest.foreign_collections, read).toHaveProperty(read, {
+        owner_app: "ctox",
+        ops: ["read"],
+      });
+    // threads.ctox_approval.request is a platform route, not an app command_out.
+    expect(manifest.commands_out).toEqual(["ctox.maintenance.restart"]);
+    expect(JSON.stringify(manifest)).not.toContain("workjet.worker.dispatch");
   });
 
   it("V4: project feed is a local query", async () => {

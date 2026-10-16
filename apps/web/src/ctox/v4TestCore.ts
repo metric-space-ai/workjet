@@ -10,6 +10,7 @@ import {
   WORKJET_APP_ID,
   WORKJET_FOREIGN_COLLECTIONS,
   workjetAppManifest,
+  workjetForeignOwnerManifests,
 } from "./workjetAppManifest";
 import { commitActiveWorkjetSelection } from "../activeWorkjetScope";
 
@@ -35,23 +36,11 @@ export async function openV4(select = true) {
       app_ver: APP_VER,
       manifest: workjetAppManifest(APP_VER),
     },
-    {
-      id: "ctox@v4-consumers",
-      app_id: "ctox",
-      app_ver: "v4-consumers",
-      manifest: {
-        app_id: "ctox",
-        app_ver: "v4-consumers",
-        min_app_api: "4.0",
-        collections: Object.fromEntries(
-          [...new Set(WORKJET_FOREIGN_COLLECTIONS)].map((name) => [name, { class: "eager" }]),
-        ),
-        handlers: {},
-      },
-    },
+    ...workjetForeignOwnerManifests("v4-consumers"),
   ]);
   await transport.push("business_apps", [
     { id: "ctox", title: "Crew", active_ver: "v4-consumers" },
+    { id: "ctox-platform", title: "Platform", active_ver: "v4-consumers" },
     { id: WORKJET_APP_ID, title: "Workjet", active_ver: APP_VER },
     { id: "shell", title: "Shell", active_ver: "v4-consumers-shell" },
   ]);
@@ -64,7 +53,7 @@ export async function openV4(select = true) {
     transport,
   });
   await kernel.ready;
-  const apps = kernel.appApi(WORKJET_APP_ID, APP_VER).query<{ id: string }>("business_apps", {});
+  const apps = kernel.appApi("fixture-probe", "0").query<{ id: string }>("business_apps", {});
   const offApps = apps.subscribe(() => {});
   await vi
     .waitFor(

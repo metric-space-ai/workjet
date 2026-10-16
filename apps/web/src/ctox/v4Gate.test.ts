@@ -311,7 +311,7 @@ describe("V4 gate: read paths are local queries on a V4 instance (E32)", () => {
       },
     ]);
     const providers = completed(
-      await read({ action: "instance.providers.read", version: 1, operationId: "gate-providers" }),
+      await read({ action: "instance.providers.read", version: 1, operationId: "8d7f8a52-3c1e-4b8a-9b9e-2f4c6d1e0a11" }),
     );
     expect(providers).toMatchObject({
       action: "instance.providers.read",

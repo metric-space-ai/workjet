@@ -180,7 +180,7 @@ export function NetworkDiagram({
                 key={tag.kind}
                 className="network-tag"
                 data-network-capability={tag.kind}
-                title={tag.title}
+                title={tag.title ?? tag.label}
               >
                 {tag.label}
               </span>

@@ -218,11 +218,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* One row: the node has a fixed height, a second tag row was cut off (FIX-E). */
 .network-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
-  max-height: 40px;
+  min-width: 0;
   overflow: hidden;
 }
 .network-add {
@@ -244,7 +245,10 @@
   white-space: nowrap;
 }
 .network-tag[data-network-capability="gpu"] {
-  max-width: 100%;
+  display: block;
+  min-width: 0;
+  flex-shrink: 1;
+  line-height: 18px;
   overflow: hidden;
   text-overflow: ellipsis;
 }

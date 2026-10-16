@@ -48,6 +48,13 @@ import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useAutomaticWorktreeStorage, WorktreeStorageInline } from "./WorkjetSettings";
 import { Row, type RowDeleteOption, type RowMenuAction, type RowStatus } from "../ui/row";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
+import {
+  remoteDaemonTarget,
+  remoteDaemonUpdateFor,
+  remoteDaemonUpdateKey,
+  useRemoteDaemonUpdates,
+  type RemoteDaemonUpdates,
+} from "./remoteDaemonUpdate";
 import { resolveSettingsInstanceContext } from "./settingsInstanceContext";
 import type { OperationalComputerEnrollment } from "../../computerCapabilityEnrollment";
 import {
@@ -568,7 +575,12 @@ export function WorkjetComputersSettingsView({
   onRolesChange,
   connectionAction,
   onRetryLoad,
+  remoteDaemonUpdates,
+  onRetryRemoteDaemonUpdate,
 }: {
+  /** Laufende/fehlgeschlagene Aktualisierung des Workjet-Dienstes je SSH-Ziel. */
+  readonly remoteDaemonUpdates?: RemoteDaemonUpdates;
+  readonly onRetryRemoteDaemonUpdate?: (row: ComputerMachineRow) => void;
   readonly configuration: WorkjetConfiguration;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
   readonly environmentsReady: boolean;
@@ -904,6 +916,12 @@ export function WorkjetComputersSettingsView({
                       : disconnected
                         ? "Getrennt"
                         : "Verbunden";
+            // Aktualisierung des Dienstes: nur der Punkt (orange), kein Satz.
+            if (
+              active &&
+              remoteDaemonUpdateFor(remoteDaemonUpdates, metadata?.connection) === "updating"
+            )
+              status = "busy";
             meta =
               computer.environmentId === environmentId
                 ? "Dieser Rechner"
@@ -1071,6 +1089,25 @@ export function WorkjetComputersSettingsView({
                     : {})}
                 />
               </div>
+              {computer &&
+              remoteDaemonUpdateFor(remoteDaemonUpdates, metadata?.connection) === "failed" ? (
+                <div
+                  role="alert"
+                  data-slot="computer-update-failed"
+                  className="flex flex-wrap items-center gap-2 px-3 pb-2 pl-8 text-xs text-destructive"
+                >
+                  <span className="min-w-0">Aktualisierung fehlgeschlagen</span>
+                  {onRetryRemoteDaemonUpdate ? (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => onRetryRemoteDaemonUpdate(row)}
+                    >
+                      Erneut
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
               {removeAsk === row.key && deleteOptions.length ? (
                 // D12: eine destructive Aktion plus Haken für die Dateien auf dem Rechner.
                 <div
@@ -1441,6 +1478,15 @@ export function WorkjetComputersSettings({
     discoverSshHosts: addOpen || setupOnly,
   });
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
+  const [remoteDaemonUpdates, setRemoteDaemonUpdate] = useRemoteDaemonUpdates(bridge);
+  // „Erneut“: ein neues Ensure startet den Aktualisierungsversuch des Dienstes neu.
+  const retryRemoteDaemonUpdate = (row: ComputerMachineRow) => {
+    const target = remoteDaemonTarget(row.computer?.metadata?.connection);
+    if (!target || !bridge) return;
+    const key = remoteDaemonUpdateKey(target);
+    setRemoteDaemonUpdate(key, null);
+    void bridge.ensureSshEnvironment(target).catch(() => setRemoteDaemonUpdate(key, "failed"));
+  };
   // Rechner-Backend (Desktop): Erkennung, Rollen, aktiv, Entfernen.
   const control = useMemo<ComputerControl | undefined>(
     () =>
@@ -1950,6 +1996,8 @@ export function WorkjetComputersSettings({
           />
         ))}
       <WorkjetComputersSettingsView
+        remoteDaemonUpdates={remoteDaemonUpdates}
+        {...(bridge ? { onRetryRemoteDaemonUpdate: retryRemoteDaemonUpdate } : {})}
         worktreeStorage={
           environmentId === null ? null : (
             <PrimaryWorktreeStorage

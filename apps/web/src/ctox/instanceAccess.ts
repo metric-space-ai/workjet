@@ -1,43 +1,67 @@
 import { requestCtoxMaintenanceRestart } from "@workjet/shared/ctoxV4AppData";
-import { parseV4LaunchContext } from "./kernel/index";
 import type { V4LaunchContext } from "./kernel/index";
 import { getCtoxClient } from "./ctoxClient";
+import {
+  redeemV4DeviceInvite,
+  type V4DeviceKeySource,
+  type V4InviteRedeemOutcome,
+  type V4PairingControlExchange,
+} from "./v4DeviceInvite";
+import { workjetV4DeviceKeys } from "./v4DeviceKey";
+import { storePairedV4LaunchContext } from "./v4PairedLaunchContexts";
+import { createV4PairingControlExchange } from "./v4PairingPeer";
 
 /**
- * Instance access without SSH on V4 (E49.6). First pairing is the Shell invitation
- * (`ctox.workjet.device.v1 invite.create`, admin in the Business OS Shell); Workjet redeems its
- * opaque payload over the signaling server, the only third-party service, and receives the
- * V4LaunchContext (E41). A V3 instance keeps today's desktop path until the post-cutover cleanup.
+ * Instance access without SSH on V4 (E49.6). First pairing is the Shell invitation (admin in the
+ * Business OS Shell); Workjet redeems it as a pairing peer over the signaling server, the only
+ * third-party service, and receives the V4LaunchContext (E41, E54.4). A V3 instance keeps
+ * today's desktop path until the post-cutover cleanup.
  */
-const PAIRING_URI = /^workjet:\/\/pair\?payload=([A-Za-z0-9_-]{1,2300})$/u;
+export type WorkjetInviteRedeemOutcome = V4InviteRedeemOutcome;
 
-export type WorkjetInviteRedeemOutcome =
-  | { readonly ok: true; readonly launchContext: Readonly<V4LaunchContext["v4"]> }
-  | {
-      readonly ok: false;
-      readonly code: "invite_invalid" | "redeem_failed" | "launch_context_invalid";
-    };
+export interface WorkjetInviteRedeemOptions {
+  /** Default: the signaling pairing peer (control lane only). */
+  readonly exchange?: V4PairingControlExchange;
+  /** Default: the renderer's Ed25519 device key per instance. */
+  readonly deviceKeys?: V4DeviceKeySource;
+  readonly deviceLabel?: string;
+  readonly now?: () => number;
+}
 
-/** The signaling exchange of the invite payload; the transport is the host's, never SSH or HTTPS to the instance. */
-export type WorkjetSignalingInviteExchange = (payload: string) => Promise<unknown>;
+/** Display label of this device; display-only, never an authority input. */
+export function workjetDeviceLabel(): string {
+  const platform =
+    typeof navigator === "undefined"
+      ? ""
+      : ((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+          ?.platform ?? navigator.platform);
+  const name = /mac/iu.test(platform)
+    ? "macOS"
+    : /win/iu.test(platform)
+      ? "Windows"
+      : /linux/iu.test(platform)
+        ? "Linux"
+        : "";
+  return name === "" ? "Workjet" : `Workjet (${name})`;
+}
 
+/**
+ * Redeems a `workjet://pair?payload=…` V4 invitation. On success the launch context is stored
+ * and the V4 host bootstrap mounts that instance with it.
+ */
 export async function redeemWorkjetDeviceInvite(
   pairingUri: string,
-  exchange: WorkjetSignalingInviteExchange,
+  options: WorkjetInviteRedeemOptions = {},
 ): Promise<WorkjetInviteRedeemOutcome> {
-  const payload = PAIRING_URI.exec(pairingUri.trim())?.[1];
-  if (payload === undefined) return { ok: false, code: "invite_invalid" };
-  let answer: unknown;
-  try {
-    answer = await exchange(payload);
-  } catch {
-    return { ok: false, code: "redeem_failed" };
-  }
-  try {
-    return { ok: true, launchContext: parseV4LaunchContext(answer) };
-  } catch {
-    return { ok: false, code: "launch_context_invalid" };
-  }
+  const outcome = await redeemV4DeviceInvite({
+    link: pairingUri,
+    exchange: options.exchange ?? createV4PairingControlExchange(),
+    deviceKeys: options.deviceKeys ?? workjetV4DeviceKeys(),
+    deviceLabel: options.deviceLabel ?? workjetDeviceLabel(),
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
+  if (outcome.ok) storePairedV4LaunchContext(outcome.instanceId, outcome.payload);
+  return outcome;
 }
 
 /** Discovery is signaling only: the endpoints come from the launch context, never from an SSH probe. */

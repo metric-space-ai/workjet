@@ -5,6 +5,10 @@ import {
   subscribeActiveWorkjetScope,
 } from "../activeWorkjetScope";
 import { createWorkjetV4Host, type WorkjetLaunchContextReader } from "./v4HostBootstrap";
+import {
+  subscribePairedV4LaunchContexts,
+  takePairedV4LaunchContext,
+} from "./v4PairedLaunchContexts";
 
 /** Desktop control-plane reader: only the `v4` member of the instance's launch context. */
 export function desktopLaunchContextReader(
@@ -18,20 +22,47 @@ export function desktopLaunchContextReader(
 }
 
 /**
+ * E54.4: a launch context returned by a redeemed device invitation is read first (once; its E50
+ * ticket is single-use). Every later read goes to the desktop control plane, when there is one.
+ */
+export function pairedFirstLaunchContextReader(
+  fallback: WorkjetLaunchContextReader | undefined,
+): WorkjetLaunchContextReader {
+  return async (instanceId) => {
+    const paired = takePairedV4LaunchContext(instanceId);
+    if (paired !== undefined) return paired;
+    if (fallback === undefined) throw new Error("ctox_launch_context_unavailable");
+    return fallback(instanceId);
+  };
+}
+
+/**
  * Starts the Scheibe C host bootstrap. Re-checks the instance on every selection change, on
  * every guest reconnect of the selected instance (`warm`) and when a native host installed a
- * newer context. Without the desktop reader (older preload, browser build) nothing mounts.
+ * newer context. Without the desktop reader (older preload, browser build) only an instance
+ * whose invitation was just redeemed mounts.
  */
 export function startWorkjetV4HostBootstrap(
   bridge: DesktopCtoxBridge | undefined,
   appVersion: string,
 ): () => void {
   const read = bridge?.readV4LaunchContext;
-  if (!read) return () => {};
   const host = createWorkjetV4Host({
     appVersion,
-    readLaunchContext: desktopLaunchContextReader(read),
+    readLaunchContext: pairedFirstLaunchContextReader(
+      read ? desktopLaunchContextReader(read) : undefined,
+    ),
   });
+  // A redeemed invitation (E54.4) mounts its instance right away.
+  const offPaired = subscribePairedV4LaunchContexts((instanceId) => {
+    void host.sync(instanceId).catch(() => {});
+  });
+  if (!read || bridge === undefined) {
+    return () => {
+      offPaired();
+      void host.dispose();
+    };
+  }
   // Desktop Main closes SSH instance paths for V4 instances (E49.6).
   const report = bridge.reportV4Generation;
   let reported: { instanceId: string | null; generation: string | null } = {
@@ -68,6 +99,7 @@ export function startWorkjetV4HostBootstrap(
     }) ?? (() => {});
   check();
   return () => {
+    offPaired();
     offState();
     offScope();
     offContext();

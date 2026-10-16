@@ -53,6 +53,9 @@ import {
   redeemWorkjetDeviceInvite,
   restartCtoxInstance,
 } from "./instanceAccess";
+import { encodeV4DeviceInviteLink, type V4PairingControlRequest } from "./v4DeviceInvite";
+import { createMemoryV4DeviceKeyStorage, createV4DeviceKeySource } from "./v4DeviceKey";
+import { takePairedV4LaunchContext } from "./v4PairedLaunchContexts";
 
 const APP_VER = "v4-slice-c";
 
@@ -724,18 +727,40 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
         packageKeys: [{ keyId: "k1", alg: "Ed25519", publicKey: "A".repeat(43) }],
       },
     };
-    const exchange = vi.fn(async (_payload: string) => launch);
-    expect(await redeemWorkjetDeviceInvite("https://evil/x", exchange)).toEqual({
+    const instanceId = "inst-1";
+    const link = encodeV4DeviceInviteLink({
+      instanceId,
+      signaling: { urls: ["wss://signal.example/ws"], room: "r", nativePeerId: "n", iceServers: [] },
+      inviteId: "0b6f6f5e-3c1a-4d2e-9f00-123456789abc",
+      oneTimeSecret: "A".repeat(43),
+      expiresAtMs: Date.now() + 60_000,
+    });
+    const exchange = vi.fn(async (_target: unknown, request: V4PairingControlRequest) => ({
+      type: "pairing_response",
+      id: request.id,
+      result: launch,
+    }));
+    const deviceKeys = createV4DeviceKeySource(createMemoryV4DeviceKeyStorage());
+    expect(await redeemWorkjetDeviceInvite("https://evil/x", { exchange, deviceKeys })).toEqual({
       ok: false,
       code: "invite_invalid",
     });
-    const redeemed = await redeemWorkjetDeviceInvite("workjet://pair?payload=abc_DEF-1", exchange);
-    expect(exchange).toHaveBeenCalledWith("abc_DEF-1");
+    expect(exchange).not.toHaveBeenCalled();
+    const redeemed = await redeemWorkjetDeviceInvite(link, { exchange, deviceKeys });
+    expect(exchange).toHaveBeenCalledTimes(1);
     if (!redeemed.ok) throw new Error(redeemed.code);
-    expect(redeemed.launchContext.instanceId).toBe("inst-1");
+    expect(redeemed.launchContext.instanceId).toBe(instanceId);
     expect(ctoxSignalingEndpoints(redeemed.launchContext)).toEqual(["wss://signal.example/ws"]);
+    expect(takePairedV4LaunchContext(instanceId)).toEqual(launch);
     expect(
-      await redeemWorkjetDeviceInvite("workjet://pair?payload=abc", async () => ({ v4: {} })),
+      await redeemWorkjetDeviceInvite(link, {
+        deviceKeys,
+        exchange: async (_target, request) => ({
+          type: "pairing_response",
+          id: request.id,
+          result: { v4: {} },
+        }),
+      }),
     ).toEqual({ ok: false, code: "launch_context_invalid" });
   });
 });

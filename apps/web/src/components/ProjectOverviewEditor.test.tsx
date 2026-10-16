@@ -297,3 +297,22 @@ describe("card configuration patch", () => {
     expect(render("https://github.com/x/y")).not.toContain("Repository übernehmen");
   });
 });
+
+describe("card editor save feedback (N8)", () => {
+  it("shows no saving or saved text; undo stays only for 5 s", async () => {
+    const { CARD_UNDO_MS, ProjectCardConfigEditor } = await import("./ProjectOverviewEditor");
+    const markup = renderToStaticMarkup(
+      <ProjectCardConfigEditor
+        title="Alpha"
+        websiteUrl={null}
+        repositoryUrl={null}
+        jourFixe={null}
+        onSave={async () => true}
+        onCancel={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain("Speichert");
+    expect(markup).not.toContain("Gespeichert");
+    expect(CARD_UNDO_MS).toBe(5_000);
+  });
+});

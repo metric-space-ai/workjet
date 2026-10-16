@@ -22,6 +22,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import type { CtoxV4AppPort, CtoxV4CommandHandle } from "@workjet/shared/ctoxV4AppData";
+import { bindCtoxV4AppPort } from "../ctox/CtoxV4AppPorts.ts";
 
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
@@ -3249,6 +3251,126 @@ group("WorkjetMailboxTransport remote dispatch authentication", (it) => {
       assert.strictEqual(status.counters.accepted, 0);
       assert.isTrue(Option.isNone(yield* store.getInbound(id)));
       assert.deepEqual(consumedIds(daemon.calls), [id]);
+    }),
+  );
+});
+
+// ===============================
+// V4 (E49.4): Workjet app collection instead of loopback HTTP
+// ===============================
+
+/** In-memory stand-in for the bound kernel client; the same functions run against the vendored
+ * fake core in apps/web/src/ctox/sliceC.test.ts. */
+const memoryV4Port = () => {
+  const rows = new Map<string, Record<string, unknown>>();
+  const accepted = { local: Promise.resolve(), result: Promise.resolve({ status: "accepted" }) };
+  const live = <T>(value: () => T) => ({
+    get: value,
+    subscribe: (listener: (value: T) => void) => {
+      listener(value());
+      return () => {};
+    },
+  });
+  const matches = (row: Record<string, unknown>, selector: Record<string, unknown>) =>
+    Object.entries(selector).every(([field, condition]) =>
+      condition !== null && typeof condition === "object" && "$gt" in condition
+        ? (row[field] as number) > (condition as { $gt: number }).$gt
+        : row[field] === condition,
+    );
+  const port: CtoxV4AppPort = {
+    actor: { id: "owner", role: "admin" },
+    query: <T>(_collection: string, query: { selector?: Record<string, unknown> }) =>
+      live(() => [...rows.values()].filter((row) => matches(row, query.selector ?? {})) as T[]),
+    get: <T>(_collection: string, id: string) => live(() => (rows.get(id) ?? null) as T | null),
+    put: (_collection, doc) => {
+      rows.set(doc.id, { ...doc });
+      return accepted;
+    },
+    patch: (_collection, id, patch) => {
+      rows.set(id, { ...rows.get(id), ...patch });
+      return accepted;
+    },
+    command: () => {
+      throw new Error("the mailbox sends no commands");
+    },
+  } satisfies Omit<CtoxV4AppPort, "command"> & {
+    command: (...args: never[]) => CtoxV4CommandHandle;
+  };
+  return { port, rows };
+};
+
+const noDaemon = HttpClient.make(() => Effect.die("a V4 instance must not reach the daemon"));
+
+group("WorkjetMailboxTransport V4", (it) => {
+  it.effect("publishes into workjet_mailbox_envelopes without token or loopback HTTP", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const identity = yield* makeIdentity(WORKSPACE);
+      const { port, rows } = memoryV4Port();
+      const release = bindCtoxV4AppPort({ instanceId: "v4-mailbox", endpoint: BASE_URL }, port);
+      try {
+        const transport = yield* makeTransport({
+          client: noDaemon,
+          identity: Effect.succeed(identity),
+          sources: { resolveAuthToken: Effect.succeed(Option.none()) },
+        });
+        const id = envelopeId("v4-push-0001");
+        const envelope = yield* identity.signRoutingEnvelope({
+          schemaVersion: 1,
+          envelopeId: id,
+          kind: "message",
+          sourceWorkspaceId: WORKSPACE,
+          sourceEnvironmentId: LOCAL_ENVIRONMENT,
+          targetWorkspaceId: WORKSPACE,
+          targetEnvironmentId: REMOTE_ENVIRONMENT,
+          createdAt: NOW,
+          expiresAt: EXPIRES,
+        });
+        yield* store.enqueueOutbound(
+          envelope,
+          messagePayload({ envelopeId: id, source: localAddress, target: remoteAddress }),
+        );
+        const status = yield* transport.runCycle;
+        assert.strictEqual(status.counters.pushed, 1);
+        assert.strictEqual(Option.getOrThrow(yield* store.getOutbound(id)).state, "delivered");
+        assert.strictEqual(rows.get(id)?.status, "pending");
+        assert.strictEqual(rows.get(id)?.target_environment_id, REMOTE_ENVIRONMENT);
+      } finally {
+        release();
+      }
+    }),
+  );
+
+  it.effect("reads pending envelopes locally and acknowledges with an api.patch receipt", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const peer = yield* makeIdentity(WORKSPACE);
+      const id = envelopeId("v4-pull-0001");
+      const document = yield* remoteDocument({
+        identity: peer,
+        envelopeId: id,
+        kind: "delegation",
+        payload: delegationPayload({
+          envelopeId: id,
+          delegationId: delegationId("v4-pull-0001"),
+          source: remoteAddress,
+          target: localAddress,
+        }),
+      });
+      const { port, rows } = memoryV4Port();
+      rows.set(id, { ...document, status: "pending", created_at_ms: 0, expires_at_ms: 2 ** 52 });
+      const release = bindCtoxV4AppPort({ instanceId: "v4-mailbox", endpoint: BASE_URL }, port);
+      try {
+        const transport = yield* makeTransport({ client: noDaemon });
+        const status = yield* transport.runCycle;
+        assert.strictEqual(status.counters.accepted, 1);
+        assert.strictEqual(status.counters.consumed, 1);
+        assert.isTrue(Option.isSome(yield* store.getInbound(id)));
+        assert.strictEqual(rows.get(id)?.status, "consumed");
+        assert.strictEqual(rows.get(id)?.consumed_by, LOCAL_ENVIRONMENT);
+      } finally {
+        release();
+      }
     }),
   );
 });

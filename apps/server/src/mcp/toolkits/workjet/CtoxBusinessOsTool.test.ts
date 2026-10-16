@@ -18,6 +18,8 @@ import { DecisionHubConnectionRegistry } from "../../../workjet/decisionHub/Deci
 import { CtoxNativeRequests } from "../../../workjet/ctox/CtoxNativeRequests.ts";
 import * as NodeSqliteClient from "../../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
+import { bindCtoxV4AppPort } from "../../../workjet/ctox/CtoxV4AppPorts.ts";
+import type { CtoxV4AppPort } from "@workjet/shared/ctoxV4AppData";
 import {
   CtoxBusinessOsToolkitRegistrationLive,
   CTOX_BUSINESS_OS_TOOL_NAME,
@@ -199,6 +201,67 @@ it.effect("writes through the registered MCP tool using only the session's pinne
       "server-only-test-token",
     );
   }).pipe(Effect.provide(test.layer));
+});
+
+it.effect("V4: the tool is a thin adapter over the bound V4 client, no MCP over HTTPS (E49.7)", () => {
+  const test = fixture();
+  const sent: Array<{ type: string; payload: object }> = [];
+  const done = (value: unknown) => ({
+    get: () => ({ status: "done", result: value }),
+    subscribe: (listener: (state: { status: string; result: unknown }) => void) => {
+      listener({ status: "done", result: value });
+      return () => {};
+    },
+  });
+  const port = {
+    actor: { id: "owner", role: "admin" },
+    command: (type: string, payload: object) => {
+      sent.push({ type, payload });
+      return {
+        id: "cmd-v4",
+        status: done({ ok: true, module_id: "app-a" }),
+        local: Promise.resolve(),
+        result: Promise.resolve({ status: "accepted" }),
+      };
+    },
+  } as unknown as CtoxV4AppPort;
+  return Effect.acquireUseRelease(
+    Effect.sync(() => bindCtoxV4AppPort({ instanceId: "instance-a" }, port)),
+    () =>
+      Effect.gen(function* () {
+        const server = yield* McpServer.McpServer;
+        const result = yield* server
+          .callTool({
+            name: CTOX_BUSINESS_OS_TOOL_NAME,
+            arguments: {
+              request: {
+                operation: "write_app_file",
+                module_id: "app-a",
+                path: "index.js",
+                content: "export {};",
+              },
+            },
+          })
+          .pipe(
+            Effect.provideService(Invocation.McpInvocationContext, scope),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+        expect(result.isError).toBe(false);
+        expect(result.structuredContent).toEqual({
+          instanceId: "instance-a",
+          result: { ok: true, module_id: "app-a" },
+        });
+        expect(sent).toEqual([
+          {
+            type: "business_os.write_app_file",
+            payload: { module_id: "app-a", path: "index.js", content: "export {};" },
+          },
+        ]);
+        expect(test.calls).toEqual([]);
+        expect(test.resolutions).toEqual([]);
+      }).pipe(Effect.provide(test.layer)),
+    (release) => Effect.sync(release),
+  );
 });
 
 it.effect("dispatches a retry key only when the native operation advertises support", () =>

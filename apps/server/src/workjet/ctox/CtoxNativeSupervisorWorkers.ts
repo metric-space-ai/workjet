@@ -15,6 +15,8 @@ import * as Schema from "effect/Schema";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import type { RemoteWorkerNativeScope } from "./CtoxRemoteWorkerAdmission.ts";
+import { dispatchWorkjetWorker } from "@workjet/shared/ctoxV4AppData";
+import { resolveCtoxV4AppPortForInstance } from "./CtoxV4AppPorts.ts";
 
 const PollReceipt = Schema.Struct({
   contract: Schema.Literal(NATIVE_SUPERVISOR_WORKER_CONTRACT),
@@ -68,6 +70,13 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
       instanceId: scope.instanceId,
       action: args.action,
     });
+    // V4 (E49.5): a Workjet app command the Workjet app handler runs with process.run; no MCP.
+    const v4 = resolveCtoxV4AppPortForInstance(scope.instanceId);
+    if (v4 !== null)
+      return yield* Effect.tryPromise({
+        try: () => dispatchWorkjetWorker(v4, { ...args, action: String(args.action) }),
+        catch: failure,
+      });
     const target = yield* dependencies.connections
       .resolveReadyTarget(scope.connectionId, scope.instanceId)
       .pipe(

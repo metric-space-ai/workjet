@@ -51,8 +51,10 @@ export interface CtoxV4AppPort {
 }
 
 export class CtoxV4AppError extends Error {
-  constructor(readonly code: string) {
+  readonly code: string;
+  constructor(code: string) {
     super(code);
+    this.code = code;
     this.name = "CtoxV4AppError";
   }
 }
@@ -302,6 +304,8 @@ export async function requestWorkjetDecision(
       title: input.title,
       prompt: input.question,
       reviewer_user_id: input.reviewerUserId,
+      // The owner reviews decisions of their own Workjet agents; the core admits this only for admins.
+      allow_self_approval_admin_override: input.reviewerUserId === api.actor.id,
       target_module: "workjet",
       target_record_id: input.threadId,
       decision_options: input.options,
@@ -357,27 +361,24 @@ export function readWorkjetDecision(
 /** Workjet app command; the Workjet app handler on the instance runs it with `process.run`. */
 export const WORKJET_WORKER_DISPATCH = "workjet.worker.dispatch";
 
-export interface WorkjetWorkerDispatchInput {
-  readonly dispatchId: string;
-  readonly workerId: string;
-  readonly projectId: string;
-  readonly brief: string;
-}
+/**
+ * Same action-multiplexed arguments as today's `business_os.workjet_worker_dispatch` tool
+ * (`register_source`, `dispatch`, …); the handler answers with the same receipt.
+ */
+export type WorkjetWorkerDispatchArgs = Readonly<Record<string, unknown>> & {
+  readonly action: string;
+};
 
 export function dispatchWorkjetWorker(
   api: CtoxV4AppPort,
-  input: WorkjetWorkerDispatchInput,
+  args: WorkjetWorkerDispatchArgs,
+  idempotencyKey?: string,
 ): Promise<unknown> {
   return runCtoxV4Command(
     api,
     WORKJET_WORKER_DISPATCH,
-    {
-      dispatch_id: input.dispatchId,
-      worker_id: input.workerId,
-      project_id: input.projectId,
-      brief: input.brief,
-    },
-    { idempotency_key: input.dispatchId },
+    args,
+    idempotencyKey === undefined ? undefined : { idempotency_key: idempotencyKey },
   );
 }
 

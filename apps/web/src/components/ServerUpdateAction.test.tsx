@@ -64,7 +64,6 @@ describe("ServerUpdateAction", () => {
     expect(testState.toast).toHaveBeenCalledWith({
       type: "success",
       title: "Test server aktualisiert",
-      description: "Verbunden mit workjet@0.0.31",
     });
   });
 

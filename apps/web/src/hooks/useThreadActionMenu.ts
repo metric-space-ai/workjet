@@ -3,7 +3,6 @@ import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
   settlePromise,
-  squashAtomCommandFailure,
 } from "@workjet/client-runtime/state/runtime";
 import {
   canSnooze,
@@ -37,12 +36,11 @@ import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { useThreadActions } from "./useThreadActions";
 
-function failureToast(title: string, error: unknown) {
+function failureToast(title: string) {
   toastManager.add(
     stackedThreadToast({
       type: "error",
       title,
-      description: error instanceof Error ? error.message : "Unbekannter Fehler.",
     }),
   );
 }
@@ -84,23 +82,23 @@ export function useThreadActionMenu(input: {
   const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
-    onCopy: ({ path }) => {
-      toastManager.add({ type: "success", title: "Pfad kopiert", description: path });
+    onCopy: () => {
+      toastManager.add({ type: "success", title: "Pfad kopiert" });
     },
-    onError: (error) => failureToast("Kopieren fehlgeschlagen", error),
+    onError: () => failureToast("Kopieren fehlgeschlagen"),
   });
   const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
     target: "branch name",
-    onCopy: ({ branch }) => {
-      toastManager.add({ type: "success", title: "Branch kopiert", description: branch });
+    onCopy: () => {
+      toastManager.add({ type: "success", title: "Branch kopiert" });
     },
-    onError: (error) => failureToast("Kopieren fehlgeschlagen", error),
+    onError: () => failureToast("Kopieren fehlgeschlagen"),
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
-    onCopy: ({ threadId }) => {
-      toastManager.add({ type: "success", title: "ID kopiert", description: threadId });
+    onCopy: () => {
+      toastManager.add({ type: "success", title: "ID kopiert" });
     },
-    onError: (error) => failureToast("Kopieren fehlgeschlagen", error),
+    onError: () => failureToast("Kopieren fehlgeschlagen"),
   });
 
   const openMenu = useCallback(
@@ -151,7 +149,7 @@ export function useThreadActionMenu(input: {
           const result = await snoozeThread(threadRef, preset.snoozedUntil);
           if (result._tag === "Failure") {
             if (!isAtomCommandInterrupted(result)) {
-              failureToast("Zurückstellen fehlgeschlagen", squashAtomCommandFailure(result));
+              failureToast("Zurückstellen fehlgeschlagen");
             }
             return;
           }
@@ -165,7 +163,7 @@ export function useThreadActionMenu(input: {
                 onClick: () => {
                   void unsnoozeThread(threadRef).then((undone) => {
                     if (undone._tag === "Failure" && !isAtomCommandInterrupted(undone)) {
-                      failureToast("Aufwecken fehlgeschlagen", squashAtomCommandFailure(undone));
+                      failureToast("Aufwecken fehlgeschlagen");
                     }
                   });
                 },
@@ -180,7 +178,7 @@ export function useThreadActionMenu(input: {
         ) => {
           const result = await run();
           if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-            failureToast(title, squashAtomCommandFailure(result));
+            failureToast(title);
           }
         };
         switch (action) {
@@ -196,7 +194,7 @@ export function useThreadActionMenu(input: {
               }),
             );
             if (result._tag === "Failure") {
-              failureToast("Unterhaltung nicht erstellt", squashAtomCommandFailure(result));
+              failureToast("Unterhaltung nicht erstellt");
             }
             return;
           }
@@ -264,7 +262,7 @@ export function useThreadActionMenu(input: {
                 // that itself, and "Failed to delete thread" would be a lie.
                 readThreadShell(threadRef) !== null
               ) {
-                failureToast("Löschen fehlgeschlagen", squashAtomCommandFailure(deleted));
+                failureToast("Löschen fehlgeschlagen");
               }
             });
             return;

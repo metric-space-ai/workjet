@@ -233,7 +233,6 @@ export function PreviewView({
         toastManager.add({
           type: "error",
           title: "Größe nicht änderbar",
-          description: error instanceof Error ? error.message : "Ein Fehler ist aufgetreten.",
         });
         throw error;
       }
@@ -290,11 +289,10 @@ export function PreviewView({
     const operation = desktopOverlay?.pictureInPicture
       ? previewBridge.pictureInPicture.close
       : previewBridge.pictureInPicture.open;
-    void operation(runtimeTabId).catch((error) => {
+    void operation(runtimeTabId).catch(() => {
       toastManager.add({
         type: "error",
         title: "Vorschaufenster nicht aktualisiert",
-        description: error instanceof Error ? error.message : "Ein Fehler ist aufgetreten.",
       });
     });
   }, [desktopOverlay?.pictureInPicture, runtimeTabId]);
@@ -317,7 +315,6 @@ export function PreviewView({
                   stackedThreadToast({
                     type: "error",
                     title: "Pfad nicht kopiert",
-                    description: "Zwischenablage nicht verfügbar",
                     actionProps: revealAction,
                   }),
                 );
@@ -333,14 +330,12 @@ export function PreviewView({
                     updateRecordingToast();
                   }, 2_000);
                 },
-                (error) => {
+                () => {
                   toastManager.update(
                     toastId,
                     stackedThreadToast({
                       type: "error",
                       title: "Pfad nicht kopiert",
-                      description:
-                        error instanceof Error ? error.message : "Ein Fehler ist aufgetreten.",
                       actionProps: revealAction,
                     }),
                   );
@@ -386,22 +381,20 @@ export function PreviewView({
               }),
             );
           },
-          (error) => {
+          () => {
             toastManager.add({
               type: "error",
               title: "Aufnahme nicht gestoppt",
-              description: error instanceof Error ? error.message : "Ein Fehler ist aufgetreten.",
             });
           },
         );
         return;
       }
       if (record) {
-        void startBrowserRecording(runtimeTabId, threadRef, tabId).catch((error) => {
+        void startBrowserRecording(runtimeTabId, threadRef, tabId).catch(() => {
           toastManager.add({
             type: "error",
             title: "Aufnahme nicht gestartet",
-            description: error instanceof Error ? error.message : "Ein Fehler ist aufgetreten.",
           });
         });
         return;
@@ -527,11 +520,10 @@ export function PreviewView({
             }),
           );
         },
-        (error) => {
+        () => {
           toastManager.add({
             type: "error",
             title: "Screenshot fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Ein Fehler ist aufgetreten.",
           });
         },
       );

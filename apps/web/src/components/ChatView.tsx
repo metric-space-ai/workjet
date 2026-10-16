@@ -330,11 +330,7 @@ import { WorkjetHandoffInbox } from "./workjetSurfaces";
 import { publishCrossModeResultSubmitted } from "../crossMode/crossModeNotificationProducer";
 import { CrossModeNotificationCenter } from "../crossMode/CrossModeNotifications";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
-import {
-  classifyComposerError,
-  composerErrorLine,
-  composerToastDescription,
-} from "./chat/composerErrorLineLogic";
+import { classifyComposerError, composerErrorLine } from "./chat/composerErrorLineLogic";
 import { useComposerSilentRetry } from "./chat/useComposerSilentRetry";
 import { environmentUnavailableBannerItem } from "./chat/environmentUnavailableBanner";
 import { ThreadSyncStatusLine } from "./chat/ThreadSyncStatusLine";
@@ -1253,11 +1249,6 @@ type LocalThreadErrorEntry = {
   readonly message: string | null;
   readonly at: number;
 };
-
-function chatActionErrorMessage(error: unknown): string | undefined {
-  // Eine deutsche Zeile oder keine Beschreibung; nie der Rohtext (UI-Vertrag §1 Toast).
-  return composerToastDescription(error);
-}
 
 function ChatViewContent(props: ChatViewProps) {
   const {
@@ -2370,12 +2361,10 @@ function ChatViewContent(props: ChatViewProps) {
     async (environmentId: EnvironmentId) => {
       const result = await retryEnvironment(environmentId);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Neu verbinden fehlgeschlagen",
-            description: composerToastDescription(error),
           }),
         );
       }
@@ -3352,12 +3341,11 @@ function ChatViewContent(props: ChatViewProps) {
           to: "/$environmentId/$threadId",
           params: { environmentId: target.environmentId, threadId: source.id },
         });
-      } catch (error) {
+      } catch {
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Rechnerwechsel fehlgeschlagen",
-            description: composerToastDescription(error),
           }),
         );
       } finally {
@@ -3855,12 +3843,10 @@ function ChatViewContent(props: ChatViewProps) {
           title: `Aktion „${deletedName ?? "—"}“ gelöscht`,
         });
       } else if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Löschen fehlgeschlagen",
-            description: composerToastDescription(error),
           }),
         );
       }
@@ -4445,12 +4431,11 @@ function ChatViewContent(props: ChatViewProps) {
           title: "Pfad kopiert",
         });
       },
-      (error) => {
+      () => {
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Kopieren fehlgeschlagen",
-            description: composerToastDescription(error),
           }),
         );
       },
@@ -5097,12 +5082,10 @@ function ChatViewContent(props: ChatViewProps) {
         input: { threadId: activeThreadRef.threadId, reason: "user" },
       });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Wiederaufnahme fehlgeschlagen",
-            description: composerToastDescription(error),
           }),
         );
       }
@@ -5125,12 +5108,10 @@ function ChatViewContent(props: ChatViewProps) {
         input: { threadId: activeThreadRef.threadId, reason: "user" },
       });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Aufwecken fehlgeschlagen",
-            description: composerToastDescription(error),
           }),
         );
       }
@@ -5203,7 +5184,6 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Checkout fehlgeschlagen",
-            description: chatActionErrorMessage(squashAtomCommandFailure(checkoutResult)),
           }),
         );
       }
@@ -5223,7 +5203,6 @@ function ChatViewContent(props: ChatViewProps) {
             stackedThreadToast({
               type: "error",
               title: "Unterhaltung nicht aktualisiert",
-              description: chatActionErrorMessage(squashAtomCommandFailure(updateResult)),
             }),
           );
         }
@@ -6802,12 +6781,10 @@ function ChatViewContent(props: ChatViewProps) {
         );
       }
       if (!isAtomCommandInterrupted(failure)) {
-        const error = squashAtomCommandFailure(failure);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Unterhaltung nicht gestartet",
-            description: composerToastDescription(error),
           }),
         );
       }
@@ -6863,12 +6840,11 @@ function ChatViewContent(props: ChatViewProps) {
       if (isServerThread) {
         try {
           await modelSelectionWriter.save(ref, nextModelSelection);
-        } catch (error) {
+        } catch {
           toastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Auswahl nicht gespeichert",
-              description: composerToastDescription(error),
             }),
           );
           return false;

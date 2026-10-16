@@ -144,16 +144,14 @@ function SidebarUpdateControl() {
             stackedThreadToast({
               type: "error",
               title: "Download fehlgeschlagen",
-              description: actionError,
             }),
           );
         })
-        .catch((error) => {
+        .catch(() => {
           toastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Download nicht gestartet",
-              description: error instanceof Error ? error.message : "Unerwarteter Fehler.",
             }),
           );
         })
@@ -167,13 +165,12 @@ function SidebarUpdateControl() {
         confirmed = await ensureLocalApi().dialogs.confirm(
           getDesktopUpdateInstallConfirmationMessage(state, navigator.platform),
         );
-      } catch (error) {
+      } catch {
         setIsActionPending(false);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Bestätigung fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Bestätigung fehlgeschlagen.",
           }),
         );
         return;
@@ -192,16 +189,14 @@ function SidebarUpdateControl() {
             stackedThreadToast({
               type: "error",
               title: "Installation fehlgeschlagen",
-              description: actionError,
             }),
           );
         })
-        .catch((error) => {
+        .catch(() => {
           toastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Installation fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unerwarteter Fehler.",
             }),
           );
         })
@@ -229,16 +224,14 @@ function SidebarUpdateControl() {
           stackedThreadToast({
             type: "error",
             title: "Suche fehlgeschlagen",
-            description: result.state.message ?? "Nicht verfügbar in diesem Build.",
           }),
         );
       })
-      .catch((error) => {
+      .catch(() => {
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Suche fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Suche fehlgeschlagen.",
           }),
         );
       })

@@ -4,11 +4,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@workjet/client-runtime/environment";
-import {
-  squashAtomCommandFailure,
-  type AtomCommand,
-  type AtomCommandResult,
-} from "@workjet/client-runtime/state/runtime";
+import { type AtomCommand, type AtomCommandResult } from "@workjet/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@workjet/client-runtime/state/shell";
 import {
   DEFAULT_RUNTIME_MODE,
@@ -200,13 +196,11 @@ export function useNewThreadHandler() {
         projects,
         createProject,
         createProjectId: newProjectId,
-        reportProjectCreateFailure: (failure) => {
-          const error = squashAtomCommandFailure(failure);
+        reportProjectCreateFailure: () => {
           toastManager.add(
             stackedThreadToast({
               type: "error",
               title: "Projekt nicht hinzugefügt",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler.",
             }),
           );
         },

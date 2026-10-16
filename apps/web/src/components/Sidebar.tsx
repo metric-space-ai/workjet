@@ -1786,11 +1786,10 @@ export default function Sidebar() {
     reportFailure: false,
   });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
-    onCopy: ({ path }) => {
+    onCopy: () => {
       toastManager.add({
         type: "success",
         title: "Pfad kopiert",
-        description: path,
       });
     },
     onError: (error) => {
@@ -1799,11 +1798,10 @@ export default function Sidebar() {
   });
   const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
     target: "branch name",
-    onCopy: ({ branch }) => {
+    onCopy: () => {
       toastManager.add({
         type: "success",
         title: "Branch kopiert",
-        description: branch,
       });
     },
     onError: (error) => {
@@ -1811,11 +1809,10 @@ export default function Sidebar() {
     },
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
-    onCopy: ({ threadId }) => {
+    onCopy: () => {
       toastManager.add({
         type: "success",
         title: "ID kopiert",
-        description: threadId,
       });
     },
     onError: (error) => {
@@ -1823,11 +1820,10 @@ export default function Sidebar() {
     },
   });
   const { copyToClipboard: copyDeepLinkToClipboard } = useCopyToClipboard<{ link: string }>({
-    onCopy: ({ link }) => {
+    onCopy: () => {
       toastManager.add({
         type: "success",
         title: "Workjet-Link kopiert",
-        description: link,
       });
     },
     onError: (error) => {
@@ -2112,11 +2108,10 @@ export default function Sidebar() {
             ),
           select: () => setProjectScopeKey(value),
         });
-      } catch (error) {
+      } catch {
         toastManager.add({
           type: "error",
           title: "Projekt konnte nicht geöffnet werden",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         });
       } finally {
         projectSwitchPending.current = false;
@@ -2145,11 +2140,10 @@ export default function Sidebar() {
             setProjectScopeKey(null);
             await router.navigate({ to: "/" });
             if (isMobile) setOpenMobile(false);
-          } catch (error) {
+          } catch {
             toastManager.add({
               type: "error",
               title: "Übersicht konnte nicht geöffnet werden",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
             });
           } finally {
             projectSwitchPending.current = false;
@@ -2174,11 +2168,10 @@ export default function Sidebar() {
           );
           setProjectScopeKey(group?.projectKey ?? null);
           if (isMobile) setOpenMobile(false);
-        } catch (error) {
+        } catch {
           toastManager.add({
             type: "error",
             title: "Projekt konnte nicht geöffnet werden",
-            description: error instanceof Error ? error.message : "Unbekannter Fehler",
           });
         } finally {
           projectSwitchPending.current = false;
@@ -2196,11 +2189,10 @@ export default function Sidebar() {
         // The landing route opens the overview and ensures its retained supervisor.
         await router.navigate({ to: "/" });
         if (isMobile) setOpenMobile(false);
-      } catch (error) {
+      } catch {
         toastManager.add({
           type: "error",
           title: "Projekt konnte nicht geöffnet werden",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         });
       } finally {
         projectSwitchPending.current = false;
@@ -3244,7 +3236,6 @@ export default function Sidebar() {
                   failedCount > 0
                     ? `${snoozedCount} von ${selectedThreads.length} zurückgestellt`
                     : `${snoozedCount} zurückgestellt`,
-                description: failedCount > 0 ? `${failedCount} fehlgeschlagen` : undefined,
                 timeout: 5_000,
                 actionProps: {
                   children: "Rückgängig",
@@ -3607,11 +3598,10 @@ export default function Sidebar() {
     setProjectScopeMenuOpen(false);
     closeThreadSearch();
     if (isMobile) setOpenMobile(false);
-    void router.navigate({ to: "/" }).catch((error) => {
+    void router.navigate({ to: "/" }).catch(() => {
       toastManager.add({
         type: "error",
         title: "Übersicht konnte nicht geöffnet werden",
-        description: error instanceof Error ? error.message : "Unbekannter Fehler",
       });
     });
   };

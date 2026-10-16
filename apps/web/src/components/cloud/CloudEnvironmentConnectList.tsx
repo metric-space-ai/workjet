@@ -113,7 +113,6 @@ export function CloudEnvironmentConnectRows({
     toastManager.add({
       type: "error",
       title: "Instanz nicht verbunden",
-      description: message,
       data: traceId
         ? {
             secondaryActionProps: {

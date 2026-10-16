@@ -16,7 +16,6 @@ import {
 import type { ScopedThreadRef, ServerProviderSkill } from "@workjet/contracts";
 import {
   isAtomCommandInterrupted,
-  squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@workjet/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
@@ -93,7 +92,6 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
-import { composerToastDescription } from "./chat/composerErrorLineLogic";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import {
   isBrowserPreviewFile,
@@ -1118,12 +1116,10 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           { operation: "open-file-in-editor", target: targetPath },
           result.cause,
         );
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Datei nicht geöffnet",
-            description: composerToastDescription(error),
           }),
         );
       } catch (cause) {
@@ -1135,7 +1131,6 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Datei nicht geöffnet",
-            description: composerToastDescription(cause),
           }),
         );
       }
@@ -1164,12 +1159,10 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           { operation: "open-file-in-browser", target: targetPath },
           result.cause,
         );
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Datei nicht im Browser geöffnet",
-            description: composerToastDescription(error),
           }),
         );
       } catch (cause) {
@@ -1181,7 +1174,6 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Datei nicht im Browser geöffnet",
-            description: composerToastDescription(cause),
           }),
         );
       }
@@ -1216,7 +1208,6 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
             stackedThreadToast({
               type: "error",
               title: "Kopieren fehlgeschlagen",
-              description: composerToastDescription(error),
             }),
           );
         },

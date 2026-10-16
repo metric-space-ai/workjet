@@ -1,37 +1,20 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 /**
- * In-app window for "Hinzufügen" (developer mode only until ctox #708 lands).
+ * In-app login window of the native Google calendar sign-in (ctox #875).
  *
- * The CTOX instance owns the OAuth flow (client registration, state, PKCE
- * verifier, token exchange and tokens) and hands out an authorize URL. This
- * window shows the provider's consent page and captures the redirect back to
- * the instance (`<instance>/toolhub/oauth/callback`) before it is loaded.
- *
- * The window is origin-bound: it only opens `https://` URLs whose origin is the
- * selected instance's origin or one of the provider's authorization origins
- * fixed in the app (`TOOLHUB_AUTHORIZE_ORIGINS`). Top-level navigations,
- * redirects and popups to any other origin are blocked. The callback is only
- * accepted on the instance's own host and port.
- *
- * The native Google calendar sign-in (ctox #875) reuses the window with only
- * the fixed Google login origin and captures the instance-issued redirect URI.
+ * The CTOX instance owns the OAuth flow (state, verifier, token exchange and
+ * tokens) and hands out an authorize URL plus its redirect URI. This window
+ * only shows `https://` pages of the fixed Google login origins
+ * (`CALENDAR_AUTHORIZE_ORIGINS`) and captures the redirect to the
+ * instance-issued redirect URI before it is loaded. Top-level navigations,
+ * redirects and popups to any other origin are blocked.
  */
 // @effect-diagnostics globalTimers:off - plain Electron window helper awaited via Effect.promise.
 import { BrowserWindow } from "electron";
 
-const CALLBACK_PATH = "/toolhub/oauth/callback";
-
-export type ToolhubAuthorizeOutcome =
+export type CalendarAuthorizeOutcome =
   | { readonly _tag: "captured"; readonly callbackUrl: string }
   | { readonly _tag: "cancelled" | "failed" };
-
-/** The origins this login window may show. */
-export interface ToolhubAuthorizeBinding {
-  /** Origin of the selected instance, e.g. `https://acme.ctox.dev`. */
-  readonly instanceOrigin: string;
-  /** Authorization origins of the provider, fixed in the app catalog. */
-  readonly providerOrigins: ReadonlyArray<string>;
-}
 
 function parse(raw: string): URL | null {
   try {
@@ -41,30 +24,12 @@ function parse(raw: string): URL | null {
   }
 }
 
-/** Pure: is `raw` the instance's OAuth callback (same host and port as the instance)? */
-export function isToolhubInstanceCallback(raw: string, instanceOrigin: string): boolean {
-  const url = parse(raw);
-  const instance = parse(instanceOrigin);
-  if (url === null || instance === null) return false;
-  return (
-    (url.protocol === "https:" || url.protocol === "http:") &&
-    url.hostname === instance.hostname &&
-    url.port === instance.port &&
-    url.pathname === CALLBACK_PATH &&
-    url.searchParams.has("state") &&
-    (url.searchParams.has("code") || url.searchParams.has("error"))
-  );
-}
-
 /** Pure: may the login window show `raw` as a top-level page? */
-export function isAllowedToolhubAuthorizePage(
-  raw: string,
-  binding: ToolhubAuthorizeBinding,
-): boolean {
+export function isAllowedAuthorizePage(raw: string, origins: ReadonlyArray<string>): boolean {
   const url = parse(raw);
   if (url === null || url.protocol !== "https:") return false;
   const allowed = new Set<string>();
-  for (const origin of [binding.instanceOrigin, ...binding.providerOrigins]) {
+  for (const origin of origins) {
     const parsed = parse(origin);
     if (parsed !== null && parsed.protocol === "https:") allowed.add(parsed.origin);
   }
@@ -99,17 +64,6 @@ function isAcceptedCalendarRedirect(redirect: URL): boolean {
   return redirect.protocol === "http:" && LOOPBACK_HOSTS.has(redirect.hostname);
 }
 
-export function openToolhubAuthorizeWindow(
-  url: string,
-  binding: ToolhubAuthorizeBinding,
-): Promise<ToolhubAuthorizeOutcome> {
-  return openAuthorizeWindow(url, {
-    title: "Schnittstelle verbinden",
-    isAllowedPage: (target) => isAllowedToolhubAuthorizePage(target, binding),
-    isCallback: (target) => isToolhubInstanceCallback(target, binding.instanceOrigin),
-  });
-}
-
 /**
  * Native calendar sign-in: shows only the provider's fixed login origins (never
  * the instance) and captures the redirect to `redirectUri` before it loads, so
@@ -118,14 +72,13 @@ export function openToolhubAuthorizeWindow(
 export function openCalendarAuthorizeWindow(
   url: string,
   binding: { readonly providerOrigins: ReadonlyArray<string>; readonly redirectUri: string },
-): Promise<ToolhubAuthorizeOutcome> {
+): Promise<CalendarAuthorizeOutcome> {
   const redirect = parse(binding.redirectUri);
   if (redirect === null || !isAcceptedCalendarRedirect(redirect))
     return Promise.resolve({ _tag: "failed" });
-  const pages = { instanceOrigin: "", providerOrigins: binding.providerOrigins };
   return openAuthorizeWindow(url, {
     title: "Kalender verbinden",
-    isAllowedPage: (target) => isAllowedToolhubAuthorizePage(target, pages),
+    isAllowedPage: (target) => isAllowedAuthorizePage(target, binding.providerOrigins),
     isCallback: (target) => isCalendarRedirectCallback(target, binding.redirectUri),
   });
 }
@@ -137,7 +90,7 @@ function openAuthorizeWindow(
     readonly isAllowedPage: (target: string) => boolean;
     readonly isCallback: (target: string) => boolean;
   },
-): Promise<ToolhubAuthorizeOutcome> {
+): Promise<CalendarAuthorizeOutcome> {
   if (!policy.isAllowedPage(url)) {
     return Promise.resolve({ _tag: "failed" });
   }
@@ -150,6 +103,7 @@ function openAuthorizeWindow(
       title: policy.title,
       autoHideMenuBar: true,
       webPreferences: {
+        // Historical partition name, kept so existing Google sign-in sessions survive.
         partition: "persist:workjet-toolhub-auth",
         sandbox: true,
         contextIsolation: true,
@@ -157,7 +111,7 @@ function openAuthorizeWindow(
       },
     });
     let done = false;
-    const finish = (outcome: ToolhubAuthorizeOutcome) => {
+    const finish = (outcome: CalendarAuthorizeOutcome) => {
       if (done) return;
       done = true;
       resolve(outcome);

@@ -148,6 +148,4 @@ export const GET_LOGIN_ITEM_STATE_CHANNEL = "desktop:get-login-item-state";
 export const SET_OPEN_AT_LOGIN_CHANNEL = "desktop:set-open-at-login";
 export const SET_TRAY_PROJECTS_CHANNEL = "desktop:set-tray-projects";
 
-export const TOOLHUB_REQUEST_CHANNEL = "desktop:toolhub-request";
-export const TOOLHUB_AUTHORIZE_CHANNEL = "desktop:toolhub-authorize";
 export const CALENDAR_AUTHORIZE_CHANNEL = "desktop:calendar-authorize";

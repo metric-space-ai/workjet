@@ -33,7 +33,7 @@ import {
   TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { useMemo, Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useMemo, Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -1453,9 +1453,11 @@ function ScopedWorkjetSettings({
   );
   const updateConfiguration = useCallback(
     (next: WorkjetConfiguration) => {
+      // Nur gegen den frischen Stand; die gespeicherte Kopie ist schreibgeschützt.
+      if (instance.data === null) return;
       void persistInstanceConfiguration(next).catch(() => undefined);
     },
-    [persistInstanceConfiguration],
+    [instance.data, persistInstanceConfiguration],
   );
   const query = useEnvironmentQuery(
     environmentId === null
@@ -1506,26 +1508,28 @@ function ScopedWorkjetSettings({
           {saveError}
         </p>
       ) : null}
-      <WorkjetSettingsView
-        {...(defaultSection ? { defaultSection } : {})}
-        draftScopeKey={`${environmentId}:${target.instanceId}:${target.connectionId}`}
-        nativeInstanceId={nativeInstanceId}
-        nativeInstanceLabel={target.instanceId}
-        onSaveWorkerConfiguration={persistInstanceConfiguration}
-        configuration={configuration}
-        greppy={{
-          snapshot: query.data,
-          isInitialLoading: query.isPending && query.data === null,
-          hasInspectFailure: query.error !== null,
-          isRefreshing: query.isPending && query.data !== null,
-          isOperating,
-          onRefresh: query.refresh,
-          onInstall: handleInstall,
-        }}
-        gateway={gateway}
-        gatewayEnvironmentId={environmentId}
-        onChange={updateConfiguration}
-      />
+      <PresetsEditGate editable={instance.data !== null}>
+        <WorkjetSettingsView
+          {...(defaultSection ? { defaultSection } : {})}
+          draftScopeKey={`${environmentId}:${target.instanceId}:${target.connectionId}`}
+          nativeInstanceId={nativeInstanceId}
+          nativeInstanceLabel={target.instanceId}
+          onSaveWorkerConfiguration={persistInstanceConfiguration}
+          configuration={configuration}
+          greppy={{
+            snapshot: query.data,
+            isInitialLoading: query.isPending && query.data === null,
+            hasInspectFailure: query.error !== null,
+            isRefreshing: query.isPending && query.data !== null,
+            isOperating,
+            onRefresh: query.refresh,
+            onInstall: handleInstall,
+          }}
+          gateway={gateway}
+          gatewayEnvironmentId={environmentId}
+          onChange={updateConfiguration}
+        />
+      </PresetsEditGate>
     </>
   );
 }
@@ -1533,6 +1537,30 @@ function ScopedWorkjetSettings({
 const PRESET_SILENT_RETRY_MS = 15_000;
 const PRESET_LOADING_LIMIT_MS = 10_000;
 const LAST_KNOWN_PRESET_TARGETS = new Map<string, WorkjetLumaTarget>();
+
+/**
+ * Solange nur die gespeicherte Kopie da ist, sind alle Bearbeiten-Steuerelemente
+ * (Felder, Hinzufügen, Löschen, ⋯) über ein deaktiviertes fieldset gesperrt,
+ * ohne Erklärtext; mit den frischen Daten werden sie aktiv.
+ */
+export function PresetsEditGate({
+  editable,
+  children,
+}: {
+  readonly editable: boolean;
+  readonly children: ReactNode;
+}) {
+  return (
+    <fieldset
+      disabled={!editable}
+      aria-busy={!editable || undefined}
+      data-workjet-presets-cached={editable ? undefined : ""}
+      className="m-0 min-w-0 border-0 p-0"
+    >
+      {children}
+    </fieldset>
+  );
+}
 
 /**
  * Presets ohne bekannten Stand: unter 10 s ein Skelett (kein Zustandstext),

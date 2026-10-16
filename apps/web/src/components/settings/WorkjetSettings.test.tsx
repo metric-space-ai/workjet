@@ -34,6 +34,7 @@ import {
   performAutomaticWorktreeStorageAction,
   performGreppyRuntimeInstall,
   WORKJET_SETTINGS_SECTIONS,
+  PresetsEditGate,
   PresetsLoadingView,
   WorkjetPresetsUnavailableView,
   WorkjetSettingsView,
@@ -112,6 +113,34 @@ describe("Workjet configuration settings", () => {
     onCheck: () => undefined,
     onApply: () => undefined,
   };
+
+  it("locks every edit control while only the cached copy is shown, without a text", () => {
+    const view = (editable: boolean) =>
+      renderToStaticMarkup(
+        <PresetsEditGate editable={editable}>
+          <WorkjetSettingsView
+            draftScopeKey="test-instance"
+            configuration={DEFAULT_WORKJET_CONFIGURATION}
+            greppy={greppy}
+            gateway={gateway}
+            onChange={() => undefined}
+          />
+        </PresetsEditGate>,
+      );
+    const cached = view(false);
+    // One disabled fieldset wraps the whole view: native disabled reaches every
+    // field, add, delete and ⋯ button inside it.
+    expect(cached.startsWith('<fieldset disabled=""')).toBe(true);
+    expect(cached.match(/<fieldset/g)).toHaveLength(1);
+    expect(cached.lastIndexOf("</fieldset>")).toBe(cached.length - "</fieldset>".length);
+    expect(cached).toContain("<button");
+    expect(cached).toContain("data-workjet-presets-cached");
+    expect(cached).not.toMatch(/gespeicherte Kopie|wird geladen|werden geladen/i);
+    const fresh = view(true);
+    expect(fresh.startsWith("<fieldset ")).toBe(true);
+    expect(fresh).not.toContain('<fieldset disabled=""');
+    expect(fresh).not.toContain("data-workjet-presets-cached");
+  });
 
   it("renders compact tabs and opens workers by default", () => {
     const markup = renderToStaticMarkup(

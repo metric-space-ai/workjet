@@ -11,6 +11,8 @@ import { useEffect, useSyncExternalStore } from "react";
 import { useActiveWorkjetScope, subscribeActiveWorkjetHostContext } from "./activeWorkjetScope";
 import { useHydratePrimaryWorkjetSettings } from "./hooks/useSettings";
 import { listWorkjetProjects } from "./workjetProjectControl";
+import { getCtoxClient, subscribeCtoxClients } from "./ctox/ctoxClient";
+import { ACTIVE_PROJECTS, WORKJET_PROJECTS } from "./ctox/workjetCollections";
 import {
   LocalProjectRegistrationSynchronizer,
   ProjectTokenBudgetSourceSynchronizer,
@@ -332,6 +334,36 @@ export function applyWorkjetProjectRegistryResult(
   });
 }
 
+/**
+ * Scheibe C: on a V4 instance the registry follows the local `workjet_projects` live query
+ * (listWorkjetProjects then reads locally); mounting or unmounting the kernel refreshes once.
+ * A V3 instance has no bound client, so nothing is subscribed and the guest refresh path stays.
+ */
+export function subscribeWorkjetProjectRegistryLive(
+  instanceId: string,
+  refresh: () => void,
+): () => void {
+  let stopRows = () => {};
+  let bound = getCtoxClient(instanceId);
+  const bind = () => {
+    stopRows();
+    stopRows = () => {};
+    if (bound) stopRows = bound.query(WORKJET_PROJECTS, ACTIVE_PROJECTS).subscribe(() => refresh());
+  };
+  const offClients = subscribeCtoxClients(() => {
+    const next = getCtoxClient(instanceId);
+    if (next === bound) return;
+    bound = next;
+    bind();
+    refresh();
+  });
+  bind();
+  return () => {
+    offClients();
+    stopRows();
+  };
+}
+
 export function WorkjetProjectRegistrySynchronizer() {
   useHydratePrimaryWorkjetSettings();
   const { selectedInstanceId: presentationInstanceId } = useActiveWorkjetScope();
@@ -371,6 +403,7 @@ export function WorkjetProjectRegistrySynchronizer() {
       if (event instanceof CustomEvent && event.detail === presentationInstanceId) refresh();
     };
     const unsubscribeHostContext = subscribeActiveWorkjetHostContext(refresh);
+    const unsubscribeLive = subscribeWorkjetProjectRegistryLive(presentationInstanceId, refresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("online", refresh);
     window.addEventListener(REFRESH_PROJECT_REGISTRY_EVENT, onRequest);
@@ -380,6 +413,7 @@ export function WorkjetProjectRegistrySynchronizer() {
       refreshController.cancel();
       unsubscribeGuest();
       unsubscribeHostContext();
+      unsubscribeLive();
       window.removeEventListener("focus", refresh);
       window.removeEventListener("online", refresh);
       window.removeEventListener(REFRESH_PROJECT_REGISTRY_EVENT, onRequest);

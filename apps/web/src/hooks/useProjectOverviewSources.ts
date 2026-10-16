@@ -1,6 +1,10 @@
 import type { CtoxWorkjetProjectFeedPost } from "@workjet/contracts";
-import { useCallback, useEffect, useState } from "react";
-import { ProjectId, type WorkjetJourFixeMeeting } from "@workjet/contracts";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ProjectId, WorkjetJourFixeMeeting } from "@workjet/contracts";
+import * as Schema from "effect/Schema";
+import { useCtoxClient, useCtoxDoc, useCtoxQuery } from "../ctox/hooks";
+import { useCtoxProjectFeed } from "../ctox/workjetLiveData";
+import { WORKJET_PROJECT_KPIS, type WorkjetProjectKpiDocument } from "../ctox/workjetCollections";
 import { useActiveWorkjetScope, readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession } from "../lib/jourFixeNative";
 import { prefetchJourFixeMeeting } from "../lib/jourFixePrefetch";
@@ -13,7 +17,53 @@ import {
 
 import type { PromptedProjectKpis } from "../projectKpis";
 
+/**
+ * Scheibe C: on a V4 instance (bound kernel client) the overview is a live local view; on V3 the
+ * unchanged desktop-port reads below run. Both hooks are always called; the inactive one gets a
+ * null instance and stays inert.
+ */
 export function useProjectOverviewSources(instanceId: string | null, projectId: string) {
+  const v4 = useCtoxClient(instanceId) !== null;
+  const local = useLocalProjectOverviewSources(v4 ? instanceId : null, projectId);
+  const legacy = useLegacyProjectOverviewSources(v4 ? null : instanceId, projectId);
+  return v4 ? local : legacy;
+}
+
+const decodeMeeting = Schema.decodeUnknownSync(WorkjetJourFixeMeeting);
+const noReload = () => undefined;
+function useLocalProjectOverviewSources(instanceId: string | null, projectId: string) {
+  const scope = useActiveWorkjetScope();
+  const localKpis = useCtoxDoc<WorkjetProjectKpiDocument>(
+    instanceId,
+    WORKJET_PROJECT_KPIS,
+    projectId,
+  );
+  const kpis: PromptedProjectKpis | null =
+    localKpis?.project_id === projectId && localKpis.id === projectId ? localKpis : null;
+  const feedPosts = useCtoxProjectFeed(instanceId, projectId);
+  const meetings = useCtoxQuery<WorkjetJourFixeMeeting>(instanceId, "workjet_jour_fixe_meetings", {
+    selector: { project_id: projectId, is_current: true, is_deleted: { $ne: true } },
+  });
+  const meeting = useMemo(() => {
+    try {
+      if (meetings.length > 1) return { meeting: null, failed: true };
+      return { meeting: meetings[0] ? decodeMeeting(meetings[0]) : null, failed: false };
+    } catch {
+      return { meeting: null, failed: true };
+    }
+  }, [meetings]);
+  // The local live view is already current; there is no remote refresh or retry.
+  return {
+    key: JSON.stringify([instanceId, projectId, scope.selectionRevision]),
+    ...meeting,
+    kpis,
+    failureText: null,
+    reload: noReload,
+    feedPosts: feedPosts as readonly CtoxWorkjetProjectFeedPost[],
+  };
+}
+
+function useLegacyProjectOverviewSources(instanceId: string | null, projectId: string) {
   const scope = useActiveWorkjetScope();
   const [reloadCount, setReloadCount] = useState(0);
   const key = JSON.stringify([instanceId, projectId, scope.selectionRevision, reloadCount]);

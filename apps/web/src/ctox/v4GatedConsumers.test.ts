@@ -4,100 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { EnvironmentId, ThreadId } from "@workjet/contracts";
-import { createKernel } from "./kernel/kernel.mjs";
-import { MemoryCoreTransport } from "./kernel/fake-core.mjs";
-import type { Kernel } from "./kernel/index";
-import { bindKernelCtoxClient } from "./kernelClient";
-import { getCtoxClient } from "./ctoxClient";
-import { WORKJET_APP_ID, WORKJET_FOREIGN_COLLECTIONS, workjetAppManifest } from "./workjetAppManifest";
 import { gateCtoxReadFamily } from "./v4GatedAtoms";
+import { closeV4Kernels, openV4 } from "./v4TestCore";
 import { CtoxLocalReadError } from "./projectReadData";
 import { commitActiveWorkjetSelection } from "../activeWorkjetScope";
 import { serverEnvironment } from "../state/server";
 import { environmentThreads } from "../state/threads";
 
-const APP_VER = "v4-consumers";
-let sequence = 0;
-const open: { kernel: Kernel; release: () => void }[] = [];
-afterEach(async () => {
-  commitActiveWorkjetSelection(null);
-  for (const { kernel, release } of open.splice(0)) {
-    release();
-    await kernel.close();
-  }
-});
-
-async function openV4(select = true) {
-  const instanceId = `v4-consumer-${++sequence}`;
-  const transport = new MemoryCoreTransport({ namespace: instanceId, latencyMs: 0 });
-  await transport.push("business_app_versions", [
-    {
-      id: `${WORKJET_APP_ID}@${APP_VER}`,
-      app_id: WORKJET_APP_ID,
-      app_ver: APP_VER,
-      manifest: workjetAppManifest(APP_VER),
-    },
-    {
-      id: "ctox@v4-consumers",
-      app_id: "ctox",
-      app_ver: "v4-consumers",
-      manifest: {
-        app_id: "ctox",
-        app_ver: "v4-consumers",
-        min_app_api: "4.0",
-        collections: Object.fromEntries(
-          [...new Set(WORKJET_FOREIGN_COLLECTIONS)].map((name) => [name, { class: "eager" }]),
-        ),
-        handlers: {},
-      },
-    },
-  ]);
-  await transport.push("business_apps", [
-    { id: "ctox", title: "Crew", active_ver: "v4-consumers" },
-    { id: WORKJET_APP_ID, title: "Workjet", active_ver: APP_VER },
-    { id: "shell", title: "Shell", active_ver: "v4-consumers-shell" },
-  ]);
-  const kernel = createKernel({
-    instanceId,
-    userId: "consumer-owner",
-    storage: "memory",
-    dbName: `${instanceId}-db`,
-    multiTab: false,
-    transport,
-  });
-  await kernel.ready;
-  const apps = kernel.appApi(WORKJET_APP_ID, APP_VER).query<{ id: string }>("business_apps", {});
-  const offApps = apps.subscribe(() => {});
-  await vi
-    .waitFor(
-      () => {
-        if (!apps.get().some((row) => row.id === "shell")) throw new Error("shell not synced");
-      },
-      { timeout: 2_000, interval: 5 },
-    )
-    .finally(offApps);
-  const release = bindKernelCtoxClient(kernel, APP_VER);
-  open.push({ kernel, release });
-  if (select) commitActiveWorkjetSelection(instanceId);
-  const api = getCtoxClient(instanceId)!;
-  const seed = async (collection: string, docs: { id: string; [key: string]: unknown }[]) => {
-    const live = api.query<{ id: string }>(collection, {});
-    const off = live.subscribe(() => {});
-    try {
-      await transport.push(collection, docs);
-      await vi.waitFor(
-        () => {
-          const ids = new Set(live.get().map((row) => row.id));
-          if (!docs.every((doc) => ids.has(doc.id))) throw new Error(`${collection} not synced`);
-        },
-        { timeout: 2_000, interval: 5 },
-      );
-    } finally {
-      off();
-    }
-  };
-  return { instanceId, release, seed };
-}
+afterEach(closeV4Kernels);
 
 function isLocalFailure(result: unknown): boolean {
   if (!AsyncResult.isAsyncResult(result) || !AsyncResult.isFailure(result)) return false;
@@ -230,7 +144,7 @@ describe("Scheibe C consumers on V3: unchanged environment RPC atoms", () => {
   it("no bound client: gateway, calendar, Luma and thread state never read the kernel", async () => {
     // Another instance is V4, but the selected one is V3.
     await openV4(false);
-    commitActiveWorkjetSelection(`v3-consumer-${++sequence}`);
+    commitActiveWorkjetSelection(`v3-consumer-${Date.now()}`);
     const registry = AtomRegistry.make();
     const atoms = [
       serverEnvironment.workjetGatewayStatus({ environmentId, input: {} }),

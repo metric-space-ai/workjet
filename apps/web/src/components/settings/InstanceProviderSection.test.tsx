@@ -57,7 +57,11 @@ describe("independent instance account capabilities", () => {
   });
 
   it("names a failed instance response instead of leaving Modelle empty (#799)", () => {
-    const html = renderSection({ _tag: "failed", code: "response_invalid" });
+    const html = renderSection({
+      _tag: "failed",
+      code: "guest_failed",
+      diagnostic: { reason: "exception" },
+    } as WorkjetProjectControlFailure);
     expect(html).toContain("data-workjet-provider-management-unavailable");
     expect(html).toContain("Konten neu laden");
   });

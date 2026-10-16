@@ -281,9 +281,9 @@ describe("cached registry notice", () => {
       showsCachedProjectRegistryNotice(failing, since + PROJECT_REGISTRY_NOTICE_GRACE_MS),
     ).toBe(true);
     // Without a recorded failure series (fresh app start) nothing shows.
-    expect(
-      showsCachedProjectRegistryNotice({ ...cached, refreshFailingSince: undefined }),
-    ).toBe(false);
+    expect(showsCachedProjectRegistryNotice({ ...cached, refreshFailingSince: undefined })).toBe(
+      false,
+    );
   });
   it("shows the quiet line only for a retained project list", () => {
     expect(showsCachedProjectRegistryNotice(cached)).toBe(true);

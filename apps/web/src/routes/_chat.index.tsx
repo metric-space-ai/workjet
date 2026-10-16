@@ -622,19 +622,22 @@ function useRegistryNoticeVisible(
 /** Die Zeile „Instanz nicht erreichbar“ bleibt so lange still (wie N7). */
 export const PROJECT_REGISTRY_NOTICE_GRACE_MS = 120_000;
 
-export function showsCachedProjectRegistryNotice(registry: {
-  readonly refreshFailed?: boolean | undefined;
-  readonly refreshFailingSince?: number | undefined;
-  readonly lastUpdatedAt?: number | undefined;
-  readonly projects: readonly unknown[];
-  readonly refreshError?:
-    | {
-        readonly code?: string;
-        readonly diagnostic?: { readonly reason?: string } | undefined;
-        readonly preparation?: { readonly reason?: string } | undefined;
-      }
-    | undefined;
-}, now: number = Date.now()): boolean {
+export function showsCachedProjectRegistryNotice(
+  registry: {
+    readonly refreshFailed?: boolean | undefined;
+    readonly refreshFailingSince?: number | undefined;
+    readonly lastUpdatedAt?: number | undefined;
+    readonly projects: readonly unknown[];
+    readonly refreshError?:
+      | {
+          readonly code?: string;
+          readonly diagnostic?: { readonly reason?: string } | undefined;
+          readonly preparation?: { readonly reason?: string } | undefined;
+        }
+      | undefined;
+  },
+  now: number = Date.now(),
+): boolean {
   if (registry.refreshFailed !== true) return false;
   if (registry.lastUpdatedAt === undefined || registry.projects.length === 0) return false;
   // Still wiederholen: erst nach 2 min ununterbrochener Fehler zeigen.

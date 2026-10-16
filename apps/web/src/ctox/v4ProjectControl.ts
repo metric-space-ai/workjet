@@ -151,7 +151,7 @@ const decodeGalleryOrder = Schema.decodeUnknownSync(
 );
 
 async function currentGalleryOrder(api: CtoxAppApi) {
-  const value = await readAppPref(api, GALLERY_ORDER_PREF);
+  const value = readAppPref(api, GALLERY_ORDER_PREF);
   if (value === null) return { revision: 0, projectIds: [] as ProjectId[] };
   try {
     const order = decodeGalleryOrder(value);

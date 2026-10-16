@@ -63,6 +63,9 @@ export default defineConfig({
       "apps/web/src/ctox/kernel/index.d.ts",
       // Byte-identical Shell v4 worker dispatch handler (ctox #924); sha256 in its PIN.md.
       "apps/web/src/ctox/contract/workjet-dispatch/*.js",
+      // Byte-identical CTOX Sync v4 stub with E51 api.prefs (93a322c8); sha256 in its PIN.md.
+      "apps/web/src/ctox/stub-e51/index.d.ts",
+      "apps/web/src/ctox/stub-e51/ctox-app-api-stub.mjs",
       "apps/web/src/lib/vendor/qrcodegen.ts",
       "apps/mobile/uniwind-types.d.ts",
       "*.icon/**",
@@ -120,6 +123,9 @@ export default defineConfig({
       "apps/web/src/ctox/kernel/index.d.ts",
       // Byte-identical Shell v4 worker dispatch handler (ctox #924); sha256 in its PIN.md.
       "apps/web/src/ctox/contract/workjet-dispatch/*.js",
+      // Byte-identical CTOX Sync v4 stub with E51 api.prefs (93a322c8); sha256 in its PIN.md.
+      "apps/web/src/ctox/stub-e51/index.d.ts",
+      "apps/web/src/ctox/stub-e51/ctox-app-api-stub.mjs",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
     jsPlugins: ["./oxlint-plugin-workjet/index.ts"],

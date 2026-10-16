@@ -32,7 +32,11 @@ export async function generateV4DeviceKey(
 export function createV4DeviceKeySource(
   storage: V4DeviceKeyStorage,
   subtle: SubtleCrypto = globalThis.crypto.subtle,
-): V4DeviceKeySource & { readonly keyFor: (instanceId: string) => Promise<V4StoredDeviceKey> } {
+): V4DeviceKeySource & {
+  readonly keyFor: (instanceId: string) => Promise<V4StoredDeviceKey>;
+  /** The key registered at redeem; renewal never creates one (E54.5). */
+  readonly existingKeyFor: (instanceId: string) => Promise<V4StoredDeviceKey | undefined>;
+} {
   const inflight = new Map<string, Promise<V4StoredDeviceKey>>();
   const keyFor = (instanceId: string) => {
     const running = inflight.get(instanceId);
@@ -45,7 +49,11 @@ export function createV4DeviceKeySource(
     inflight.set(instanceId, next);
     return next;
   };
-  return { keyFor, publicKeyFor: async (instanceId) => (await keyFor(instanceId)).publicKey };
+  return {
+    keyFor,
+    existingKeyFor: (instanceId) => storage.get(instanceId),
+    publicKeyFor: async (instanceId) => (await keyFor(instanceId)).publicKey,
+  };
 }
 
 export function createMemoryV4DeviceKeyStorage(): V4DeviceKeyStorage {

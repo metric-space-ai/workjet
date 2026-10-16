@@ -54,6 +54,7 @@ import {
   subscribeActiveWorkjetHostContext,
   useActiveWorkjetScope,
 } from "../../activeWorkjetScope";
+import { isV4DirectoryInstance } from "../../ctox/v4InstanceDirectory";
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
@@ -280,6 +281,9 @@ export function getCtoxSelectionDisposition(
   selectedId: string | null,
 ): "keep" | "unavailable" | "revoked" {
   if (selectedId === null || discovery._tag !== "ready") return "keep";
+  // A paired V4 instance of this device lives in its own directory (E54.5), not in the desktop
+  // discovery; its selection is kept and the bootstrap renews its launch context.
+  if (isV4DirectoryInstance(selectedId)) return "keep";
   const selected = discovery.instances.find((instance) => instance.id === selectedId);
   if (selected === undefined) return "revoked";
   return canActivateCtoxInstance(selected) ? "keep" : "unavailable";

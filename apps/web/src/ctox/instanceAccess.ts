@@ -8,8 +8,18 @@ import {
   type V4PairingControlExchange,
 } from "./v4DeviceInvite";
 import { workjetV4DeviceKeys } from "./v4DeviceKey";
+import { renewV4DeviceLaunch, V4_RENEW_UNPAIRED, type V4RenewOutcome } from "./v4DeviceRenew";
+import {
+  getV4InstanceDirectoryEntry,
+  markV4DeviceUnpaired,
+  recordV4LaunchContext,
+} from "./v4InstanceDirectory";
 import { storePairedV4LaunchContext } from "./v4PairedLaunchContexts";
-import { createV4PairingControlExchange } from "./v4PairingPeer";
+import {
+  createV4PairingChallengeExchange,
+  createV4PairingControlExchange,
+  type V4PairingChallengeExchange,
+} from "./v4PairingPeer";
 
 /**
  * Instance access without SSH on V4 (E49.6). First pairing is the Shell invitation (admin in the
@@ -46,8 +56,9 @@ export function workjetDeviceLabel(): string {
 }
 
 /**
- * Redeems a `workjet://pair?payload=…` V4 invitation. On success the launch context is stored
- * and the V4 host bootstrap mounts that instance with it.
+ * Redeems a `workjet://pair?payload=…` V4 invitation. On success the instance enters this
+ * device's directory (E54.5), the launch context is stored and the V4 host bootstrap mounts that
+ * instance with it.
  */
 export async function redeemWorkjetDeviceInvite(
   pairingUri: string,
@@ -60,7 +71,43 @@ export async function redeemWorkjetDeviceInvite(
     deviceLabel: options.deviceLabel ?? workjetDeviceLabel(),
     ...(options.now === undefined ? {} : { now: options.now }),
   });
-  if (outcome.ok) storePairedV4LaunchContext(outcome.instanceId, outcome.payload);
+  if (outcome.ok) {
+    const now = options.now ?? Date.now;
+    await recordV4LaunchContext(outcome.launchContext, now()).catch(() => undefined);
+    storePairedV4LaunchContext(outcome.instanceId, outcome.payload);
+  }
+  return outcome;
+}
+
+export interface WorkjetDeviceRenewOptions {
+  /** Default: the signaling pairing peer answering the Core's challenge. */
+  readonly exchange?: V4PairingChallengeExchange;
+  readonly deviceKeys?: Parameters<typeof renewV4DeviceLaunch>[0]["deviceKeys"];
+  readonly now?: () => number;
+}
+
+/**
+ * `device.launch.renew` for a paired V4 instance of this device (E54.5). Success refreshes the
+ * directory entry; `device_revoked`/`device_unknown` mark it unpaired, which stops renewal until a
+ * new invitation is redeemed. `null`: the instance is not in this device's directory.
+ */
+export async function renewWorkjetDeviceLaunch(
+  instanceId: string,
+  options: WorkjetDeviceRenewOptions = {},
+): Promise<V4RenewOutcome | null> {
+  const entry = getV4InstanceDirectoryEntry(instanceId);
+  if (entry === undefined) return null;
+  const now = options.now ?? Date.now;
+  if (entry.state === "unpaired") return { ok: false, code: "device_revoked" };
+  const outcome = await renewV4DeviceLaunch({
+    entry,
+    deviceKeys: options.deviceKeys ?? workjetV4DeviceKeys(),
+    exchange: options.exchange ?? createV4PairingChallengeExchange(),
+    now,
+  });
+  if (outcome.ok) await recordV4LaunchContext(outcome.launchContext, now()).catch(() => undefined);
+  else if (V4_RENEW_UNPAIRED.includes(outcome.code))
+    await markV4DeviceUnpaired(instanceId, now()).catch(() => undefined);
   return outcome;
 }
 

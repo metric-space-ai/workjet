@@ -36,7 +36,7 @@ import type * as Scope from "effect/Scope";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
 import * as Credential from "./DesktopLocalServiceCredential.ts";
-import { ElectronDialog } from "../electron/ElectronDialog.ts";
+import { DesktopServiceTakeover } from "./DesktopServiceTakeover.ts";
 import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 
 const LocalCliCommandFailure = Schema.Struct({
@@ -147,28 +147,6 @@ export const classifyLocalServiceDiscoveryFailure = (error: unknown): LocalServi
     ...(commandFailure?.kind === "timeout" ? { retryable: true } : {}),
   });
 };
-
-export const requestLocalSessionRecoveryConsent = (
-  dialog: Pick<typeof ElectronDialog.Service, "showMessageBox">,
-) =>
-  dialog
-    .showMessageBox({
-      type: "question",
-      title: "Verbindung wiederherstellen",
-      message: "Verbindung zum lokalen Hintergrunddienst wiederherstellen?",
-      detail:
-        "Andere Workjet-Installationen vorher schließen. Projekte und Arbeit bleiben erhalten.",
-      buttons: ["Abbrechen", "Wiederherstellen"],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-      checkboxLabel: "Andere Workjet-Installationen sind geschlossen",
-      checkboxChecked: false,
-    })
-    .pipe(
-      Effect.map((result) => result.response === 1 && result.checkboxChecked),
-      Effect.mapError(() => fail("confirm recovery of")),
-    );
 
 export const decodeEnrollmentSessions = (serialized: string, attemptId: string) =>
   Schema.decodeUnknownEffect(
@@ -513,7 +491,7 @@ export class DesktopLocalServiceSession extends Context.Service<
 export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const dialog = yield* ElectronDialog;
+  const takeover = yield* DesktopServiceTakeover;
   const keyRecovery = yield* Effect.serviceOption(DesktopKeyRecovery);
   const runCli = (config: DesktopBackendStartConfig, args: ReadonlyArray<string>) =>
     runLocalCli(config, args).pipe(
@@ -578,7 +556,8 @@ export const make = Effect.gen(function* () {
       ),
       Effect.mapError(() => fail("inspect local key recovery for")),
     ),
-    confirmRecovery: () => requestLocalSessionRecoveryConsent(dialog),
+    // Recognize instead of asking: silent unless another installation holds the service.
+    confirmRecovery: () => takeover.confirm,
     listEnrollmentSessions: (config, target, attemptId) =>
       runCli(config, ["auth", "session", "list", ...identityArgs(target), "--json"]).pipe(
         Effect.flatMap((serialized) => decodeEnrollmentSessions(serialized, attemptId)),

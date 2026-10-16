@@ -10,7 +10,6 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import type * as Scope from "effect/Scope";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import { ElectronDialog } from "../electron/ElectronDialog.ts";
 import {
   runBackendProcess,
   type BackendProcessExit,
@@ -22,6 +21,7 @@ import {
   runLocalCli,
 } from "./DesktopLocalServiceSession.ts";
 import { attachDesktopServiceTelemetry } from "./DesktopServiceTelemetry.ts";
+import { DesktopServiceTakeover } from "./DesktopServiceTakeover.ts";
 import * as Crypto from "effect/Crypto";
 
 export class LocalServiceAttachmentError extends Schema.TaggedErrorClass<LocalServiceAttachmentError>()(
@@ -285,27 +285,6 @@ export class DesktopLocalServiceAttachment extends Context.Service<
   Effect.Success<ReturnType<typeof makeAttachment>>
 >()("@workjet/desktop/backend/DesktopLocalServiceAttachment") {}
 
-export const requestProfileMigrationConsent = (
-  dialog: Pick<typeof ElectronDialog.Service, "showMessageBox">,
-) =>
-  dialog
-    .showMessageBox({
-      type: "question",
-      title: "Hintergrunddienst einrichten",
-      message: "Workjet arbeitet danach auch bei geschlossener App weiter.",
-      detail: "Ältere Workjet-Versionen vorher beenden. Die Datenbank wird gesichert.",
-      buttons: ["Abbrechen", "Sichern und einrichten"],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-      checkboxLabel: "Ältere Workjet-Versionen sind beendet",
-      checkboxChecked: false,
-    })
-    .pipe(
-      Effect.map((result) => result.response === 1 && result.checkboxChecked),
-      Effect.mapError(() => blocked("Could not confirm the profile migration.")),
-    );
-
 export const layer = Layer.effect(
   DesktopLocalServiceAttachment,
   Effect.gen(function* () {
@@ -315,7 +294,7 @@ export const layer = Layer.effect(
     const http = yield* HttpClient.HttpClient;
     const crypto = yield* Crypto.Crypto;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const dialog = yield* ElectronDialog;
+    const takeover = yield* DesktopServiceTakeover;
     const cli = {
       executablePath: process.execPath,
       entryPath: environment.backendEntryPath,
@@ -368,7 +347,9 @@ export const layer = Layer.effect(
             blocked("Could not complete the first background-service installation."),
           ),
         ),
-      confirmMigration: requestProfileMigrationConsent(dialog),
+      // The background service is the default: migrate silently unless another
+      // installation still holds the profile.
+      confirmMigration: takeover.confirm,
       migrate: (endpoint) =>
         Effect.gen(function* () {
           artifactArgs = [...artifactArgs, ...endpointArgs(endpoint)];

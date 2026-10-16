@@ -7,15 +7,13 @@ import { beforeEach, vi } from "vite-plus/test";
 
 import * as ElectronDialog from "./ElectronDialog.ts";
 
-const { showMessageBoxMock, showOpenDialogMock, showErrorBoxMock } = vi.hoisted(() => ({
-  showMessageBoxMock: vi.fn(),
+const { showOpenDialogMock, showErrorBoxMock } = vi.hoisted(() => ({
   showOpenDialogMock: vi.fn(),
   showErrorBoxMock: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
   dialog: {
-    showMessageBox: showMessageBoxMock,
     showOpenDialog: showOpenDialogMock,
     showErrorBox: showErrorBoxMock,
   },
@@ -23,7 +21,6 @@ vi.mock("electron", () => ({
 
 describe("ElectronDialog", () => {
   beforeEach(() => {
-    showMessageBoxMock.mockReset();
     showOpenDialogMock.mockReset();
     showErrorBoxMock.mockReset();
   });
@@ -49,43 +46,6 @@ describe("ElectronDialog", () => {
       assert.strictEqual(error.cause, cause);
       assert.include(error.message, "window 7");
       assert.include(error.message, "/workspace");
-      assert.notInclude(error.message, cause.message);
-    }).pipe(Effect.provide(ElectronDialog.layer)),
-  );
-
-  it.effect("preserves message box request context and cause", () =>
-    Effect.gen(function* () {
-      const cause = new Error("message box failed");
-      showMessageBoxMock.mockRejectedValue(cause);
-      const dialog = yield* ElectronDialog.ElectronDialog;
-
-      const error = yield* Effect.flip(
-        dialog.showMessageBox({
-          type: "warning",
-          title: "Unsaved changes",
-          message: "Discard changes?",
-          detail: "This cannot be undone.",
-          buttons: ["Cancel", "Discard"],
-        }),
-      );
-
-      assert.instanceOf(error, ElectronDialog.ElectronDialogShowMessageBoxError);
-      assert.strictEqual(error.type, "warning");
-      assert.strictEqual(error.titleLength, "Unsaved changes".length);
-      assert.strictEqual(error.messageLength, "Discard changes?".length);
-      assert.strictEqual(error.detailLength, "This cannot be undone.".length);
-      assert.strictEqual(error.buttonCount, 2);
-      assert.notProperty(error, "title");
-      assert.notProperty(error, "dialogMessage");
-      assert.notProperty(error, "dialogDetail");
-      assert.notProperty(error, "buttons");
-      assert.strictEqual(error.cause, cause);
-      assert.include(error.message, "warning");
-      assert.notInclude(error.message, "Unsaved changes");
-      assert.notInclude(error.message, "Discard changes?");
-      assert.notInclude(error.message, "This cannot be undone.");
-      assert.notInclude(error.message, "Cancel");
-      assert.notInclude(error.message, "Discard");
       assert.notInclude(error.message, cause.message);
     }).pipe(Effect.provide(ElectronDialog.layer)),
   );

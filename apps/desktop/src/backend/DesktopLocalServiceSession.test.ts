@@ -17,10 +17,10 @@ import {
   classifyLocalServiceDiscoveryFailure,
   makeSessionAccess,
   decodeEnrollmentSessions,
-  requestLocalSessionRecoveryConsent,
   type LocalSessionDependencies,
 } from "./DesktopLocalServiceSession.ts";
 import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
+import { findOtherInstallations, makeTakeoverGate } from "./DesktopServiceTakeover.ts";
 vi.mock("electron", () => ({ safeStorage: {} }));
 
 const config: DesktopBackendStartConfig = {
@@ -75,26 +75,6 @@ it.effect("selects only the exact enrollment subject, never a label or a matchin
     assert.deepEqual(selected, [credential.sessionId]);
     yield* decodeEnrollmentSessions("{", "attempt-a").pipe(Effect.flip);
   }),
-);
-
-it.effect(
-  "recovery consent defaults to Cancel and requires the stopped-installations checkbox",
-  () =>
-    Effect.gen(function* () {
-      for (const response of [0, 1]) {
-        for (const checkboxChecked of [false, true]) {
-          const consent = yield* requestLocalSessionRecoveryConsent({
-            showMessageBox: (options) => {
-              assert.equal(options.defaultId, 0);
-              assert.equal(options.cancelId, 0);
-              assert.equal(options.checkboxChecked, false);
-              return Effect.succeed({ response, checkboxChecked });
-            },
-          });
-          assert.equal(consent, response === 1 && checkboxChecked);
-        }
-      }
-    }),
 );
 
 const fixture = () => {
@@ -530,3 +510,84 @@ for (const failure of ["expired", "revoked", "wrong-profile"] as const) {
     }),
   );
 }
+
+const OWN_APP = "/Applications/Workjet.app/Contents/MacOS/Workjet";
+const ownProcesses = [
+  { pid: 500, ppid: 1, executable: OWN_APP },
+  {
+    pid: 501,
+    ppid: 500,
+    executable:
+      "/Applications/Workjet.app/Contents/Frameworks/Workjet Helper (Renderer).app/Contents/MacOS/Workjet Helper (Renderer)",
+  },
+  // CLI child run with ELECTRON_RUN_AS_NODE from the same executable.
+  { pid: 502, ppid: 500, executable: OWN_APP },
+];
+
+it.effect("after an own-app update the new version takes over silently, without any line", () =>
+  Effect.gen(function* () {
+    const { dependencies, state, events } = fixture();
+    state.pending = true;
+    const access = yield* makeSessionAccess({
+      ...dependencies,
+      confirmRecovery: () =>
+        makeTakeoverGate({
+          detect: Effect.sync(() =>
+            findOtherInstallations({
+              ownPid: 500,
+              ownExecutable: OWN_APP,
+              // The previous version of this very installation is still exiting.
+              processes: [{ pid: 400, ppid: 1, executable: OWN_APP }, ...ownProcesses],
+            }),
+          ),
+          awaitTakeover: Effect.die("An update takeover must not show a line."),
+        }),
+    });
+    const prepared = yield* access.prepareWithRecovery(config);
+    assert.equal(prepared.credential.sessionId, credential.sessionId);
+    assert.includeMembers(events, ["revoke", "retire", "issue", "save"]);
+    assert.notInclude(events, "in-app-line");
+  }),
+);
+
+it.effect("another running installation leads to the in-app line before any takeover", () =>
+  Effect.gen(function* () {
+    for (const takeOver of [true, false]) {
+      const { dependencies, state, events } = fixture();
+      state.pending = true;
+      const access = yield* makeSessionAccess({
+        ...dependencies,
+        confirmRecovery: () =>
+          makeTakeoverGate({
+            detect: Effect.sync(() =>
+              findOtherInstallations({
+                ownPid: 500,
+                ownExecutable: OWN_APP,
+                processes: [
+                  ...ownProcesses,
+                  {
+                    pid: 700,
+                    ppid: 1,
+                    executable: "/Users/a/Downloads/Workjet.app/Contents/MacOS/Workjet",
+                  },
+                ],
+              }),
+            ),
+            awaitTakeover: Effect.sync(() => {
+              events.push("in-app-line");
+              return takeOver;
+            }),
+          }),
+      });
+      const result = yield* access.prepareWithRecovery(config).pipe(Effect.result);
+      assert.include(events, "in-app-line");
+      if (takeOver) {
+        assert.equal(result._tag, "Success");
+        assert.isBelow(events.indexOf("in-app-line"), events.indexOf("revoke"));
+      } else {
+        assert.equal(result._tag, "Failure");
+        assert.notInclude(events, "revoke");
+      }
+    }
+  }),
+);

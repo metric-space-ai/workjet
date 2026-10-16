@@ -36,23 +36,6 @@ export class ElectronDialogPickFilesError extends Schema.TaggedErrorClass<Electr
   }
 }
 
-export class ElectronDialogShowMessageBoxError extends Schema.TaggedErrorClass<ElectronDialogShowMessageBoxError>()(
-  "ElectronDialogShowMessageBoxError",
-  {
-    type: Schema.NullOr(Schema.Literals(["none", "info", "error", "question", "warning"])),
-    titleLength: Schema.NullOr(Schema.Number),
-    messageLength: Schema.Number,
-    detailLength: Schema.NullOr(Schema.Number),
-    buttonCount: Schema.Number,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    const type = this.type === null ? "untyped" : this.type;
-    return `Failed to show the Electron ${type} message box with ${this.buttonCount} buttons.`;
-  }
-}
-
 export class ElectronDialogShowErrorBoxError extends Schema.TaggedErrorClass<ElectronDialogShowErrorBoxError>()(
   "ElectronDialogShowErrorBoxError",
   {
@@ -69,7 +52,6 @@ export class ElectronDialogShowErrorBoxError extends Schema.TaggedErrorClass<Ele
 export const ElectronDialogError = Schema.Union([
   ElectronDialogPickFolderError,
   ElectronDialogPickFilesError,
-  ElectronDialogShowMessageBoxError,
   ElectronDialogShowErrorBoxError,
 ]);
 export type ElectronDialogError = typeof ElectronDialogError.Type;
@@ -95,9 +77,8 @@ export class ElectronDialog extends Context.Service<
     readonly pickFiles: (
       input: ElectronDialogPickFilesInput,
     ) => Effect.Effect<readonly string[], ElectronDialogPickFilesError>;
-    readonly showMessageBox: (
-      options: Electron.MessageBoxOptions,
-    ) => Effect.Effect<Electron.MessageBoxReturnValue, ElectronDialogShowMessageBoxError>;
+    // Native error box only for a fatal startup error before Electron can open
+    // any window (see DesktopApp.handleFatalStartupError). Everything else is in-app.
     readonly showErrorBox: (title: string, content: string) => Effect.Effect<void>;
   }
 >()("@workjet/desktop/electron/ElectronDialog") {}
@@ -163,19 +144,6 @@ export const make = ElectronDialog.of({
     });
     return result.canceled ? [] : result.filePaths;
   }),
-  showMessageBox: (options) =>
-    Effect.tryPromise({
-      try: () => Electron.dialog.showMessageBox(options),
-      catch: (cause) =>
-        new ElectronDialogShowMessageBoxError({
-          type: options.type ?? null,
-          titleLength: options.title?.length ?? null,
-          messageLength: options.message.length,
-          detailLength: options.detail?.length ?? null,
-          buttonCount: options.buttons?.length ?? 0,
-          cause,
-        }),
-    }),
   showErrorBox: (title, content) =>
     Effect.try({
       try: () => Electron.dialog.showErrorBox(title, content),

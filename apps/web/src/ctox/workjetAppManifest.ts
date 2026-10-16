@@ -14,6 +14,8 @@ export const WORKJET_OWNED_COLLECTIONS = [
   "workjet_project_kpis",
   "workjet_project_feed",
   "workjet_worker_profiles",
+  // E49.4: Workjet writes its gallery order itself (api.patch), so the app owns the collection.
+  "workjet_gallery_orders",
   ...THREAD_READ_COLLECTIONS,
 ] as const;
 /** Read-only collections of other owners: app ctox (K-WJ-1) and platform (§16.41/§16.43). */
@@ -27,7 +29,11 @@ export const WORKJET_FOREIGN_COLLECTIONS = [
   "workjet_calendar_state",
   "devices",
   "machine_enrollments",
-  ...new Set(Object.values(PROJECT_READ_COLLECTIONS)),
+  ...new Set(
+    Object.values(PROJECT_READ_COLLECTIONS).filter(
+      (collection) => !(WORKJET_OWNED_COLLECTIONS as readonly string[]).includes(collection),
+    ),
+  ),
 ] as const;
 export const PLATFORM_OWNED = new Set(["devices", "machine_enrollments"]);
 

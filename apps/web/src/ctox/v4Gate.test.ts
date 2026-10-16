@@ -488,3 +488,123 @@ describe("V4 gate: a V3 instance keeps the desktop guest path (no bound client)"
     expect(requestDeviceControl).toHaveBeenCalledWith(instanceId, { action: "binding.list" });
   });
 });
+
+describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", () => {
+  it("V4: gallery order set is a local api.patch, read back locally, never a command", async () => {
+    const { instanceId, api } = await openGate({ routes: [] });
+    const set = (expectedRevision: number, ids: string[]) =>
+      requestWorkjetProjectControl(
+        instanceId,
+        {
+          action: "project.gallery.order.set",
+          commandId: CommandId.make(`gate-gallery-${expectedRevision}`),
+          operationId: `gate-gallery-op-${expectedRevision}`,
+          expectedRevision,
+          projectIds: ids.map((id) => ProjectId.make(id)),
+        },
+        noGuest,
+      );
+    expect(await set(0, ["p-2", "p-1"])).toMatchObject({
+      _tag: "completed",
+      response: { action: "project.gallery.order.set", order: { revision: 1 } },
+    });
+    expect(await set(1, ["p-1", "p-2"])).toMatchObject({
+      _tag: "completed",
+      response: { order: { revision: 2, projectIds: ["p-1", "p-2"] } },
+    });
+    // Optimistic revision: a stale writer is refused locally (conflict), nothing is written.
+    expect(await set(1, ["p-3"])).toMatchObject({
+      _tag: "failed",
+      error: { code: "conflict", reason: "gallery_order_revision_mismatch" },
+    });
+    const read = await requestWorkjetProjectControl(
+      instanceId,
+      { action: "project.gallery.order.read", commandId: CommandId.make("gate-gallery-read") },
+      noGuest,
+    );
+    expect(read).toMatchObject({
+      _tag: "completed",
+      response: {
+        action: "project.gallery.order.read",
+        order: { revision: 2, projectIds: ["p-1", "p-2"] },
+      },
+    });
+    // No route exists (routes: []), and no business command was written for the order.
+    expect(api.query("business_commands", {}).get()).toEqual([]);
+  });
+
+  it("V4: the gallery order collection is owned by the Workjet app, not read-only foreign", () => {
+    const manifest = workjetAppManifest(APP_VER);
+    expect(manifest.collections).toHaveProperty("workjet_gallery_orders");
+    expect(manifest.foreign_collections).not.toHaveProperty("workjet_gallery_orders");
+    expect(manifest.collections).toHaveProperty("workjet_project_feed");
+  });
+
+  it("V4: project feed is a local query", async () => {
+    const { instanceId, seed } = await openGate();
+    await seed("workjet_project_feed", [
+      {
+        id: "post-1",
+        post_id: "post-1",
+        project_id: "p-1",
+        kind: "owner_note",
+        author_kind: "owner",
+        author_thread: null,
+        author_label: "Owner",
+        harness: null,
+        headline: "Gate note",
+        body: "Local feed",
+        open_items: null,
+        sources: [],
+        action: null,
+        thread_ref: null,
+        occurred_at_ms: 5_000,
+      },
+    ]);
+    const feed = await requestWorkjetProjectControl(
+      instanceId,
+      {
+        action: "project.feed.read",
+        commandId: CommandId.make("gate-feed"),
+        projectId: ProjectId.make("p-1"),
+      },
+      noGuest,
+    );
+    expect(feed).toMatchObject({
+      _tag: "completed",
+      response: { action: "project.feed.read", posts: [{ post_id: "post-1" }] },
+    });
+  });
+
+  it("V3: gallery order set and feed read still go to the desktop port", async () => {
+    const instanceId = `v3-gallery-${++sequence}`;
+    const port = vi.fn<WorkjetProjectControlPort>(async () => ({
+      _tag: "failed",
+      code: "not_active",
+    }));
+    await requestWorkjetProjectControl(
+      instanceId,
+      {
+        action: "project.gallery.order.set",
+        commandId: CommandId.make("v3-gallery"),
+        operationId: "v3-gallery-op",
+        expectedRevision: 0,
+        projectIds: [],
+      },
+      port,
+    );
+    await requestWorkjetProjectControl(
+      instanceId,
+      {
+        action: "project.feed.read",
+        commandId: CommandId.make("v3-feed"),
+        projectId: ProjectId.make("p-1"),
+      },
+      port,
+    );
+    expect(port.mock.calls.map(([, request]) => request.action)).toEqual([
+      "project.gallery.order.set",
+      "project.feed.read",
+    ]);
+  });
+});

@@ -56,6 +56,7 @@ export function requestV4ProjectControl(
         : result,
     );
   }
+  if (request.action === "project.gallery.order.set") return writeV4GalleryOrder(api, request);
   if (request.action === "project.feed.read") {
     try {
       const posts = api
@@ -124,4 +125,47 @@ export function readV4WorkjetProjectKpis(
       kpis,
     },
   };
+}
+
+/** E49.4: the gallery order is Workjet app data (one document per actor), never a command. */
+export const WORKJET_GALLERY_ORDERS = "workjet_gallery_orders";
+type GalleryOrderSet = Extract<
+  CtoxWorkjetProjectControlRequest,
+  { action: "project.gallery.order.set" }
+>;
+
+/** Optimistic revision check, then a local api.patch/put; the core replicates and audits it. */
+export async function writeV4GalleryOrder(
+  api: CtoxAppApi,
+  request: GalleryOrderSet,
+): Promise<CtoxWorkjetProjectControlResult> {
+  try {
+    const id = api.actor.id;
+    const current = api
+      .get<{ id: string; revision?: unknown }>(WORKJET_GALLERY_ORDERS, id)
+      .get();
+    const revision = typeof current?.revision === "number" ? current.revision : 0;
+    if (revision !== request.expectedRevision)
+      throw new CtoxLocalReadError(
+        "conflict",
+        "gallery_order_revision_mismatch",
+        `${WORKJET_GALLERY_ORDERS}/${id}`,
+      );
+    const order = { revision: revision + 1, projectIds: [...request.projectIds] };
+    const write = current
+      ? api.patch(WORKJET_GALLERY_ORDERS, id, order)
+      : api.put(WORKJET_GALLERY_ORDERS, { id, owner_user_id: id, ...order });
+    await write.local;
+    return {
+      _tag: "completed",
+      response: {
+        action: "project.gallery.order.set",
+        commandId: request.commandId,
+        contract: "ctox.workjet.project_gallery_order.v1",
+        order,
+      },
+    };
+  } catch (error) {
+    return localReadFailure(error);
+  }
 }

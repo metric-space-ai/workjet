@@ -33,6 +33,7 @@ import {
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { findComputerForTarget, includeSavedComputers } from "../../workjetComputerCatalog";
+import * as Option from "effect/Option";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -546,6 +547,40 @@ type Expansion = { readonly key: string; readonly kind: "repair" | "edit" };
 const NOTICE_MS = 5_000;
 /** Eine Werkzeugprüfung endet nach 10 s (UI-Vertrag §1.3, D03). */
 const PROBE_TIMEOUT_MS = 10_000;
+/**
+ * Ein grüner Punkt kippt erst nach 30 s anhaltender Störung (FIX-R): ein
+ * SSH-Tunnel, der neu aufgebaut wird, oder eine Werkzeugprüfung, die nach dem
+ * Wiederverbinden neu läuft, lässt den Punkt sonst zwischen grün und orange
+ * springen, obwohl der Dienst durchläuft.
+ */
+export const COMPUTER_STATUS_HOLD_MS = 30_000;
+
+export interface HeldComputerStatus {
+  readonly status: RowStatus;
+  readonly statusLabel: string;
+  /** Seit wann der Live-Zustand vom gezeigten „ok“ abweicht; null = keine Abweichung. */
+  readonly divergedAt: number | null;
+}
+
+/**
+ * Gezeigter Zustand einer Rechnerzeile: Ein Wechsel weg von „ok“, der nur aus
+ * Verbindung oder Werkzeugprüfung kommt (`transient`), wird bis `holdMs`
+ * gehalten. Alles andere (inaktiv, eigene Prüfung, Aktualisierung,
+ * gespeicherte Erkennung „nicht erreichbar“) und jeder Wechsel zu „ok“ gilt
+ * sofort.
+ */
+export function holdComputerStatus(
+  previous: HeldComputerStatus | undefined,
+  live: { readonly status: RowStatus; readonly statusLabel: string },
+  input: { readonly now: number; readonly transient: boolean; readonly holdMs?: number },
+): HeldComputerStatus {
+  const holdMs = input.holdMs ?? COMPUTER_STATUS_HOLD_MS;
+  if (!previous || previous.status !== "ok" || live.status === "ok" || !input.transient)
+    return { ...live, divergedAt: null };
+  const divergedAt = previous.divergedAt ?? input.now;
+  if (input.now - divergedAt >= holdMs) return { ...live, divergedAt: null };
+  return { status: "ok", statusLabel: previous.statusLabel, divergedAt };
+}
 
 export function WorkjetComputersSettingsView({
   worktreeStorage = null,
@@ -638,6 +673,25 @@ export function WorkjetComputersSettingsView({
   const [removeFiles, setRemoveFiles] = useState(false);
   const [probeExpired, setProbeExpired] = useState(emptyIdSet);
   const [removing, setRemoving] = useState(emptyIdSet);
+  // Gezeigter Punkt je Zeile mit 30-s-Haltezeit (FIX-R); der Wecker rendert
+  // neu, sobald eine gehaltene Störung die Haltezeit erreicht.
+  const heldStatuses = useRef(new Map<string, HeldComputerStatus>());
+  const [, setHoldTick] = useState(0);
+  useEffect(() => {
+    const holdExpiry = [...heldStatuses.current.values()].reduce<number | null>(
+      (earliest, held) =>
+        held.divergedAt === null
+          ? earliest
+          : Math.min(earliest ?? Infinity, held.divergedAt + COMPUTER_STATUS_HOLD_MS),
+      null,
+    );
+    if (holdExpiry === null) return;
+    const timer = window.setTimeout(
+      () => setHoldTick((tick) => tick + 1),
+      Math.max(0, holdExpiry - Date.now()) + 50,
+    );
+    return () => window.clearTimeout(timer);
+  });
   const [notices, setNotices] = useState<Readonly<Record<string, ComputerRemoveNotice>>>({});
   const noticeTimers = useRef(new Map<string, number>());
   useEffect(() => {
@@ -917,11 +971,23 @@ export function WorkjetComputersSettingsView({
                         ? "Getrennt"
                         : "Verbunden";
             // Aktualisierung des Dienstes: nur der Punkt (orange), kein Satz.
-            if (
+            const updating =
               active &&
-              remoteDaemonUpdateFor(remoteDaemonUpdates, metadata?.connection) === "updating"
-            )
-              status = "busy";
+              remoteDaemonUpdateFor(remoteDaemonUpdates, metadata?.connection) === "updating";
+            if (updating) status = "busy";
+            // Kurze Aussetzer der Verbindung oder eine erneute Werkzeugprüfung
+            // schalten den Punkt erst nach 30 s um (FIX-R Punkt 1/2).
+            const held = holdComputerStatus(
+              heldStatuses.current.get(row.key),
+              { status, statusLabel },
+              {
+                now: Date.now(),
+                transient: active && !busyRow && !updating && !unreachable,
+              },
+            );
+            heldStatuses.current.set(row.key, held);
+            status = held.status;
+            statusLabel = held.statusLabel;
             meta =
               computer.environmentId === environmentId
                 ? "Dieser Rechner"
@@ -1233,6 +1299,30 @@ export function computerRecordFor(
 }
 
 /**
+ * Umgebungen, deren Rechnerzeile als verbunden gilt. „Dieser Rechner“ ist die
+ * Umgebung, über die diese App selbst läuft: Hat ihr Verbindungsaufseher
+ * gerade keinen Zustand („available“, etwa während die Registrierung den
+ * Aufseher neu anlegt), läuft die App trotzdem; nur ein echter Aufbau,
+ * Abbruch oder Fehler zählt (FIX-R Punkt 2). Entfernte Rechner brauchen eine
+ * bestehende Verbindung.
+ */
+export function computerOnlineEnvironmentIds(
+  environments: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly connection: { readonly phase: string };
+  }>,
+  primaryEnvironmentId: EnvironmentId | null,
+): EnvironmentId[] {
+  return environments
+    .filter(
+      (entry) =>
+        entry.connection.phase === "connected" ||
+        (entry.environmentId === primaryEnvironmentId && entry.connection.phase === "available"),
+    )
+    .map((entry) => entry.environmentId);
+}
+
+/**
  * Gespeicherte Rechner mit dem jüngsten Stand des Backends (Erkennung,
  * Rollen, aktiv) und dem gerade umgelegten Aktiv-Schalter.
  */
@@ -1349,15 +1439,112 @@ export function isKnownComputer(
   candidate: MachineCandidate,
   localEnvironmentId: EnvironmentId | null,
 ): boolean {
-  return computers.some((entry) => {
-    if (candidate.transport === "local") return entry.environmentId === localEnvironmentId;
-    const connection = entry.metadata?.connection;
-    if (!connection || connection._tag === "local") return false;
+  return knownComputerFor(computers, candidate, localEnvironmentId) !== null;
+}
+
+/**
+ * Steht der Rechner eines Beitritts schon verbunden in der Liste? Dann ist die
+ * Fortschrittszeile des Beitritts überflüssig (FIX-R Punkt 3).
+ */
+export function isListedOnlineComputer(
+  computers: ReadonlyArray<WorkjetComputer>,
+  candidate: MachineCandidate,
+  localEnvironmentId: EnvironmentId | null,
+  onlineEnvironmentIds: ReadonlyArray<EnvironmentId>,
+  environmentTargets: ReadonlyMap<EnvironmentId, ComputerSshTarget> = new Map(),
+): boolean {
+  const known = knownComputerFor(computers, candidate, localEnvironmentId);
+  if (known !== null && onlineEnvironmentIds.includes(known.environmentId)) return true;
+  // Frisch angelegt hat die Zeile noch keine erkannte Verbindung: dann zählt
+  // das SSH-Ziel ihrer verbundenen Umgebung.
+  if (candidate.transport === "local") return false;
+  return computers.some((computer) => {
+    if (!onlineEnvironmentIds.includes(computer.environmentId)) return false;
+    const target = environmentTargets.get(computer.environmentId);
     return (
-      connection.target.hostname === candidate.host ||
-      (candidate.sshAlias !== null && connection.target.alias === candidate.sshAlias)
+      target !== undefined &&
+      ((candidate.host !== null && target.hostname === candidate.host) ||
+        (candidate.sshAlias !== null && target.alias === candidate.sshAlias))
     );
   });
+}
+
+type ComputerSshTarget = Extract<ComputerConnection, { readonly _tag: "ssh" }>["target"];
+
+/** SSH-Ziel je verbundener Umgebung aus dem Verbindungskatalog. */
+export function environmentSshTargets(
+  environments: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly entry: { readonly profile: Option.Option<unknown> };
+  }>,
+): ReadonlyMap<EnvironmentId, ComputerSshTarget> {
+  const targets = new Map<EnvironmentId, ComputerSshTarget>();
+  for (const environment of environments) {
+    const profile = environment.entry.profile;
+    if (Option.isNone(profile)) continue;
+    const value = profile.value as {
+      readonly _tag?: string;
+      readonly target?: ComputerSshTarget;
+    };
+    if (value._tag === "SshConnectionProfile" && value.target)
+      targets.set(environment.environmentId, value.target);
+  }
+  return targets;
+}
+
+/**
+ * Erkennung für eine verbundene Zeile ohne Fakten (FIX-R Punkt 4). Eine
+ * Verbindung, die ohne gespeicherten Rechner in der Liste steht (Zeile aus dem
+ * Verbindungskatalog) oder deren Erkennung beim Hinzufügen abriss, hat sonst
+ * nie Fakten: keine Build-/Speicher-/GPU-Chips, obwohl die Probe auf dem
+ * Rechner die GPU findet. null = nichts zu tun.
+ */
+export function computerDetectionRequest(
+  computer: WorkjetComputer,
+  input: {
+    readonly online: boolean;
+    readonly primaryEnvironmentId: EnvironmentId | null;
+    readonly target: ComputerSshTarget | null;
+  },
+): ComputerControlInput | null {
+  const metadata = computer.metadata;
+  if (!input.online || metadata?.facts || metadata?.active === false) return null;
+  if (metadata?.connection) return { _tag: "recheck", id: computer.id };
+  const connection: ComputerConnection | null =
+    computer.environmentId === input.primaryEnvironmentId
+      ? { _tag: "local" }
+      : input.target
+        ? {
+            _tag: computer.presentationKind === "tailscale" ? "tailscale" : "ssh",
+            target: input.target,
+          }
+        : null;
+  if (!connection) return null;
+  return {
+    _tag: "add",
+    id: computer.id,
+    label: computer.label,
+    environmentId: computer.environmentId,
+    connection,
+  };
+}
+
+function knownComputerFor(
+  computers: ReadonlyArray<WorkjetComputer>,
+  candidate: MachineCandidate,
+  localEnvironmentId: EnvironmentId | null,
+): WorkjetComputer | null {
+  return (
+    computers.find((entry) => {
+      if (candidate.transport === "local") return entry.environmentId === localEnvironmentId;
+      const connection = entry.metadata?.connection;
+      if (!connection || connection._tag === "local") return false;
+      return (
+        connection.target.hostname === candidate.host ||
+        (candidate.sshAlias !== null && connection.target.alias === candidate.sshAlias)
+      );
+    }) ?? null
+  );
 }
 
 export function computerConnectionFor(request: AddComputerRequest): ComputerConnection {
@@ -1637,6 +1824,35 @@ export function WorkjetComputersSettings({
       ? null
       : serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
+  // Verbundene Zeilen ohne Fakten einmal je Sitzung still erkennen (FIX-R
+  // Punkt 4); das Ergebnis kommt über die Rechnerliste zurück. Läuft das
+  // Hinzufügen gerade, erkennt dessen eigener Schritt.
+  const autoDetected = useRef(new Set<string>());
+  const onlineIds = computerOnlineEnvironmentIds(environments, environmentId);
+  const sshTargets = environmentSshTargets(environments);
+  const autoDetectRequests =
+    control && pending === null && !connections.busy
+      ? configuration.computers.flatMap((computer) => {
+          if (autoDetected.current.has(computer.id)) return [];
+          const request = computerDetectionRequest(computer, {
+            online: onlineIds.includes(computer.environmentId),
+            primaryEnvironmentId: environmentId,
+            target: sshTargets.get(computer.environmentId) ?? null,
+          });
+          return request ? [request] : [];
+        })
+      : [];
+  const autoDetectKey = autoDetectRequests.map((request) => JSON.stringify(request)).join("\n");
+  useEffect(() => {
+    for (const request of autoDetectRequests) {
+      if (request._tag === "list" || !("id" in request)) continue;
+      if (autoDetected.current.has(request.id)) continue;
+      autoDetected.current.add(request.id);
+      void runControl(request).catch(() => undefined);
+    }
+    // autoDetectKey trägt den Inhalt von autoDetectRequests.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDetectKey, runControl]);
 
   const enrollRemoteComputer = useAtomCommand(serverEnvironment.enrollWorkjetRemoteComputer, {
     reportFailure: false,
@@ -1691,6 +1907,8 @@ export function WorkjetComputersSettings({
     let facts: ComputerFacts | null = null;
     if (control) {
       progress?.("Erkennt Rechner…");
+      // Dieser Schritt erkennt selbst; die stille Erkennung lässt ihn aus.
+      autoDetected.current.add(computer.id);
       try {
         const result = await runControl({
           _tag: "add",
@@ -1908,6 +2126,15 @@ export function WorkjetComputersSettings({
       defaultOpen={setupOnly || addOpen}
       onOpenTailscale={() => void bridge?.openExternal?.("https://login.tailscale.com/start")}
       isKnown={(candidate) => isKnownComputer(configuration.computers, candidate, environmentId)}
+      isListedOnline={(candidate) =>
+        isListedOnlineComputer(
+          configuration.computers,
+          candidate,
+          environmentId,
+          computerOnlineEnvironmentIds(environments, environmentId),
+          environmentSshTargets(environments),
+        )
+      }
       onGreen={() => {
         if (setupOnly) onCompleted?.();
       }}
@@ -1917,9 +2144,7 @@ export function WorkjetComputersSettings({
   if (setupOnly) return <div className="space-y-3">{addPanel}</div>;
 
   const savedEnvironmentIds = connections.savedEnvironments.map((entry) => entry.environmentId);
-  const connectedIds = environments
-    .filter((entry) => entry.connection.phase === "connected")
-    .map((entry) => entry.environmentId);
+  const connectedIds = computerOnlineEnvironmentIds(environments, environmentId);
   const removeRow = (row: ComputerMachineRow, mode: ComputerRemoveMode) =>
     removeComputerRow({
       row,
@@ -1982,11 +2207,7 @@ export function WorkjetComputersSettings({
   return (
     <SettingsPageContainer className="gap-6">
       {[...new Set(configuration.computers.map((computer) => computer.environmentId))]
-        .filter((target) =>
-          environments.some(
-            (entry) => entry.environmentId === target && entry.connection.phase === "connected",
-          ),
-        )
+        .filter((target) => connectedIds.includes(target))
         .map((target) => (
           <ComputerHarnessProbe
             key={target}

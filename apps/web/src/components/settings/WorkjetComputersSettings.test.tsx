@@ -34,7 +34,14 @@ import {
   toggleCurrentComputer,
   WorkjetComputersSettingsView,
   computerCapabilityToggles,
+  COMPUTER_STATUS_HOLD_MS,
+  computerDetectionRequest,
+  computerOnlineEnvironmentIds,
+  environmentSshTargets,
+  holdComputerStatus,
+  isListedOnlineComputer,
 } from "./WorkjetComputersSettings";
+import * as Option from "effect/Option";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
 const remoteEnvironmentId = EnvironmentId.make("environment-remote");
@@ -1036,5 +1043,177 @@ describe("membership failure line timing (N7)", () => {
       false,
     );
     expect(membershipFailureVisible(null, 2_000)).toBe(false);
+  });
+});
+
+describe("FIX-R: Rechnerliste zeigt den Zustand ruhig und vollständig", () => {
+  const ok = { status: "ok" as const, statusLabel: "Verbunden" };
+  const busy = { status: "busy" as const, statusLabel: "Verbindet" };
+
+  it("Punkt 1: ein kurzer Verbindungsaussetzer lässt den grünen Punkt stehen, erst nach 30 s kippt er", () => {
+    const green = holdComputerStatus(undefined, ok, { now: 0, transient: true });
+    const blip = holdComputerStatus(green, busy, { now: 1_000, transient: true });
+    expect(blip.status).toBe("ok");
+    expect(blip.statusLabel).toBe("Verbunden");
+    // Zurück auf grün: die Haltezeit beginnt beim nächsten Aussetzer neu.
+    const back = holdComputerStatus(blip, ok, { now: 5_000, transient: true });
+    expect(back).toEqual({ ...ok, divergedAt: null });
+    const again = holdComputerStatus(back, busy, { now: 10_000, transient: true });
+    const still = holdComputerStatus(again, busy, {
+      now: 10_000 + COMPUTER_STATUS_HOLD_MS - 1,
+      transient: true,
+    });
+    expect(still.status).toBe("ok");
+    const flipped = holdComputerStatus(still, busy, {
+      now: 10_000 + COMPUTER_STATUS_HOLD_MS,
+      transient: true,
+    });
+    expect(flipped).toEqual({ ...busy, divergedAt: null });
+  });
+
+  it("Punkt 1: eigene Aktionen (Prüfen, Inaktiv, Aktualisierung) zeigen sofort", () => {
+    const green = holdComputerStatus(undefined, ok, { now: 0, transient: true });
+    expect(holdComputerStatus(green, busy, { now: 1, transient: false }).status).toBe("busy");
+    expect(
+      holdComputerStatus(
+        green,
+        { status: "off", statusLabel: "Inaktiv" },
+        {
+          now: 1,
+          transient: false,
+        },
+      ).status,
+    ).toBe("off");
+  });
+
+  it("Punkt 2: dieser Rechner bleibt verbunden, wenn sein Verbindungsaufseher gerade keinen Zustand hat", () => {
+    const environments = [
+      { environmentId: localEnvironmentId, connection: { phase: "available" } },
+      { environmentId: remoteEnvironmentId, connection: { phase: "available" } },
+    ];
+    expect(computerOnlineEnvironmentIds(environments, localEnvironmentId)).toEqual([
+      localEnvironmentId,
+    ]);
+    // Ein echter Abbruch oder Fehler zählt weiterhin.
+    expect(
+      computerOnlineEnvironmentIds(
+        [{ environmentId: localEnvironmentId, connection: { phase: "error" } }],
+        localEnvironmentId,
+      ),
+    ).toEqual([]);
+    const markup = renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(localComputer)}
+        environments={[]}
+        environmentsReady
+        harnessInspections={{
+          [localEnvironmentId]: {
+            snapshot: { schemaVersion: 1, probedAt: "2026-10-16T08:30:00.000Z", harnesses: [] },
+            error: null,
+          },
+        }}
+        environmentId={localEnvironmentId}
+        onChange={() => undefined}
+        connectedEnvironmentIds={computerOnlineEnvironmentIds(environments, localEnvironmentId)}
+        connectingEnvironmentIds={[]}
+      />,
+    );
+    expect(markup).toContain("Dieser Rechner");
+    expect(markup).not.toContain("Getrennt");
+  });
+
+  it("Punkt 3: die Fortschrittszeile endet, sobald der Rechner verbunden in der Liste steht", () => {
+    const candidate = {
+      id: "tailscale:gpu1-a6000",
+      transport: "tailscale" as const,
+      name: "gpu1-a6000",
+      user: "deck",
+      host: "100.87.204.48",
+      port: 22,
+      sshAlias: null,
+    };
+    // Frisch angelegt, noch ohne erkannte Verbindung: das SSH-Ziel der Umgebung zählt.
+    const fresh = computer("gpu1", remoteEnvironmentId);
+    const targets = environmentSshTargets([
+      {
+        environmentId: remoteEnvironmentId,
+        entry: {
+          profile: Option.some({
+            _tag: "SshConnectionProfile",
+            target: {
+              alias: "100.87.204.48",
+              hostname: "100.87.204.48",
+              username: "deck",
+              port: 22,
+            },
+          }),
+        },
+      },
+    ]);
+    expect(isListedOnlineComputer([fresh], candidate, localEnvironmentId, [], targets)).toBe(false);
+    expect(
+      isListedOnlineComputer(
+        [fresh],
+        candidate,
+        localEnvironmentId,
+        [remoteEnvironmentId],
+        targets,
+      ),
+    ).toBe(true);
+    // Mit erkannter Verbindung reicht der gespeicherte Eintrag.
+    const detected = {
+      ...fresh,
+      metadata: metadataWith({
+        connection: {
+          _tag: "tailscale",
+          target: { alias: "100.87.204.48", hostname: "100.87.204.48", username: "deck", port: 22 },
+        },
+      }),
+    };
+    expect(
+      isListedOnlineComputer([detected], candidate, localEnvironmentId, [remoteEnvironmentId]),
+    ).toBe(true);
+  });
+
+  it("Punkt 4: eine verbundene Zeile ohne Fakten wird erkannt, damit Build/Speicher/GPU erscheinen", () => {
+    const target = { alias: "ts-gpu1", hostname: "100.87.204.48", username: "deck", port: 22 };
+    // Zeile aus dem Verbindungskatalog: kein gespeicherter Rechner, keine Fakten.
+    const listed = computer(`connection-${remoteEnvironmentId}`, remoteEnvironmentId);
+    expect(
+      computerDetectionRequest(listed, {
+        online: true,
+        primaryEnvironmentId: localEnvironmentId,
+        target,
+      }),
+    ).toEqual({
+      _tag: "add",
+      id: listed.id,
+      label: listed.label,
+      environmentId: remoteEnvironmentId,
+      connection: { _tag: "ssh", target },
+    });
+    // Erkennung abgerissen, Verbindung bekannt: erneut prüfen.
+    const unreachable = { ...listed, metadata: metadataWith({ status: "unreachable" }) };
+    expect(
+      computerDetectionRequest(unreachable, {
+        online: true,
+        primaryEnvironmentId: localEnvironmentId,
+        target,
+      }),
+    ).toEqual({ _tag: "recheck", id: listed.id });
+    // Getrennt, inaktiv oder schon erkannt: nichts.
+    const input = { online: true, primaryEnvironmentId: localEnvironmentId, target };
+    expect(computerDetectionRequest(listed, { ...input, online: false })).toBeNull();
+    expect(
+      computerDetectionRequest({ ...listed, metadata: metadataWith({ active: false }) }, input),
+    ).toBeNull();
+    const withGpu = { ...listed, metadata: metadataWith({ facts: gpuFacts }) };
+    expect(computerDetectionRequest(withGpu, input)).toBeNull();
+    // Mit Fakten zeigt die Zeile die GPU als Schalter.
+    expect(computerCapabilityToggles(withGpu.metadata, null).map((toggle) => toggle.key)).toEqual([
+      "build",
+      "storage",
+      "gpu",
+    ]);
   });
 });

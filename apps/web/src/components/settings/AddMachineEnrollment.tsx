@@ -31,6 +31,7 @@ import {
   machineCandidateAddress,
   machineEnrollmentError,
   machineEnrollmentLabels,
+  machineEnrollmentDisplayProgress,
   machineEnrollmentProgress,
   machineEnrollmentStepLabel,
   parseManualAddress,
@@ -85,6 +86,8 @@ export interface AddMachineEnrollmentProps {
   readonly onGreen?: () => void;
   /** Schon vorhandene Rechner: Zeile mit grünem Punkt, nicht anklickbar. */
   readonly isKnown?: (candidate: MachineCandidate) => boolean;
+  /** Steht der Rechner dieses Beitritts verbunden in der Rechnerliste? Dann geht die Zeile. */
+  readonly isListedOnline?: (candidate: MachineCandidate) => boolean;
   /** „Tailscale nicht angemeldet · Öffnen“. */
   readonly onOpenTailscale?: () => void;
   readonly onRename?: (enrollmentId: string, name: string) => void;
@@ -130,6 +133,7 @@ export function AddMachineEnrollment({
   defaultOpen = false,
   defaultSegment,
   isKnown = NEVER_KNOWN,
+  isListedOnline = NEVER_KNOWN,
   onGreen,
   onOpenTailscale,
   onRename,
@@ -270,6 +274,7 @@ export function AddMachineEnrollment({
               key={entry.enrollmentId}
               entry={entry}
               source={source}
+              listedOnline={isListedOnline(entry.candidate)}
               onRetry={(candidate, password) => void retry(entry, candidate, password)}
               onGreen={() => {
                 // Kurz grün stehen lassen, dann übernimmt die Zeile der Rechnerliste.
@@ -563,6 +568,7 @@ function useEnrollmentSnapshot(source: MachineEnrollmentSource, enrollmentId: st
 function EnrollmentRow({
   entry,
   source,
+  listedOnline,
   onRetry,
   onGreen,
   onAbort,
@@ -571,6 +577,7 @@ function EnrollmentRow({
 }: {
   readonly entry: EnrollmentEntry;
   readonly source: MachineEnrollmentSource;
+  readonly listedOnline: boolean;
   readonly onRetry: (candidate: MachineCandidate, password?: string) => void;
   readonly onGreen: () => void;
   readonly onAbort: () => void;
@@ -578,7 +585,10 @@ function EnrollmentRow({
   readonly onCapabilitiesChange?: (capabilities: MachineCapabilities) => void;
 }) {
   const snapshot = useEnrollmentSnapshot(source, entry.enrollmentId);
-  const progress = machineEnrollmentProgress(snapshot.steps);
+  const progress = machineEnrollmentDisplayProgress(
+    machineEnrollmentProgress(snapshot.steps),
+    listedOnline,
+  );
   const green = progress.phase === "green";
   const greenSeen = useRef(false);
   useEffect(() => {

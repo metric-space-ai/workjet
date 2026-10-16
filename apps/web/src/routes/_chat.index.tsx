@@ -1614,7 +1614,7 @@ function InlineProjectCreate({
   return (
     <div className={cn("w-full", className)}>
       <InlinePanel
-        triggerLabel="Projekt anlegen"
+        triggerLabel={workjetUiLanguage() === "en" ? "New project" : "Projekt anlegen"}
         open={open}
         onOpenChange={(next) => {
           setOpen(next);

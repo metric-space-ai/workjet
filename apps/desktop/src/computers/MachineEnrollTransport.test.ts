@@ -95,6 +95,9 @@ describe("Fehlercodes", () => {
     ).toBe("disk_full");
     expect(classifyTransportFailure("installed", "join: token expired")).toBe("token_expired");
     expect(classifyTransportFailure("installed", "boom")).toBe("install_failed");
+    expect(classifyTransportFailure("transport_connected", "Error: spawn ssh ENOENT")).toBe(
+      "ssh_missing",
+    );
   });
 
   it("never connects a tailnet device as an unknown user", () => {

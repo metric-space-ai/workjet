@@ -18,7 +18,6 @@ import { Button } from "../ui/button";
 import { InlinePanel } from "../ui/inline-panel";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface SidebarAddPersistentWorkerText {
   readonly addPersistentWorker: string;
@@ -111,24 +110,17 @@ export function SidebarAddPersistentWorker(props: {
   return (
     <div className="flex flex-col gap-1 px-1 py-0.5" data-sidebar-add-persistent-worker="">
       {open ? null : (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label={props.text.addPersistentWorker}
-                data-workjet-action="project.worker.persistent.add"
-                className="text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                onClick={() => setOpen(true)}
-              />
-            }
-          >
-            <PlusIcon aria-hidden className="size-4" />
-          </TooltipTrigger>
-          <TooltipPopup side="right">{props.text.addPersistentWorker}</TooltipPopup>
-        </Tooltip>
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          data-workjet-action="project.worker.persistent.add"
+          className="justify-start text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+          onClick={() => setOpen(true)}
+        >
+          <PlusIcon aria-hidden className="size-4" />
+          {props.text.addPersistentWorker}
+        </Button>
       )}
       <InlinePanel
         hideTrigger

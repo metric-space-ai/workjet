@@ -193,6 +193,7 @@ import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../pr
 import { primaryServerProvidersAtom } from "../state/server";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
+import { UNDO_DELETE_MS } from "../lib/undoableDelete";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
@@ -1253,7 +1254,21 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 />
               )}
             </span>
-            {title}
+            {teamStatus ? (
+              // Der Zustand steht als Wort unter dem Namen, nicht nur im Tooltip des Punkts
+              // (UI-Regel: keine Hover-only-Information, #798).
+              <span className="flex min-w-0 flex-1 flex-col">
+                {title}
+                <span
+                  className="text-[11px] leading-4 text-muted-foreground"
+                  data-workjet-team-state=""
+                >
+                  {overviewText[projectOverviewWorkerState(thread)]}
+                </span>
+              </span>
+            ) : (
+              title
+            )}
             {props.teamHarnessLabel ? (
               <span className="shrink-0 text-[11px] text-muted-foreground">
                 {props.teamHarnessLabel}
@@ -1347,14 +1362,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ) : (
                 <Button
                   type="button"
-                  size="icon-xs"
+                  size="xs"
                   variant="ghost"
-                  aria-label="Erledigen"
-                  title={sidebarActionLabel("settle")}
                   onClick={handleSettleClick}
-                  className="ml-1"
+                  className="ml-1 px-1.5"
                 >
                   <CheckIcon aria-hidden className="size-3.5" />
+                  {sidebarActionLabel("settle")}
                 </Button>
               )}
             </span>
@@ -2877,6 +2891,19 @@ export default function Sidebar() {
             }
             return;
           }
+          // Erledigen ohne Rückfrage, aber mit Rückgängig (UI-Regel, #798).
+          const en = workjetUiLanguage() === "en";
+          toastManager.add(
+            stackedThreadToast({
+              type: "success",
+              title: en ? "Marked done" : "Erledigt",
+              timeout: UNDO_DELETE_MS,
+              actionProps: {
+                children: en ? "Undo" : "Rückgängig",
+                onClick: () => void unsettleThread(threadRef),
+              },
+            }),
+          );
           // Only move forward if the user is still on the settled thread —
           // a navigation made during the await wins over ours.
           if (routeThreadKeyRef.current === threadKey) {
@@ -2887,7 +2914,7 @@ export default function Sidebar() {
         }
       })();
     },
-    [planForwardNavigation, settleThread],
+    [planForwardNavigation, settleThread, unsettleThread],
   );
   const attemptUnsettle = useCallback(
     (threadRef: ScopedThreadRef) => {

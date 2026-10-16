@@ -73,7 +73,10 @@ describe("dense owner overview model", () => {
     expect(projectOverviewBudgetValue({ consumedTokens: 1_800_000_000, limitBillions: null })).toBe(
       "1,8 Mrd.",
     );
-    expect(projectOverviewBudgetValue({ consumedTokens: 0, limitBillions: null })).toBe("0,0 Mrd.");
+    expect(projectOverviewBudgetValue({ consumedTokens: 0, limitBillions: null })).toBe("0 Tokens");
+    expect(projectOverviewBudgetValue({ consumedTokens: 120_000, limitBillions: null })).toBe(
+      "120.000 Tokens",
+    );
     expect(projectOverviewBudgetValue({ consumedTokens: null, limitBillions: 2.3 })).toBe("—");
     expect(projectOverviewBudgetValue()).toBe("—");
     expect(

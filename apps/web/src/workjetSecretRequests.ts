@@ -86,6 +86,25 @@ export function secretRequestText(language: "de" | "en") {
 }
 
 /** Write-only credential listing: names and status, never values. */
+/** Wie listCredentials, unterscheidet aber „Instanz kennt secret.list nicht“ (#799). */
+export async function readCredentials(
+  instanceId: string,
+): Promise<
+  | { readonly kind: "ready"; readonly rows: readonly WorkjetCredentialRecord[] }
+  | { readonly kind: "unsupported" }
+  | { readonly kind: "failed" }
+> {
+  const result = await requestWorkjetProjectControl(instanceId, {
+    action: "secret.list",
+    commandId: newCommandId(),
+  });
+  if (result._tag === "completed" && result.response.action === "secret.list")
+    return { kind: "ready", rows: result.response.secrets };
+  if (result._tag === "failed" && "code" in result && result.code === "unsupported")
+    return { kind: "unsupported" };
+  return { kind: "failed" };
+}
+
 export async function listCredentials(
   instanceId: string,
 ): Promise<readonly WorkjetCredentialRecord[] | null> {

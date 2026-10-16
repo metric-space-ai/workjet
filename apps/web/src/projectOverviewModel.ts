@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "./workjetProjectControl";
 import { localizedThreadTitle } from "./localizedThreadTitle";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import { selectThreadsForProjectScope } from "@workjet/client-runtime/state/worker-overview";
@@ -55,17 +56,25 @@ export function projectOverviewBudgetValue(
     source.consumedTokens < 0
   )
     return "—";
-  const billions = new Intl.NumberFormat("de-DE", {
+  const en = workjetUiLanguage() === "en";
+  const locale = en ? "en-GB" : "de-DE";
+  const unit = en ? "bn" : "Mrd.";
+  const billions = new Intl.NumberFormat(locale, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
-  const used = billions.format(source.consumedTokens / 1_000_000_000);
+  // Unter 50 Mio. kein „0,0 Mrd.“ (unplausibel, #798), sondern kompakt in Tokens.
+  const small = source.consumedTokens < 50_000_000;
+  const used = small
+    ? `${new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(source.consumedTokens)} Tokens`
+    : `${billions.format(source.consumedTokens / 1_000_000_000)}`;
   const limit = source.limitBillions;
-  if (limit == null || !Number.isFinite(limit) || limit <= 0) return used + " Mrd.";
+  if (limit == null || !Number.isFinite(limit) || limit <= 0)
+    return small ? used : `${used} ${unit}`;
   const percent = Math.floor(
     (source.consumedTokens / (Math.round(limit * 10) * 100_000_000)) * 100,
   );
-  return `${used}/${billions.format(limit)} Mrd. (${source.partial ? "≥" : ""}${percent} %)`;
+  return `${used}${small ? " / " : "/"}${billions.format(limit)} ${unit} (${source.partial ? "≥" : ""}${percent} %)`;
 }
 export function projectOverviewWorkerName(title: string, projectTitle: string) {
   const suffix = title.match(/\s*\((Codex|Claude(?: Code)?|Cursor|Grok|OpenCode)\)\s*$/iu);

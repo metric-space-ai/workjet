@@ -22,7 +22,8 @@ export type ProjectTokenBudgetView = {
  */
 export function ProjectTokenBudgetSummary({ view }: { readonly view: ProjectTokenBudgetView }) {
   const tokens = view.totals === null ? null : projectTokenTotal(view.totals);
-  if (tokens === null) return null;
+  // Ohne gemessenen Verbrauch kein „≥0 Tokens“ auf der Karte (#798).
+  if (tokens === null || tokens === 0) return null;
   const en = workjetUiLanguage() === "en";
   const locale = en ? "en-GB" : "de-DE";
   const unit = en ? "bn" : "Mrd.";
@@ -30,7 +31,10 @@ export function ProjectTokenBudgetSummary({ view }: { readonly view: ProjectToke
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
-  const used = billions.format(tokens / BILLION);
+  // Kleine Mengen nicht als „0,0 Mrd.“ (unplausibel, #798), sondern kompakt: „120.000 Tokens“, „3,4 Mio. Tokens“.
+  const small = tokens < BILLION / 20;
+  const compact = new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 });
+  const used = small ? compact.format(tokens) : billions.format(tokens / BILLION);
   const percent =
     view.limitBillions === null
       ? null
@@ -38,8 +42,10 @@ export function ProjectTokenBudgetSummary({ view }: { readonly view: ProjectToke
   const partial = view.unknown.length > 0;
   const label =
     view.limitBillions === null
-      ? `${partial ? "≥" : ""}${used} ${unit}`
-      : `${partial ? "≥" : ""}${used}/${billions.format(view.limitBillions)} ${unit}${percent === null ? "" : ` (${percent} %)`}`;
+      ? `${partial ? "≥" : ""}${used} ${small ? "Tokens" : unit}`
+      : small
+        ? `${partial ? "≥" : ""}${used} Tokens / ${billions.format(view.limitBillions)} ${unit}${percent === null ? "" : ` (${percent} %)`}`
+        : `${partial ? "≥" : ""}${used}/${billions.format(view.limitBillions)} ${unit}${percent === null ? "" : ` (${percent} %)`}`;
   const count = (n: number) => new Intl.NumberFormat(locale).format(n);
   const dateTime = (iso: string) =>
     new Date(iso).toLocaleString(locale, { dateStyle: "short", timeStyle: "short" });

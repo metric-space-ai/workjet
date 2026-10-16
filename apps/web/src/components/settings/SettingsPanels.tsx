@@ -256,7 +256,9 @@ function AboutVersionSection() {
     "up-to-date": "Aktuell",
   };
   const buttonLabel =
-    actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Updates prüfen";
+    actionLabel[action] ??
+    statusLabel[updateState?.status ?? ""] ??
+    archiveText("Updates prüfen", "Check for updates");
   const status =
     action === "install" && isInstallConfirming
       ? "Workjet startet zum Installieren neu."
@@ -296,7 +298,7 @@ function AboutVersionSection() {
       />
       {hasDesktopBridge ? (
         <SettingsRow
-          title="Update-Kanal"
+          title={archiveText("Update-Kanal", "Update channel")}
           control={
             <Select
               value={selectedUpdateChannel}
@@ -306,19 +308,21 @@ function AboutVersionSection() {
             >
               <SelectTrigger
                 className="w-full sm:w-40"
-                aria-label="Update-Kanal"
+                aria-label={archiveText("Update-Kanal", "Update channel")}
                 disabled={isChangingUpdateChannel}
               >
                 <SelectValue>
-                  {selectedUpdateChannel === "nightly" ? "Vorabversion" : "Stabil"}
+                  {selectedUpdateChannel === "nightly"
+                    ? archiveText("Vorabversion", "Pre-release")
+                    : archiveText("Stabil", "Stable")}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="latest">
-                  Stabil
+                  {archiveText("Stabil", "Stable")}
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
-                  Vorabversion
+                  {archiveText("Vorabversion", "Pre-release")}
                 </SelectItem>
               </SelectPopup>
             </Select>
@@ -326,7 +330,7 @@ function AboutVersionSection() {
         />
       ) : selectedHostedAppChannel && configuredHostedAppUrl() ? (
         <SettingsRow
-          title="Update-Kanal"
+          title={archiveText("Update-Kanal", "Update channel")}
           control={
             <Select
               value={selectedHostedAppChannel}
@@ -338,18 +342,23 @@ function AboutVersionSection() {
                 if (channelUrl) window.location.assign(channelUrl);
               }}
             >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Update-Kanal">
+              <SelectTrigger
+                className="w-full sm:w-40"
+                aria-label={archiveText("Update-Kanal", "Update channel")}
+              >
                 {/* Ein Begriff auf beiden Wegen: Stabil | Vorabversion (Audit C 19). */}
                 <SelectValue>
-                  {selectedHostedAppChannel === "nightly" ? "Vorabversion" : "Stabil"}
+                  {selectedHostedAppChannel === "nightly"
+                    ? archiveText("Vorabversion", "Pre-release")
+                    : archiveText("Stabil", "Stable")}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="latest">
-                  Stabil
+                  {archiveText("Stabil", "Stable")}
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
-                  Vorabversion
+                  {archiveText("Vorabversion", "Pre-release")}
                 </SelectItem>
               </SelectPopup>
             </Select>
@@ -590,7 +599,15 @@ export function useSettingsRestore(onRestored?: () => void) {
   };
 }
 
-const COLOR_SCHEME_LABELS = { light: "Hell", dark: "Dunkel", system: "System" } as const;
+const COLOR_SCHEME_LABELS = {
+  get light() {
+    return archiveText("Hell", "Light");
+  },
+  get dark() {
+    return archiveText("Dunkel", "Dark");
+  },
+  system: "System",
+} as const;
 type ColorSchemeChoice = keyof typeof COLOR_SCHEME_LABELS;
 
 function isColorSchemeChoice(value: unknown): value is ColorSchemeChoice {
@@ -614,9 +631,25 @@ function AppearanceRows() {
           <Select
             value={colorScheme}
             onValueChange={(value) => {
-              if (!isColorSchemeChoice(value)) return;
+              if (!isColorSchemeChoice(value) || value === colorScheme) return;
+              const previous = colorScheme;
               setTheme(value);
               setAppearanceMode(value);
+              // Sofort wirksam, mit Rückgängig (UI-Regel, #798).
+              toastManager.add(
+                stackedThreadToast({
+                  type: "success",
+                  title: `${searchableSetting("color-scheme").title}: ${COLOR_SCHEME_LABELS[value]}`,
+                  timeout: 8_000,
+                  actionProps: {
+                    children: workjetUiLanguage() === "en" ? "Undo" : "Rückgängig",
+                    onClick: () => {
+                      setTheme(previous);
+                      setAppearanceMode(previous);
+                    },
+                  },
+                }),
+              );
             }}
           >
             <SelectTrigger aria-label={searchableSetting("color-scheme").title} className="w-40">
@@ -946,9 +979,9 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection title="Allgemein">
+      <SettingsSection title={archiveText("Allgemein", "General")}>
         <SettingsRow
-          title="Sprache"
+          title={archiveText("Sprache", "Language")}
           control={
             <Select
               value={settings.interfaceLanguage === "en" ? "en" : "de"}
@@ -957,7 +990,7 @@ export function GeneralSettingsPanel() {
                   updateClientSettings({ interfaceLanguage: value });
               }}
             >
-              <SelectTrigger aria-label="Sprache" className="w-40">
+              <SelectTrigger aria-label={archiveText("Sprache", "Language")} className="w-40">
                 <SelectValue>
                   {INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage === "en" ? "en" : "de"]}
                 </SelectValue>
@@ -987,7 +1020,7 @@ export function GeneralSettingsPanel() {
 
       {settings.developerMode ? (
         <>
-          <SettingsSection title="Entwickler">
+          <SettingsSection title={archiveText("Entwickler", "Developer")}>
             <EnvironmentIdentificationRow />
             <WordWrapRow />
             <SettingsRow
@@ -1233,7 +1266,7 @@ export function GeneralSettingsPanel() {
         </>
       ) : null}
 
-      <SettingsSection title="Über Workjet">
+      <SettingsSection title={archiveText("Über Workjet", "About Workjet")}>
         {isElectron || HOSTED_APP_CHANNEL ? (
           <AboutVersionSection />
         ) : (

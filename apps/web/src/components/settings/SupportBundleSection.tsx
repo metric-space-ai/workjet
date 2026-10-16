@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import type { DesktopSupportBundleResult } from "@workjet/contracts";
 import { AlertTriangleIcon, CopyIcon, LifeBuoyIcon } from "lucide-react";
 import { useCallback, useState } from "react";
@@ -67,7 +68,7 @@ export function SupportBundleSectionView({
   return (
     <SettingsSection
       id="support-bundle"
-      title="Hilfepaket"
+      title={workjetUiLanguage() === "en" ? "Support bundle" : "Hilfepaket"}
       icon={<LifeBuoyIcon className="size-4 text-muted-foreground" />}
       headerAction={
         <Button
@@ -76,7 +77,13 @@ export function SupportBundleSectionView({
           disabled={state.status === "creating"}
           onClick={onCreate}
         >
-          {state.status === "creating" ? "Erstellt …" : "Erstellen"}
+          {workjetUiLanguage() === "en"
+            ? state.status === "creating"
+              ? "Creating …"
+              : "Create"
+            : state.status === "creating"
+              ? "Erstellt …"
+              : "Erstellen"}
         </Button>
       }
     >

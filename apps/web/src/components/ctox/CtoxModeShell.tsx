@@ -2253,7 +2253,7 @@ export function CtoxSidebarFooter() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={() => void navigate({ to: "/settings/business-os" })}>
             <SettingsIcon />
-            <span>Einstellungen</span>
+            <span>{shellText("Einstellungen", "Settings")}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

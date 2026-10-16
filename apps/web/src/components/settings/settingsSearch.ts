@@ -1,3 +1,8 @@
+/** Sprache der Oberfläche aus `<html lang>` (ohne Import, damit Modul-Mocks greifen). */
+function workjetUiLanguage(): "de" | "en" {
+  const lang = typeof document === "undefined" ? "de" : document.documentElement.lang;
+  return lang.toLowerCase().startsWith("en") ? "en" : "de";
+}
 /**
  * Einstellungen in sieben Seiten (#568, Projekte seit 15.10. im Projekt). Im Entwicklermodus kommen vier Seiten
  * dazu. Jede frühere Seite ist einer dieser Seiten zugeordnet; Unterseiten
@@ -59,21 +64,62 @@ export function isDeveloperSettingsPath(path: SettingsPath): boolean {
 }
 
 /** Seiten-Bezeichnungen; Navigation, Suche und Brotkrumen lesen von hier. */
-export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/general": "Allgemein",
-  "/settings/business-os": "Instanz",
-  "/settings/computers": "Rechner",
-  "/settings/models": "Modelle",
-  "/settings/workjet": "Presets",
-  "/settings/speech": "Sprachausgabe",
-  "/settings/archived": "Archiv",
-  "/settings/diagnostics": "Diagnose",
-  "/settings/harnesses": "Harness",
-  "/settings/source-control": "Versionsverwaltung",
-  "/settings/keybindings": "Tastenkürzel",
-  "/settings/prompts": "System-Prompts",
-  "/settings/usage": "Verbrauch",
-};
+// Englisch ist Grundausstattung (#800): die Namen folgen der UI-Sprache beim Lesen.
+export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> =
+  Object.defineProperties({} as Record<SettingsPath, string>, {
+    "/settings/general": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "General" : "Allgemein"),
+    },
+    "/settings/business-os": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Instance" : "Instanz"),
+    },
+    "/settings/computers": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Computers" : "Rechner"),
+    },
+    "/settings/models": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Models" : "Modelle"),
+    },
+    "/settings/workjet": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Presets" : "Presets"),
+    },
+    "/settings/speech": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Speech" : "Sprachausgabe"),
+    },
+    "/settings/archived": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Archive" : "Archiv"),
+    },
+    "/settings/diagnostics": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Diagnostics" : "Diagnose"),
+    },
+    "/settings/harnesses": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Harness" : "Harness"),
+    },
+    "/settings/source-control": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Source control" : "Versionsverwaltung"),
+    },
+    "/settings/keybindings": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Keyboard shortcuts" : "Tastenk\u00fcrzel"),
+    },
+    "/settings/prompts": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "System prompts" : "System-Prompts"),
+    },
+    "/settings/usage": {
+      enumerable: true,
+      get: () => (workjetUiLanguage() === "en" ? "Usage" : "Verbrauch"),
+    },
+  });
 
 /** Unterseiten zeigen in der Navigation ihre Elternseite als aktiv. */
 export const SETTINGS_SUBPAGE_PARENTS: Readonly<Record<SettingsSubpagePath, SettingsPagePath>> = {
@@ -359,12 +405,53 @@ const SEARCH_ITEMS_BY_ID = Object.fromEntries(
  * spread (or pick from) this instead of restating the strings, so the catalog
  * and the rendered settings cannot drift apart.
  */
+const SETTINGS_TITLES_EN: Partial<Record<string, string>> = {
+  "color-scheme": "Color scheme",
+  "font-size": "Font size",
+  "developer-mode": "Developer mode",
+  "environment-identification": "Environment ID",
+  "word-wrap": "Word wrap",
+  "auto-settle-inactive-threads": "Settle inactive",
+  "auto-settle-merged-threads": "Settle merged",
+  "hide-whitespace-changes": "Hide whitespace",
+  "provider-update-checks": "Update checks",
+  "new-threads": "New chats",
+  "start-from-origin": "Start from origin",
+  "legacy-plan-mode": "Plan mode",
+  "legacy-token-streaming": "Token streaming",
+  "instance-devices": "Paired devices",
+  "instance-secrets": "Credentials",
+  "instance-calendar-accounts": "Calendar accounts",
+  "workjet-computers": "Computers",
+  "add-project-starts-in": "Project folder",
+  "project-working-copies": "Working copies",
+  "workjet-provider-accounts": "LLM providers",
+  "workjet-provider-pools": "Gateway pools",
+  "workjet-llm-routes": "LLM routes",
+  usage: "Usage",
+  "workjet-workers": "Presets",
+  "workjet-prompt": "System prompts",
+  "workjet-execution": "Execution",
+  "automatic-worktree-storage": "Working copy storage",
+  "greppy-runtime": "Code search",
+  "speech-voice": "Voice",
+  "speech-transcription": "Transcription",
+  archive: "Archived chats",
+  harnesses: "Harness",
+  "import-sessions": "Import sessions",
+  "source-control": "Source control",
+  "source-control-writing-model": "Custom model",
+};
+
 export function searchableSetting(id: SettingsSearchItemId): {
   readonly id: string;
   readonly title: string;
 } {
   const { id: anchorId, title } = SEARCH_ITEMS_BY_ID[id];
-  return { id: anchorId, title };
+  return {
+    id: anchorId,
+    title: workjetUiLanguage() === "en" ? (SETTINGS_TITLES_EN[id] ?? title) : title,
+  };
 }
 
 function normalizeSearchText(value: string): string {

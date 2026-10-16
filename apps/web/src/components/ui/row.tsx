@@ -1,4 +1,5 @@
-"use client";
+import { workjetUiLanguage } from "../../workjetProjectControl";
+("use client");
 
 /**
  * Zeile (UI-Vertrag §1.2): die eine Listenzeile für Instanzen, Rechner,
@@ -204,15 +205,14 @@ function Row({
           ) : null}
           {menuActions?.length ? (
             <Menu>
-              <Tooltip>
-                <TooltipTrigger
-                  render={<MenuTrigger render={<Button size="icon-sm" variant="ghost" />} />}
-                >
-                  <EllipsisVerticalIcon />
-                  <span className="sr-only">{menuLabel}</span>
-                </TooltipTrigger>
-                <TooltipPopup>{menuLabel}</TooltipPopup>
-              </Tooltip>
+              {/* Icon + Wort (UI-Regel, #808): „⋮ Mehr“, der volle Name bleibt für Screenreader. */}
+              <MenuTrigger
+                aria-label={menuLabel}
+                render={<Button size="sm" variant="ghost" className="px-2" />}
+              >
+                <EllipsisVerticalIcon />
+                {workjetUiLanguage() === "en" ? "More" : "Mehr"}
+              </MenuTrigger>
               <MenuPopup>
                 {menuActions.map((action) => (
                   <MenuItem

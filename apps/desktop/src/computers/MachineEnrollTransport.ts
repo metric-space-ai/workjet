@@ -173,6 +173,10 @@ export function classifyTransportFailure(
   step: MachineEnrollTransportStepKey,
   stderr: string,
 ): string {
+  // `spawn ssh ENOENT`: auf diesem Rechner gibt es kein ssh-Programm (#808).
+  if (/spawn (?:ssh|scp|sshpass)\b.*ENOENT|ENOENT.*\b(?:ssh|scp)\b/iu.test(stderr))
+    return "ssh_missing";
+  if (/spawn tailscale\b.*ENOENT/iu.test(stderr)) return "tailscale_missing";
   if (/permission denied|authentication failed|too many authentication failures/iu.test(stderr))
     return "auth_rejected";
   if (/host key verification failed|remote host identification has changed/iu.test(stderr))

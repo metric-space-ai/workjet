@@ -32,8 +32,13 @@ describe("Icon-Leiste unter dem Projektnamen (Michael, 15.10.)", () => {
     </SidebarProvider>,
   );
 
-  it("zeigt nur Icons, keine Zeilen mit Text", () => {
-    expect(visibleText(html)).toEqual([]);
+  it("zeigt kompakte Knöpfe mit Icon und Wort (#798), keine Zeilen", () => {
+    expect(visibleText(html)).toEqual([
+      text.allProjects,
+      text.overview,
+      text.projectSettings,
+      text.search,
+    ]);
     expect(html.match(/<button/g)).toHaveLength(4);
   });
 
@@ -72,17 +77,16 @@ describe("Seitenleiste ohne „Neue Unterhaltung“", () => {
 });
 
 describe("Plus unter „Persistente Worker“", () => {
-  it("ist ein Icon mit Tooltip, das Formular bleibt bis zum Klick zu", () => {
+  it("ist ein Plus mit Wort (#798), das Formular bleibt bis zum Klick zu", () => {
     const html = renderToStaticMarkup(
       <SidebarProvider>
         <SidebarAddPersistentWorker text={text} onCreate={async () => true} />
       </SidebarProvider>,
     );
-    // Kein sichtbarer Text: der Zuklappen-Pfeil ist ein Icon-Button (A-06), kein Text, keine Felder.
-    expect(visibleText(html)).toEqual([]);
+    // Nur das Wort am Plus, keine Felder.
+    expect(visibleText(html)).toEqual([text.addPersistentWorker]);
     expect(html).toContain('data-state="closed"');
     expect(html).not.toContain(text.goal);
-    expect(html).toContain(`aria-label="${text.addPersistentWorker}"`);
     expect(html).toContain('data-workjet-action="project.worker.persistent.add"');
   });
 

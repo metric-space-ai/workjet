@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { stackedThreadToast, toastManager } from "./ui/toast";
+import { UNDO_DELETE_MS } from "../lib/undoableDelete";
 import { ChevronUpIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import {
   projectKpiPresentation,
@@ -20,8 +22,9 @@ const TEXT = {
     close: "Schließen",
     prompt: (n: number) => `Satz für Kennzahl ${n}`,
     placeholder: "Was soll diese Kennzahl messen?",
-    save: "Speichern",
-    saving: "Speichern …",
+    saving: "Wird gespeichert …",
+    saved: (n: number) => `Kennzahl ${n} gespeichert`,
+    undo: "Rückgängig",
     refresh: "Neu berechnen",
     refreshing: "Wird berechnet …",
     saveFailed: "Nicht gespeichert.",
@@ -36,8 +39,9 @@ const TEXT = {
     close: "Close",
     prompt: (n: number) => `Sentence for metric ${n}`,
     placeholder: "What should this metric measure?",
-    save: "Save",
     saving: "Saving …",
+    saved: (n: number) => `Metric ${n} saved`,
+    undo: "Undo",
     refresh: "Recalculate",
     refreshing: "Calculating …",
     saveFailed: "Not saved.",
@@ -106,21 +110,62 @@ export function ProjectKpiTile({
   const label = projectKpiTileLabel(kpis, projectId, index);
   const editable = onSave !== undefined;
   const dirty = draft.trim() !== saved.trim();
-  const collapse = () => {
-    onExpandedChange(false);
-    toggleRef.current?.focus();
-  };
-  const save = async () => {
-    if (!onSave || busy) return;
-    const prompts = kpis.items.map((item) => item.prompt.prompt);
+  // Sofortspeichern (UI-Regel, #798): kein „Speichern“-Knopf. Der Satz wird kurz nach dem
+  // Tippen und beim Zuklappen geschrieben; der Toast bietet „Rückgängig“ zum alten Satz.
+  const latestKpis = useRef(kpis);
+  latestKpis.current = kpis;
+  const writePrompt = async (sentence: string, withUndo: boolean) => {
+    if (!onSave) return false;
+    const before = kpis.items.map((item) => item.prompt.prompt);
+    const prompts = [...before];
     while (prompts.length <= index) prompts.push("");
-    prompts[index] = draft;
+    const previous = prompts[index] ?? "";
+    prompts[index] = sentence;
     setBusy("save");
     setError(null);
     const ok = await onSave(projectKpiPromptInputs(prompts, kpis), kpis.revision);
     setBusy(null);
-    if (ok) collapse();
-    else setError(text.saveFailed);
+    if (!ok) {
+      setError(text.saveFailed);
+      return false;
+    }
+    if (withUndo) {
+      const save = onSave;
+      const restore = [...prompts];
+      restore[index] = previous;
+      toastManager.add(
+        stackedThreadToast({
+          type: "success",
+          title: text.saved(position),
+          timeout: UNDO_DELETE_MS,
+          actionProps: {
+            children: text.undo,
+            onClick: () =>
+              void save(
+                projectKpiPromptInputs(restore, latestKpis.current),
+                latestKpis.current.revision,
+              ),
+          },
+        }),
+      );
+    }
+    return true;
+  };
+  const save = async () => {
+    if (!onSave || busy || !dirty) return;
+    await writePrompt(draft, true);
+  };
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (!expanded || !dirty) return;
+    const timer = setTimeout(() => void saveRef.current(), 1_200);
+    return () => clearTimeout(timer);
+  }, [draft, expanded, dirty]);
+  const collapse = () => {
+    if (dirty) void save();
+    onExpandedChange(false);
+    toggleRef.current?.focus();
   };
   const refresh = async () => {
     if (!onRefresh || busy) return;
@@ -265,9 +310,11 @@ export function ProjectKpiTile({
             </p>
           )}
           <div className="mt-auto flex flex-wrap items-center gap-2">
-            <Button size="xs" disabled={!dirty || busy !== null} onClick={() => void save()}>
-              {busy === "save" ? text.saving : text.save}
-            </Button>
+            {busy === "save" ? (
+              <span className="text-[12px] text-muted-foreground" aria-live="polite">
+                {text.saving}
+              </span>
+            ) : null}
             {onRefresh && record && (
               <Button
                 size="xs"

@@ -118,9 +118,12 @@ const ENGLISH_SCAN_TARGETS = (file) =>
 
 function checkEnglishLiterals(out, file, source) {
   if (!ENGLISH_SCAN_TARGETS(file)) return;
-  // JSX-Textknoten
-  for (const match of source.matchAll(/>\s*([^<>{}\n][^<>{}]*?)\s*</g)) {
+  // JSX-Textknoten. Nur in .tsx; Code zwischen `=>` und einem Generic
+  // (`new Set<string>`, `useState<…>`) enthält `;` bzw. `=` und ist kein Text.
+  const jsxSource = file.endsWith(".tsx") ? source : "";
+  for (const match of jsxSource.matchAll(/>\s*([^<>{}\n][^<>{}]*?)\s*</g)) {
     const text = match[1].replace(/\s+/g, " ").trim();
+    if (/;|\b(const|let|return|useState)\b|\s=\s/.test(text)) continue;
     if (words(text).length >= 2 && /[a-zA-Z]/.test(text) && !isGermanOrNeutral(text)) {
       out.push(`d|${file}|${clean(text.slice(0, 120))}`);
     }

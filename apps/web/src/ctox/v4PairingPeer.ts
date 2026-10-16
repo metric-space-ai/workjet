@@ -1,13 +1,39 @@
-// E54.4 pairing peer: joins the invitation's signaling room as an unpaired peer, opens exactly one
-// data channel (the V4 control lane, `ctox-v4-control`), sends one plain JSON control request and
-// waits for the matching response. No other lane, no hello, no data; the connection is closed as
-// soon as the response arrived. The launch context it returns opens a separate E50 connection.
+// Pairing peer (contract E54.5): joins the signaling room as an unpaired peer (`role=pairing`,
+// `protocol=ctox-v4-pairing`), opens exactly one data channel (the V4 control lane,
+// `ctox-v4-control`), sends no hello and exactly one plain JSON `pairing_request`, and waits for the
+// matching `pairing_response`. No other lane, no data; the connection is closed as soon as the
+// response arrived. The launch context it returns opens a separate E50 connection.
+// `device.invite.redeem` sends at once; `device.launch.renew` first waits for the Core's
+// `{"type":"pairing_challenge",nonce,expires_at_ms}` and answers it.
 import { randomUUID } from "../lib/utils";
 import type {
   V4InviteSignalingTarget,
   V4PairingControlExchange,
   V4PairingControlRequest,
 } from "./v4DeviceInvite";
+
+/** The Core's challenge before `device.launch.renew` (E54.5). */
+export interface V4PairingChallenge {
+  readonly nonce: string;
+  readonly expiresAtMs: number;
+}
+
+/**
+ * Waits for the Core's challenge on the control lane, sends the request `respond` builds from it
+ * and resolves the matching response. `respond` may throw to abort without sending.
+ */
+export type V4PairingChallengeExchange = (
+  target: V4InviteSignalingTarget,
+  respond: (challenge: V4PairingChallenge) => Promise<V4PairingControlRequest>,
+) => Promise<unknown>;
+
+/** A `respond` that refused to answer (e.g. expired challenge); nothing was sent. */
+export class V4PairingAbort extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = "V4PairingAbort";
+  }
+}
 
 export const V4_PAIRING_CONTROL_CHANNEL = "ctox-v4-control";
 export const V4_PAIRING_SIGNALING_ROLE = "pairing";
@@ -62,9 +88,9 @@ class PairingTransportError extends Error {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
-export function createV4PairingControlExchange(
-  options: V4PairingPeerOptions = {},
-): V4PairingControlExchange {
+type Compose = (challenge: V4PairingChallenge | null) => Promise<V4PairingControlRequest>;
+
+function createPairingExchange(options: V4PairingPeerOptions) {
   const WebSocketImpl =
     options.WebSocketImpl ??
     (globalThis.WebSocket as unknown as V4PairingPeerOptions["WebSocketImpl"]);
@@ -73,16 +99,17 @@ export function createV4PairingControlExchange(
     (globalThis.RTCPeerConnection as unknown as V4PairingPeerOptions["RTCPeerConnectionImpl"]);
   const timeoutMs = options.timeoutMs ?? 20_000;
   const peerId = options.peerId ?? (() => `pairing-${randomUUID()}`);
-  return async (target, request) => {
+  return async (
+    target: V4InviteSignalingTarget,
+    compose: Compose,
+    expectChallenge: boolean,
+  ): Promise<unknown> => {
     if (typeof WebSocketImpl !== "function" || typeof RTCPeerConnectionImpl !== "function")
       throw new PairingTransportError("webrtc_unavailable", false);
-    const encoded = JSON.stringify(request);
-    if (new TextEncoder().encode(encoded).length > MAX_CONTROL_BYTES)
-      throw new PairingTransportError("request_too_large", false);
     let last: unknown = new PairingTransportError("no_signaling_url", false);
     for (const url of target.urls) {
       try {
-        return await exchangeOnce(url, target, request, encoded, {
+        return await exchangeOnce(url, target, compose, expectChallenge, {
           WebSocketImpl,
           RTCPeerConnectionImpl,
           timeoutMs,
@@ -91,6 +118,7 @@ export function createV4PairingControlExchange(
       } catch (error) {
         last = error;
         // A request that already left may have spent the invitation: never send it twice.
+        if (error instanceof V4PairingAbort) break;
         if (error instanceof PairingTransportError && error.sent) break;
       }
     }
@@ -98,11 +126,44 @@ export function createV4PairingControlExchange(
   };
 }
 
+/** `device.invite.redeem`: the request is sent as soon as the control lane is open. */
+export function createV4PairingControlExchange(
+  options: V4PairingPeerOptions = {},
+): V4PairingControlExchange {
+  const exchange = createPairingExchange(options);
+  return (target, request) => exchange(target, async () => request, false);
+}
+
+/** `device.launch.renew`: the request answers the Core's challenge. */
+export function createV4PairingChallengeExchange(
+  options: V4PairingPeerOptions = {},
+): V4PairingChallengeExchange {
+  const exchange = createPairingExchange(options);
+  return (target, respond) =>
+    exchange(
+      target,
+      async (challenge) => {
+        if (challenge === null) throw new V4PairingAbort("challenge_missing");
+        return respond(challenge);
+      },
+      true,
+    );
+}
+
+const parseChallenge = (message: Record<string, unknown>): V4PairingChallenge | null =>
+  typeof message.nonce === "string" &&
+  message.nonce.length > 0 &&
+  message.nonce.length <= 512 &&
+  typeof message.expires_at_ms === "number" &&
+  Number.isSafeInteger(message.expires_at_ms)
+    ? { nonce: message.nonce, expiresAtMs: message.expires_at_ms }
+    : null;
+
 function exchangeOnce(
   base: string,
   target: V4InviteSignalingTarget,
-  request: V4PairingControlRequest,
-  encoded: string,
+  compose: Compose,
+  expectChallenge: boolean,
   context: {
     readonly WebSocketImpl: NonNullable<V4PairingPeerOptions["WebSocketImpl"]>;
     readonly RTCPeerConnectionImpl: NonNullable<V4PairingPeerOptions["RTCPeerConnectionImpl"]>;
@@ -129,6 +190,8 @@ function exchangeOnce(
     let offered = false;
     let remote = false;
     let sent = false;
+    let composing = false;
+    let requestId: string | null = null;
     let settled = false;
     const close = () => {
       try {
@@ -164,14 +227,25 @@ function exchangeOnce(
       const candidate = event.candidate as { toJSON?: () => unknown } | null;
       if (candidate) signal({ type: "candidate", candidate: candidate.toJSON?.() ?? candidate });
     };
+    const send = (challenge: V4PairingChallenge | null) => {
+      if (settled || sent || composing) return;
+      composing = true;
+      void compose(challenge)
+        .then((request) => {
+          if (settled) return;
+          const encoded = JSON.stringify(request);
+          if (new TextEncoder().encode(encoded).length > MAX_CONTROL_BYTES)
+            return done(failure("request_too_large"));
+          requestId = request.id;
+          control.send(encoded);
+          sent = true;
+        })
+        .catch((error: unknown) =>
+          done(error instanceof V4PairingAbort ? error : failure("control_send_failed")),
+        );
+    };
     control.addEventListener("open", () => {
-      if (settled || sent) return;
-      try {
-        control.send(encoded);
-        sent = true;
-      } catch {
-        done(failure("control_send_failed"));
-      }
+      if (!expectChallenge) send(null);
     });
     control.addEventListener("message", (event) => {
       if (typeof event.data !== "string" || event.data.length > MAX_CONTROL_BYTES) return;
@@ -181,7 +255,14 @@ function exchangeOnce(
       } catch {
         return;
       }
-      if (isRecord(message) && message.type === "pairing_response" && message.id === request.id)
+      if (!isRecord(message)) return;
+      if (message.type === "pairing_challenge" && expectChallenge && !sent && !composing) {
+        const challenge = parseChallenge(message);
+        if (challenge === null) return done(failure("challenge_invalid"));
+        return send(challenge);
+      }
+      // A Core rejection before any request (e.g. rate_limited instead of a challenge).
+      if (message.type === "pairing_response" && (message.id === requestId || requestId === null))
         done(null, message);
     });
     control.addEventListener("close", () => done(failure("control_closed")));

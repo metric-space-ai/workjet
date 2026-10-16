@@ -24,6 +24,7 @@ import { SettingsAddButton, SettingsLoadingRow } from "./settingsAdd";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { InstanceAddInline } from "../ctox/InstanceAddInline";
+import { V4DeviceUnpairedLine } from "../ctox/V4DeviceUnpairedLine";
 import { InstanceNetworkOverview } from "../ctox/InstanceNetworkOverview";
 import { Button } from "../ui/button";
 import { InlinePanel } from "../ui/inline-panel";
@@ -444,6 +445,7 @@ export function BusinessOsSettingsView({
   onLoadManualConnection,
   renewingInvite = false,
   addPanel = null,
+  unpairedNotice = null,
   network = null,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
@@ -468,6 +470,8 @@ export function BusinessOsSettingsView({
   readonly renewingInvite?: boolean;
   /** Das Inline-Panel „Instanz hinzufügen“ (braucht den CTOX-Kontext). */
   readonly addPanel?: ReactNode;
+  /** E54.5: „Gerät nicht mehr gekoppelt · Neuer Link“ for the selected paired V4 instance. */
+  readonly unpairedNotice?: ReactNode;
   /** Inhalt des aufklappbaren Abschnitts „Netzwerk“. */
   readonly network?: ReactNode;
 }) {
@@ -477,6 +481,7 @@ export function BusinessOsSettingsView({
   if (selected === null) {
     return (
       <SettingsPageContainer className="gap-5">
+        {unpairedNotice}
         {loading || discoveryFailed ? (
           <SettingsLoadingRow onRetry={() => onRetryDiscovery?.()} />
         ) : addPanel === null ? (
@@ -499,6 +504,7 @@ export function BusinessOsSettingsView({
   }
   return (
     <SettingsPageContainer className="gap-5" title={ctoxInstanceDisplayTitle(selected)}>
+      {unpairedNotice}
       <DevicesSection
         instanceName={ctoxInstanceDisplayTitle(selected)}
         devices={devices}
@@ -729,6 +735,7 @@ export function BusinessOsSettings() {
         : { onLoadManualConnection: async () => activeInvite.manualConnection })}
       renewingInvite={renewingInvite}
       addPanel={addRequested ? <InstanceAddInline /> : null}
+      unpairedNotice={<V4DeviceUnpairedLine instanceId={activeInstanceId} />}
       network={
         <InstanceNetworkOverview
           variant="section"

@@ -51,6 +51,11 @@ export interface V4DeviceInvite {
   readonly expiresAtMs: number;
 }
 
+/**
+ * Link payload, contract E54.5: base64url(JSON) of
+ * {"type":"ctox-device-invite","version":4,instance_id,signaling:{urls,room,native_peer_id,token?,
+ * ice_servers?},invite_id,one_time_secret,expires_at_ms}.
+ */
 export const V4_INVITE_PAYLOAD_TYPE = "ctox-device-invite";
 export const V4_INVITE_PAYLOAD_VERSION = 4;
 export const V4_INVITE_MAX_TTL_MS = 86_400_000;
@@ -271,14 +276,31 @@ export interface V4DeviceInviteRedeemRequest {
   readonly device_label: string;
 }
 
-/** Exact control-lane request/response on the pairing peer. */
+/**
+ * Control-lane request on the pairing peer, contract E54.5:
+ * {"type":"pairing_request",id,method,params:[{…}]} → {"type":"pairing_response",id,result|error}.
+ */
 export const V4_PAIRING_METHOD = "device.invite.redeem";
-export interface V4PairingControlRequest {
-  readonly type: "pairing_request";
-  readonly id: string;
-  readonly method: typeof V4_PAIRING_METHOD;
-  readonly params: readonly [V4DeviceInviteRedeemRequest];
+export const V4_RENEW_METHOD = "device.launch.renew";
+export interface V4DeviceLaunchRenewRequest {
+  readonly instance_id: string;
+  readonly device_id: string;
+  readonly nonce: string;
+  readonly signature: string;
 }
+export type V4PairingControlRequest =
+  | {
+      readonly type: "pairing_request";
+      readonly id: string;
+      readonly method: typeof V4_PAIRING_METHOD;
+      readonly params: readonly [V4DeviceInviteRedeemRequest];
+    }
+  | {
+      readonly type: "pairing_request";
+      readonly id: string;
+      readonly method: typeof V4_RENEW_METHOD;
+      readonly params: readonly [V4DeviceLaunchRenewRequest];
+    };
 
 /**
  * Sends one control request over a fresh pairing-peer connection and resolves its matching

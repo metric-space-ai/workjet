@@ -75,7 +75,13 @@ const SEGMENTS: ReadonlyArray<{
   readonly label: string;
   readonly icon: ReactNode;
 }> = [
-  { value: "local", label: labels.transports.local, icon: <MonitorIcon /> },
+  {
+    value: "local",
+    get label() {
+      return labels.transports.local;
+    },
+    icon: <MonitorIcon />,
+  },
   // D23: Terminal steht für Harness; SSH bekommt den Schlüssel.
   { value: "ssh", label: labels.transports.ssh, icon: <KeyRoundIcon /> },
   { value: "tailscale", label: labels.transports.tailscale, icon: <NetworkIcon /> },

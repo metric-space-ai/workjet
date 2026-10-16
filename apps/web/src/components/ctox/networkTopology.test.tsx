@@ -177,3 +177,13 @@ describe("NetworkDiagram", () => {
       expect(html).not.toContain(fake);
   });
 });
+
+describe("network map theme (hell und dunkel)", () => {
+  it("colours only through theme tokens, and the fixture does not force dark", async () => {
+    const { readFileSync } = await import("node:fs");
+    const css = readFileSync(new URL("./networkDiagram.css", import.meta.url), "utf8");
+    expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/);
+    const html = readFileSync(new URL("../../../netz-fixture.html", import.meta.url), "utf8");
+    expect(html).not.toMatch(/<html[^>]*class="[^"]*\bdark\b/);
+  });
+});

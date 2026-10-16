@@ -10,7 +10,7 @@
  * dann als Zeile mit Balken über die acht Vertragsschritte bis grün.
  * Das Passwort dient nur der ersten Anmeldung und wird nie gespeichert.
  */
-import { KeyRoundIcon, MonitorIcon, NetworkIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { KeyboardIcon, KeyRoundIcon, MonitorIcon, NetworkIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
@@ -370,7 +370,7 @@ export function AddMachineEnrollment({
                     setPickedId(manual ? null : MANUAL);
                   }}
                 >
-                  <span className="size-4 shrink-0" aria-hidden />
+                  <KeyboardIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                   <span className="font-medium">{labels.manual}</span>
                 </button>
                 {manual ? credentialFields(true) : null}

@@ -317,6 +317,23 @@ export function InstanceSpeechSettings({
             </TooltipTrigger>
             <TooltipPopup>Aktualisieren</TooltipPopup>
           </Tooltip>
+          {/* Hinzufügen wie unter „Modelle“: primär im Kopf, die neue Zeile erscheint darunter. */}
+          {!showMistral ? (
+            <SettingsAddButton
+              action="speech.add-provider"
+              disabled={busy !== undefined || !config}
+              options={SPEECH_PROVIDERS.map((provider) => ({
+                key: provider.id,
+                label: provider.label,
+                icon: MistralIcon,
+                action: `speech.provider.${provider.id}.select`,
+                onSelect: () => {
+                  setDraft(provider.id);
+                  setEditing(provider.id);
+                },
+              }))}
+            />
+          ) : null}
         </div>
       }
     >
@@ -332,28 +349,6 @@ export function InstanceSpeechSettings({
       ) : null}
       {!config && !readDenied ? (
         <SettingsLoadingRow onRetry={() => setReadAttempt((attempt) => attempt + 1)} />
-      ) : null}
-      {config && !showMistral ? (
-        // Ohne Mistral keine toten Steuerelemente, nur die Zeile „+ Hinzufügen“ (Audit C 6, 38).
-        <div
-          className="flex items-center rounded-lg border px-3 py-1.5"
-          data-workjet-speech-accounts=""
-        >
-          <SettingsAddButton
-            action="speech.add-provider"
-            disabled={busy !== undefined}
-            options={SPEECH_PROVIDERS.map((provider) => ({
-              key: provider.id,
-              label: provider.label,
-              icon: MistralIcon,
-              action: `speech.provider.${provider.id}.select`,
-              onSelect: () => {
-                setDraft(provider.id);
-                setEditing(provider.id);
-              },
-            }))}
-          />
-        </div>
       ) : null}
       {config && showMistral ? (
         <div

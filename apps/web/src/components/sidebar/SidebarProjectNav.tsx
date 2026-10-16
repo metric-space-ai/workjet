@@ -1,6 +1,6 @@
 /**
  * Icon-Leiste unter dem Projektnamen (Michael, 15.10.): Alle Projekte (Haus),
- * Übersicht, Projekteinstellungen und Suche als Icons mit Tooltip statt Zeilen.
+ * Übersicht, Projekteinstellungen und Suche als kompakte Knöpfe mit Icon und Wort.
  * Erscheint nur in einem Projekt; in „Alle Projekte“ gibt es keine Leiste.
  */
 import { HomeIcon, LayoutDashboardIcon, SearchIcon, SettingsIcon } from "lucide-react";
@@ -10,7 +10,6 @@ type ButtonClick = ReactMouseEvent<HTMLButtonElement>;
 
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface SidebarProjectNavText {
   readonly allProjects: string;
@@ -37,7 +36,7 @@ export function SidebarProjectNav(props: {
     <div
       role="toolbar"
       aria-label={props.label}
-      className="flex items-center gap-0.5"
+      className="flex flex-wrap items-center gap-0.5"
       data-sidebar-project-nav=""
     >
       <NavIcon
@@ -90,30 +89,25 @@ function NavIcon(props: {
   readonly disabled?: boolean | undefined;
   readonly children: ReactNode;
 }) {
+  // Icon + Wort (UI-Regel, #798): kein Tooltip als einzige Beschriftung.
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label={props.ariaLabel ?? props.label}
-            aria-pressed={props.active === undefined ? undefined : props.active}
-            data-active={props.active ? "" : undefined}
-            data-workjet-action={props.action}
-            disabled={props.disabled}
-            onClick={props.onClick}
-            className={cn(
-              "text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
-              props.active && "bg-sidebar-accent text-sidebar-accent-foreground",
-            )}
-          />
-        }
-      >
-        {props.children}
-      </TooltipTrigger>
-      <TooltipPopup side="bottom">{props.label}</TooltipPopup>
-    </Tooltip>
+    <Button
+      type="button"
+      size="xs"
+      variant="ghost"
+      aria-label={props.ariaLabel ?? props.label}
+      aria-pressed={props.active === undefined ? undefined : props.active}
+      data-active={props.active ? "" : undefined}
+      data-workjet-action={props.action}
+      disabled={props.disabled}
+      onClick={props.onClick}
+      className={cn(
+        "min-w-0 px-1.5 text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+        props.active && "bg-sidebar-accent text-sidebar-accent-foreground",
+      )}
+    >
+      {props.children}
+      <span className="truncate">{props.label}</span>
+    </Button>
   );
 }

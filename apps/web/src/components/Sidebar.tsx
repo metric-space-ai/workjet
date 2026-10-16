@@ -1253,7 +1253,21 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 />
               )}
             </span>
-            {title}
+            {teamStatus ? (
+              // Der Zustand steht als Wort unter dem Namen, nicht nur im Tooltip des Punkts
+              // (UI-Regel: keine Hover-only-Information, #798).
+              <span className="flex min-w-0 flex-1 flex-col">
+                {title}
+                <span
+                  className="text-[11px] leading-4 text-muted-foreground"
+                  data-workjet-team-state=""
+                >
+                  {overviewText[projectOverviewWorkerState(thread)]}
+                </span>
+              </span>
+            ) : (
+              title
+            )}
             {props.teamHarnessLabel ? (
               <span className="shrink-0 text-[11px] text-muted-foreground">
                 {props.teamHarnessLabel}

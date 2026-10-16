@@ -34,6 +34,8 @@ import {
   projectOverviewWorkerState,
 } from "../projectOverviewModel";
 import { type PromptedProjectKpis, type SaveProjectKpiPrompts } from "../projectKpis";
+import { stackedThreadToast, toastManager } from "./ui/toast";
+import { UNDO_DELETE_MS } from "../lib/undoableDelete";
 import { ProjectKpiTile } from "./ProjectKpiTile";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectInitProgress } from "./ProjectInitProgress";
@@ -342,6 +344,23 @@ export function ProjectOverviewCard({
     try {
       if (!(await onSave({ ...overview, archived: !archived })))
         throw new Error("project not saved");
+      // Sofortspeichern + Rückgängig statt Bestätigung (UI-Regel, #798): der Toast stellt
+      // den vorherigen Stand wieder her, auch wenn die Karte inzwischen aus der Liste ist.
+      const previous = overview;
+      const save = onSave;
+      toastManager.add(
+        stackedThreadToast({
+          type: "success",
+          title: archived
+            ? t(`${project.title} wiederhergestellt`, `${project.title} restored`)
+            : t(`${project.title} archiviert`, `${project.title} archived`),
+          timeout: UNDO_DELETE_MS,
+          actionProps: {
+            children: t("Rückgängig", "Undo"),
+            onClick: () => void save(previous),
+          },
+        }),
+      );
       return true;
     } catch {
       lastFailed.current = "archive";
@@ -525,9 +544,11 @@ export function ProjectOverviewCard({
           <Menu>
             <MenuTrigger
               aria-label={t(`Aktionen für ${project.title}`, `Actions for ${project.title}`)}
-              render={<Button size="icon-xs" variant="ghost" />}
+              render={<Button size="xs" variant="ghost" className="shrink-0" />}
+              data-workjet-action={`project.card.menu:${project.key}`}
             >
               <EllipsisIcon className="size-4" aria-hidden="true" />
+              {t("Mehr", "More")}
             </MenuTrigger>
             <MenuPopup align="end">
               {onRefreshKpis && scopedKpis && scopedKpis.items.length > 0 && (

@@ -1,4 +1,6 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Button } from "~/components/ui/button";
+import { workjetUiLanguage } from "../workjetProjectControl";
 import { useEffect } from "react";
 
 import ChatView from "../components/ChatView";
@@ -81,15 +83,21 @@ function ChatThreadRouteView() {
     }
   }, [authorizedThreadRef, bootstrapComplete, environmentHasAnyThreads, navigate, renderState]);
 
+  // Ein Chat auf einem Rechner, der für die aktive Instanz nicht freigegeben ist, sprang
+  // früher stumm zur Übersicht zurück (#798: „Supervisor lässt sich nicht öffnen“). Jetzt
+  // bleibt die Route stehen und sagt, warum der Chat nicht offen ist und was zu tun ist.
+  const computerNotAssigned =
+    threadRef !== null && authorizedThreadRef === null && businessOsCodeScope.phase === "ready";
   useEffect(() => {
     if (
       threadRef !== null &&
       authorizedThreadRef === null &&
-      businessOsCodeScope.phase !== "resolving"
+      businessOsCodeScope.phase === "blocked" &&
+      businessOsCodeScope.blocker === "no-active-instance"
     ) {
       void navigate({ to: "/", replace: true });
     }
-  }, [authorizedThreadRef, businessOsCodeScope.phase, navigate, threadRef]);
+  }, [authorizedThreadRef, businessOsCodeScope, navigate, threadRef]);
 
   useEffect(() => {
     if (!authorizedThreadRef || !serverThreadStarted || !draftThread) {
@@ -99,6 +107,9 @@ function ChatThreadRouteView() {
   }, [authorizedThreadRef, draftThread, serverThreadStarted]);
 
   if (!authorizedThreadRef) {
+    if (computerNotAssigned || businessOsCodeScope.phase === "blocked") {
+      return <ThreadComputerNotAssigned blocked={businessOsCodeScope.phase === "blocked"} />;
+    }
     return null;
   }
 
@@ -112,6 +123,52 @@ function ChatThreadRouteView() {
           threadSyncPhase={threadSyncPhase}
         />
       ) : null}
+    </SidebarInset>
+  );
+}
+
+function ThreadComputerNotAssigned({ blocked }: { readonly blocked: boolean }) {
+  const en = workjetUiLanguage() === "en";
+  const title = blocked
+    ? en
+      ? "Instance not reachable"
+      : "Instanz nicht erreichbar"
+    : en
+      ? "This chat runs on a computer not assigned to this instance"
+      : "Dieser Chat läuft auf einem Rechner, der dieser Instanz nicht zugeordnet ist";
+  const description = blocked
+    ? en
+      ? "Workjet could not confirm the instance. Check the connection in Settings › Instance."
+      : "Workjet konnte die Instanz nicht bestätigen. Verbindung unter Einstellungen › Instanz prüfen."
+    : en
+      ? "Assign this computer to the instance or choose another computer, then open the chat again."
+      : "Ordne diesen Rechner der Instanz zu oder wähle einen anderen Rechner und öffne den Chat dann erneut.";
+  return (
+    <SidebarInset className="h-svh min-h-0 overflow-hidden bg-background text-foreground md:h-dvh">
+      <div
+        className="mx-auto flex max-w-md flex-1 flex-col items-start justify-center gap-3 p-8"
+        data-workjet-thread-blocked={blocked ? "instance" : "computer"}
+      >
+        <h1 className="text-base font-semibold">{title}</h1>
+        <p className="text-sm text-muted-foreground">{description}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            render={<Link to={blocked ? "/settings/business-os" : "/settings/computers"} />}
+          >
+            {blocked
+              ? en
+                ? "Open instance settings"
+                : "Instanz-Einstellungen öffnen"
+              : en
+                ? "Choose computer"
+                : "Rechner wählen"}
+          </Button>
+          <Button size="sm" variant="outline" render={<Link to="/" />}>
+            {en ? "Back to overview" : "Zur Übersicht"}
+          </Button>
+        </div>
+      </div>
     </SidebarInset>
   );
 }

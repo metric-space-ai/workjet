@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { OptionSelect } from "../ui/option-select";
 import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { CheckIcon, CircleDashedIcon, LoaderIcon, RefreshCwIcon, XIcon } from "lucide-react";
@@ -301,22 +302,15 @@ export function InstanceSpeechSettings({
       id="speech"
       headerAction={
         <div className="flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label="Aktualisieren"
-                  disabled={busy !== undefined}
-                  onClick={() => void run({ action: "speech.settings.read" })}
-                />
-              }
-            >
-              <RefreshCwIcon className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipPopup>Aktualisieren</TooltipPopup>
-          </Tooltip>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy !== undefined}
+            onClick={() => void run({ action: "speech.settings.read" })}
+          >
+            <RefreshCwIcon aria-hidden className="size-3.5" />
+            {workjetUiLanguage() === "en" ? "Refresh" : "Aktualisieren"}
+          </Button>
           {/* Hinzufügen wie unter „Modelle“: primär im Kopf, die neue Zeile erscheint darunter. */}
           {!showMistral ? (
             <SettingsAddButton

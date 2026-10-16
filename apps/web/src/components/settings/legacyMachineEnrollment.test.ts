@@ -206,7 +206,7 @@ describe("SSH sources over the desktop bridge (N6, real path)", () => {
       ],
       localName: "Dieser Rechner",
       isOnline: () => false,
-      add: async () => ({ status: "ok" as const }),
+      add: async () => ({ status: "done" as const }),
     });
     const sources = await transport.listCandidates();
     expect(sources.candidates.map((candidate) => candidate.id)).toEqual([

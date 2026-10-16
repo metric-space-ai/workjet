@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import type { CtoxManagedInstance } from "@workjet/contracts";
 
 import {
@@ -9,6 +9,8 @@ import {
   type InstanceAddOption,
   type InstanceSetupRequest,
 } from "../../instanceSetup";
+import { redeemWorkjetDeviceInvite } from "../../ctox/instanceAccess";
+import { isV4DeviceInviteLink } from "../../ctox/v4DeviceInvite";
 import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
 import { expandWorkjetPairingInvite } from "../settings/businessOsPairing";
 import { Button } from "../ui/button";
@@ -21,6 +23,7 @@ import { Segment } from "../ui/segment";
 import { useCtoxMode } from "./CtoxModeShell";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 import { InstanceQrScanner } from "./InstanceQrScanner";
+import { V4InviteRedeemLine, type V4InviteRedeemState } from "./V4InviteRedeemLine";
 
 /**
  * „Instanz hinzufügen“ als Inline-Panel auf Einstellungen › Instanzen
@@ -43,6 +46,8 @@ export const INSTANCE_ADD_OPTIONS: ReadonlyArray<{
 export { SEGMENT_TOGGLE_CLASS } from "../ui/segment";
 
 export const INSTANCE_ADD_TRIGGER_LABEL = "Instanz hinzufügen";
+/** E54.4: a V4 device invitation is redeemed with „Verbinden“. */
+export const V4_INVITE_SUBMIT_LABEL = "Verbinden";
 
 const MANUAL_TOKEN = /workjet-join-v1\.[A-Za-z0-9+/=_-]+/u;
 
@@ -167,6 +172,10 @@ export function InstanceAddPanel({
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
   const [scanRevision, setScanRevision] = useState(0);
+  const [v4Redeem, setV4Redeem] = useState<V4InviteRedeemState | null>(null);
+  const inviteField = useRef<HTMLTextAreaElement | null>(null);
+  // An expired V4 link still takes the V4 path and fails locally without being sent.
+  const v4Invite = option === "link" && isV4DeviceInviteLink(invite);
   const replacesInstanceId = request.replacesInstanceId;
   const removedManaged =
     mode.discovery !== "loading" && mode.discovery._tag === "ready"
@@ -178,6 +187,7 @@ export function InstanceAddPanel({
   const choose = (next: InstanceAddOption) => {
     setOption(next);
     setStatus(null);
+    setV4Redeem(null);
     if (next === "qr") setScanRevision((value) => value + 1);
   };
 
@@ -199,7 +209,27 @@ export function InstanceAddPanel({
       .finally(() => setSubmitting(false));
   };
 
+  const redeemV4 = () => {
+    setV4Redeem({ phase: "running" });
+    setStatus(null);
+    void redeemWorkjetDeviceInvite(invite)
+      .then((outcome) =>
+        setV4Redeem(outcome.ok ? { phase: "connected" } : { phase: "failed", code: outcome.code }),
+      )
+      .catch(() => setV4Redeem({ phase: "failed", code: "unreachable" }));
+  };
+
+  const newV4Link = () => {
+    setV4Redeem(null);
+    setInvite("");
+    inviteField.current?.focus();
+  };
+
   const submit = () => {
+    if (v4Invite) {
+      if (v4Redeem?.phase !== "running" && v4Redeem?.phase !== "connected") redeemV4();
+      return;
+    }
     if (option === "ctox-dev") {
       mode.login();
       return;
@@ -236,9 +266,15 @@ export function InstanceAddPanel({
         : { ok: false, message: "Instanz konnte nicht wiederhergestellt werden." };
     });
 
-  const submitLabel = option === "ctox-dev" ? "Bei ctox.dev anmelden" : "Hinzufügen";
+  const submitLabel =
+    option === "ctox-dev"
+      ? "Bei ctox.dev anmelden"
+      : v4Invite
+        ? V4_INVITE_SUBMIT_LABEL
+        : "Hinzufügen";
   const submitDisabled =
     option === "qr" ||
+    (v4Invite && v4Redeem !== null && v4Redeem.phase !== "failed") ||
     (option === "link" && invite.trim() === "") ||
     (option === "manual" && connectionData.trim() === "") ||
     (option === "ctox-dev" && (mode.bridge === undefined || mode.refreshing));
@@ -253,7 +289,7 @@ export function InstanceAddPanel({
       }
       open
       onOpenChange={(open) => {
-        if (!open && !submitting) closeInstanceSetup();
+        if (!open && !submitting && v4Redeem?.phase !== "running") closeInstanceSetup();
       }}
       segment={
         <Segment
@@ -271,7 +307,7 @@ export function InstanceAddPanel({
       submitLabel={submitLabel}
       onSubmit={submit}
       submitDisabled={submitDisabled}
-      busy={submitting}
+      busy={submitting || v4Redeem?.phase === "running"}
       {...(statusLine === null
         ? {}
         : {
@@ -292,10 +328,18 @@ export function InstanceAddPanel({
             placeholder="workjet://pair?payload=…"
             rows={3}
             spellCheck={false}
+            disabled={v4Redeem?.phase === "running"}
+            ref={inviteField}
             value={invite}
-            onChange={(event) => setInvite(event.target.value)}
+            onChange={(event) => {
+              setInvite(event.target.value);
+              setV4Redeem(null);
+            }}
           />
         </Field>
+      ) : null}
+      {option === "link" && v4Redeem !== null ? (
+        <V4InviteRedeemLine state={v4Redeem} onRetry={redeemV4} onNewLink={newV4Link} />
       ) : null}
       {option === "qr" ? (
         <InstanceQrScanner

@@ -7,6 +7,8 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeUtil from "node:util";
 import { computerCleanupPaths, computerCleanupScript } from "./ComputerCleanup.ts";
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
+// Cleanup refuses any symlinked path component by design; macOS's tmpdir lives under the /var -> /private/var symlink.
+const realTmpdir = () => NodeFSP.realpath(NodeOS.tmpdir());
 describe("allowlisted computer cleanup", () => {
   it("rejects user roots, traversal and home deletion", () => {
     for (const home of ["/", "/tmp/../other", "relative"])
@@ -16,7 +18,9 @@ describe("allowlisted computer cleanup", () => {
     ).toThrow();
   });
   it("removes only owned directories on a throwaway target and refuses symlinks", async () => {
-    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-cleanup-fixture-"));
+    const home = await NodeFSP.mkdtemp(
+      NodePath.join(await realTmpdir(), "workjet-cleanup-fixture-"),
+    );
     try {
       const root = NodePath.join(home, ".workjet/computer-work");
       const outside = NodePath.join(home, "real-project");
@@ -41,7 +45,7 @@ describe("allowlisted computer cleanup", () => {
 });
 
 it("refuses cleanup if the remote home changed or an ancestor is a symlink", async () => {
-  const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-cleanup-escape-"));
+  const home = await NodeFSP.mkdtemp(NodePath.join(await realTmpdir(), "workjet-cleanup-escape-"));
   try {
     const outside = NodePath.join(home, "outside");
     await NodeFSP.mkdir(outside);

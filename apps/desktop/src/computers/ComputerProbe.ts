@@ -27,6 +27,9 @@ root="$HOME/.workjet/computer-work"
 mkdir -p "$root"
 printf 'root=%s\nfree_kib=%s\n' "$root" "$(df -Pk "$root" | awk 'END {print $4}')"
 if [ "$platform" = Darwin ]; then
+  # sysctl, ioreg and system_profiler live in /usr/sbin, which a non-interactive SSH PATH may omit.
+  PATH="$PATH:/usr/sbin:/sbin"
+  export PATH
   printf 'cores=%s\nram=%s\n' "$(sysctl -n hw.logicalcpu)" "$(sysctl -n hw.memsize)"
   printf 'machine=%s\n' "$(ioreg -rd1 -c IOPlatformExpertDevice | awk -F '"' '/IOPlatformUUID/ {print $(NF-1)}')"
   bounded 8 system_profiler SPDisplaysDataType -json | tr -d '\n' | sed 's/^/apple_gpu=/'; printf '\n'

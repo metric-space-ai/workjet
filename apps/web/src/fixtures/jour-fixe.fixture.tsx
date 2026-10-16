@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { ProjectId } from "@workjet/contracts";
 import { JourFixeRoom, type JourFixeAreaStatus } from "../components/JourFixeRoom";
 import { JourFixeSpeechRoom } from "../components/JourFixeSpeechRoom";
-import { ProviderUpdateChipView } from "../components/ProviderUpdateLaunchNotification";
+import { VersionChipView } from "../components/VersionChip";
 import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
 import { updateSlideCanvas } from "@workjet/slide-engine/excalidraw/scene";
 import type { SlideDocument } from "@workjet/slide-engine/schema";
@@ -15,7 +15,6 @@ import { JourFixeReadError } from "../lib/jourFixeReadRetry";
 import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
 import { type JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import type { GalleryProject } from "../projectOverview";
-import { workjetUiLanguage } from "../workjetProjectControl";
 import { randomUUID } from "../lib/utils";
 import fixture from "./jour-fixe.contract.json";
 import "../index.css";
@@ -198,26 +197,29 @@ function Fixture() {
           className="flex items-center justify-end gap-2 border-b border-border px-3 py-1.5"
           data-workjet-fixture-chrome=""
         >
-          <span className="mr-auto text-xs text-muted-foreground" role="status">
-            Instanz nicht erreichbar · Letzter Stand:{" "}
-            {new Date("2026-10-12T18:32:38").toLocaleString(
-              workjetUiLanguage() === "en" ? "en-US" : "de-DE",
-              {
-                day: "2-digit",
-                month: "2-digit",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              },
-            )}
+          {/* Wie die Galerie im Produkt (A-10): eine Zeile, genau eine Aktion. */}
+          <span
+            className="mr-auto flex items-center gap-2 text-[13.5px] text-muted-foreground"
+            role="status"
+          >
+            Instanz nicht erreichbar
+            <Button size="xs" variant="outline">
+              Erneut verbinden
+            </Button>
           </span>
-          {!chipDismissed && (
-            <ProviderUpdateChipView
-              title="Codex 0.162.1 verfügbar"
-              onOpen={() => {}}
-              onDismiss={() => setChipDismissed(true)}
-            />
-          )}
+          <VersionChipView
+            label="Workjet 0.0.103 · Host 0.1.3 · welsch"
+            update={
+              chipDismissed
+                ? null
+                : {
+                    title: "Codex 0.162.1 verfügbar",
+                    onOpen: () => {},
+                    onDismiss: () => setChipDismissed(true),
+                  }
+            }
+            onOpenDetails={() => {}}
+          />
         </div>
       )}
       <nav

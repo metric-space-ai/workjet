@@ -62,7 +62,6 @@ export function useCloudLinkController() {
     toastManager.add({
       type: "error",
       title: "Workjet Connect fehlgeschlagen",
-      description: message,
       data: traceId
         ? {
             secondaryActionProps: {

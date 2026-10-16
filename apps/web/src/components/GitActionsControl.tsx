@@ -232,26 +232,6 @@ function getPublishProviderReadiness(input: {
   return { ready: true, hint: null };
 }
 
-function formatElapsedDescription(startedAtMs: number | null): string | undefined {
-  if (startedAtMs === null) {
-    return undefined;
-  }
-  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
-  if (elapsedSeconds < 60) {
-    return `Läuft seit ${elapsedSeconds} s`;
-  }
-  const minutes = Math.floor(elapsedSeconds / 60);
-  const seconds = elapsedSeconds % 60;
-  return `Läuft seit ${minutes} Min. ${seconds} s`;
-}
-
-function resolveProgressDescription(progress: ActiveGitActionProgress): string | undefined {
-  if (progress.lastOutputLine) {
-    return progress.lastOutputLine;
-  }
-  return formatElapsedDescription(progress.hookStartedAtMs ?? progress.phaseStartedAtMs);
-}
-
 function getMenuActionDisabledReason({
   item,
   gitStatus,
@@ -679,7 +659,6 @@ export default function GitActionsControl({
     toastManager.update(progress.toastId, {
       type: "loading",
       title: progress.title,
-      description: resolveProgressDescription(progress),
       timeout: 0,
       data: progress.toastData,
     });
@@ -896,7 +875,6 @@ export default function GitActionsControl({
         stackedThreadToast({
           type: "error",
           title: "Pull Request nicht geöffnet",
-          description: err instanceof Error ? err.message : undefined,
           ...(threadToastData !== undefined ? { data: threadToastData } : {}),
         }),
       );
@@ -964,7 +942,6 @@ export default function GitActionsControl({
         toastManager.add({
           type: "loading",
           title: progressStages[0] ?? "Git-Aktion läuft …",
-          description: "Wartet auf Git …",
           timeout: 0,
           data: scopedToastData,
         });
@@ -985,7 +962,6 @@ export default function GitActionsControl({
         toastManager.update(progressToastId, {
           type: "loading",
           title: progressStages[0] ?? "Git-Aktion läuft …",
-          description: "Wartet auf Git …",
           timeout: 0,
           data: scopedToastData,
         });
@@ -1063,13 +1039,11 @@ export default function GitActionsControl({
           return;
         }
 
-        const error = squashAtomCommandFailure(result);
         toastManager.update(
           resolvedProgressToastId,
           stackedThreadToast({
             type: "error",
             title: "Git-Aktion fehlgeschlagen",
-            description: error instanceof Error ? error.message : undefined,
             ...(scopedToastData !== undefined ? { data: scopedToastData } : {}),
           }),
         );
@@ -1120,7 +1094,6 @@ export default function GitActionsControl({
           stackedThreadToast({
             type: "success",
             title: actionResult.toast.title,
-            description: actionResult.toast.description,
             timeout: 0,
             actionProps: toastActionProps,
             data: successToastData,
@@ -1130,7 +1103,6 @@ export default function GitActionsControl({
         toastManager.update(resolvedProgressToastId, {
           type: "success",
           title: actionResult.toast.title,
-          description: actionResult.toast.description,
           timeout: 0,
           data: successToastData,
         });
@@ -1213,13 +1185,11 @@ export default function GitActionsControl({
             toastManager.close(toastId);
             return;
           }
-          const error = squashAtomCommandFailure(result);
           toastManager.update(
             toastId,
             stackedThreadToast({
               type: "error",
               title: "Herunterladen fehlgeschlagen",
-              description: error instanceof Error ? error.message : undefined,
               ...(threadToastData !== undefined ? { data: threadToastData } : {}),
             }),
           );
@@ -1238,8 +1208,7 @@ export default function GitActionsControl({
     if (quickAction.kind === "show_hint") {
       toastManager.add({
         type: "info",
-        title: quickAction.label,
-        description: quickAction.hint,
+        title: quickAction.hint ?? quickAction.label,
         data: threadToastData,
       });
       return;
@@ -1298,12 +1267,10 @@ export default function GitActionsControl({
         if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
           return;
         }
-        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Datei nicht geöffnet",
-            description: error instanceof Error ? error.message : undefined,
             ...(threadToastData !== undefined ? { data: threadToastData } : {}),
           }),
         );
@@ -1329,12 +1296,10 @@ export default function GitActionsControl({
               if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
                 return;
               }
-              const error = squashAtomCommandFailure(result);
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
                   title: "Git nicht initialisiert",
-                  description: error instanceof Error ? error.message : undefined,
                   ...(threadToastData !== undefined ? { data: threadToastData } : {}),
                 }),
               );

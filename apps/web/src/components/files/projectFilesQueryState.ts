@@ -169,6 +169,8 @@ export function useProjectFilePickerQuery(
     error: search.error,
     isPending: search.isPending,
     matchedQuery: search.searchedQuery,
+    /** Wiederholt die letzte Suche, z. B. nach einem Fehler. */
+    retry: search.refresh,
   };
 }
 

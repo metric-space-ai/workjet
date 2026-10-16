@@ -166,13 +166,11 @@ export default function FileBrowserPanel({
           toastManager.add({
             type: "success",
             title: "Erwähnung kopiert",
-            description: relativePath,
           });
-        } catch (error) {
+        } catch {
           toastManager.add({
             type: "error",
             title: "Kopieren fehlgeschlagen",
-            description: error instanceof Error ? error.message : undefined,
           });
         }
         return;

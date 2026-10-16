@@ -168,7 +168,6 @@ export function WorkjetConnectUserProfilePage() {
     toastManager.add({
       type: "error",
       title: "Server nicht abgemeldet",
-      description: message,
       data: traceId
         ? {
             secondaryActionProps: {

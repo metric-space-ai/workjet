@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ComposerBar } from "./ComposerBar";
+import { ComposerBar, ComposerBarLayout } from "./ComposerBar";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import { ComposerWorkerControl } from "./ComposerWorkerControl";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -62,10 +62,37 @@ describe("shared composer bar", () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     expect(html).toContain("lucide-plus");
   });
-  it("keeps the target chips on one line in a narrow composer (Audit B #6)", () => {
+  it("folds the target chips into ONE collapse chip in a narrow composer (Audit B #6)", () => {
+    const html = renderToStaticMarkup(
+      <ComposerBarLayout
+        narrow
+        targetSummary="Molecularity"
+        attachments={<button>Anhang</button>}
+        worker={<button>Preset</button>}
+        manual={
+          <>
+            <button>Harness</button>
+            <button>Modell</button>
+            <button>Rechner</button>
+          </>
+        }
+        settings={<button>Optionen</button>}
+        dictation={<button>Diktieren</button>}
+      />,
+    );
+    expect(html.match(/data-composer-bar-collapsed="true"/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Ziel wählen"');
+    expect(html).toContain(">Molecularity<");
+    // The chips are not laid out inline next to the collapse chip.
+    expect(html).not.toMatch(/data-composer-bar-target="true"[^>]*>\s*<button>Preset</);
+    // Folded inline under the bar (no popover), mounted but hidden until opened.
+    expect(html).toMatch(/data-composer-bar-collapsed-targets="true" hidden=""/);
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("popover");
+  });
+  it("lays the target chips out inline when the composer is wide", () => {
     const html = render();
-    expect(html).toContain("@container/composer-bar");
-    expect(html).toMatch(/data-composer-bar-target="true" class="[^"]*flex-nowrap/);
+    expect(html).not.toContain("data-composer-bar-collapsed");
   });
   it("keeps a chosen Luma in the bar without competing manual controls", () => {
     const html = render(true);

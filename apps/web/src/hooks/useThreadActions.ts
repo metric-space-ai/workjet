@@ -433,7 +433,6 @@ export function useThreadActions() {
             : null;
       if (cleanupFailure) {
         const error = squashAtomCommandFailure(cleanupFailure);
-        const message = error instanceof Error ? error.message : "Unbekannter Fehler.";
         console.error("Failed to remove orphaned worktree after thread deletion", {
           threadId: threadRef.threadId,
           projectCwd: threadProject.workspaceRoot,
@@ -444,7 +443,6 @@ export function useThreadActions() {
           stackedThreadToast({
             type: "error",
             title: "Worktree nicht entfernt",
-            description: `${displayWorktreePath ?? orphanedWorktreePath}: ${message}`,
           }),
         );
         return cleanupFailure;

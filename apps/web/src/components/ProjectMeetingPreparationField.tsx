@@ -7,8 +7,11 @@ import {
 } from "@workjet/contracts";
 import { Checkbox } from "./ui/checkbox";
 import { OptionSelect } from "./ui/option-select";
-import { useEffect, useState } from "react";
-import { useProjectSupervisorLumas } from "./ProjectSupervisorLumaField";
+import {
+  PresetsUnavailableLine,
+  useLoadingEndsAfter10s,
+  useProjectSupervisorLumas,
+} from "./ProjectSupervisorLumaField";
 import { workjetHarnessDisplayLabel } from "./settings/WorkjetWorkerEditor";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -40,9 +43,11 @@ export function MeetingPreparationField({
   onChange,
   profiles = emptyProfiles,
   phase = "unavailable",
+  retry,
 }: PreparationFieldProps & {
   readonly profiles?: readonly WorkjetWorkerProfile[];
   readonly phase?: "loading" | "ready" | "unavailable";
+  readonly retry?: (() => void) | undefined;
 }) {
   const config = value ?? DEFAULT_MEETING_PREPARATION_CONFIGURATION;
   const matching = profiles.filter((p) => p.harness === config.harness);
@@ -51,15 +56,7 @@ export function MeetingPreparationField({
   const change = (patch: Partial<MeetingPreparationConfiguration>) =>
     onChange({ ...config, ...patch });
   // Laden endet nach 10 s in einer Statuszeile statt endlos zu warten.
-  const [loadingSlow, setLoadingSlow] = useState(false);
-  useEffect(() => {
-    if (phase !== "loading") {
-      setLoadingSlow(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setLoadingSlow(true), 10_000);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
+  const loadingSlow = useLoadingEndsAfter10s(phase);
   return (
     <fieldset
       className="grid min-w-0 gap-2 rounded-md border border-border p-3"
@@ -184,16 +181,15 @@ export function MeetingPreparationField({
           </Button>
         )}
       </div>
-      <p className="break-words text-xs text-muted-foreground" role="status">
-        {oneShotHarnessUnavailableReason(config.harness) ??
-          (phase === "loading"
-            ? loadingSlow
-              ? "Presets nicht erreichbar"
-              : ""
-            : available.length === 0
-              ? "Kein passendes Preset"
-              : "")}
-      </p>
+      {oneShotHarnessUnavailableReason(config.harness) === null &&
+      (phase === "unavailable" || (phase === "loading" && loadingSlow)) ? (
+        <PresetsUnavailableLine retry={retry} />
+      ) : (
+        <p className="break-words text-xs text-muted-foreground" role="status">
+          {oneShotHarnessUnavailableReason(config.harness) ??
+            (phase === "ready" && available.length === 0 ? "Kein passendes Preset" : "")}
+        </p>
+      )}
     </fieldset>
   );
 }

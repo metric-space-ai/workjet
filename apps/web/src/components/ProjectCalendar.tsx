@@ -710,7 +710,10 @@ export function ProjectCalendar({
   const today = current.date;
 
   const [selectedEvent, setSelectedEvent] = useState<WorkjetCalendarEvent | null>(null);
-  const [view, setView] = useState<CalendarView>(initialView);
+  const [chosenView, setView] = useState<CalendarView>(initialView);
+  // Below 768 px the week shows one day: title, step and selection follow that day.
+  const narrow = useNarrowViewport();
+  const view: CalendarView = chosenView === "week" && narrow ? "day" : chosenView;
   const [projectKey, setProjectKey] = useState("all");
   const [anchor, setAnchor] = useState<DateKey>(() => initialDate ?? today);
   const [hiddenCalendars, setHiddenCalendars] = useState<ReadonlySet<string>>(() => new Set());
@@ -773,11 +776,8 @@ export function ProjectCalendar({
   };
 
   const unscheduled = projects.filter((project) => project.configuration?.jourFixe == null);
-  const narrow = useNarrowViewport();
   const columnDays =
-    view === "week" && !narrow
-      ? WEEKDAY_OFFSETS.map((index) => addDays(range.from, index))
-      : [anchor];
+    view === "week" ? WEEKDAY_OFFSETS.map((index) => addDays(range.from, index)) : [anchor];
 
   return (
     <CalendarFormatContext.Provider value={format}>

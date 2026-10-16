@@ -1,8 +1,5 @@
 import { scopeProjectRef, scopeThreadRef } from "@workjet/client-runtime/environment";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@workjet/client-runtime/state/runtime";
+import { isAtomCommandInterrupted } from "@workjet/client-runtime/state/runtime";
 import type { ContextMenuItem, EnvironmentId, VcsRef, ThreadId } from "@workjet/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { ChevronDownIcon, GitBranchIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
@@ -77,10 +74,6 @@ interface BranchToolbarBranchSelectorProps {
   onStartFromOriginChange: (startFromOrigin: boolean) => void;
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest?: () => void;
-}
-
-function toBranchActionErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Fehler aufgetreten.";
 }
 
 export function BranchToolbarBranchSelector({
@@ -338,15 +331,13 @@ export function BranchToolbarBranchSelector({
         toastManager.add({
           type: "success",
           title: "Branchname kopiert",
-          description: branchName,
         });
       },
-      (error: unknown) => {
+      () => {
         toastManager.add(
           stackedThreadToast({
             type: "error",
             title: "Kopieren fehlgeschlagen",
-            description: toBranchActionErrorMessage(error),
           }),
         );
       },
@@ -432,7 +423,6 @@ export function BranchToolbarBranchSelector({
           stackedThreadToast({
             type: "error",
             title: "Wechsel fehlgeschlagen",
-            description: toBranchActionErrorMessage(squashAtomCommandFailure(checkoutResult)),
           }),
         );
       }
@@ -468,7 +458,6 @@ export function BranchToolbarBranchSelector({
           stackedThreadToast({
             type: "error",
             title: "Anlegen fehlgeschlagen",
-            description: toBranchActionErrorMessage(squashAtomCommandFailure(createBranchResult)),
           }),
         );
       }

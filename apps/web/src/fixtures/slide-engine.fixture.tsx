@@ -360,7 +360,7 @@ function Fixture() {
         aria-label="Prüfsteuerung"
       >
         <span className="mr-auto text-xs text-muted-foreground">
-          Isolated fixture · slide {index + 1} of {deck.slides.length} · {slide.title}
+          Fixture · Folie {index + 1} von {deck.slides.length} · {slide.title}
         </span>
         <Button
           size="sm"
@@ -368,7 +368,7 @@ function Fixture() {
           disabled={index === 0}
           onClick={() => setIndex(index - 1)}
         >
-          Previous slide
+          Vorherige Folie
         </Button>
         <Button
           size="sm"
@@ -376,7 +376,7 @@ function Fixture() {
           disabled={index === deck.slides.length - 1}
           onClick={() => setIndex(index + 1)}
         >
-          Next slide
+          Nächste Folie
         </Button>
         <Button
           size="sm"
@@ -387,7 +387,7 @@ function Fixture() {
           {mode === "present" ? "Bearbeiten" : "Vorführen"}
         </Button>
         <Button size="sm" disabled={!runtime} onClick={save}>
-          Save
+          Speichern
         </Button>
         <Button
           size="sm"

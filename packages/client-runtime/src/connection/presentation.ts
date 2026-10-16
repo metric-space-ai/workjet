@@ -55,32 +55,30 @@ export function presentConnectionState(
   }
 }
 
+/**
+ * Kurzer deutscher Verbindungsstatus ohne Rohfehler (UI-Vertrag §2/§4,
+ * Audit B#50). Der Rohtext bleibt in `connection.error` für die Diagnose.
+ */
 export function connectionStatusText(connection: EnvironmentConnectionPresentation): string {
   switch (connection.phase) {
     case "available":
-      return "Available";
+      return "Verfügbar";
     case "offline":
       return "Offline";
     case "connecting":
-      return "Connecting...";
+      return "Verbindet …";
     case "reconnecting":
-      return connection.error
-        ? `Failed to connect. Reconnecting... Reason: ${connection.error}`
-        : "Reconnecting...";
+      return "Verbindet erneut …";
     case "connected":
-      return "Connected";
+      return "Verbunden";
     case "error":
-      return connection.error
-        ? `Connection failed. Reason: ${connection.error}`
-        : "Connection failed";
+      return "Verbindung fehlgeschlagen";
   }
 }
 
+/** Titel/Tooltip zum Status: dieselbe kurze Zeile, nie der Rohfehler. */
 export function connectionStatusTitle(connection: EnvironmentConnectionPresentation): string {
-  if (connection.phase === "reconnecting" && connection.error) {
-    return "Failed to connect. Reconnecting...";
-  }
-  return connectionStatusText({ ...connection, error: null });
+  return connectionStatusText(connection);
 }
 
 export function presentEnvironmentConnection(
@@ -112,18 +110,18 @@ export function connectionPhaseMessage(
   networkStatus: NetworkStatus,
 ): string {
   if (networkStatus === "offline" || phase === "offline") {
-    return "You are offline";
+    return "Du bist offline";
   }
   switch (phase) {
     case "available":
-      return "Available";
+      return "Verfügbar";
     case "connecting":
-      return `Connecting to ${label}...`;
+      return `Verbindet mit ${label} …`;
     case "reconnecting":
-      return `Reconnecting to ${label}...`;
+      return `Verbindet erneut mit ${label} …`;
     case "connected":
-      return "Connected";
+      return "Verbunden";
     case "error":
-      return "Connection failed";
+      return "Verbindung fehlgeschlagen";
   }
 }

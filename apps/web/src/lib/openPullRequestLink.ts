@@ -285,7 +285,6 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
           stackedThreadToast({
             type: "error",
             title: "Pull Request nicht geöffnet",
-            description: error instanceof Error ? error.message : undefined,
           }),
         );
       });

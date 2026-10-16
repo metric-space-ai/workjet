@@ -87,61 +87,29 @@ function useProviderUpdateChipView(): {
   };
 }
 
-/**
- * Dichter Chip in der Kopfzeile statt Toast (Muster: SlowRpcRequestChip):
- * „Codex 0.162.1 verfügbar“. Klick öffnet Einstellungen › Harnesses; × merkt
- * die Ablehnung wie bisher über die verwahrten Schlüssel.
- */
-export function ProviderUpdateHeaderChip() {
-  const hasLocalSecondary = useHasLocalSecondaryEnvironment();
-  return hasLocalSecondary ? <ProviderUpdateEnvironmentsChip /> : null;
+/** Harness-Update als Teil des Versions-Chips (UI-Vertrag §6, Audit A-63). */
+export interface ProviderUpdateHint {
+  /** z. B. „Codex 0.162.1 verfügbar“ */
+  readonly title: string;
+  /** Öffnet Einstellungen › Harnesses. */
+  readonly onOpen: () => void;
+  /** Merkt die Ablehnung über die verwahrten Schlüssel. */
+  readonly onDismiss: () => void;
 }
 
-function ProviderUpdateEnvironmentsChip() {
+/**
+ * Update-Hinweis für den Versions-Chip. Nur mit lokalem Zweit-Backend (WSL);
+ * sonst läuft das Update im Ein-Klick-Ablauf und es gibt keinen Hinweis.
+ */
+export function useProviderUpdateHint(): ProviderUpdateHint | null {
   const navigate = useNavigate();
+  const hasLocalSecondary = useHasLocalSecondaryEnvironment();
   const { dismissNotificationKey } = useDismissedProviderUpdateNotificationKeys();
   const view = useProviderUpdateChipView();
-  if (view === null) return null;
-  return (
-    <ProviderUpdateChipView
-      title={view.title}
-      onOpen={() => void navigate({ to: "/settings/harnesses" })}
-      onDismiss={() => dismissNotificationKey(view.notificationKey)}
-    />
-  );
-}
-
-/** Reine Darstellung des Kopfzeilen-Chips, auch für die Fixture nutzbar. */
-export function ProviderUpdateChipView({
-  title,
-  onOpen,
-  onDismiss,
-}: {
-  readonly title: string;
-  readonly onOpen: () => void;
-  readonly onDismiss: () => void;
-}) {
-  return (
-    <span
-      className="no-drag inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 pl-2 pr-1 py-0.5 text-[11px] whitespace-nowrap text-amber-400"
-      data-workjet-provider-update=""
-    >
-      <button
-        type="button"
-        className="hover:text-amber-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-        title="Einstellungen › Harnesses"
-        onClick={onOpen}
-      >
-        {title}
-      </button>
-      <button
-        type="button"
-        aria-label="Schließen"
-        className="rounded-full px-1 text-amber-400/70 hover:text-amber-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={onDismiss}
-      >
-        ×
-      </button>
-    </span>
-  );
+  if (!hasLocalSecondary || view === null) return null;
+  return {
+    title: view.title,
+    onOpen: () => void navigate({ to: "/settings/harnesses" }),
+    onDismiss: () => dismissNotificationKey(view.notificationKey),
+  };
 }

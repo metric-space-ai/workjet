@@ -71,11 +71,10 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
     const operation = desktopOverlay?.pictureInPicture
       ? previewBridge.pictureInPicture.close
       : previewBridge.pictureInPicture.open;
-    void operation(runtimeTabId).catch((error) => {
+    void operation(runtimeTabId).catch(() => {
       toastManager.add({
         type: "error",
         title: "Vorschaufenster nicht aktualisiert",
-        description: error instanceof Error ? error.message : "Ein Fehler ist aufgetreten.",
       });
     });
   };

@@ -343,6 +343,8 @@ export function useProjectContentSearch(target: ProjectContentSearchTarget) {
     hasQuery,
     truncated: result.data?.truncated ?? false,
     invalidRegex: target.useRegex && result.data?.regexFallbackError !== undefined,
+    /** Wiederholt die letzte Suche, z. B. nach einem Fehler. */
+    retry: result.refresh,
   };
 }
 

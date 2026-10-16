@@ -18,7 +18,7 @@ import {
 } from "../projectKpis";
 import { ProjectKpiResult } from "./ProjectKpiResult";
 import { ProjectMeetingPreparationField } from "./ProjectMeetingPreparationField";
-import { ProjectSupervisorLumaSelect, type LumaFieldProps } from "./ProjectSupervisorLumaField";
+import { ProjectSupervisorLumaField, type LumaFieldProps } from "./ProjectSupervisorLumaField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
@@ -829,13 +829,11 @@ export function ProjectOverviewEditor({
                 disabled: state.pending,
               })
             ) : (
-              <ProjectSupervisorLumaSelect
+              <ProjectSupervisorLumaField
                 id={`${id}-supervisor-luma`}
                 value={supervisorLumaId}
                 onChange={setSupervisorLumaId}
                 disabled={state.pending}
-                phase="unavailable"
-                profiles={[]}
               />
             )}
             <span className="text-xs text-muted-foreground">Regeltermin</span>

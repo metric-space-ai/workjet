@@ -816,14 +816,7 @@ export function CtoxModeProvider({
           // (Befund K-BH4).
           toastManager.add({
             type: "error",
-            title: shellText(
-              "Die App konnte nicht geöffnet werden.",
-              "The app could not be opened.",
-            ),
-            description: shellText(
-              "Prüfe die Verbindung und versuche es erneut.",
-              "Check the connection and try again.",
-            ),
+            title: shellText("App nicht geöffnet", "App not opened"),
           });
         })
         .then(() => {

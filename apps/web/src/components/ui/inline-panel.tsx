@@ -86,11 +86,9 @@ function InlinePanel({
         >
           {/* With a source picker the tiles say what this is; no heading repeating the button (#583). */}
           {segment ? (
-            <div className="pe-7" data-slot="inline-panel-segment">
-              {segment}
-            </div>
+            <div data-slot="inline-panel-segment">{segment}</div>
           ) : (
-            <div className="pe-7 font-medium text-[13.5px]">{triggerLabel}</div>
+            <div className="font-medium text-[13.5px]">{triggerLabel}</div>
           )}
           <div className="flex flex-col gap-3" data-slot="inline-panel-body">
             {children}

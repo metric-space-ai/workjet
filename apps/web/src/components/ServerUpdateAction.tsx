@@ -1,9 +1,6 @@
 import type { EnvironmentId, ServerSelfUpdateCapability } from "@workjet/contracts";
 import type { ServerUpdateStage, ServerUpdateState } from "@workjet/client-runtime/state/server";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@workjet/client-runtime/state/runtime";
+import { isAtomCommandInterrupted } from "@workjet/client-runtime/state/runtime";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { serverEnvironment } from "~/state/server";
@@ -24,10 +21,6 @@ const pendingUpdateEnvironmentIds = new Set<EnvironmentId>();
 
 export function serverUpdateStageLabel(stage: ServerUpdateStage): string {
   return UPDATE_STAGE_LABELS[stage];
-}
-
-function updateFailureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Aktualisierung fehlgeschlagen.";
 }
 
 /**
@@ -91,11 +84,10 @@ export function ServerUpdateAction({
         title: "Befehl kopiert",
       });
     },
-    onError: (error) => {
+    onError: () => {
       toastManager.add({
         type: "error",
         title: "Kopieren fehlgeschlagen",
-        description: error.message,
       });
     },
   });
@@ -117,14 +109,12 @@ export function ServerUpdateAction({
         toastManager.add({
           type: "error",
           title: "Aktualisierung fehlgeschlagen",
-          description: updateFailureMessage(squashAtomCommandFailure(result)),
         });
         return;
       }
       toastManager.add({
         type: "success",
         title: `${serverLabel} aktualisiert`,
-        description: `Verbunden mit workjet@${result.value.targetVersion}`,
       });
     } finally {
       pendingUpdateEnvironmentIds.delete(environmentId);

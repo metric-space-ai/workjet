@@ -16,7 +16,7 @@ const computers: NetworkComputerNode[] = [
     name: "gpu1-a6000",
     platform: "linux",
     connected: false,
-    tags: [{ kind: "gpu", label: "GPU · A6000" }],
+    tags: [{ kind: "gpu", label: "GPU A6000 · 48 GB" }],
   },
   {
     id: "gpu3",
@@ -25,14 +25,15 @@ const computers: NetworkComputerNode[] = [
     connected: true,
     tags: [
       { kind: "build", label: "Build" },
-      { kind: "storage", label: "Store" },
-      { kind: "gpu", label: "GPU · A4500" },
+      { kind: "storage", label: "Speicher" },
+      { kind: "gpu", label: "GPU A4500 · 20 GB" },
     ],
   },
   { id: "box", name: "box 3a650c14", platform: "unknown", connected: false, tags: [] },
 ];
+// Wie im Produkt (D24, D31): Beschriftungen aus networkCapabilityTags; dieses
+// Gerät ist schon Rechner der Instanz und steht deshalb nur einmal im Netz.
 const clients: NetworkClientNode[] = [
-  { id: "this-device", name: "MacBook Pro", kind: "this-device", connected: true },
   { id: "device:fold", name: "Fold 8", kind: "device", connected: false },
 ];
 
@@ -43,13 +44,13 @@ function Fixture() {
       <article className="network-instance">
         <header className="network-instance-header">
           <div className="network-instance-title">
-            <h2>WELSCH</h2>
+            <h2>welsch</h2>
             <span>welsch.ctox.dev</span>
           </div>
         </header>
         <div className="network-instance-body">
           <NetworkDiagram
-            name="WELSCH"
+            name="welsch"
             host="welsch.ctox.dev"
             ready
             clients={clients}

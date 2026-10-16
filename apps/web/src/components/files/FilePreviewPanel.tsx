@@ -8,10 +8,7 @@ import { isWorkspaceImagePreviewPath } from "@workjet/shared/filePreview";
 import { VirtualizedFile, type SelectedLineRange } from "@pierre/diffs";
 import { Editor } from "@pierre/diffs/editor";
 import { EditProvider, File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@workjet/client-runtime/state/runtime";
+import { isAtomCommandInterrupted } from "@workjet/client-runtime/state/runtime";
 import { ChevronRight, Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -843,12 +840,10 @@ export default function FilePreviewPanel({
       if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
         return;
       }
-      const error = squashAtomCommandFailure(result);
       toastManager.add(
         stackedThreadToast({
           type: "error",
           title: "Datei konnte nicht geöffnet werden",
-          description: error instanceof Error ? error.message : "Ein Fehler ist aufgetreten.",
         }),
       );
     })();

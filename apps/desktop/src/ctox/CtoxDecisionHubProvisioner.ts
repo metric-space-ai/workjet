@@ -38,8 +38,10 @@ import { CONNECTION_CATALOG_WARNING_CHANNEL } from "../ipc/channels.ts";
 import {
   acquireWorkjetWorkerSourceGrant,
   revokeWorkjetWorkerSourceGrant,
+  WorkerSourceGrantError,
   workerSourceGrantIdentity,
   workerSourceNeedsRenewal,
+  workerSourceToRenewInPlace,
 } from "./CtoxWorkerSourceGrant.ts";
 import { fetchRemoteEnvironmentDescriptor } from "@workjet/client-runtime/environment";
 
@@ -164,6 +166,14 @@ const make = Effect.gen(function* () {
         const target = input.target;
         if (input.purpose === "worker_source" && target._tag !== "ctox_dev")
           return yield* Effect.fail("grant_unavailable" as const);
+        if (input.purpose === "worker_source" && target._tag === "ctox_dev") {
+          // Neu verbinden erneuert eine vorhandene Quelle unter derselben ID,
+          // statt jedes Mal eine weitere Verbindung anzulegen.
+          const renewed = yield* Effect.suspend(() =>
+            renewWorkerSourceInPlace(input.environmentId, target.tenantId),
+          );
+          if (renewed !== undefined) return { _tag: "completed", connection: renewed } as const;
+        }
         const managedTenantId = target._tag === "ctox_dev" ? target.tenantId : undefined;
         const localInstanceId = target._tag === "local_ctox" ? target.instanceId : undefined;
         const provisionTarget =
@@ -392,21 +402,21 @@ const make = Effect.gen(function* () {
    * Stellt eine Worker-Quelle unter DERSELBEN Verbindungs-ID neu aus, damit
    * Unterhaltungen ihre Bindung behalten, und widerruft danach das alte Token.
    */
-  const renewWorkerSource = (
+  const renewWorkerSourceStrict = (
     rpc: Effect.Success<ReturnType<typeof openEnvironmentRpc>>,
     connection: { readonly connectionId: WorkjetConnectionId; readonly instanceId: string },
   ) =>
     Effect.scoped(
       Effect.gen(function* () {
         const identity = workerSourceGrantIdentity(connection.connectionId);
-        if (identity === undefined) return;
+        if (identity === undefined) return undefined;
         const account = yield* sessions.account;
         const grant = yield* acquireWorkjetWorkerSourceGrant(
           account.fetch.bind(account),
           identity.tenantId,
         );
-        if (grant.instanceId !== connection.instanceId) return;
-        yield* rpc.client[WS_METHODS.workjetDecisionHubProvisionConnection]({
+        if (grant.instanceId !== connection.instanceId) return undefined;
+        const result = yield* rpc.client[WS_METHODS.workjetDecisionHubProvisionConnection]({
           connectionId: connection.connectionId,
           instanceId: grant.instanceId,
           displayName: grant.displayName,
@@ -436,8 +446,33 @@ const make = Effect.gen(function* () {
             tokenId: previousTokenId,
             purpose: "worker_source",
           });
+        return result.connection;
       }),
-    ).pipe(Effect.catchCause(() => Effect.void));
+    );
+
+  const renewWorkerSource = (
+    rpc: Effect.Success<ReturnType<typeof openEnvironmentRpc>>,
+    connection: { readonly connectionId: WorkjetConnectionId; readonly instanceId: string },
+  ) => renewWorkerSourceStrict(rpc, connection).pipe(Effect.catchCause(() => Effect.void));
+
+  /** Abgemeldet bleibt ein Fehler (führt zur Anmeldung); sonst fällt es auf eine neue Quelle zurück. */
+  const renewWorkerSourceInPlace = (environmentId: string, tenantId: string) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const rpc = yield* openEnvironmentRpc(environmentId, "Worker source reconnect");
+        const listed = yield* rpc.client[WS_METHODS.workjetDecisionHubListConnections]({});
+        const existing = workerSourceToRenewInPlace(listed.connections, tenantId);
+        if (existing === undefined) return undefined;
+        return yield* renewWorkerSourceStrict(rpc, existing);
+      }),
+    ).pipe(
+      Effect.catch((error) =>
+        error instanceof WorkerSourceGrantError && error.code === "signed_out"
+          ? Effect.fail("signed_out" as const)
+          : Effect.succeed(undefined),
+      ),
+      Effect.catchDefect(() => Effect.succeed(undefined)),
+    );
 
   const renewWorkerSources = Effect.gen(function* () {
     const environmentIds = new Set<string>();

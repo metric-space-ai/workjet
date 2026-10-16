@@ -2,6 +2,7 @@
 // data channel (the V4 control lane, `ctox-v4-control`), sends one plain JSON control request and
 // waits for the matching response. No other lane, no hello, no data; the connection is closed as
 // soon as the response arrived. The launch context it returns opens a separate E50 connection.
+import { randomUUID } from "../lib/utils";
 import type {
   V4InviteSignalingTarget,
   V4PairingControlExchange,
@@ -71,7 +72,7 @@ export function createV4PairingControlExchange(
     options.RTCPeerConnectionImpl ??
     (globalThis.RTCPeerConnection as unknown as V4PairingPeerOptions["RTCPeerConnectionImpl"]);
   const timeoutMs = options.timeoutMs ?? 20_000;
-  const peerId = options.peerId ?? (() => `pairing-${globalThis.crypto.randomUUID()}`);
+  const peerId = options.peerId ?? (() => `pairing-${randomUUID()}`);
   return async (target, request) => {
     if (typeof WebSocketImpl !== "function" || typeof RTCPeerConnectionImpl !== "function")
       throw new PairingTransportError("webrtc_unavailable", false);

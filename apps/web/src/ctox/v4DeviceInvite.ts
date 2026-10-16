@@ -2,6 +2,7 @@
 // target, the invite id and the one-time secret. Workjet derives the proof locally, connects as a
 // pairing peer over signaling (control lane only, no data) and sends `device.invite.redeem`. The
 // answer is a V4LaunchContext (E41, carrying its E50 ticket) for this device. No HTTP path.
+import { randomUUID } from "../lib/utils";
 import { parseV4LaunchContext } from "./kernel/boot.mjs";
 import type { V4LaunchContext } from "./kernel/index";
 
@@ -321,7 +322,7 @@ export async function redeemV4DeviceInvite(options: {
     );
     request = {
       type: "pairing_request",
-      id: options.requestId?.() ?? globalThis.crypto.randomUUID(),
+      id: options.requestId?.() ?? randomUUID(),
       method: V4_PAIRING_METHOD,
       params: [
         {

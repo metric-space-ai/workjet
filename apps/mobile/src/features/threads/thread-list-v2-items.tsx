@@ -145,7 +145,7 @@ export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedS
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
       <Text className="text-xs font-workjet-medium text-blue-600 dark:text-blue-400">
-        {props.expanded ? "Zurückgestellt" : `Snoozed (${props.count})`}
+        {props.expanded ? "Zurückgestellt" : "Zurückgestellt"}
       </Text>
       <View className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
       <SymbolView
@@ -181,7 +181,7 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
       <Text className="text-xs font-workjet-medium text-foreground-tertiary">
-        {props.expanded ? "Erledigt" : `Settled (${props.count})`}
+        {props.expanded ? "Erledigt" : "Erledigt"}
       </Text>
       <View className="h-px flex-1 bg-border" />
       <SymbolView
@@ -622,7 +622,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     }
     if (swipeActions.primary === "unsnooze") {
       return {
-        accessibilityLabel: `Wake ${thread.title} now`,
+        accessibilityLabel: `${thread.title} wecken`,
         icon: "clock" as const,
         label: "Wecken",
         onPress: handleUnsnooze,
@@ -630,13 +630,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     }
     return swipeActions.primary === "unsettle"
       ? {
-          accessibilityLabel: `Un-settle ${thread.title}`,
+          accessibilityLabel: `${thread.title} wieder öffnen`,
           icon: "arrow.uturn.backward" as const,
           label: "Wieder öffnen",
           onPress: handleUnsettle,
         }
       : {
-          accessibilityLabel: `Settle ${thread.title}`,
+          accessibilityLabel: `${thread.title} erledigen`,
           icon: "checkmark" as const,
           label: "Erledigt",
           onPress: handleSettle,

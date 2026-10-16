@@ -533,7 +533,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const androidSectionMenuActions = useMemo<MenuAction[]>(() => {
     const sectionAction = (section: ReviewSectionItem | null, title: string): MenuAction => ({
       id: section ? `section:${section.id}` : `unavailable:${title}`,
-      title: section?.id === selectedSection?.id ? `${title} (selected)` : title,
+      title: section?.id === selectedSection?.id ? `${title} (gewählt)` : title,
       attributes: section ? undefined : { disabled: true },
     });
     const actions: MenuAction[] = [
@@ -548,7 +548,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
         title: "Zug",
         subactions: sectionMenu.turns.map((section) => ({
           id: `section:${section.id}`,
-          title: section.id === selectedSection?.id ? `${section.title} (selected)` : section.title,
+          title: section.id === selectedSection?.id ? `${section.title} (gewählt)` : section.title,
           subtitle: section.subtitle ?? undefined,
         })),
       });

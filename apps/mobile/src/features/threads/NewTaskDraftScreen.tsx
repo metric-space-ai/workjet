@@ -992,7 +992,7 @@ export function NewTaskDraftScreen(props: {
             {flow.planModeEnabled ? (
               <ComposerInlineControl
                 accessibilityHint={`Wechselt zu ${flow.interactionMode === "plan" ? "Build" : "Plan"}`}
-                accessibilityLabel={`Interaction mode: ${flow.interactionMode === "plan" ? "Plan" : "Build"}`}
+                accessibilityLabel={`Modus: ${flow.interactionMode === "plan" ? "Plan" : "Build"}`}
                 disabled={isIncomingShareTransferPending}
                 emphasized
                 icon={

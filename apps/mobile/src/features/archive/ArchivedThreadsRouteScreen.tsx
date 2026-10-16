@@ -109,7 +109,7 @@ export function ArchivedThreadsRouteScreen() {
       allowAllEnvironments
       allEnvironmentsLabel={
         hasEnvironmentBindings
-          ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "diese Instanz"}`
+          ? `Alle Rechner in ${selectedBusinessOsInstance?.displayName ?? "diese Instanz"}`
           : "Alle Rechner"
       }
       environments={environments}

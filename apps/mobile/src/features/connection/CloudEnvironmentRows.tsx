@@ -297,8 +297,7 @@ function CloudEnvironmentRowShell(props: {
     readonly text: string;
     readonly lineCount: number;
   } | null>(null);
-  const errorTraceId = props.connectionErrorTraceId;
-  const measuredErrorText = errorTraceId ? `${statusText} Trace ID: ${errorTraceId}` : statusText;
+  const measuredErrorText = statusText;
   const errorLineCount =
     errorMeasurement?.text === measuredErrorText ? errorMeasurement.lineCount : 0;
   const errorCanExpand = props.connectionError !== null && errorLineCount > 1;
@@ -357,25 +356,6 @@ function CloudEnvironmentRowShell(props: {
             numberOfLines={isErrorExpanded ? undefined : 1}
           >
             {statusText}
-            {errorTraceId ? (
-              <>
-                {" Trace ID: "}
-                <Text
-                  accessibilityHint="Kopiert die Trace-ID"
-                  accessibilityRole="button"
-                  className={cn("text-xs underline decoration-dotted", statusClassName)}
-                  onLongPress={(event) => {
-                    event.stopPropagation();
-                    copyTextWithHaptic(errorTraceId, { target: "connection-trace-id" });
-                  }}
-                  onPress={(event) => {
-                    event.stopPropagation();
-                  }}
-                >
-                  {errorTraceId}
-                </Text>
-              </>
-            ) : null}
           </Text>
           {errorCanExpand ? (
             <SymbolView

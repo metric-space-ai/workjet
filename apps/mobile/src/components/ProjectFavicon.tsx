@@ -112,7 +112,7 @@ function ProjectFaviconImage(props: {
           }}
           cachePolicy="memory-disk"
           recyclingKey={faviconRequest.cacheKey}
-          accessibilityLabel={`${props.projectTitle} favicon`}
+          accessibilityLabel={`${props.projectTitle} Icon`}
           style={{
             width: props.size,
             height: props.size,

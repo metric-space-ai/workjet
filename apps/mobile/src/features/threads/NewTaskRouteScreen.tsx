@@ -247,7 +247,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 }
               >
                 <Text className="text-sm font-workjet-bold text-primary-foreground">
-                  Business OS einrichten
+                  Instanz verbinden
                 </Text>
               </Pressable>
             ) : (
@@ -295,7 +295,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                         numberOfLines={1}
                       >
                         {hasMultipleProjects
-                          ? `${scope.projects.length} workspaces`
+                          ? `${scope.projects.length} Arbeitsbereiche`
                           : selectionTarget.workspaceRoot}
                       </Text>
                     </View>

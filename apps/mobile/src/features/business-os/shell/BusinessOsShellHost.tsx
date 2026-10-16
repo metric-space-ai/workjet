@@ -57,19 +57,14 @@ export function BusinessOsShellHost(props: {
   if (!Surface || !isNativeBusinessOsSurfaceSupported()) {
     return (
       <View className="flex-1 items-center justify-center px-6">
-        <Text className="max-w-[520px] text-center text-base leading-normal text-foreground-muted">
-          Diese System-WebView unterstützt die erforderliche isolierte Business-OS-Datenablage
-          nicht.
+        <Text className="text-center text-sm text-foreground-muted">
+          System-WebView zu alt. WebView aktualisieren.
         </Text>
       </View>
     );
   }
   if (!launch) {
-    return (
-      <Text className="py-10 text-center text-foreground-muted">
-        Business OS wird sicher geöffnet…
-      </Text>
-    );
+    return <Text className="py-10 text-center text-foreground-muted">Öffnet Instanz…</Text>;
   }
   return (
     <Surface

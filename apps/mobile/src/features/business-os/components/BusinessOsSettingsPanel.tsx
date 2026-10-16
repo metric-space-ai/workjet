@@ -21,14 +21,14 @@ import { CredentialQrCode } from "./CredentialQrCode";
 
 function safeMessage(error: unknown): string {
   return error instanceof Error && error.name === "WorkjetDeviceInviteControlUnavailableError"
-    ? "Für diese Business-OS-Instanz ist keine vom Mobilgerät erreichbare Workjet-Verbindung verfügbar."
-    : "Die Aktion konnte nicht abgeschlossen werden. Bitte erneut versuchen.";
+    ? "Instanz vom Gerät aus nicht erreichbar."
+    : "Aktion fehlgeschlagen. Erneut versuchen.";
 }
 
 export function BusinessOsSettingsPanel(props: {
   readonly inviteControl?: WorkjetDeviceInviteControlPort;
 }) {
-  const { environmentBindings, forget, instances, isReady, select, selected } = useBusinessOs();
+  const { forget, instances, isReady, select, selected } = useBusinessOs();
   const { importPairingPayload } = useWorkjetDevicePairing();
   const productionInviteControl = useManagedWorkjetDeviceInviteControl(
     selected?.instanceId ?? null,
@@ -142,7 +142,7 @@ export function BusinessOsSettingsPanel(props: {
     if (permission.granted) {
       setScannerReady(false);
       setShowScanner(true);
-    } else Alert.alert("Kamerazugriff benötigt", "Kamerazugriff fehlt.");
+    } else Alert.alert("Kamerazugriff fehlt", "In den Systemeinstellungen erlauben.");
   }, [cameraPermission?.granted, requestCameraPermission]);
 
   const importRawLink = useCallback(
@@ -153,7 +153,7 @@ export function BusinessOsSettingsPanel(props: {
         if (result) setShowScanner(false);
         return result;
       } catch {
-        setError("Der QR-Code oder Link ist ungültig oder abgelaufen.");
+        setError("QR-Code ungültig oder abgelaufen.");
         return false;
       }
     },
@@ -178,27 +178,18 @@ export function BusinessOsSettingsPanel(props: {
 
   const confirmForget = useCallback(() => {
     if (!selected) return;
-    Alert.alert(
-      "Instanz vergessen?",
-      `${selected.displayName} und die gerätegebundenen Zugangsdaten werden von diesem Gerät entfernt.`,
-      [
-        { text: "Abbrechen", style: "cancel" },
-        {
-          text: "Vergessen",
-          style: "destructive",
-          onPress: () =>
-            void forget(selected).catch(() =>
-              setError("Die Instanz konnte nicht entfernt werden."),
-            ),
-        },
-      ],
-    );
+    Alert.alert("Instanz vergessen?", selected.displayName, [
+      { text: "Abbrechen", style: "cancel" },
+      {
+        text: "Vergessen",
+        style: "destructive",
+        onPress: () => void forget(selected).catch(() => setError("Instanz nicht entfernt.")),
+      },
+    ]);
   }, [forget, selected]);
 
   if (!isReady) {
-    return (
-      <Text className="py-10 text-center text-foreground-muted">Business OS wird geladen…</Text>
-    );
+    return <Text className="py-10 text-center text-foreground-muted">Lädt Instanzen…</Text>;
   }
 
   return (
@@ -217,7 +208,7 @@ export function BusinessOsSettingsPanel(props: {
               facing="back"
               onBarcodeScanned={scannerLocked ? undefined : scan}
               onCameraReady={() => setScannerReady(true)}
-              onMountError={() => setError("Die Kamera konnte nicht gestartet werden.")}
+              onMountError={() => setError("Kamera startet nicht.")}
               style={{ height: scannerSize, width: scannerSize }}
             />
             <View
@@ -227,10 +218,10 @@ export function BusinessOsSettingsPanel(props: {
           </View>
           <Text className="text-center text-sm text-foreground-muted">
             {scannerLocked
-              ? "QR-Code erkannt. Pairing wird geprüft…"
+              ? "Prüft QR-Code…"
               : scannerReady
-                ? "Kurzen Workjet-QR-Code vollständig innerhalb des Rahmens positionieren"
-                : "Kamera wird gestartet…"}
+                ? "QR-Code in den Rahmen halten"
+                : "Kamera startet…"}
           </Text>
           <ConnectionSheetButton
             icon="xmark"
@@ -244,32 +235,14 @@ export function BusinessOsSettingsPanel(props: {
       ) : (
         <View className={cn("gap-5", tabletLayout && "flex-row items-start")}>
           <View className="min-w-0 flex-1 gap-4 rounded-[24px] bg-card p-5">
-            <View className="gap-1">
-              <Text className="text-lg font-workjet-bold text-foreground">Business OS</Text>
-              <Text className="text-sm leading-normal text-foreground-muted">
-                Jede Business-OS-Instanz wird auf diesem Gerät separat verbunden. Die aktive Auswahl
-                gilt immer gemeinsam für Code und Business OS; Geschäftsdaten synchronisieren
-                ausschließlich direkt per RxDB und WebRTC.
-              </Text>
-            </View>
+            <Text className="text-lg font-workjet-bold text-foreground">Instanzen</Text>
 
             {instances.length === 0 ? (
-              <View className="rounded-[18px] bg-subtle p-4">
-                <Text className="text-sm leading-normal text-foreground-muted">
-                  Noch keine Business-OS-Instanz verbunden. Scanne ihren Workjet-QR-Code oder füge
-                  den kurzlebigen Link explizit ein.
-                </Text>
-              </View>
+              <Text className="text-sm text-foreground-muted">Noch keine Instanz</Text>
             ) : (
               <View className="gap-2">
                 {instances.map((instance) => {
                   const active = instance.id === selected?.id;
-                  const codeEnvironmentBound = environmentBindings.some(
-                    (binding) => binding.businessOsInstanceId === instance.id,
-                  );
-                  const assignedComputerCount = environmentBindings.filter(
-                    (binding) => binding.businessOsInstanceId === instance.id,
-                  ).length;
                   return (
                     <Pressable
                       key={instance.id}
@@ -286,14 +259,7 @@ export function BusinessOsSettingsPanel(props: {
                         {instance.displayName}
                       </Text>
                       <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={1}>
-                        {codeEnvironmentBound
-                          ? active
-                            ? "Aktiv für Code und Business OS"
-                            : "Bereit für Code und Business OS"
-                          : active
-                            ? "Aktiv"
-                            : "Noch keine Rechner zugewiesen"}
-                        {assignedComputerCount > 0 ? ` · ${assignedComputerCount} Rechner` : ""}
+                        {active ? "Aktiv" : "Bereit"}
                       </Text>
                     </Pressable>
                   );
@@ -320,14 +286,7 @@ export function BusinessOsSettingsPanel(props: {
           </View>
 
           <View className="min-w-0 flex-1 gap-4 rounded-[24px] bg-card p-5">
-            <View className="gap-1">
-              <Text className="text-lg font-workjet-bold text-foreground">Gerät hinzufügen</Text>
-              <Text className="text-sm leading-normal text-foreground-muted">
-                Der kurzlebige QR-Code verbindet das andere Gerät mit Code und Business OS dieser
-                Instanz. Weitere Business-OS-Instanzen werden separat verbunden. Zeige ihn nur der
-                Zielperson.
-              </Text>
-            </View>
+            <Text className="text-lg font-workjet-bold text-foreground">Gerät hinzufügen</Text>
 
             {generatedInvite ? (
               <>
@@ -367,11 +326,7 @@ export function BusinessOsSettingsPanel(props: {
             )}
 
             {selected && !hasVerifiedBackendControl ? (
-              <Text className="text-sm leading-normal text-foreground-muted">
-                Für diese Business OS ist die sichere Gerätefreigabe noch nicht verfügbar. Sobald
-                die Instanz online und vollständig eingerichtet ist, kannst du hier ein Gerät
-                hinzufügen.
-              </Text>
+              <Text className="text-sm text-foreground-muted">Instanz noch nicht bereit</Text>
             ) : null}
 
             {selected ? (

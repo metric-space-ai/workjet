@@ -508,7 +508,7 @@ function ArchivedThreadRow(props: {
       onSwipeableClose={props.onSwipeableClose}
       onSwipeableWillOpen={props.onSwipeableWillOpen}
       primaryAction={{
-        accessibilityLabel: `Unarchive ${props.thread.title}`,
+        accessibilityLabel: `${props.thread.title} wiederherstellen`,
         icon: "arrow.uturn.backward",
         label: "Wiederherstellen",
         onPress: props.onUnarchive,

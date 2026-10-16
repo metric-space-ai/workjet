@@ -426,10 +426,6 @@ function ConfiguredSettingsRouteScreen() {
               onPress={openAccount}
             />
           </SettingsSection>
-          <Text className="px-2 text-sm text-foreground-muted">
-            Code funktioniert auch ohne Business OS. Verbundene Instanzen gelten gemeinsam für Code
-            und Business OS.
-          </Text>
         </View>
 
         <SettingsSection title="Konfiguration">

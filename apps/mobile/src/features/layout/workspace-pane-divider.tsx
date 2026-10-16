@@ -78,7 +78,7 @@ export function WorkspacePaneDivider(props: WorkspacePaneDividerProps) {
         accessibilityRole="adjustable"
         accessibilityValue={{
           now: Math.round(props.currentWidth),
-          text: `${Math.round(props.currentWidth)} points wide`,
+          text: `${Math.round(props.currentWidth)} Punkte breit`,
         }}
         onAccessibilityAction={handleAccessibilityAction}
         onHoverIn={() => setHovered(true)}

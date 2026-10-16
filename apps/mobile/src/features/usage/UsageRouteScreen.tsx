@@ -215,7 +215,7 @@ function ChartCard(props: {
           <Text className="text-sm text-foreground-muted">
             {metric === "cost"
               ? "* bei vollem API-Preis"
-              : `Across ${formatCount(merged.sessions)} sessions`}
+              : `Über ${formatCount(merged.sessions)} Sitzungen`}
           </Text>
         </View>
         <MetricToggle metric={metric} onChange={props.onMetricChange} />
@@ -371,7 +371,7 @@ function TotalsSection(props: { readonly merged: MergedUsage; readonly isPast24H
         <MetricCell
           label="Verarbeitete Tokens"
           value={formatTokens(merged.totalTokens)}
-          detail={`${formatTokens(periodAverage)} per active ${props.isPast24Hours ? "hour" : "day"}`}
+          detail={`${formatTokens(periodAverage)} je aktive ${props.isPast24Hours ? "Stunde" : "Tag"}`}
         />
         <MetricCell
           label="Cache-Ersparnis"
@@ -390,12 +390,12 @@ function TotalsSection(props: { readonly merged: MergedUsage; readonly isPast24H
         <MetricCell
           label="Ungecachte Eingabe"
           value={formatTokens(merged.uncachedInputTokens)}
-          detail={`${formatTokens(merged.cacheCreationTokens)} cache writes`}
+          detail={`${formatTokens(merged.cacheCreationTokens)} Cache-Schreibvorgänge`}
         />
         <MetricCell
           label="Ausgabe"
           value={formatTokens(merged.outputTokens)}
-          detail={`incl. ${formatTokens(merged.reasoningTokens)} reasoning`}
+          detail={`inkl. ${formatTokens(merged.reasoningTokens)} Denken`}
         />
         <MetricCell
           label="Ohne Preis"
@@ -448,7 +448,7 @@ function ModelsSection(props: { readonly merged: MergedUsage }) {
               {model.model}
             </Text>
             <Text className="text-sm text-foreground-muted">
-              {formatPercent(model.costShare)} der Kosten · {formatTokens(model.totalTokens)} tokens
+              {formatPercent(model.costShare)} der Kosten · {formatTokens(model.totalTokens)} Tokens
             </Text>
           </View>
           <Text className="text-base tabular-nums text-foreground">

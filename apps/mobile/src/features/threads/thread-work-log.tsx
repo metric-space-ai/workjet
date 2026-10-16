@@ -283,15 +283,13 @@ export function ThreadWorkGroupToggle(props: {
   const pressedBackground = colorScheme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.035)";
   const noun = props.onlyToolActivities
     ? props.hiddenCount === 1
-      ? "tool call"
-      : "tool calls"
+      ? "Werkzeugaufruf"
+      : "Werkzeugaufrufe"
     : props.hiddenCount === 1
-      ? "log entry"
-      : "log entries";
-  const collapsedLabel = `Show ${props.hiddenCount} previous ${noun}`;
-  const expandedLabel = props.onlyToolActivities
-    ? "Show fewer tool calls"
-    : "Show fewer log entries";
+      ? "Eintrag"
+      : "Einträge";
+  const collapsedLabel = `${props.hiddenCount} frühere ${noun} zeigen`;
+  const expandedLabel = "Weniger zeigen";
 
   return (
     <View className="-mx-1 mb-1 px-1 py-0">
@@ -322,7 +320,7 @@ export function ThreadWorkGroupToggle(props: {
           />
         </View>
         <Text className="font-workjet-medium text-xs text-foreground opacity-80">
-          {props.expanded ? expandedLabel : `+${props.hiddenCount} previous ${noun}`}
+          {props.expanded ? expandedLabel : `+${props.hiddenCount} frühere ${noun}`}
         </Text>
       </Pressable>
     </View>

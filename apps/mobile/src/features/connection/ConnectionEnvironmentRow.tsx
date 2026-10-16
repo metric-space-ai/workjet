@@ -11,7 +11,6 @@ import { useThemeColor } from "../../lib/useThemeColor";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { cn } from "../../lib/cn";
-import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 
@@ -41,7 +40,6 @@ export function ConnectionEnvironmentRow(props: {
   const primaryFg = useThemeColor("--color-primary-foreground");
   const dangerFg = useThemeColor("--color-danger-foreground");
   const statusLabel = connectionStatusLabel(props.environment);
-  const statusTraceId = props.environment.connectionErrorTraceId;
   const hasConnectionFailure = props.environment.connectionError !== null;
   const isRetrying =
     props.environment.connectionState === "connecting" ||
@@ -94,25 +92,6 @@ export function ConnectionEnvironmentRow(props: {
               selectable={props.expanded}
             >
               {statusLabel}
-              {statusTraceId ? (
-                <>
-                  {" Trace ID: "}
-                  <Text
-                    accessibilityHint="Kopiert die Trace-ID"
-                    accessibilityRole="button"
-                    className="underline decoration-dotted"
-                    onLongPress={(event) => {
-                      event.stopPropagation();
-                      copyTextWithHaptic(statusTraceId, { target: "connection-trace-id" });
-                    }}
-                    onPress={(event) => {
-                      event.stopPropagation();
-                    }}
-                  >
-                    {statusTraceId}
-                  </Text>
-                </>
-              ) : null}
             </Text>
           ) : null}
         </View>

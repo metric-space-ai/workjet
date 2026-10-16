@@ -233,7 +233,12 @@ export function createIndexedDbV4InstanceDirectoryStorage(
     },
     save: async (next) => {
       const db = await open();
-      await request(db.transaction(STORE, "readwrite").objectStore(STORE).put([...next], KEY));
+      await request(
+        db
+          .transaction(STORE, "readwrite")
+          .objectStore(STORE)
+          .put([...next], KEY),
+      );
     },
   };
 }

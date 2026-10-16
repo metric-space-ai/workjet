@@ -5,11 +5,7 @@ import {
   subscribeActiveWorkjetScope,
 } from "../activeWorkjetScope";
 import { renewWorkjetDeviceLaunch } from "./instanceAccess";
-import {
-  V4_RENEW_UNPAIRED,
-  type V4RenewFailureCode,
-  type V4RenewOutcome,
-} from "./v4DeviceRenew";
+import { V4_RENEW_UNPAIRED, type V4RenewFailureCode, type V4RenewOutcome } from "./v4DeviceRenew";
 import {
   createWorkjetV4Host,
   type WorkjetLaunchContextReader,

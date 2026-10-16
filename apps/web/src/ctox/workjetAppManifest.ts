@@ -1,24 +1,34 @@
+import {
+  CTOX_APPROVAL_REQUEST,
+  CTOX_APPROVAL_REQUESTS,
+  CTOX_MAINTENANCE_RESTART,
+  WORKJET_LUMA_STATE,
+  WORKJET_MAILBOX_ENVELOPES,
+} from "@workjet/shared/ctoxV4AppData";
 import { PROJECT_READ_COLLECTIONS } from "./projectReadData";
 import { THREAD_READ_COLLECTIONS } from "./threadReadAtoms";
 
 /**
  * Workjet app manifest (app_id `workjet`) as the Shell/Core activates it (§9, E35 Nr. 3).
- * Workjet data stays Core/ctox-app owned (K-WJ-1, E49.4); Workjet declares what it reads and
- * which Core platform routes it sends (E40: platform routes need no app handler). Workjet has no
- * own command handlers yet; `workjet_worker_dispatch` arrives with slice C (E49.5).
+ * Ownership follows E42.3: until `store_workjet_projects.rs` is retired after M7, the project,
+ * KPI, feed and worker-profile collections stay ctox-owned and Workjet reads them through the
+ * K-WJ-1 exports. Workjet owns only its mailbox envelopes and the Luma state. It sends the
+ * approval request and the maintenance restart (E40 platform routes). `workjet.worker.dispatch`
+ * is an incoming command of the instance module (its handler ships with Shell v4), so it is not
+ * part of this manifest.
  */
 export const WORKJET_APP_ID = "workjet";
-/** Workjet-owned collections (proposals docs/v4/workjet-collections{,-b}.json). */
-export const WORKJET_OWNED_COLLECTIONS = [
+/** E42.3: the only Workjet-owned collections. */
+export const WORKJET_OWNED_COLLECTIONS = [WORKJET_MAILBOX_ENVELOPES, WORKJET_LUMA_STATE] as const;
+/** E42.3: ctox-owned Workjet data read through the K-WJ-1 exports. */
+export const WORKJET_CTOX_EXPORT_READS = [
   "workjet_projects",
   "workjet_project_kpis",
   "workjet_project_feed",
   "workjet_worker_profiles",
-  // E49.4: Workjet writes its gallery order itself (api.patch), so the app owns the collection.
-  "workjet_gallery_orders",
-  ...THREAD_READ_COLLECTIONS,
+  CTOX_APPROVAL_REQUESTS,
 ] as const;
-/** Projections behind the gated consumers (state/server, state/threads). */
+/** Projections behind the Scheibe C gated consumers (state/server, state/threads). */
 export const SCHEIBE_C_READ_COLLECTIONS = [
   "workjet_connections",
   "workjet_calendar_accounts",
@@ -36,30 +46,33 @@ export const SCHEIBE_C_READ_COLLECTIONS = [
   "workjet_gateway_pending_checks",
   "workjet_gateway_model_discovery",
   "workjet_gateway_account_models",
-  "workjet_luma_state",
   "workjet_llm_routes",
   "workjet_model_prompts",
 ] as const;
+const OWNED = new Set<string>(WORKJET_OWNED_COLLECTIONS);
 /** Read-only collections of other owners: app ctox (K-WJ-1) and platform (§16.41/§16.43). */
 export const WORKJET_FOREIGN_COLLECTIONS = [
-  "workjet_computers",
-  "workjet_sessions",
-  "workjet_session_transfers",
-  "workjet_session_transfer_events",
-  "workjet_provider_accounts",
-  "workjet_provider_selections",
-  "workjet_calendar_state",
-  "devices",
-  "machine_enrollments",
-  // Scheibe C consumers read these Core projections locally (gateway, calendar, Luma target).
-  ...SCHEIBE_C_READ_COLLECTIONS,
   ...new Set(
-    Object.values(PROJECT_READ_COLLECTIONS).filter(
-      (collection) => !(WORKJET_OWNED_COLLECTIONS as readonly string[]).includes(collection),
-    ),
+    [
+      ...WORKJET_CTOX_EXPORT_READS,
+      ...THREAD_READ_COLLECTIONS,
+      "workjet_computers",
+      "workjet_sessions",
+      "workjet_session_transfers",
+      "workjet_session_transfer_events",
+      "workjet_provider_accounts",
+      "workjet_provider_selections",
+      "workjet_calendar_state",
+      "devices",
+      "machine_enrollments",
+      ...SCHEIBE_C_READ_COLLECTIONS,
+      ...Object.values(PROJECT_READ_COLLECTIONS),
+    ].filter((collection) => !OWNED.has(collection)),
   ),
-] as const;
+];
 export const PLATFORM_OWNED = new Set(["devices", "machine_enrollments"]);
+/** Platform routes Workjet sends (E40); no Workjet handler on the Core side. */
+export const WORKJET_COMMANDS_OUT = [CTOX_APPROVAL_REQUEST, CTOX_MAINTENANCE_RESTART] as const;
 
 export function workjetAppManifest(appVer: string) {
   return {
@@ -72,14 +85,36 @@ export function workjetAppManifest(appVer: string) {
       WORKJET_OWNED_COLLECTIONS.map((collection) => [collection, { class: "eager" }]),
     ),
     foreign_collections: Object.fromEntries(
-      [...new Set(WORKJET_FOREIGN_COLLECTIONS)].map((collection) => [
+      WORKJET_FOREIGN_COLLECTIONS.map((collection) => [
         collection,
         { owner_app: PLATFORM_OWNED.has(collection) ? "ctox-platform" : "ctox", ops: ["read"] },
       ]),
     ),
     handlers: {},
     commands_in: [],
-    commands_out: [],
+    commands_out: [...WORKJET_COMMANDS_OUT],
     triggers: [],
   };
+}
+
+/** Fake-core seed for the owners of the foreign reads: declared and exported for read (K-WJ-1). */
+export function workjetForeignOwnerManifests(appVer: string) {
+  const byOwner = new Map<string, string[]>();
+  for (const collection of WORKJET_FOREIGN_COLLECTIONS) {
+    const owner = PLATFORM_OWNED.has(collection) ? "ctox-platform" : "ctox";
+    byOwner.set(owner, [...(byOwner.get(owner) ?? []), collection]);
+  }
+  return [...byOwner].map(([owner, collections]) => ({
+    id: `${owner}@${appVer}`,
+    app_id: owner,
+    app_ver: appVer,
+    manifest: {
+      app_id: owner,
+      app_ver: appVer,
+      min_app_api: "4.0",
+      collections: Object.fromEntries(collections.map((name) => [name, { class: "eager" }])),
+      exports: Object.fromEntries(collections.map((name) => [name, ["read"]])),
+      handlers: {},
+    },
+  }));
 }

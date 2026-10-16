@@ -2,7 +2,7 @@
 // launch context reports V4 (E41 `v4` member); V3 instances get no mount, and V4 -> V3 unmounts.
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { createKernel } from "./kernel/kernel.mjs";
-import { MemoryCoreTransport } from "./kernel/fake-core.mjs";
+import { MemoryCoreTransport } from "./kernelTestkit";
 import { getCtoxClient } from "./ctoxClient";
 import {
   createWorkjetV4Host,

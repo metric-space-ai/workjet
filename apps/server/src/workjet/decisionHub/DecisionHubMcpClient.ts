@@ -9,7 +9,13 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 
+import {
+  readWorkjetDecision,
+  requestWorkjetDecision,
+  type CtoxV4AppPort,
+} from "@workjet/shared/ctoxV4AppData";
 import { makeCtoxMcpTransport, type CtoxMcpTarget } from "../ctox/CtoxMcpTransport.ts";
+import { resolveCtoxV4AppPortForEndpoint } from "../ctox/CtoxV4AppPorts.ts";
 
 export {
   CTOX_MCP_SERVER_NAME,
@@ -79,13 +85,51 @@ export class DecisionHubMcpClient extends Context.Service<
   DecisionHubMcpClientShape
 >()("workjet/workjet/decisionHub/DecisionHubMcpClient") {}
 
+const text = (value: unknown) => (typeof value === "string" ? value : "");
+const record = (value: unknown): Readonly<Record<string, unknown>> =>
+  value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+/** V4 (E49.4): decision_hub.* becomes the core approval route plus a collection read. */
+const requestDecisionV4 = (port: CtoxV4AppPort, arguments_: Readonly<Record<string, unknown>>) =>
+  Effect.tryPromise({
+    try: () =>
+      requestWorkjetDecision(port, {
+        decisionKey: text(arguments_.decision_key),
+        title: text(arguments_.title),
+        question: text(arguments_.question),
+        context: arguments_.context,
+        options: Array.isArray(arguments_.options)
+          ? arguments_.options.map((option) => ({
+              id: text(record(option).id),
+              label: text(record(option).label),
+            }))
+          : [],
+        reviewerUserId: port.actor.id,
+        threadId: text(record(arguments_.source).thread_id),
+        environmentId: text(record(arguments_.source).environment_id),
+      }),
+    catch: () => failure("connection-unavailable"),
+  });
+
+const getDecisionV4 = (port: CtoxV4AppPort, decisionId: string) =>
+  Effect.suspend(() => {
+    const resolution = readWorkjetDecision(port, decisionId);
+    return resolution === null
+      ? Effect.fail(failure("remote-response-invalid"))
+      : Effect.succeed(resolution);
+  });
+
 const make = Effect.gen(function* () {
   const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
   const probe: DecisionHubMcpClientShape["probe"] = (
     target,
     requiredTools = DECISION_HUB_REMOTE_TOOLS,
   ) =>
-    transport.probe(target, requiredTools).pipe(Effect.mapError((error) => failure(error.reason)));
+    resolveCtoxV4AppPortForEndpoint(target.endpoint) !== null
+      ? Effect.void
+      : transport
+          .probe(target, requiredTools)
+          .pipe(Effect.mapError((error) => failure(error.reason)));
 
   const callTool = (
     target: DecisionHubMcpTarget,
@@ -101,8 +145,10 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const requestDecision: DecisionHubMcpClientShape["requestDecision"] = (target, arguments_) =>
-    callTool(target, DECISION_HUB_REQUEST_TOOL, arguments_).pipe(
+  const requestDecision: DecisionHubMcpClientShape["requestDecision"] = (target, arguments_) => {
+    const v4 = resolveCtoxV4AppPortForEndpoint(target.endpoint);
+    if (v4 !== null) return requestDecisionV4(v4, arguments_);
+    return callTool(target, DECISION_HUB_REQUEST_TOOL, arguments_).pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(RequestResult)),
       Effect.mapError(() => failure("remote-response-invalid")),
       Effect.flatMap((result) => {
@@ -112,9 +158,12 @@ const make = Effect.gen(function* () {
           : Effect.succeed({ decisionId: result.decision_id, status });
       }),
     );
+  };
 
-  const getDecision: DecisionHubMcpClientShape["getDecision"] = (target, decisionId) =>
-    callTool(target, DECISION_HUB_GET_TOOL, { decision_id: decisionId }).pipe(
+  const getDecision: DecisionHubMcpClientShape["getDecision"] = (target, decisionId) => {
+    const v4 = resolveCtoxV4AppPortForEndpoint(target.endpoint);
+    if (v4 !== null) return getDecisionV4(v4, decisionId);
+    return callTool(target, DECISION_HUB_GET_TOOL, { decision_id: decisionId }).pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(GetResult)),
       Effect.mapError(() => failure("remote-response-invalid")),
       Effect.flatMap((result) => {
@@ -130,6 +179,7 @@ const make = Effect.gen(function* () {
             });
       }),
     );
+  };
 
   return DecisionHubMcpClient.of({ probe, requestDecision, getDecision });
 });

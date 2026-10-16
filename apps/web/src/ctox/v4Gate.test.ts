@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { CommandId, EnvironmentId, ProjectId, ThreadId } from "@workjet/contracts";
 import type { CtoxWorkjetProjectControlResult, DesktopCtoxBridge } from "@workjet/contracts";
 import { createKernel } from "./kernel/kernel.mjs";
-import { MemoryCoreTransport } from "./kernel/fake-core.mjs";
+import { MemoryCoreTransport } from "./kernelTestkit";
 import type { CtoxAppApi, Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
 import { getCtoxClient } from "./ctoxClient";

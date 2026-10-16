@@ -11,6 +11,7 @@ import {
   type WorkjetMeshPeerBinding,
   type WorkjetMeshWorkspaceId,
 } from "@workjet/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -40,6 +41,14 @@ import {
 } from "./WorkjetMailboxStore.ts";
 import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
 import { WorkjetSnapshotStore } from "./WorkjetSnapshotStore.ts";
+import {
+  acknowledgeWorkjetMailboxEnvelopes,
+  publishWorkjetMailboxEnvelope,
+  readPendingWorkjetMailboxEnvelopes,
+  type CtoxV4AppPort,
+  type WorkjetMailboxPublishInput,
+} from "@workjet/shared/ctoxV4AppData";
+import { resolveCtoxV4AppPortForEndpoint } from "../ctox/CtoxV4AppPorts.ts";
 
 /**
  * The Workjet side of the LOCAL CTOX daemon mailbox docking (docs/workjet-plan.md
@@ -1275,12 +1284,63 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
    * caller's only decision is "did the daemon answer usefully or not", and the
    * bounded status snapshot is the sole place a failure is ever counted.
    */
+  /**
+   * V4 (E49.4): the same three mailbox hops against the Workjet app collection
+   * `workjet_mailbox_envelopes` of the bound kernel client. publish = put, pending = local
+   * live-store read (no network poll, no cursor), consumed = api.patch receipt per envelope.
+   */
+  const callV4 = (
+    port: CtoxV4AppPort,
+    request: HttpClientRequest.HttpClientRequest,
+  ): Effect.Effect<Option.Option<unknown>> => {
+    const url = new URL(request.url);
+    const body = (): Record<string, unknown> =>
+      request.body._tag === "Uint8Array"
+        ? (JSON.parse(new TextDecoder().decode(request.body.body)) as Record<string, unknown>)
+        : {};
+    return Clock.currentTimeMillis.pipe(
+      Effect.flatMap((nowMillis) =>
+        Effect.tryPromise(async (): Promise<unknown> => {
+          if (url.pathname.endsWith("/workjet/mailbox/publish"))
+            return publishWorkjetMailboxEnvelope(
+              port,
+              body() as unknown as WorkjetMailboxPublishInput,
+            );
+          if (url.pathname.endsWith("/workjet/mailbox/pending"))
+            return {
+              envelopes: readPendingWorkjetMailboxEnvelopes(
+                port,
+                url.searchParams.get("environment_id") ?? localEnvironmentId,
+                nowMillis,
+              ).slice(0, Number(url.searchParams.get("limit") ?? WORKJET_TRANSPORT_PULL_LIMIT)),
+              has_more: false,
+              next_cursor: null,
+            };
+          if (url.pathname.endsWith("/workjet/mailbox/consumed")) {
+            const ids = body().envelope_ids;
+            const consumed = await acknowledgeWorkjetMailboxEnvelopes(
+              port,
+              Array.isArray(ids) ? ids.map(String) : [],
+              localEnvironmentId,
+              nowMillis,
+            );
+            return { consumed };
+          }
+          throw new Error("unknown_mailbox_route");
+        }),
+      ),
+      Effect.option,
+    );
+  };
+
   const call = (input: {
     readonly endpoint: CtoxDaemonEndpoint;
     readonly token: string;
     readonly request: HttpClientRequest.HttpClientRequest;
-  }): Effect.Effect<Option.Option<unknown>> =>
-    Effect.gen(function* () {
+  }): Effect.Effect<Option.Option<unknown>> => {
+    const v4 = resolveCtoxV4AppPortForEndpoint(input.endpoint.baseUrl);
+    if (v4 !== null) return callV4(v4, input.request);
+    return Effect.gen(function* () {
       const response = yield* httpClient.execute(
         input.request.pipe(
           HttpClientRequest.acceptJson,
@@ -1300,6 +1360,7 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       Effect.option,
       Effect.map((value) => value as Option.Option<unknown>),
     );
+  };
 
   // -----------------------------
   // PUSH
@@ -1953,7 +2014,11 @@ export const makeWorkjetMailboxTransportWithSources = Effect.fn(
       return snapshot();
     }
 
-    const token = yield* sources.resolveAuthToken;
+    // V4 needs no daemon token: the bound kernel client carries the authenticated identity.
+    const token =
+      resolveCtoxV4AppPortForEndpoint(resolved.endpoint.baseUrl) === null
+        ? yield* sources.resolveAuthToken
+        : Option.some("");
     if (Option.isNone(token)) {
       running = false;
       idleReason = "token-unavailable";

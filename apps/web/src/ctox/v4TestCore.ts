@@ -2,7 +2,7 @@
 // active Workjet manifest and the foreign-collection owner published before it opens (E35 Nr. 3).
 import { vi } from "vite-plus/test";
 import { createKernel } from "./kernel/kernel.mjs";
-import { MemoryCoreTransport } from "./kernel/fake-core.mjs";
+import { MemoryCoreTransport } from "./kernelTestkit";
 import type { Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
 import { getCtoxClient } from "./ctoxClient";

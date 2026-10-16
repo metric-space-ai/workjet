@@ -238,6 +238,10 @@
     "./secretShapes": {
       "types": "./src/secretShapes.ts",
       "import": "./src/secretShapes.ts"
+    },
+    "./ctoxV4AppData": {
+      "types": "./src/ctoxV4AppData.ts",
+      "import": "./src/ctoxV4AppData.ts"
     }
   },
   "scripts": {

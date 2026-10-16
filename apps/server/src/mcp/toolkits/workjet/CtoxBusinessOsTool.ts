@@ -15,6 +15,8 @@ import { DecisionHubConnectionRegistry } from "../../../workjet/decisionHub/Deci
 import { makeCtoxMcpTransport } from "../../../workjet/ctox/CtoxMcpTransport.ts";
 import { CtoxNativeRequests } from "../../../workjet/ctox/CtoxNativeRequests.ts";
 import { makeCtoxNativeTaskClient } from "../../../workjet/ctox/CtoxNativeTaskClient.ts";
+import { resolveCtoxV4AppPortForInstance } from "../../../workjet/ctox/CtoxV4AppPorts.ts";
+import { callWorkjetBusinessOs } from "@workjet/shared/ctoxV4AppData";
 
 export const CTOX_BUSINESS_OS_TOOL_NAME = "ctox_business_os";
 export const isCtoxBusinessOsToolVisible = (scope: McpInvocationContext.McpInvocationScope) =>
@@ -143,6 +145,37 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
                 ),
               },
             ],
+          });
+        }
+        // V4 (E49.7): a thin adapter over the bound V4 client. Business OS MCP stays a local
+        // typed channel on the instance; Workjet never reaches it over HTTPS. Delegations keep
+        // their native task path (E49.3, CAP-4).
+        const v4 = resolveCtoxV4AppPortForInstance(binding.instanceId);
+        const delegation =
+          input.request.operation === "get_delegation_status" ||
+          input.request.operation === "create_app" ||
+          input.request.operation === "modify_app" ||
+          input.request.operation === "delegate_task";
+        if (v4 !== null && !delegation) {
+          const { operation, ...requested } = input.request;
+          const adapted = yield* Effect.tryPromise({
+            try: () =>
+              callWorkjetBusinessOs(v4, {
+                kind: "command",
+                type: `business_os.${operation}`,
+                payload: operation.startsWith("toolhub_")
+                  ? { ...requested, ...toolhubIdentity(scope) }
+                  : requested,
+              }),
+            catch: () => "rejected" as const,
+          }).pipe(Effect.option);
+          if (Option.isNone(adapted)) return failureResult("ctox-operation-rejected");
+          const output = { instanceId: binding.instanceId, result: adapted.value };
+          return new McpSchema.CallToolResult({
+            isError: false,
+            structuredContent: output,
+            // @effect-diagnostics-next-line preferSchemaOverJson:off -- MCP text mirrors structured content.
+            content: [{ type: "text", text: JSON.stringify(output) }],
           });
         }
         if (Option.isNone(registry)) return failureResult("connection-unavailable");

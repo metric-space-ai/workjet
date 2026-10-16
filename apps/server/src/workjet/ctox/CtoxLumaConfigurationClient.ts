@@ -1,8 +1,14 @@
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 
+import {
+  readWorkjetLumaConfiguration,
+  saveWorkjetLumaConfiguration,
+} from "@workjet/shared/ctoxV4AppData";
 import { makeCtoxMcpTransport, type CtoxMcpTarget } from "./CtoxMcpTransport.ts";
+import { resolveCtoxV4AppPortForEndpoint } from "./CtoxV4AppPorts.ts";
 
 export const CTOX_LUMA_READ_TOOL = "business_os.luma_configuration_read";
 export const CTOX_LUMA_UPDATE_TOOL = "business_os.luma_configuration_update";
@@ -75,6 +81,12 @@ export function makeCtoxLumaConfigurationClient(httpClient: HttpClient.HttpClien
     );
 
   const read = Effect.fn("CtoxLumaConfigurationClient.read")(function* (target: CtoxMcpTarget) {
+    // V4 (E49.4): Workjet app data, a local read of the bound kernel client.
+    const v4 = resolveCtoxV4AppPortForEndpoint(target.endpoint);
+    if (v4 !== null) {
+      const local: CtoxLumaConfigurationDocument = readWorkjetLumaConfiguration(v4);
+      return local;
+    }
     const raw = yield* structured(target, CTOX_LUMA_READ_TOOL, {});
     const result = yield* Schema.decodeUnknownEffect(ReadResult)(raw).pipe(
       Effect.mapError(() => new CtoxLumaConfigurationError({ reason: "remote-response-invalid" })),
@@ -99,6 +111,15 @@ export function makeCtoxLumaConfigurationClient(httpClient: HttpClient.HttpClien
     );
     if (new TextEncoder().encode(encoded).byteLength > 1_024 * 1_024) {
       return yield* new CtoxLumaConfigurationError({ reason: "remote-response-invalid" });
+    }
+    const v4 = resolveCtoxV4AppPortForEndpoint(target.endpoint);
+    if (v4 !== null) {
+      const now = yield* Clock.currentTimeMillis;
+      const saved: CtoxLumaConfigurationSaveResult = yield* Effect.tryPromise({
+        try: () => saveWorkjetLumaConfiguration(v4, expectedRevision, configuration, now),
+        catch: () => new CtoxLumaConfigurationError({ reason: "connection-unavailable" }),
+      });
+      return saved;
     }
     const raw = yield* structured(target, CTOX_LUMA_UPDATE_TOOL, {
       expected_revision: expectedRevision,

@@ -56,10 +56,8 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
     !catalogState.hasLoadedShellSnapshot
   ) {
     return {
-      title: "Environment unavailable",
-      detail:
-        catalogState.connectionError ??
-        "The saved environment is offline. Check the URL or start the environment, then retry.",
+      title: "Umgebung nicht erreichbar",
+      detail: "Adresse prüfen oder Umgebung starten.",
       loading: false,
     };
   }
@@ -70,8 +68,8 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
     catalogState.connectionError === null
   ) {
     return {
-      title: "Connecting to environment",
-      detail: "Loading projects from the saved environment.",
+      title: "Verbindet mit Umgebung",
+      detail: "Lädt Projekte.",
       loading: true,
     };
   }

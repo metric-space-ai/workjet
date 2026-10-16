@@ -1,6 +1,8 @@
 /**
  * Isolierte Fixture für die Netzwerkkarte (Screenshots, kein Backend): drei
  * Rechner mit gemeldeten Fähigkeiten, ein Rechner ohne Angaben, zwei Clients.
+ *
+ * Schema wie in der App: `?theme=light|dark`, sonst das Systemschema.
  */
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
@@ -8,6 +10,13 @@ import { useState } from "react";
 import { NetworkDiagram } from "../components/ctox/NetworkDiagram";
 import type { NetworkClientNode, NetworkComputerNode } from "../components/ctox/networkTopology";
 import "../index.css";
+
+const themeParam = new URLSearchParams(window.location.search).get("theme");
+document.documentElement.classList.toggle(
+  "dark",
+  themeParam === "dark" ||
+    (themeParam !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches),
+);
 
 const computers: NetworkComputerNode[] = [
   { id: "mac", name: "MacBook Pro", platform: "macos", connected: true, tags: [] },

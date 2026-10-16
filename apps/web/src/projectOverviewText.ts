@@ -130,7 +130,6 @@ export const PROJECT_OVERVIEW_TEXT = {
     liveTitle: "Aktiv",
     feedEmpty: "Noch keine Beiträge",
     savedEmpty: "Nichts gemerkt",
-    feedDetails: "Details",
     disruptionStopped: "Der letzte Lauf ist abgebrochen.",
     feedMore: "Mehr anzeigen",
     feedOpen: "Offen",
@@ -272,7 +271,6 @@ export const PROJECT_OVERVIEW_TEXT = {
     liveTitle: "Active",
     feedEmpty: "No posts yet",
     savedEmpty: "Nothing saved",
-    feedDetails: "Details",
     disruptionStopped: "The last run stopped.",
     feedMore: "Show more",
     feedOpen: "Open",
@@ -356,7 +354,7 @@ export function projectOverviewSessionError(
       text: de ? "Anbieter nicht erreichbar." : "Provider unreachable.",
       action: null,
     };
-  // Unknown errors stay raw only behind "Details"; the visible line is always plain language.
+  // Unknown errors: the visible line is always plain language; the raw text is listed under Diagnose.
   return {
     text: PROJECT_OVERVIEW_TEXT[language].disruptionStopped,
     action: null,

@@ -130,7 +130,7 @@
   color: var(--foreground);
   text-align: left;
   cursor: pointer;
-  box-shadow: 0 3px 9px #0000000c;
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--foreground) 5%, transparent);
   transition:
     border-color 0.14s,
     box-shadow 0.14s;

@@ -5,6 +5,8 @@ import { ThreadId } from "@workjet/contracts";
 import { ProjectOverviewView, jourFixeJoinLocked, silentRetryDelayMs } from "./ProjectOverviewView";
 import { buildProjectOwnerOverview, projectOverviewNextMeetingDate } from "../projectOverviewModel";
 import { overviewFixture } from "../fixtures/project-overview.fixture-data";
+import { disruptionContent } from "../projectFeedContent";
+import { recordWorkerErrors, resetWorkerErrorLog, workerErrorLogSnapshot } from "../workerErrorLog";
 
 const recurring = { weekday: 1, time: "13:00", timezone: "Europe/Berlin" };
 // Montag, 12.10.2026: 10:30 UTC = 12:30 in Berlin (Sommerzeit).
@@ -143,18 +145,41 @@ describe("ProjectOverviewView feed without filler (#711, #703, #586)", () => {
     expect(html).not.toContain("Erneut öffnen");
     expect(html).not.toContain('role="status"');
   });
-  it("keeps the raw error behind Details and offers one button", () => {
+  it("shows only the plain line with one button; the raw error goes to Diagnose", () => {
     for (const raw of ["Not logged in · Please run /login", "Build failed"]) {
       const html = renderFull({ lastError: raw });
-      expect(visibleText(html)).not.toContain(raw.split(" · ")[0]);
-      expect(html).toMatch(
-        /<details[^>]*data-workjet-feed-details=""[\s\S]*?<summary[^>]*>Details<\/summary>/,
-      );
-      expect(html).toContain(raw);
-      expect(html).not.toContain("font-mono text-[12.5px]");
+      expect(html).not.toContain(raw);
+      expect(html).not.toContain("<details");
+      expect(html).not.toContain("data-workjet-feed-details");
+      expect(visibleText(html)).not.toContain("Details");
+      const content = disruptionContent({ name: "Pinball", lastError: raw, language: "de" });
+      expect(content.details).toBe(raw);
+      expect(content.body).not.toContain(raw);
     }
     const login = renderFull({ lastError: "Not logged in · Please run /login" });
     expect(login).toMatch(/<button[^>]*data-slot="button"[^>]*>[\s\S]{0,400}Im Chat anmelden/);
+  });
+  it("keeps the raw worker errors as a bounded newest-first list for Diagnose", () => {
+    resetWorkerErrorLog();
+    recordWorkerErrors([
+      { key: "a", worker: "Pinball", raw: "Build failed", at: "2026-10-15T09:00:00Z" },
+      { key: "b", worker: "Pinball", raw: "ENOENT", at: "2026-10-15T09:30:00Z" },
+    ]);
+    recordWorkerErrors([
+      { key: "a", worker: "Pinball", raw: "Build failed", at: "2026-10-15T09:00:00Z" },
+    ]);
+    expect(workerErrorLogSnapshot().map((entry) => entry.raw)).toEqual(["ENOENT", "Build failed"]);
+    recordWorkerErrors(
+      Array.from({ length: 30 }, (_, index) => ({
+        key: `k${index}`,
+        worker: "W",
+        raw: `e${index}`,
+        at: new Date(Date.parse("2026-10-15T10:00:00Z") + index * 1000).toISOString(),
+      })),
+    );
+    expect(workerErrorLogSnapshot()).toHaveLength(20);
+    expect(workerErrorLogSnapshot()[0]!.raw).toBe("e29");
+    resetWorkerErrorLog();
   });
   it("folds the same error of the same worker into one card", () => {
     const html = renderFull({ duplicate: true });

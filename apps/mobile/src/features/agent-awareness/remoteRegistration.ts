@@ -517,7 +517,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
           threadTitle: input.threadTitle,
           modelTitle: "",
           phase: "starting",
-          status: "Connecting",
+          status: "Verbindet",
           updatedAt: nowIso,
           deepLink: "/",
         },

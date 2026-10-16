@@ -99,7 +99,7 @@ export function resolveThreadStatus(
   if (thread.session?.status === "starting") {
     return {
       kind: "connecting",
-      label: "Connecting",
+      label: "Verbindet",
       pillClassName: "bg-sky-500/12 dark:bg-sky-500/16",
       textClassName: "text-sky-700 dark:text-sky-300",
       iconColor: "#0a84ff",

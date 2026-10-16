@@ -56,6 +56,12 @@ describe("independent instance account capabilities", () => {
     expect(html).toContain("Bei der Instanz anmelden, um sie zu verbinden");
   });
 
+  it("names a failed instance response instead of leaving Modelle empty (#799)", () => {
+    const html = renderSection({ _tag: "failed", code: "response_invalid" });
+    expect(html).toContain("data-workjet-provider-management-unavailable");
+    expect(html).toContain("Konten neu laden");
+  });
+
   it("retries transport failures silently and keeps the known rows without a status line", () => {
     for (const html of [
       renderSection({ _tag: "failed", code: "timeout" }),

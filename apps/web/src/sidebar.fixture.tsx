@@ -5,6 +5,7 @@
  * mit dem Plus unter „Persistente Worker“. Kein Backend, keine Verbindungen.
  * Ansicht per `?view=switcher|kopf|alle|suche|plus|schmal` (schmal: 200 px breite Leiste).
  */
+import { Button } from "./components/ui/button";
 import { EnvironmentId, ProjectId } from "@workjet/contracts";
 import { CheckIcon, SearchIcon, XIcon } from "lucide-react";
 import { useState } from "react";
@@ -78,18 +79,22 @@ const teamLabels = {
   workers: "Einmal-Worker",
 } as const;
 
+/** Nachbau der Team-Zeile wie in Sidebar.tsx: Zustand nur als Punkt, Erledigen als Icon-Button (D55/D56). */
 function TeamRow(props: { readonly title: string; readonly state: string; readonly dot: string }) {
   return (
     <li className="flex min-h-9 list-none items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm hover:bg-sidebar-row-hover">
-      <span className={`block size-2 shrink-0 rounded-full ${props.dot}`} />
+      <span
+        role="img"
+        aria-label={props.state}
+        title={props.state}
+        className={`block size-2 shrink-0 rounded-full ${props.dot}`}
+      />
       <span className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug">
         {props.title}
       </span>
-      <span className="shrink-0 text-xs text-secondary-label">{props.state}</span>
-      <span className="inline-flex shrink-0 items-center gap-1 px-1 text-xs text-muted-foreground">
-        <CheckIcon aria-hidden className="size-3" />
-        Erledigen
-      </span>
+      <Button type="button" size="icon-xs" variant="ghost" aria-label="Erledigen" title="Erledigen">
+        <CheckIcon aria-hidden className="size-3.5" />
+      </Button>
     </li>
   );
 }

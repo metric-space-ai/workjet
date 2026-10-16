@@ -12,7 +12,9 @@
  */
 import { isNonComputerSshHost } from "../../sshAliasCandidates";
 import type {
+  DesktopBridge,
   DesktopDiscoveredSshHost,
+  DesktopSshEnvironmentProgress,
   DesktopTailscalePeers,
   EnvironmentId,
 } from "@workjet/contracts";
@@ -57,6 +59,51 @@ export interface LegacyEnrollmentDeps {
   readonly schedule?: (fn: () => void, ms: number) => void;
   readonly onlinePollMs?: number;
   readonly onlineTimeoutMs?: number;
+}
+
+/**
+ * Live-Schritte des Desktop-SSH-Wegs (`desktop:ssh-environment-progress`) auf
+ * die Vertragsschritte: sobald das Paket kopiert wird, ist „Verbinden“ fertig;
+ * sobald der Dienst startet, ist „Kopieren“ fertig.
+ */
+export function sshProgressSteps(
+  progress: Pick<DesktopSshEnvironmentProgress, "phase">,
+): ReadonlyArray<readonly [MachineEnrollmentStepKey, "running" | "done"]> {
+  switch (progress.phase) {
+    case "copying":
+      return [
+        ["transport_connected", "done"],
+        ["package_copied", "running"],
+      ];
+    case "starting":
+    case "pairing":
+      return [
+        ["transport_connected", "done"],
+        ["package_copied", "done"],
+        ["installed", "running"],
+      ];
+    default:
+      return [];
+  }
+}
+
+/** Hört nur auf den Fortschritt dieses Ziels; ohne Desktop-Brücke ein No-op. */
+export function watchSshEnvironmentProgress(
+  bridge: Pick<DesktopBridge, "onSshEnvironmentProgress"> | undefined,
+  target: { readonly alias: string; readonly hostname: string },
+  phase: AddComputerPhase,
+): () => void {
+  if (!bridge?.onSshEnvironmentProgress) return () => undefined;
+  const reached = new Set<string>();
+  return bridge.onSshEnvironmentProgress((progress) => {
+    if (progress.alias !== target.alias || progress.hostname !== target.hostname) return;
+    for (const [key, state] of sshProgressSteps(progress)) {
+      const id = `${key}:${state}`;
+      if (reached.has(id)) continue;
+      reached.add(id);
+      phase(key, state);
+    }
+  });
 }
 
 const WILDCARD = /[*?!]/u;

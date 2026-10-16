@@ -194,6 +194,16 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.SSH_PASSWORD_PROMPT_CHANNEL, wrappedListener);
     };
   },
+  onSshEnvironmentProgress: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, progress: unknown) => {
+      if (typeof progress !== "object" || progress === null) return;
+      listener(progress as Parameters<typeof listener>[0]);
+    };
+    ipcRenderer.on(IpcChannels.SSH_ENVIRONMENT_PROGRESS_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.SSH_ENVIRONMENT_PROGRESS_CHANNEL, wrappedListener);
+    };
+  },
   resolveSshPasswordPrompt: (requestId, password) =>
     ipcRenderer.invoke(IpcChannels.RESOLVE_SSH_PASSWORD_PROMPT_CHANNEL, { requestId, password }),
   getServerExposureState: () => ipcRenderer.invoke(IpcChannels.GET_SERVER_EXPOSURE_STATE_CHANNEL),

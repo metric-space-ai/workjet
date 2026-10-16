@@ -117,7 +117,7 @@ export const preparePortableServer = Effect.fn("ssh.preparePortableServer")(func
   target: DesktopSshEnvironmentTarget,
   directory: string,
   auth: SshAuthOptions,
-  onProgress?: (progress: PortableServerTransferProgress) => void,
+  onProgress?: (progress: PortableServerTransferProgress) => Effect.Effect<void>,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -172,7 +172,7 @@ export const preparePortableServer = Effect.fn("ssh.preparePortableServer")(func
     totalBytes: total,
     resumeAt: offset,
   });
-  onProgress?.({ transferredBytes: offset, totalBytes: total });
+  if (onProgress) yield* onProgress({ transferredBytes: offset, totalBytes: total });
   while (offset < total) {
     const chunk = archive.subarray(offset, Math.min(total, offset + PORTABLE_SERVER_CHUNK_BYTES));
     const before = offset;
@@ -214,7 +214,7 @@ export const preparePortableServer = Effect.fn("ssh.preparePortableServer")(func
     if (offset > before) {
       stalled = 0;
       busy = 0;
-      onProgress?.({ transferredBytes: offset, totalBytes: total });
+      if (onProgress) yield* onProgress({ transferredBytes: offset, totalBytes: total });
       yield* Effect.logDebug("ssh.portableServer.transfer.progress", {
         alias: target.alias,
         transferredBytes: offset,

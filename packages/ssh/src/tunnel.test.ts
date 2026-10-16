@@ -529,8 +529,13 @@ describe("ssh tunnel scripts", () => {
     return Effect.gen(function* () {
       const manager = yield* SshEnvironmentManager;
 
-      const first = yield* manager.ensureEnvironment(target);
+      const phases: string[] = [];
+      const first = yield* manager.ensureEnvironment(target, {
+        onProgress: (step) => Effect.sync(() => phases.push(step.phase)),
+      });
       assert.equal(first.httpBaseUrl, "http://127.0.0.1:41773/");
+      // Live steps for the add-computer row; no bundled archive here, so no copy.
+      assert.deepEqual(phases, ["connecting", "starting"]);
       const firstTunnelArgs = spawnedCommands.find((args) => args.includes("-N"));
       assert.isDefined(firstTunnelArgs);
       assert.include(firstTunnelArgs, "ControlMaster=no");

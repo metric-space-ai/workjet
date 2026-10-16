@@ -206,7 +206,7 @@ it.effect("resumes a cut chunk at the size the host reports and reports progress
     host.cutChunks = 2;
     const progress: number[] = [];
     const installed = yield* preparePortableServer(target, directory, {}, (step) =>
-      progress.push(step.transferredBytes),
+      Effect.sync(() => progress.push(step.transferredBytes)),
     );
     expect(installed).toMatch(/package\/dist\/bin\.mjs$/);
     // Cut chunks are not resent from zero: only the missing halves travel again.

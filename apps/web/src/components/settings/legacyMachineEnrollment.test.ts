@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@workjet/contracts";
+import type { DesktopSshEnvironmentProgress, EnvironmentId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -6,6 +6,7 @@ import {
   legacyErrorCode,
   legacyMachineCandidates,
   requestForCandidate,
+  watchSshEnvironmentProgress,
   type AddComputerPhase,
 } from "./legacyMachineEnrollment";
 import {
@@ -217,6 +218,56 @@ describe("Schritte aus dem heutigen Weg", () => {
         "Workjet server transfer checksum verification failed.",
       ),
     ).toBe("copy_failed");
+  });
+});
+
+describe("Live-Fortschritt des SSH-Wegs", () => {
+  it("moves past „Verbinden“ while the package copies, only for this target, once per step", () => {
+    let emit: (progress: DesktopSshEnvironmentProgress) => void = () => undefined;
+    let unsubscribed = false;
+    const bridge = {
+      onSshEnvironmentProgress: (listener: typeof emit) => {
+        emit = listener;
+        return () => {
+          unsubscribed = true;
+        };
+      },
+    };
+    const seen: string[] = [];
+    const stop = watchSshEnvironmentProgress(
+      bridge,
+      { alias: "ts-gpu1", hostname: "100.87.204.48" },
+      (key, state) => seen.push(`${key}:${state}`),
+    );
+    emit({ alias: "ts-gpu1", hostname: "100.87.204.48", phase: "connecting" });
+    emit({ alias: "ts-gpu4", hostname: "100.120.16.93", phase: "copying" });
+    expect(seen).toEqual([]);
+    emit({
+      alias: "ts-gpu1",
+      hostname: "100.87.204.48",
+      phase: "copying",
+      transferredBytes: 1,
+      totalBytes: 9,
+    });
+    emit({
+      alias: "ts-gpu1",
+      hostname: "100.87.204.48",
+      phase: "copying",
+      transferredBytes: 5,
+      totalBytes: 9,
+    });
+    emit({ alias: "ts-gpu1", hostname: "100.87.204.48", phase: "starting" });
+    expect(seen).toEqual([
+      "transport_connected:done",
+      "package_copied:running",
+      "package_copied:done",
+      "installed:running",
+    ]);
+    stop();
+    expect(unsubscribed).toBe(true);
+    expect(
+      watchSshEnvironmentProgress(undefined, { alias: "a", hostname: "b" }, () => undefined)(),
+    ).toBeUndefined();
   });
 });
 

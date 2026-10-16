@@ -102,11 +102,11 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
   const openExistingPr = useCallback(async () => {
     const prUrl = gitStatus.data?.pr?.state === "open" ? gitStatus.data.pr.url : null;
     if (!prUrl) {
-      Alert.alert("No open PR", "This branch does not have an open pull request.");
+      Alert.alert("Kein offener PR", "Kein offener PR.");
       return;
     }
     if (!(await tryOpenExternalUrl(prUrl, "pull-request"))) {
-      Alert.alert("Unable to open PR", "The pull request could not be opened.");
+      Alert.alert("PR nicht geöffnet", "PR nicht geöffnet.");
     }
   }, [gitStatus.data]);
 
@@ -249,8 +249,8 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
             <View className="ml-12 h-px bg-border" />
             <SheetListRow
               icon="arrow.down.circle"
-              title="Pull latest"
-              subtitle={`${behindCount} commit${behindCount === 1 ? "" : "s"} behind upstream`}
+              title="Aktualisieren"
+              subtitle={`${behindCount} ${behindCount === 1 ? "Commit" : "Commits"} hinter upstream`}
               disabled={busy || !isRepo}
               onPress={() => void gitActions.onPullSelectedThreadBranch()}
             />
@@ -259,8 +259,8 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
         <View className="ml-12 h-px bg-border" />
         <SheetListRow
           icon="text.bubble"
-          title="Review changes"
-          subtitle="Inspect turn diffs, worktree changes, and base branch diff"
+          title="Änderungen prüfen"
+          subtitle="Diffs prüfen"
           disabled={busy || !isRepo}
           onPress={() => {
             const params = { environmentId, threadId };
@@ -274,8 +274,8 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
         <View className="ml-12 h-px bg-border" />
         <SheetListRow
           icon="point.topleft.down.curvedto.point.bottomright.up"
-          title="Branches & worktrees"
-          subtitle="Switch branch, create branch, or move to a worktree"
+          title="Zweige & Worktrees"
+          subtitle="Zweig oder Worktree wechseln"
           disabled={busy || !isRepo}
           onPress={() =>
             navigation.navigate("GitBranches", {
@@ -405,7 +405,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
           onBack={() => navigation.goBack()}
           actions={[
             {
-              accessibilityLabel: "Refresh repository status",
+              accessibilityLabel: "Repository-Status aktualisieren",
               disabled: busy,
               icon: "arrow.clockwise",
               onPress: () => void gitActions.refreshSelectedThreadGitStatus(),

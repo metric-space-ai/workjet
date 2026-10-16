@@ -5,7 +5,7 @@ import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@workjet/contract
 import type { RecentThreadShortcut } from "../../persistence/imperative";
 
 // Launchers cap visible shortcuts around 4; one slot is the static
-// "New task" entry, the rest rotate through recently opened threads.
+// "Neue Aufgabe" entry, the rest rotate through recently opened threads.
 export const MAX_RECENT_THREAD_SHORTCUTS = 3;
 
 export const NEW_TASK_SHORTCUT_ID = "new-task";
@@ -113,12 +113,12 @@ export function withRecentThreadShortcut(
   ].slice(0, MAX_RECENT_THREAD_SHORTCUTS);
 }
 
-/** Full launcher shortcut list: static "New task" first, then recents. */
+/** Full launcher shortcut list: static "Neue Aufgabe" first, then recents. */
 export function buildShortcutActions(recents: ReadonlyArray<RecentThreadShortcut>): Action[] {
   return [
     {
       id: NEW_TASK_SHORTCUT_ID,
-      title: "New task",
+      title: "Neue Aufgabe",
       icon: SHORTCUT_ICON,
       params: { href: NEW_TASK_SHORTCUT_HREF },
     },

@@ -174,17 +174,17 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         className="min-h-10 flex-1 flex-row items-center gap-2 active:opacity-70"
       >
         <Text className="font-workjet-bold text-2xs uppercase tracking-[1.1px] text-sky-700 dark:text-sky-300">
-          User input needed
+          Eingabe nötig
         </Text>
         <Text className="font-sans text-xs text-neutral-500 dark:text-neutral-400">
-          {questionCount} question{questionCount === 1 ? "" : "s"}
+          {questionCount} {questionCount === 1 ? "Frage" : "Fragen"}
         </Text>
         <View className="flex-1" />
         <SymbolView name="chevron.up" size={12} tintColor={iconSubtle} type="monochrome" />
       </Pressable>
       {props.onStopThread ? (
         <ControlPill
-          accessibilityLabel="Stop"
+          accessibilityLabel="Stoppen"
           icon="stop.fill"
           variant="danger"
           className="h-9 w-9"
@@ -222,16 +222,16 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Collapse user input"
+        accessibilityLabel="Eingabe einklappen"
         onPress={props.onToggleCollapsed}
         className="flex-row items-start gap-2"
       >
         <View className="flex-1 gap-2.5">
           <Text className="font-workjet-bold text-2xs uppercase tracking-[1.1px] text-sky-700 dark:text-sky-300">
-            User input needed
+            Eingabe nötig
           </Text>
           <Text className="font-workjet-bold text-lg text-neutral-950 dark:text-neutral-50">
-            Fill in the pending answers
+            Antworten ausfüllen
           </Text>
         </View>
         <View className="h-8 w-8 items-center justify-center rounded-full bg-neutral-200/70 dark:bg-white/8">
@@ -298,7 +298,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                 }
                 onFocus={() => props.onInputFocusChange?.(true)}
                 onBlur={() => props.onInputFocusChange?.(false)}
-                placeholder="Or type a custom answer"
+                placeholder="Eigene Antwort"
                 className="min-h-[54px] rounded-2xl border border-neutral-200 bg-white px-3.5 py-3 font-sans text-base text-neutral-950 dark:border-white/8 dark:bg-neutral-950/70 dark:text-neutral-50"
               />
             </View>
@@ -315,7 +315,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         }
         onPress={() => void props.onSubmit()}
       >
-        <Text className="font-workjet-extrabold text-sm text-white">Submit answers</Text>
+        <Text className="font-workjet-extrabold text-sm text-white">Antworten senden</Text>
       </Pressable>
     </Animated.View>
   ) : null;

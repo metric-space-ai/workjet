@@ -322,7 +322,7 @@ export async function commitNativeManagedWorkjetPairing(input: {
   readonly now?: number;
 }): Promise<BusinessOsInstance> {
   if (input.authorization.businessOsInstanceId !== input.invite.instanceId) {
-    throw new Error("Workjet session and CTOX invite name different Business OS instances.");
+    throw new Error("QR-Code gehört zu anderer Instanz.");
   }
   const now = input.now ?? Date.now();
   const existing = (await nativeBusinessOsRegistry.list()).find(
@@ -345,7 +345,7 @@ export async function commitNativeManagedWorkjetPairing(input: {
           : nativeBusinessOsSecretStore.remove(reference),
       ),
     );
-    throw new Error("Workjet pairing credentials could not be stored securely.", { cause });
+    throw new Error("Zugang nicht gespeichert.", { cause });
   }
 
   const instance: BusinessOsInstance = Object.freeze({

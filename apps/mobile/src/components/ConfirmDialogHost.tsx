@@ -81,7 +81,7 @@ export function ConfirmDialogHost() {
                   onPress={handleCancel}
                 >
                   <AppText className="text-base font-workjet-medium">
-                    {request.cancelText ?? "Cancel"}
+                    {request.cancelText ?? "Abbrechen"}
                   </AppText>
                 </Pressable>
               </View>

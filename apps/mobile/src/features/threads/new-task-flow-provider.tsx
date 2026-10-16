@@ -289,7 +289,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     return {
       environmentId: editingPendingTask.environmentId,
       id: creation.projectId,
-      title: creation.projectTitle ?? "Unknown project",
+      title: creation.projectTitle ?? "Unbekanntes Projekt",
       // Deliberately empty when the snapshot has no cwd — downstream consumers
       // (branch queries, worktree bootstrap) must skip it, not receive a
       // fabricated path.
@@ -656,7 +656,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         return;
       }
       if (mode === "worktree" && selectedProject.workspaceRoot === null) {
-        Alert.alert("Working copy required", "Attach a working copy before creating a worktree.");
+        Alert.alert("Arbeitskopie nötig", "Zuerst eine Arbeitskopie zuordnen.");
         return;
       }
       const localSelection = resolveNewTaskLocalWorkspaceSelection({

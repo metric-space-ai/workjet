@@ -76,7 +76,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "threads",
-    title: "Threads",
+    title: "Unterhaltungen",
     category: "System",
     icon: "text.bubble",
     accent: "#7c3aed",
@@ -86,7 +86,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "knowledge",
-    title: "Knowledge",
+    title: "Wissen",
     category: "Knowledge",
     icon: "doc.text",
     accent: "#0891b2",
@@ -106,7 +106,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "credentials",
-    title: "Credentials",
+    title: "Zugangsdaten",
     category: "Security",
     icon: "server.rack",
     accent: "#475569",
@@ -167,7 +167,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "coding-agents",
-    title: "Coding Agents",
+    title: "Coding-Worker",
     category: "Development",
     icon: "chevron.left.forwardslash.chevron.right",
     accent: "#4f46e5",
@@ -177,7 +177,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "conversations",
-    title: "Conversations",
+    title: "Unterhaltungen",
     category: "Collaboration",
     icon: "text.bubble",
     accent: "#7c3aed",
@@ -297,7 +297,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "matching",
-    title: "Matching",
+    title: "Treffer",
     category: "People",
     icon: "checkmark.circle",
     accent: "#7c3aed",
@@ -337,7 +337,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "submissions",
-    title: "Submissions",
+    title: "Einreichungen",
     category: "People",
     icon: "arrow.up.right.circle",
     accent: "#4f46e5",
@@ -357,7 +357,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "documents",
-    title: "Documents",
+    title: "Dokumente",
     category: "Knowledge",
     icon: "doc.text",
     accent: "#2563eb",
@@ -377,7 +377,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "research",
-    title: "Research",
+    title: "Recherche",
     category: "Knowledge",
     icon: "safari",
     accent: "#6366f1",
@@ -387,7 +387,7 @@ const BUILT_IN_APPS: readonly BuiltInBusinessOsMobileAppDescriptor[] = [
   },
   {
     id: "spreadsheets",
-    title: "Spreadsheets",
+    title: "Tabellen",
     category: "Finance",
     icon: "chart.bar.xaxis",
     accent: "#16a34a",

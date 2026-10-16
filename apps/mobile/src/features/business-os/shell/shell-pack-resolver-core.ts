@@ -36,7 +36,7 @@ export function makeProductionBusinessOsShellPackResolver(input: {
       // ships the reviewed current+next production trust map.
       validateBusinessOsShellPackTrustMap(input.trustKeys);
       if (input.environmentId === null) {
-        throw new Error("No CTOX Backend is selected for the Business OS shell.");
+        throw new Error("Keine Instanz gewählt.");
       }
       const descriptor = await input.command.execute({
         environmentId: input.environmentId,

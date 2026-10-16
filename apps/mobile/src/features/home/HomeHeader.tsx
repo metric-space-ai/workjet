@@ -83,14 +83,14 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
     () => [
       {
         id: "environment",
-        title: "Machine",
+        title: "Rechner",
         subactions: [
           ...(props.allowAllEnvironments === false
             ? []
             : [
                 {
                   id: "environment:all",
-                  title: props.allEnvironmentsLabel ?? "All machines",
+                  title: props.allEnvironmentsLabel ?? "Alle Rechner",
                   state: checkedMenuState(props.selectedEnvironmentId === null),
                 },
               ]),
@@ -106,11 +106,11 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
         : ([
             {
               id: "project",
-              title: "Project",
+              title: "Projekt",
               subactions: [
                 {
                   id: "project:all",
-                  title: "All projects",
+                  title: "Alle Projekte",
                   state: checkedMenuState(props.selectedProjectKey === null),
                 },
                 ...props.projects.map((project) => ({
@@ -126,7 +126,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
         : ([
             {
               id: "project-sort",
-              title: "Sort projects",
+              title: "Projekte sortieren",
               subactions: PROJECT_SORT_OPTIONS.map((option) => ({
                 id: `project-sort:${option.value}`,
                 title: option.label,
@@ -135,7 +135,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
             },
             {
               id: "thread-sort",
-              title: "Sort threads",
+              title: "Unterhaltungen sortieren",
               subactions: THREAD_SORT_OPTIONS.map((option) => ({
                 id: `thread-sort:${option.value}`,
                 title: option.label,
@@ -247,7 +247,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               onPressAction={handleMenuAction}
             >
               <Pressable
-                accessibilityLabel="Filter and sort threads"
+                accessibilityLabel="Filtern und sortieren"
                 accessibilityRole="button"
                 className="size-11 items-center justify-center rounded-full bg-subtle"
               >
@@ -267,7 +267,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
                 match exactly (ControlPill sizes via Tailwind classes and
                 resolves to a different box). */}
             <Pressable
-              accessibilityLabel="Open settings"
+              accessibilityLabel="Einstellungen öffnen"
               accessibilityRole="button"
               onPress={props.onOpenSettings}
               className="size-11 items-center justify-center rounded-full bg-subtle"
@@ -279,17 +279,17 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
           <View className="min-h-12 flex-row items-center gap-2.5 rounded-2xl border border-input-border bg-input px-3.5">
             <SymbolView name="magnifyingglass" size={17} tintColor={mutedColor} type="monochrome" />
             <TextInput
-              accessibilityLabel="Search threads"
+              accessibilityLabel="Suchen"
               autoCapitalize="none"
               onChangeText={props.onSearchQueryChange}
-              placeholder="Search threads"
+              placeholder="Suchen"
               placeholderTextColorClassName="accent-placeholder"
               className="flex-1 py-2.5 text-base font-sans text-foreground"
               value={props.searchQuery}
             />
             {props.searchQuery.length > 0 ? (
               <Pressable
-                accessibilityLabel="Clear search"
+                accessibilityLabel="Suche leeren"
                 hitSlop={10}
                 onPress={() => props.onSearchQueryChange("")}
               >
@@ -340,7 +340,7 @@ function IosHomeHeader(props: HomeHeaderProps) {
             Platform.OS === "ios"
               ? () => [
                   withNativeGlassHeaderItem({
-                    accessibilityLabel: "Open settings",
+                    accessibilityLabel: "Einstellungen öffnen",
                     icon: { name: "ellipsis", type: "sfSymbol" } as const,
                     identifier: "home-settings",
                     label: "",
@@ -364,7 +364,7 @@ function IosHomeHeader(props: HomeHeaderProps) {
                       : "line.3.horizontal.decrease",
                     onComposePress: props.onStartNewTask,
                     onSearchTextChange: props.onSearchQueryChange,
-                    placeholder: "Search",
+                    placeholder: "Suchen",
                     searchTextChangeId: "home-search-text",
                     showsSearchDismissButton: true,
                   }),
@@ -377,7 +377,7 @@ function IosHomeHeader(props: HomeHeaderProps) {
                   ref: searchBarRef,
                   autoCapitalize: "none" as const,
                   hideNavigationBar: false,
-                  placeholder: "Search",
+                  placeholder: "Suchen",
                   onCancelButtonPress: () => {
                     props.onSearchQueryChange("");
                   },
@@ -392,25 +392,25 @@ function IosHomeHeader(props: HomeHeaderProps) {
       {NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED ? null : (
         <NativeHeaderToolbar placement="bottom">
           <NativeHeaderToolbar.Menu
-            accessibilityLabel="Filter and sort threads"
+            accessibilityLabel="Filtern und sortieren"
             icon={
               hasCustomListOptions
                 ? "line.3.horizontal.decrease.circle.fill"
                 : "line.3.horizontal.decrease.circle"
             }
-            title="Thread list options"
+            title="Listenoptionen"
             separateBackground
           >
-            <NativeHeaderToolbar.Menu title="Machine">
-              <NativeHeaderToolbar.Label>Machine</NativeHeaderToolbar.Label>
+            <NativeHeaderToolbar.Menu title="Rechner">
+              <NativeHeaderToolbar.Label>Rechner</NativeHeaderToolbar.Label>
               {props.allowAllEnvironments === false ? null : (
                 <NativeHeaderToolbar.MenuAction
                   isOn={props.selectedEnvironmentId === null}
                   onPress={() => props.onEnvironmentChange(null)}
-                  subtitle="Show threads from every machine in the active scope"
+                  subtitle="Von allen Rechnern"
                 >
                   <NativeHeaderToolbar.Label>
-                    {props.allEnvironmentsLabel ?? "All machines"}
+                    {props.allEnvironmentsLabel ?? "Alle Rechner"}
                   </NativeHeaderToolbar.Label>
                 </NativeHeaderToolbar.MenuAction>
               )}
@@ -426,14 +426,14 @@ function IosHomeHeader(props: HomeHeaderProps) {
             </NativeHeaderToolbar.Menu>
 
             {props.projects.length > 0 ? (
-              <NativeHeaderToolbar.Menu title="Project">
-                <NativeHeaderToolbar.Label>Project</NativeHeaderToolbar.Label>
+              <NativeHeaderToolbar.Menu title="Projekt">
+                <NativeHeaderToolbar.Label>Projekt</NativeHeaderToolbar.Label>
                 <NativeHeaderToolbar.MenuAction
                   isOn={props.selectedProjectKey === null}
                   onPress={() => props.onProjectChange(null)}
-                  subtitle="Show threads from every project"
+                  subtitle="Aus allen Projekten"
                 >
-                  <NativeHeaderToolbar.Label>All projects</NativeHeaderToolbar.Label>
+                  <NativeHeaderToolbar.Label>Alle Projekte</NativeHeaderToolbar.Label>
                 </NativeHeaderToolbar.MenuAction>
                 {props.projects.map((project) => (
                   <NativeHeaderToolbar.MenuAction
@@ -448,8 +448,8 @@ function IosHomeHeader(props: HomeHeaderProps) {
             ) : null}
 
             {threadListV2Enabled ? null : (
-              <NativeHeaderToolbar.Menu title="Sort projects">
-                <NativeHeaderToolbar.Label>Sort projects</NativeHeaderToolbar.Label>
+              <NativeHeaderToolbar.Menu title="Projekte sortieren">
+                <NativeHeaderToolbar.Label>Projekte sortieren</NativeHeaderToolbar.Label>
                 {PROJECT_SORT_OPTIONS.map((option) => (
                   <NativeHeaderToolbar.MenuAction
                     key={option.value}
@@ -463,8 +463,8 @@ function IosHomeHeader(props: HomeHeaderProps) {
             )}
 
             {threadListV2Enabled ? null : (
-              <NativeHeaderToolbar.Menu title="Sort threads">
-                <NativeHeaderToolbar.Label>Sort threads</NativeHeaderToolbar.Label>
+              <NativeHeaderToolbar.Menu title="Unterhaltungen sortieren">
+                <NativeHeaderToolbar.Label>Unterhaltungen sortieren</NativeHeaderToolbar.Label>
                 {THREAD_SORT_OPTIONS.map((option) => (
                   <NativeHeaderToolbar.MenuAction
                     key={option.value}
@@ -479,7 +479,7 @@ function IosHomeHeader(props: HomeHeaderProps) {
           </NativeHeaderToolbar.Menu>
           <NativeHeaderToolbar.Spacer flexible />
           <NativeHeaderToolbar.Button
-            accessibilityLabel="New task"
+            accessibilityLabel="Neue Aufgabe"
             icon="square.and.pencil"
             onPress={props.onStartNewTask}
             separateBackground

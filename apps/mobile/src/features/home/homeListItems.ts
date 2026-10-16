@@ -3,9 +3,9 @@ import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/shell
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import type { HomeThreadGroup } from "./homeThreadList";
 
-/** Threads shown per project before the "Show more" affordance appears. */
+/** Threads shown per project before the "Mehr zeigen" affordance appears. */
 export const HOME_INITIAL_VISIBLE_THREADS = 6;
-/** Additional threads revealed per "Show more" tap. */
+/** Additional threads revealed per "Mehr zeigen" tap. */
 export const HOME_SHOW_MORE_STEP = 10;
 
 export interface HomeGroupDisplayState {
@@ -47,7 +47,7 @@ export interface HomeShowMoreListItem {
   readonly groupKey: string;
   /** Threads still hidden. 0 means the group is fully expanded. */
   readonly hiddenCount: number;
-  /** Whether more than the initial count is revealed, so "Show less" applies. */
+  /** Whether more than the initial count is revealed, so "Weniger zeigen" applies. */
   readonly canShowLess: boolean;
 }
 
@@ -147,8 +147,8 @@ export function buildHomeListLayout(input: {
     const totalCount = group.threads.length;
     // Default to the group's recent-activity window (last few days, or a small
     // fallback for stale projects), capped at the initial page size. Until the
-    // user taps "Show more", older threads stay hidden to save vertical space;
-    // "Show less" resets visibleCount to the initial constant, which lands back
+    // user taps "Mehr zeigen", older threads stay hidden to save vertical space;
+    // "Weniger zeigen" resets visibleCount to the initial constant, which lands back
     // here at the recency baseline.
     const baselineCount = Math.min(
       group.recentThreads.length,

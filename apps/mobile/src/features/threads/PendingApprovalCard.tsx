@@ -19,7 +19,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
   return (
     <View className="gap-2.5 rounded-[20px] border border-neutral-200 bg-neutral-100 p-4 dark:border-white/6 dark:bg-neutral-900">
       <Text className="font-workjet-bold text-2xs uppercase tracking-[1.1px] text-sky-700 dark:text-sky-300">
-        Approval needed
+        Freigabe nötig
       </Text>
       <Text className="font-workjet-bold text-lg text-neutral-950 dark:text-neutral-50">
         {props.approval.requestKind}
@@ -35,7 +35,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
           disabled={props.respondingApprovalId === props.approval.requestId}
           onPress={() => void props.onRespond(props.approval.requestId, "accept")}
         >
-          <Text className="font-workjet-extrabold text-sm text-white">Allow once</Text>
+          <Text className="font-workjet-extrabold text-sm text-white">Einmal erlauben</Text>
         </Pressable>
         <Pressable
           className="items-center justify-center rounded-[14px] bg-neutral-200 px-3.5 py-3 dark:bg-neutral-800"
@@ -43,7 +43,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
           onPress={() => void props.onRespond(props.approval.requestId, "acceptForSession")}
         >
           <Text className="font-workjet-bold text-sm text-neutral-950 dark:text-neutral-50">
-            Allow session
+            Für Sitzung erlauben
           </Text>
         </Pressable>
         <Pressable
@@ -52,7 +52,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
           onPress={() => void props.onRespond(props.approval.requestId, "decline")}
         >
           <Text className="font-workjet-bold text-sm text-rose-700 dark:text-rose-300">
-            Decline
+            Ablehnen
           </Text>
         </Pressable>
       </View>

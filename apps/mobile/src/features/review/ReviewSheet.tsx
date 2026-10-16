@@ -82,7 +82,7 @@ const ReviewNotice = memo(function ReviewNotice(props: { readonly notice: string
   return (
     <View className="border-b border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/40">
       <Text className="text-xs font-workjet-bold uppercase text-amber-700 dark:text-amber-300">
-        Partial diff
+        Teil-Diff
       </Text>
       <Text className="text-xs leading-normal text-amber-800 dark:text-amber-200">
         {props.notice}
@@ -306,8 +306,8 @@ function ReviewFileNavigator({
               hideBackButton
               hideShadow={false}
               navigationItemStyle="editor"
-              subtitle={`${files.length} ${files.length === 1 ? "file" : "files"}`}
-              title="Changed files"
+              subtitle={`${files.length} ${files.length === 1 ? "Datei" : "Dateien"}`}
+              title="Geänderte Dateien"
               titleColor={foregroundColor}
               titleFontSize={17}
               titleFontWeight="700"
@@ -323,9 +323,9 @@ function ReviewFileNavigator({
     <View className="flex-1 border-l border-border bg-sheet">
       <View className="border-b border-border" style={{ paddingTop: headerInset }}>
         <View className="px-4 py-3">
-          <Text className="text-sm font-workjet-bold text-foreground">Changed files</Text>
+          <Text className="text-sm font-workjet-bold text-foreground">Geänderte Dateien</Text>
           <Text className="text-xs text-foreground-muted">
-            {files.length} {files.length === 1 ? "file" : "files"}
+            {files.length} {files.length === 1 ? "Datei" : "Dateien"}
           </Text>
         </View>
       </View>
@@ -537,15 +537,15 @@ export function ReviewSheet(props: ReviewSheetProps) {
       attributes: section ? undefined : { disabled: true },
     });
     const actions: MenuAction[] = [
-      sectionAction(sectionMenu.workingTree, "Working tree"),
-      sectionAction(sectionMenu.branchChanges, "Branch changes"),
-      sectionAction(sectionMenu.latestTurn, "Latest turn"),
+      sectionAction(sectionMenu.workingTree, "Arbeitskopie"),
+      sectionAction(sectionMenu.branchChanges, "Zweig-Änderungen"),
+      sectionAction(sectionMenu.latestTurn, "Letzter Zug"),
     ];
 
     if (sectionMenu.turns.length > 0) {
       actions.push({
         id: "turns",
-        title: "Turn",
+        title: "Zug",
         subactions: sectionMenu.turns.map((section) => ({
           id: `section:${section.id}`,
           title: section.id === selectedSection?.id ? `${section.title} (selected)` : section.title,
@@ -558,7 +558,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
     // stays a menu action there (iOS refreshes via pull-to-refresh instead).
     actions.push({
       id: "refresh",
-      title: "Refresh current diff",
+      title: "Diff aktualisieren",
       attributes: {
         disabled: !selectedSection || selectedSection.isLoading,
       },
@@ -609,7 +609,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
     if (error) {
       children.push(
         <View key="review-error" className="border-b border-border bg-card px-4 py-3">
-          <Text className="text-sm font-workjet-bold text-foreground">Review unavailable</Text>
+          <Text className="text-sm font-workjet-bold text-foreground">Prüfung nicht verfügbar</Text>
           <Text className="text-xs leading-normal text-foreground-muted">{error}</Text>
         </View>,
       );
@@ -634,7 +634,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
   ]
     .filter(Boolean)
     .join(" · ");
-  const headerTitleText = selectedSection?.title ?? "Review changes";
+  const headerTitleText = selectedSection?.title ?? "Änderungen prüfen";
 
   return (
     <>
@@ -658,8 +658,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
 
       {isAndroid ? (
         <AndroidScreenHeader
-          title="Review changes"
-          subtitle={androidHeaderSubtitle || "Select a diff"}
+          title="Änderungen prüfen"
+          subtitle={androidHeaderSubtitle || "Diff wählen"}
           onBack={handleReturnToThread}
           trailing={
             showSectionToolbar ? (
@@ -668,10 +668,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                 isAnchoredToRight
                 onPressAction={handleAndroidSectionMenuAction}
               >
-                <AndroidHeaderIconButton
-                  accessibilityLabel="Select review diff"
-                  icon="ellipsis.circle"
-                />
+                <AndroidHeaderIconButton accessibilityLabel="Diff wählen" icon="ellipsis.circle" />
               </ControlPillMenu>
             ) : null
           }
@@ -680,7 +677,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
 
       <WorkspaceSidebarToolbar>
         <NativeHeaderToolbar.Button
-          accessibilityLabel="Back to chat"
+          accessibilityLabel="Zurück zum Chat"
           icon="chevron.left"
           onPress={handleReturnToThread}
         />
@@ -691,7 +688,9 @@ export function ReviewSheet(props: ReviewSheetProps) {
           {panes.supportsAuxiliaryPane ? (
             <NativeHeaderToolbar.Button
               accessibilityLabel={
-                panes.auxiliaryPaneVisible ? "Hide changed files" : "Show changed files"
+                panes.auxiliaryPaneVisible
+                  ? "Geänderte Dateien ausblenden"
+                  : "Geänderte Dateien zeigen"
               }
               icon="sidebar.right"
               onPress={toggleAuxiliaryPane}
@@ -710,7 +709,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
             />
           ) : null}
           {showSectionToolbar ? (
-            <NativeHeaderToolbar.Menu icon="ellipsis" title="Select diff" separateBackground>
+            <NativeHeaderToolbar.Menu icon="ellipsis" title="Diff wählen" separateBackground>
               <NativeHeaderToolbar.Menu inline>
                 <NativeHeaderToolbar.MenuAction
                   disabled={sectionMenu.workingTree === null}
@@ -721,7 +720,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                     }
                   }}
                 >
-                  <NativeHeaderToolbar.Label>Working tree</NativeHeaderToolbar.Label>
+                  <NativeHeaderToolbar.Label>Arbeitskopie</NativeHeaderToolbar.Label>
                 </NativeHeaderToolbar.MenuAction>
                 <NativeHeaderToolbar.MenuAction
                   disabled={sectionMenu.branchChanges === null}
@@ -732,7 +731,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                     }
                   }}
                 >
-                  <NativeHeaderToolbar.Label>Branch changes</NativeHeaderToolbar.Label>
+                  <NativeHeaderToolbar.Label>Zweig-Änderungen</NativeHeaderToolbar.Label>
                 </NativeHeaderToolbar.MenuAction>
                 <NativeHeaderToolbar.MenuAction
                   disabled={sectionMenu.latestTurn === null}
@@ -743,10 +742,10 @@ export function ReviewSheet(props: ReviewSheetProps) {
                     }
                   }}
                 >
-                  <NativeHeaderToolbar.Label>Latest turn</NativeHeaderToolbar.Label>
+                  <NativeHeaderToolbar.Label>Letzter Zug</NativeHeaderToolbar.Label>
                 </NativeHeaderToolbar.MenuAction>
                 {sectionMenu.turns.length > 0 ? (
-                  <NativeHeaderToolbar.Menu title="Turn">
+                  <NativeHeaderToolbar.Menu title="Zug">
                     {sectionMenu.turns.map((section) => (
                       <NativeHeaderToolbar.MenuAction
                         key={section.id}
@@ -839,21 +838,18 @@ export function ReviewSheet(props: ReviewSheetProps) {
             {listHeader}
             {!selectedSection ? (
               <View className="border-b border-border bg-card px-4 py-5">
-                <Text className="text-sm font-workjet-bold text-foreground">No review diffs</Text>
-                <Text className="text-xs leading-normal text-foreground-muted">
-                  This thread has no ready turn diffs and the worktree diff is empty.
-                </Text>
+                <Text className="text-sm font-workjet-bold text-foreground">Keine Diffs</Text>
               </View>
             ) : selectedSection.isLoading && selectedSection.diff === null ? (
               <View className="items-center gap-3 border-b border-border bg-card px-4 py-6">
                 <ActivityIndicator size="small" />
-                <Text className="text-xs text-foreground-muted">Loading diff…</Text>
+                <Text className="text-xs text-foreground-muted">Lädt Diff…</Text>
               </View>
             ) : parsedDiff.kind === "empty" ? (
               <View className="border-b border-border bg-card px-4 py-5">
-                <Text className="text-sm font-workjet-bold text-foreground">No changes</Text>
+                <Text className="text-sm font-workjet-bold text-foreground">Keine Änderungen</Text>
                 <Text className="text-xs leading-normal text-foreground-muted">
-                  {selectedSection.subtitle ?? "This diff is empty."}
+                  {selectedSection.subtitle ?? "Diff ist leer."}
                 </Text>
               </View>
             ) : parsedDiff.kind === "raw" ? (

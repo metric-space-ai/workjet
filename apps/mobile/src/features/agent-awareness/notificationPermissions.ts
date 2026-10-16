@@ -15,7 +15,7 @@ export class NotificationPermissionReadError extends Schema.TaggedErrorClass<Not
   },
 ) {
   override get message(): string {
-    return "Failed to read device notification permissions.";
+    return "Mitteilungsrechte nicht lesbar.";
   }
 }
 
@@ -26,7 +26,7 @@ export class NotificationPermissionRequestError extends Schema.TaggedErrorClass<
   },
 ) {
   override get message(): string {
-    return "Failed to request device notification permissions.";
+    return "Mitteilungsrechte nicht angefragt.";
   }
 }
 

@@ -199,7 +199,9 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
           if (persisted) {
             setDrafts(persisted);
           }
-          setError(cause instanceof Error ? cause : new Error("Could not import shared content."));
+          setError(
+            cause instanceof Error ? cause : new Error("Geteilter Inhalt nicht importiert."),
+          );
         }
       }
     })().finally(() => {
@@ -238,10 +240,10 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
     if (!error) {
       return;
     }
-    Alert.alert("Could not import shared content", error.message, [
-      { text: "Dismiss", style: "cancel", onPress: () => setError(null) },
+    Alert.alert("Geteilter Inhalt nicht importiert", error.message, [
+      { text: "Schließen", style: "cancel", onPress: () => setError(null) },
       {
-        text: "Retry",
+        text: "Erneut versuchen",
         onPress: () => {
           setError(null);
           void refresh();

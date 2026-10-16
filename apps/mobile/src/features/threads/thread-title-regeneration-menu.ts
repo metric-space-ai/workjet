@@ -9,7 +9,7 @@ export function buildThreadTitleRegenerationMenuItems(input: {
   return [
     {
       id: "regenerate-title",
-      title: input.isRegenerating ? "Regenerating…" : "Regenerate title",
+      title: input.isRegenerating ? "Erzeugt…" : "Titel neu erzeugen",
       image: "arrow.clockwise",
       ...(input.isRegenerating ? { attributes: { disabled: true } } : {}),
     },

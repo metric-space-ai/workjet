@@ -14,14 +14,14 @@ export const SHOWCASE_PENDING_TASK_DEFINITIONS = [
   {
     projectId: "workjet",
     id: "offline-launch-checklist",
-    text: "Ship the offline launch checklist before touchdown ✈️",
+    text: "Offline-Checkliste vor der Landung fertigstellen ✈️",
     branch: "feat/offline-launchpad",
     minutesAgo: 8,
   },
   {
     projectId: "react",
     id: "train-tunnel-suspense",
-    text: "Polish the Suspense handoff for the train tunnel 🚇",
+    text: "Suspense-Übergang für den Zugtunnel polieren 🚇",
     branch: "perf/tunnel-handoff",
     minutesAgo: 27,
   },

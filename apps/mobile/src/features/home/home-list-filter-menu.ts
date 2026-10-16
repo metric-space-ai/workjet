@@ -56,15 +56,15 @@ export function buildHomeListFilterMenu(props: {
 
   items.push({
     type: "submenu",
-    title: props.environmentMenuTitle ?? "Environment",
+    title: props.environmentMenuTitle ?? "Rechner",
     items: [
       ...(props.allowAllEnvironments === false
         ? []
         : [
             {
               type: "action" as const,
-              title: props.allEnvironmentsLabel ?? "All environments",
-              subtitle: props.allEnvironmentsSubtitle ?? "Show threads from every environment",
+              title: props.allEnvironmentsLabel ?? "Alle Rechner",
+              subtitle: props.allEnvironmentsSubtitle ?? "Von allen Rechnern",
               state: props.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
               onPress: () => props.onEnvironmentChange(null),
             },
@@ -84,12 +84,12 @@ export function buildHomeListFilterMenu(props: {
   if (props.projects.length > 0) {
     items.push({
       type: "submenu",
-      title: "Project",
+      title: "Projekt",
       items: [
         {
           type: "action",
-          title: "All projects",
-          subtitle: "Show threads from every project",
+          title: "Alle Projekte",
+          subtitle: "Aus allen Projekten",
           state: props.selectedProjectKey === null ? "on" : "off",
           onPress: () => props.onProjectChange(null),
         },
@@ -107,7 +107,7 @@ export function buildHomeListFilterMenu(props: {
     items.push(
       {
         type: "submenu",
-        title: "Sort projects",
+        title: "Projekte sortieren",
         items: PROJECT_SORT_OPTIONS.map((option) => ({
           type: "action",
           title: option.label,
@@ -117,7 +117,7 @@ export function buildHomeListFilterMenu(props: {
       },
       {
         type: "submenu",
-        title: "Sort threads",
+        title: "Unterhaltungen sortieren",
         items: THREAD_SORT_OPTIONS.map((option) => ({
           type: "action",
           title: option.label,
@@ -129,7 +129,7 @@ export function buildHomeListFilterMenu(props: {
   }
 
   return {
-    title: "Thread list options",
+    title: "Listenoptionen",
     items,
   };
 }

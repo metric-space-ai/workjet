@@ -15,7 +15,7 @@ describe("buildThreadTitleRegenerationMenuItems", () => {
     ).toEqual([
       {
         id: "regenerate-title",
-        title: "Regenerate title",
+        title: "Titel neu erzeugen",
         image: "arrow.clockwise",
       },
     ]);
@@ -27,7 +27,7 @@ describe("buildThreadTitleRegenerationMenuItems", () => {
     ).toEqual([
       {
         id: "regenerate-title",
-        title: "Regenerating…",
+        title: "Erzeugt…",
         image: "arrow.clockwise",
         attributes: { disabled: true },
       },

@@ -153,7 +153,7 @@ export function HomeRouteScreen() {
         <WorkspaceSidebarToolbar
           afterSidebarButton={
             <NativeHeaderToolbar.Button
-              accessibilityLabel="New task"
+              accessibilityLabel="Neue Aufgabe"
               icon="square.and.pencil"
               onPress={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
             />
@@ -188,8 +188,8 @@ export function HomeRouteScreen() {
           allowAllEnvironments
           allEnvironmentsLabel={
             hasEnvironmentBindings
-              ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "this CTOX instance"}`
-              : "All machines"
+              ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "diese Instanz"}`
+              : "Alle Rechner"
           }
           environments={environments}
           projects={projectFilterOptions}

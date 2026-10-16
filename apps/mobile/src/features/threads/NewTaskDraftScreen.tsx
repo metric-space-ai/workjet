@@ -411,10 +411,7 @@ export function NewTaskDraftScreen(props: {
     if (!incomingShare) {
       if (isIncomingShareUnavailable && alertedUnavailableIncomingShareIdRef.current !== shareId) {
         alertedUnavailableIncomingShareIdRef.current = shareId;
-        Alert.alert(
-          "Shared content unavailable",
-          "The shared content is no longer in the inbox. You can continue editing this task draft.",
-        );
+        Alert.alert("Geteilter Inhalt fehlt", "Geteilter Inhalt nicht mehr vorhanden.");
       }
       return;
     }
@@ -468,11 +465,11 @@ export function NewTaskDraftScreen(props: {
       const warnings = [...incomingShare.warnings];
       if (skippedAttachmentCount > 0) {
         warnings.push(
-          `${skippedAttachmentCount} shared image${skippedAttachmentCount === 1 ? " was" : "s were"} skipped because this draft reached the attachment limit.`,
+          `${skippedAttachmentCount} ${skippedAttachmentCount === 1 ? "Bild" : "Bilder"} übersprungen, Anhanglimit erreicht.`,
         );
       }
       if (warnings.length > 0) {
-        Alert.alert("Some shared content was skipped", warnings.join("\n"));
+        Alert.alert("Teilweise übersprungen", warnings.join("\n"));
       }
       shareImportDraftBackupRef.current.delete(importKey);
     })()
@@ -481,11 +478,11 @@ export function NewTaskDraftScreen(props: {
           return;
         }
         Alert.alert(
-          "Could not import shared content",
-          error instanceof Error ? error.message : "The shared content could not be saved.",
+          "Geteilter Inhalt nicht importiert",
+          error instanceof Error ? error.message : "Geteilter Inhalt nicht gespeichert.",
           [
             {
-              text: "Cancel import",
+              text: "Import abbrechen",
               style: "cancel",
               onPress: () => {
                 const cancelImport = async (): Promise<void> => {
@@ -518,13 +515,13 @@ export function NewTaskDraftScreen(props: {
                       return;
                     }
                     Alert.alert(
-                      "Could not cancel import",
+                      "Import nicht abgebrochen",
                       cancelError instanceof Error
                         ? cancelError.message
-                        : "The shared content could not be restored safely.",
+                        : "Geteilter Inhalt nicht wiederhergestellt.",
                       [
                         {
-                          text: "Retry import",
+                          text: "Import wiederholen",
                           onPress: () => {
                             cancellingShareImportKeyRef.current = null;
                             setIsCancellingShareImport(false);
@@ -532,7 +529,7 @@ export function NewTaskDraftScreen(props: {
                           },
                         },
                         {
-                          text: "Retry cancel",
+                          text: "Abbruch wiederholen",
                           onPress: () => void cancelImport(),
                         },
                       ],
@@ -544,7 +541,7 @@ export function NewTaskDraftScreen(props: {
               },
             },
             {
-              text: "Retry",
+              text: "Erneut versuchen",
               onPress: () => setShareImportAttempt((attempt) => attempt + 1),
             },
           ],
@@ -684,8 +681,8 @@ export function NewTaskDraftScreen(props: {
         await enqueueThreadOutboxMessage(message);
       } catch (error) {
         Alert.alert(
-          "Could not queue task",
-          error instanceof Error ? error.message : "The task could not be saved to the outbox.",
+          "Aufgabe nicht eingereiht",
+          error instanceof Error ? error.message : "Aufgabe nicht gespeichert.",
         );
         return;
       } finally {
@@ -741,8 +738,8 @@ export function NewTaskDraftScreen(props: {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         Alert.alert(
-          "Could not start task",
-          error instanceof Error ? error.message : "The task could not be started.",
+          "Aufgabe nicht gestartet",
+          error instanceof Error ? error.message : "Aufgabe nicht gestartet.",
         );
       }
       return;
@@ -772,10 +769,10 @@ export function NewTaskDraftScreen(props: {
         {Platform.OS === "android" ? (
           <>
             <NativeStackScreenOptions options={{ headerShown: false }} />
-            <AndroidScreenHeader title="New Thread" onBack={() => navigation.goBack()} />
+            <AndroidScreenHeader title="Neue Unterhaltung" onBack={() => navigation.goBack()} />
           </>
         ) : (
-          <NativeStackScreenOptions options={{ title: "Loading task" }} />
+          <NativeStackScreenOptions options={{ title: "Lädt Aufgabe" }} />
         )}
       </View>
     );
@@ -806,7 +803,7 @@ export function NewTaskDraftScreen(props: {
       onFocus={() => setIsComposerFocused(true)}
       onBlur={() => setIsComposerFocused(false)}
       onPasteImages={(uris) => void handleNativePasteImages(uris)}
-      placeholder="Ask anything…"
+      placeholder="Nachricht…"
       singleLineCentered={false}
       contentInsetVertical={0}
       style={{
@@ -849,13 +846,13 @@ export function NewTaskDraftScreen(props: {
     <View className="items-center gap-6 px-6" testID="new-task-hero">
       <View className="w-full items-center gap-1.5">
         <Text className="text-center text-2xl font-workjet-medium tracking-tight text-foreground">
-          What should we build
+          Was bauen wir
         </Text>
         <View className="max-w-full flex-row items-center justify-center">
           <Text className="text-2xl font-workjet-medium tracking-tight text-foreground">in </Text>
           <Pressable
-            accessibilityHint="Opens the project picker"
-            accessibilityLabel={`Change project from ${selectedProject.title}`}
+            accessibilityHint="Öffnet die Projektauswahl"
+            accessibilityLabel={`Projekt: ${selectedProject.title}`}
             accessibilityRole="button"
             disabled={isIncomingShareTransferPending}
             onPress={chooseProject}
@@ -877,11 +874,11 @@ export function NewTaskDraftScreen(props: {
       </View>
 
       <ComposerInlineControl
-        accessibilityLabel={`Environment: ${selectedEnvironmentLabel}`}
+        accessibilityLabel={`Rechner: ${selectedEnvironmentLabel}`}
         chevronDirection="right"
         disabled={isIncomingShareTransferPending}
         icon="desktopcomputer"
-        label={`on ${selectedEnvironmentLabel}`}
+        label={`auf ${selectedEnvironmentLabel}`}
         maxWidth={260}
         onPress={
           flow.environments.length > 1 ? () => openContextPicker("NewTaskEnvironment") : undefined
@@ -912,7 +909,7 @@ export function NewTaskDraftScreen(props: {
   const workspaceControls = (
     <View className="flex-row items-center gap-1 px-2">
       <ComposerInlineControl
-        accessibilityHint={`Switches to ${flow.workspaceMode === "local" ? "a new worktree" : "the current checkout"}`}
+        accessibilityHint={`Wechselt zu ${flow.workspaceMode === "local" ? "ein neuer Worktree" : "der aktuelle Checkout"}`}
         accessibilityLabel={workspaceLabel}
         disabled={isIncomingShareTransferPending}
         iconNode={
@@ -928,11 +925,11 @@ export function NewTaskDraftScreen(props: {
       />
 
       <ComposerInlineControl
-        accessibilityLabel={`${flow.workspaceMode === "worktree" ? "Base branch" : "Branch"}: ${selectedBranchLabel}`}
+        accessibilityLabel={`${flow.workspaceMode === "worktree" ? "Basiszweig" : "Zweig"}: ${selectedBranchLabel}`}
         chevronDirection="right"
         disabled={isIncomingShareTransferPending}
         icon="arrow.triangle.branch"
-        label={showBranchLoading ? "Loading branches…" : selectedBranchLabel}
+        label={showBranchLoading ? "Lädt Zweige…" : selectedBranchLabel}
         maxWidth={190}
         onPress={() => openContextPicker("NewTaskBranch")}
       />
@@ -975,26 +972,26 @@ export function NewTaskDraftScreen(props: {
             contentPaddingRight={8}
           >
             <ComposerToolbarButton
-              accessibilityLabel="Add attachment"
+              accessibilityLabel="Anhang hinzufügen"
               disabled={isIncomingShareTransferPending}
               icon="plus"
               onPress={() => void handlePickImages()}
               showChevron={false}
             />
             <ComposerInlineControl
-              accessibilityLabel="Model and reasoning settings"
+              accessibilityLabel="Modell und Denktiefe"
               disabled={isIncomingShareTransferPending}
               emphasized
               iconNode={
                 <ProviderIcon provider={flow.selectedModelOption?.providerDriver} size={16} />
               }
-              label={flow.selectedModelOption?.label ?? "Choose model"}
+              label={flow.selectedModelOption?.label ?? "Modell wählen"}
               maxWidth={152}
               onPress={settingsSheetPresentation.open}
             />
             {flow.planModeEnabled ? (
               <ComposerInlineControl
-                accessibilityHint={`Switches to ${flow.interactionMode === "plan" ? "Build" : "Plan"} mode`}
+                accessibilityHint={`Wechselt zu ${flow.interactionMode === "plan" ? "Build" : "Plan"}`}
                 accessibilityLabel={`Interaction mode: ${flow.interactionMode === "plan" ? "Plan" : "Build"}`}
                 disabled={isIncomingShareTransferPending}
                 emphasized
@@ -1013,7 +1010,11 @@ export function NewTaskDraftScreen(props: {
           </ComposerToolbarScroller>
           <ComposerToolbarButton
             accessibilityLabel={
-              flow.submitting ? "Starting task" : environmentConnected ? "Start task" : "Queue task"
+              flow.submitting
+                ? "Startet Aufgabe"
+                : environmentConnected
+                  ? "Aufgabe starten"
+                  : "Aufgabe einreihen"
             }
             disabled={!canStart}
             icon={environmentConnected ? "arrow.up" : "tray.and.arrow.up"}
@@ -1030,7 +1031,7 @@ export function NewTaskDraftScreen(props: {
     return (
       <View className="flex-1 bg-sheet" collapsable={false}>
         <NativeStackScreenOptions options={{ headerShown: false }} />
-        <AndroidScreenHeader title="New task" onBack={closeNewTask} />
+        <AndroidScreenHeader title="Neue Aufgabe" onBack={closeNewTask} />
         {heroViewport}
 
         <KeyboardStickyView
@@ -1054,8 +1055,8 @@ export function NewTaskDraftScreen(props: {
       />
       <NativeHeaderToolbar placement="left">
         <NativeHeaderToolbar.Button
-          accessibilityLabel="Cancel new task"
-          label="Cancel"
+          accessibilityLabel="Neue Aufgabe abbrechen"
+          label="Abbrechen"
           onPress={closeNewTask}
         />
       </NativeHeaderToolbar>

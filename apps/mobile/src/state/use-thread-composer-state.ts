@@ -175,7 +175,7 @@ export function useThreadComposerState() {
       void mergeComposerDraftContent(threadKey, { text, attachments: [] });
       appendComposerDraftAttachments(threadKey, attachments);
       setPendingConnectionError(
-        error instanceof Error ? error.message : "Failed to save the queued message.",
+        error instanceof Error ? error.message : "Nachricht nicht gespeichert.",
       );
     });
     return messageId;

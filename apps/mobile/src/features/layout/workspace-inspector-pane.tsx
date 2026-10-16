@@ -119,7 +119,7 @@ export function WorkspaceInspectorPane(props: {
     <>
       {inspectorVisible ? (
         <WorkspacePaneDivider
-          accessibilityLabel="Resize detail pane"
+          accessibilityLabel="Bereichsbreite ändern"
           currentWidth={inspectorWidth ?? 0}
           resizeDirection={-1}
           onResizeStart={beginResize}

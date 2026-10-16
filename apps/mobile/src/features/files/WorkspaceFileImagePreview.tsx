@@ -24,7 +24,7 @@ function ResolvedWorkspaceFileImagePreview(props: {
     <View className="relative flex-1 bg-subtle">
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Open full-screen preview of ${props.accessibilityLabel}`}
+        accessibilityLabel={`${props.accessibilityLabel} groß anzeigen`}
         disabled={loadError !== null}
         className="flex-1 p-4 active:bg-subtle-strong"
         onPress={() => setFullScreenVisible(true)}
@@ -36,14 +36,14 @@ function ResolvedWorkspaceFileImagePreview(props: {
           resizeMode="contain"
           onLoadStart={() => setLoadError(null)}
           onError={(event) => {
-            setLoadError(event.nativeEvent.error || "The image could not be rendered.");
+            setLoadError(event.nativeEvent.error || "Bild nicht darstellbar.");
           }}
         />
       </Pressable>
 
       {loadError !== null ? (
         <View className="absolute inset-0 items-center justify-center bg-card px-6">
-          <EmptyState title="Image unavailable" detail={loadError} />
+          <EmptyState title="Bild nicht verfügbar" detail={loadError} />
         </View>
       ) : null}
 
@@ -69,10 +69,7 @@ function CachedWorkspaceFileImagePreview(props: {
   if (AsyncResult.isFailure(imageResult)) {
     return (
       <View className="flex-1 items-center justify-center bg-card px-6">
-        <EmptyState
-          title="Image unavailable"
-          detail="The image could not be loaded into the local cache."
-        />
+        <EmptyState title="Bild nicht verfügbar" />
       </View>
     );
   }
@@ -81,7 +78,7 @@ function CachedWorkspaceFileImagePreview(props: {
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-card px-6">
         <ActivityIndicator />
-        <Text className="text-center text-sm text-foreground-muted">Loading image...</Text>
+        <Text className="text-center text-sm text-foreground-muted">Lädt Bild…</Text>
       </View>
     );
   }
@@ -102,9 +99,7 @@ export function WorkspaceFileImagePreview(props: {
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-card px-6">
         <ActivityIndicator />
-        <Text className="text-center text-sm text-foreground-muted">
-          Preparing image preview...
-        </Text>
+        <Text className="text-center text-sm text-foreground-muted">Bereitet Vorschau vor…</Text>
       </View>
     );
   }

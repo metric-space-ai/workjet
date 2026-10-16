@@ -11,17 +11,16 @@ export function WorkspaceEmptyDetail(props: { readonly onStartNewTask?: () => vo
     <View className="flex-1 items-center justify-center bg-screen px-10">
       <View className="max-w-[360px] items-center gap-3">
         <SymbolView name="sidebar.left" size={34} tintColor={iconColor} type="hierarchical" />
-        <Text className="text-center text-xl font-workjet-bold">Select a thread</Text>
-        <Text className="text-center text-base text-foreground-muted">
-          Choose a thread from the sidebar or start a new task.
-        </Text>
+        <Text className="text-center text-xl font-workjet-bold">Unterhaltung wählen</Text>
         {props.onStartNewTask ? (
           <Pressable
             accessibilityRole="button"
             className="mt-2 flex-row items-center gap-2 rounded-full bg-primary px-5 py-3 active:opacity-70"
             onPress={props.onStartNewTask}
           >
-            <Text className="text-base font-workjet-bold text-primary-foreground">New Task</Text>
+            <Text className="text-base font-workjet-bold text-primary-foreground">
+              Neue Aufgabe
+            </Text>
           </Pressable>
         ) : null}
       </View>

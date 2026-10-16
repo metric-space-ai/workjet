@@ -14,7 +14,7 @@ import { toUploadChatImageAttachments, type DraftComposerImageAttachment } from 
 export function deriveThreadTitleFromPrompt(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
-    return "New thread";
+    return "Neue Unterhaltung";
   }
 
   const compact = trimmed.replace(/\s+/g, " ");
@@ -49,8 +49,7 @@ export interface ProjectThreadStartTurnSpec {
 export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpec) {
   const title = deriveThreadTitleFromPrompt(spec.text);
   const isWorktree = spec.workspaceMode === "worktree";
-  if (isWorktree && spec.projectCwd === null)
-    throw new Error("Attach a working copy before creating a worktree.");
+  if (isWorktree && spec.projectCwd === null) throw new Error("Zuerst eine Arbeitskopie zuordnen.");
   return {
     commandId: CommandId.make(spec.commandId),
     threadId: ThreadId.make(spec.threadId),

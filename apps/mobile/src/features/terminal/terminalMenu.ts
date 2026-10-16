@@ -47,7 +47,7 @@ export function getTerminalStatusLabel(input: {
   readonly hasRunningSubprocess?: boolean;
 }): string {
   if (input.status === "running") {
-    return input.hasRunningSubprocess ? "Task running" : "Ready";
+    return input.hasRunningSubprocess ? "Aufgabe läuft" : "Ready";
   }
   if (input.status === "starting") {
     return "Starting";
@@ -59,7 +59,7 @@ export function getTerminalStatusLabel(input: {
     return "Error";
   }
 
-  return "Not started";
+  return "Nicht gestartet";
 }
 
 /**

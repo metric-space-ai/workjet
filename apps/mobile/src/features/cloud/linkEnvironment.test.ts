@@ -194,7 +194,7 @@ describe("mobile cloud link environment client", () => {
       {
         environment: { environmentId: "env-1", label: "Desktop" },
         status: null,
-        statusError: "Checking status...",
+        statusError: "Prüft Status…",
       },
     ]);
   });
@@ -596,7 +596,7 @@ describe("mobile cloud link environment client", () => {
             label: "Desktop",
           },
           status: null,
-          statusError: "Relay returned status for a different environment.",
+          statusError: "Relay lieferte Status für anderen Rechner.",
         },
       ]);
     }),
@@ -625,7 +625,7 @@ describe("mobile cloud link environment client", () => {
         ).pipe(Effect.flip);
         expect(error).toMatchObject({
           _tag: "CloudEnvironmentLinkError",
-          message: "Relay returned credentials for a different environment.",
+          message: "Relay lieferte Zugang für anderen Rechner.",
         });
         expect(fetchMock).toHaveBeenCalledTimes(3);
       }),
@@ -656,9 +656,7 @@ describe("mobile cloud link environment client", () => {
         }),
       ).pipe(Effect.flip);
       expect(error._tag).toBe("CloudEnvironmentLinkError");
-      expect(error.message).toBe(
-        "Could not obtain environment link proof: Invalid environment bearer session.",
-      );
+      expect(error.message).toBe("Nachweis nicht erhalten: Invalid environment bearer session.");
       expect(fetchMock).toHaveBeenCalledTimes(2);
     }),
   );
@@ -695,7 +693,7 @@ describe("mobile cloud link environment client", () => {
       expect(error).toMatchObject({
         _tag: "CloudEnvironmentLinkError",
         message:
-          "https://relay.example.test/v1/client/environment-links failed: Relay rejected the environment link proof (origin_not_allowed).",
+          "https://relay.example.test/v1/client/environment-links failed: Relay lehnt den Nachweis ab (origin_not_allowed).",
         traceId: "trace-test",
       });
       expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -731,7 +729,7 @@ describe("mobile cloud link environment client", () => {
       ).pipe(Effect.flip);
       expect(error).toMatchObject({
         _tag: "CloudEnvironmentLinkError",
-        message: "Relay returned credentials for a different endpoint provider.",
+        message: "Relay lieferte Zugang für anderen Anbieter.",
       });
       expect(fetchMock).toHaveBeenCalledTimes(3);
     }),
@@ -1033,7 +1031,7 @@ describe("mobile cloud link environment client", () => {
       ).pipe(Effect.flip);
       expect(error).toMatchObject({
         _tag: "CloudEnvironmentLinkError",
-        message: "Relay returned credentials for a different environment.",
+        message: "Relay lieferte Zugang für anderen Rechner.",
       });
     }),
   );
@@ -1077,7 +1075,7 @@ describe("mobile cloud link environment client", () => {
       expect(error).toMatchObject({
         _tag: "CloudEnvironmentLinkError",
         message:
-          "https://relay.example.test/v1/environments/env-1/connect failed: Relay rejected the DPoP proof.",
+          "https://relay.example.test/v1/environments/env-1/connect failed: Relay lehnt den Nachweis ab.",
         traceId: "trace-connect",
       });
     }),
@@ -1122,7 +1120,7 @@ describe("mobile cloud link environment client", () => {
       ).pipe(Effect.flip);
       expect(error).toMatchObject({
         _tag: "CloudEnvironmentLinkError",
-        message: "Relay returned credentials for a different endpoint.",
+        message: "Relay lieferte Zugang für anderen Endpunkt.",
       });
     }),
   );
@@ -1176,7 +1174,7 @@ describe("mobile cloud link environment client", () => {
         ).pipe(Effect.flip);
         expect(error).toMatchObject({
           _tag: "CloudEnvironmentLinkError",
-          message: "Connected endpoint descriptor does not match the selected environment.",
+          message: "Endpunkt passt nicht zum Rechner.",
         });
       }),
   );

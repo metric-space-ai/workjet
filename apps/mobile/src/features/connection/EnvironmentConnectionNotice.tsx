@@ -30,13 +30,12 @@ function noticeDetail(phase: EnvironmentConnectionPhase, error: string | null): 
   if (error) return "Neuer Versuch läuft automatisch.";
   switch (phase) {
     case "offline":
-      return "Gespeicherte Daten bleiben sichtbar.";
     case "connecting":
     case "reconnecting":
       return "";
     case "available":
     case "error":
-      return "Umgebung neu verbinden.";
+      return "Rechner neu verbinden.";
     case "connected":
       return "";
   }

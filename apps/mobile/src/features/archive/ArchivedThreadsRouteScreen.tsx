@@ -109,8 +109,8 @@ export function ArchivedThreadsRouteScreen() {
       allowAllEnvironments
       allEnvironmentsLabel={
         hasEnvironmentBindings
-          ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "this CTOX instance"}`
-          : "All machines"
+          ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "diese Instanz"}`
+          : "Alle Rechner"
       }
       environments={environments}
       error={error}

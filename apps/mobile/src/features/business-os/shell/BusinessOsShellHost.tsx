@@ -44,8 +44,7 @@ export function BusinessOsShellHost(props: {
         if (current) setLaunch(value);
       })
       .catch(() => {
-        if (current)
-          setError("Business OS kann nicht sicher gestartet werden. Verbinde die Instanz erneut.");
+        if (current) setError("Instanz startet nicht. Erneut verbinden.");
       });
     return () => {
       current = false;

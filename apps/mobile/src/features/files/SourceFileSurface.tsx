@@ -146,7 +146,7 @@ function SourceHighlightStatusView(props: { readonly status: SourceHighlightStat
     return (
       <View className="border-b border-border bg-card px-4 py-2">
         <Text className="text-2xs font-workjet-medium uppercase text-foreground-muted">
-          Plain text
+          Klartext
         </Text>
       </View>
     );

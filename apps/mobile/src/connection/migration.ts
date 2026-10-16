@@ -94,14 +94,14 @@ export const migrateLegacyConnectionCatalog = Effect.fn(
     try: () => JSON.parse(raw) as unknown,
     catch: (cause) =>
       new LegacyConnectionMigrationError({
-        message: `Could not parse the legacy mobile connection catalog: ${String(cause)}`,
+        message: `Alte Rechnerliste nicht lesbar: ${String(cause)}`,
       }),
   });
   const legacy = yield* decodeLegacyConnectionDocument(parsed).pipe(
     Effect.mapError(
       (cause) =>
         new LegacyConnectionMigrationError({
-          message: `Could not decode the legacy mobile connection catalog: ${String(cause)}`,
+          message: `Alte Rechnerliste nicht lesbar: ${String(cause)}`,
         }),
     ),
   );

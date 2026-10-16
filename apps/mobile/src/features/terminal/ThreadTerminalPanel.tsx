@@ -221,7 +221,7 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
             Terminal
           </Text>
           <Text className="text-2xs text-neutral-500" numberOfLines={1}>
-            {nativeTerminalAvailable ? "Native Ghostty surface" : "Text fallback active"}
+            {nativeTerminalAvailable ? "Terminal" : "Textmodus aktiv"}
           </Text>
         </View>
         <View className="flex-row items-center gap-2">

@@ -35,11 +35,11 @@ export function ConnectionsRouteScreen() {
     <View collapsable={false} className="flex-1 bg-sheet">
       {Platform.OS === "android" ? (
         <AndroidScreenHeader
-          title="Computers"
+          title="Rechner"
           onBack={() => navigation.goBack()}
           actions={[
             {
-              accessibilityLabel: "Add computer",
+              accessibilityLabel: "Rechner hinzufügen",
               icon: "plus",
               onPress: () => navigation.navigate("ConnectionsNew"),
             },
@@ -94,8 +94,7 @@ export function ConnectionsRouteScreen() {
               />
             </View>
             <Text className="text-center text-sm leading-normal text-foreground-muted">
-              No computers connected yet.{"\n"}Tap{" "}
-              <Text className="font-workjet-bold text-foreground">+</Text> to add one.
+              Kein Rechner verbunden
             </Text>
           </View>
         )}

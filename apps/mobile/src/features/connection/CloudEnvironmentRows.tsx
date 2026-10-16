@@ -162,13 +162,13 @@ function CloudEnvironmentRowsContent(
         <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-card p-6">
           <ActivityIndicator color={iconColor} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
-            Loading linked cloud environments.
+            Lädt Connect-Rechner…
           </Text>
         </View>
       ) : controller.relayDiscovery.error ? null : (
         <View collapsable={false} className="rounded-[24px] bg-card p-5">
           <Text className="text-sm leading-normal text-foreground-muted">
-            No additional linked cloud environments.
+            Keine weiteren Connect-Rechner
           </Text>
         </View>
       )}
@@ -180,7 +180,7 @@ function CloudEnvironmentRowsContent(
       !controller.relayDiscovery.isRefreshing ? (
         <View collapsable={false} className="gap-3 rounded-[24px] bg-card p-5">
           <Text className="text-base font-workjet-bold text-foreground">
-            Could not load Workjet Connect environments
+            Connect-Rechner nicht geladen
           </Text>
           <Text className="text-sm text-foreground-muted">{controller.relayDiscovery.error}</Text>
           {controller.relayDiscovery.errorTraceId ? (
@@ -193,7 +193,7 @@ function CloudEnvironmentRowsContent(
             }}
             className="self-start rounded-full bg-subtle px-3.5 py-2 active:opacity-70"
           >
-            <Text className="text-xs font-workjet-bold text-foreground">Try again</Text>
+            <Text className="text-xs font-workjet-bold text-foreground">Erneut versuchen</Text>
           </Pressable>
         </View>
       ) : null}
@@ -361,7 +361,7 @@ function CloudEnvironmentRowShell(props: {
               <>
                 {" Trace ID: "}
                 <Text
-                  accessibilityHint="Copies the trace ID"
+                  accessibilityHint="Kopiert die Trace-ID"
                   accessibilityRole="button"
                   className={cn("text-xs underline decoration-dotted", statusClassName)}
                   onLongPress={(event) => {
@@ -414,7 +414,7 @@ function CopyTraceIdButton(props: { readonly traceId: string }) {
       className="self-start flex-row items-center gap-1.5 rounded-full bg-subtle px-3 py-2 active:opacity-70"
     >
       <SymbolView name="doc.on.doc" size={12} tintColor={iconColor} type="monochrome" />
-      <Text className="text-xs font-workjet-bold text-foreground">Copy trace ID</Text>
+      <Text className="text-xs font-workjet-bold text-foreground">Trace-ID kopieren</Text>
     </Pressable>
   );
 }

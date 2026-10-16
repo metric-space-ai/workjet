@@ -142,11 +142,7 @@ export function BusinessOsSettingsPanel(props: {
     if (permission.granted) {
       setScannerReady(false);
       setShowScanner(true);
-    } else
-      Alert.alert(
-        "Kamerazugriff benötigt",
-        "Erlaube den Kamerazugriff, um den QR-Code zu scannen.",
-      );
+    } else Alert.alert("Kamerazugriff benötigt", "Kamerazugriff fehlt.");
   }, [cameraPermission?.granted, requestCameraPermission]);
 
   const importRawLink = useCallback(
@@ -295,7 +291,7 @@ export function BusinessOsSettingsPanel(props: {
                             ? "Aktiv für Code und Business OS"
                             : "Bereit für Code und Business OS"
                           : active
-                            ? "Aktiv · Noch keine Rechner zugewiesen"
+                            ? "Aktiv"
                             : "Noch keine Rechner zugewiesen"}
                         {assignedComputerCount > 0 ? ` · ${assignedComputerCount} Rechner` : ""}
                       </Text>

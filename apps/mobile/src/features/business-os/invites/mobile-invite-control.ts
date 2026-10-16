@@ -20,7 +20,7 @@ export interface BusinessOsMobileInviteControlPort {
 
 export class BusinessOsInviteControlUnavailableError extends Error {
   constructor() {
-    super("Mobile invite controls are not available for this backend yet.");
+    super("Für diese Instanz nicht verfügbar.");
     this.name = "BusinessOsInviteControlUnavailableError";
   }
 }
@@ -54,7 +54,7 @@ export function decodeCreatedBusinessOsMobileInvite(
   }
   const link = encodeWorkjetBusinessOsPairLink(response.invite, options);
   if (new TextEncoder().encode(link).byteLength > 2_300) {
-    throw new Error("Mobile invite is too large for a reliable QR code.");
+    throw new Error("QR-Code zu groß.");
   }
   return Object.freeze({
     inviteId: response.inviteId,

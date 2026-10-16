@@ -60,7 +60,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       {Platform.OS === "android" ? (
-        <AndroidSheetHeader title="Branches & worktrees" onBack={() => navigation.goBack()} />
+        <AndroidSheetHeader title="Zweige & Worktrees" onBack={() => navigation.goBack()} />
       ) : null}
       <ScrollView
         className="flex-1"
@@ -70,7 +70,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
       >
         <View className="gap-2 rounded-[18px] border border-border bg-card px-4 py-4">
           <Text className="text-foreground-secondary text-2xs font-workjet-bold tracking-[1px] uppercase">
-            New branch
+            Neuer Zweig
           </Text>
           <TextInput
             value={newBranchName}
@@ -80,7 +80,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
           />
           <SheetActionButton
             icon="plus"
-            label="Create & checkout"
+            label="Erstellen & auschecken"
             tone="primary"
             disabled={busy || newBranchName.trim().length === 0}
             onPress={() => {
@@ -96,7 +96,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
 
         <View className="gap-2 rounded-[18px] border border-border bg-card px-4 py-4">
           <Text className="text-foreground-secondary text-2xs font-workjet-bold tracking-[1px] uppercase">
-            New worktree
+            Neuer Worktree
           </Text>
           <TextInput
             value={worktreeBaseBranch}
@@ -112,7 +112,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
           />
           <SheetActionButton
             icon="square.split.2x1"
-            label="Create worktree"
+            label="Worktree erstellen"
             tone="primary"
             disabled={
               busy ||
@@ -133,27 +133,25 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
 
         <View className="gap-2">
           <Text className="text-foreground-secondary text-2xs font-workjet-bold tracking-[1px] uppercase">
-            Existing branches
+            Vorhandene Zweige
           </Text>
           {branchesLoading ? (
-            <Text className="text-foreground-secondary text-sm font-medium">
-              Loading branches...
-            </Text>
+            <Text className="text-foreground-secondary text-sm font-medium">Lädt Zweige…</Text>
           ) : null}
           {!branchesLoading && availableBranches.length === 0 ? (
             <Text className="text-foreground-secondary text-sm font-medium">
-              No local branches found.
+              Keine lokalen Zweige
             </Text>
           ) : null}
           {availableBranches.map((branch) => {
             const disabled = disabledExistingBranches.has(branch.name);
             const subtitle = branch.worktreePath
               ? branch.worktreePath === currentWorktreePath
-                ? "Checked out in this thread"
-                : "Checked out in another worktree"
+                ? "Hier ausgecheckt"
+                : "In anderem Worktree ausgecheckt"
               : branch.isDefault
-                ? "Default branch"
-                : "Local branch";
+                ? "Standardzweig"
+                : "Lokaler Zweig";
 
             return (
               <Pressable

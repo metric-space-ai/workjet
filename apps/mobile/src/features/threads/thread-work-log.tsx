@@ -90,12 +90,12 @@ export function visibleWorkLogActivities(
 // rows are single-line (numberOfLines={1}) inside a min-height that stays
 // taller than the text at every supported base font size (text-xs reaches
 // 23px at the 22pt maximum, under the 32px min-h-8), so row height is
-// deterministic. The "work log" label has no such clamp — its height follows
+// deterministic. The "Arbeitsprotokoll" label has no such clamp — its height follows
 // the scaled text-2xs line height. Values mirror the classNames below — keep
 // them in sync; a mismatch only costs a one-time correction on measure.
 const WORK_ROW_HEIGHT = 32; // min-h-8
 const WORK_ROW_GAP = 1; // gap-px
-const WORK_LOG_HEADER_PADDING = 2; // pb-0.5 under the "work log" label
+const WORK_LOG_HEADER_PADDING = 2; // pb-0.5 under the "Arbeitsprotokoll" label
 const WORK_LOG_BOTTOM_MARGIN = 4; // mb-1
 
 export const WORK_GROUP_TOGGLE_HEIGHT = 36; // min-h-8 (32) + mb-1 (4)
@@ -144,7 +144,7 @@ export function ThreadWorkLog(props: {
     <View className="-mx-1 mb-1 px-1 py-0">
       {!onlyToolRows ? (
         <Text className="px-0.5 pb-0.5 font-workjet-medium text-2xs text-foreground-muted opacity-60">
-          work log
+          Arbeitsprotokoll
         </Text>
       ) : null}
 
@@ -165,9 +165,7 @@ export function ThreadWorkLog(props: {
                 accessibilityRole={canExpand ? "button" : undefined}
                 accessibilityLabel={displayText}
                 accessibilityHint={
-                  canExpand
-                    ? "Double tap to show full details. Long press to copy."
-                    : "Long press to copy."
+                  canExpand ? "Lang drücken zum Kopieren." : "Lang drücken zum Kopieren."
                 }
                 accessibilityState={canExpand ? { expanded } : undefined}
                 hitSlop={4}
@@ -211,7 +209,7 @@ export function ThreadWorkLog(props: {
                   <View className="shrink-0 flex-row items-center gap-px">
                     {props.copiedRowId === row.id ? (
                       <Text className="pr-1 font-workjet-medium text-3xs text-emerald-600 dark:text-emerald-400">
-                        Copied
+                        Kopiert
                       </Text>
                     ) : null}
                     <View className="h-4 w-4 items-center justify-center">

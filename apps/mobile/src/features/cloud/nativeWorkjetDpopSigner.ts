@@ -10,8 +10,7 @@ import { CloudDpopError, type DpopProofSigner } from "./dpop";
 export function loadNativeWorkjetDpopSigner(): Effect.Effect<DpopProofSigner, CloudDpopError> {
   return Effect.tryPromise({
     try: () => nativeWorkjetDeviceProof.key(),
-    catch: (cause) =>
-      new CloudDpopError({ message: "Native Workjet device proof is unavailable.", cause }),
+    catch: (cause) => new CloudDpopError({ message: "Gerätenachweis nicht verfügbar.", cause }),
   }).pipe(
     Effect.map((key) => ({
       publicJwk: key.publicJwk,
@@ -30,7 +29,7 @@ export function loadNativeWorkjetDpopSigner(): Effect.Effect<DpopProofSigner, Cl
             return proof.signature;
           },
           catch: (cause) =>
-            new CloudDpopError({ message: "Native Workjet device proof signing failed.", cause }),
+            new CloudDpopError({ message: "Gerätenachweis fehlgeschlagen.", cause }),
         }),
     })),
   );

@@ -36,7 +36,7 @@ const productionControl = makeManagedWorkjetDeviceInviteControl(transport, {
       authorization.businessOsInstanceId !== businessOsInstanceId ||
       authorization.deviceId !== workjetInstallationId
     ) {
-      throw new Error("The Workjet device session belongs to another installation.");
+      throw new Error("Sitzung gehört zu anderer Installation.");
     }
     const issued = await runtime.runPromise(
       issueManagedRelayControlIdentityAssertion({
@@ -49,7 +49,7 @@ const productionControl = makeManagedWorkjetDeviceInviteControl(transport, {
       }),
     );
     if (Date.parse(issued.expiresAt) <= Date.now()) {
-      throw new Error("The Workjet control identity is expired.");
+      throw new Error("Identität abgelaufen.");
     }
     return issued.assertion;
   },

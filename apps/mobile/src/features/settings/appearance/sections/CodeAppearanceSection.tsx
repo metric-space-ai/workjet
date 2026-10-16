@@ -35,7 +35,7 @@ export function CodeAppearanceSection() {
       <SettingsSwitchRow
         disabled={!isReady}
         icon="chevron.left.forwardslash.chevron.right"
-        label="Custom font size"
+        label="Eigene Schriftgröße"
         onValueChange={handleToggleCustom}
         value={custom}
       />
@@ -43,7 +43,7 @@ export function CodeAppearanceSection() {
         <FontSizeSliderRow
           disabled={!isReady}
           icon="textformat.size"
-          label="Font size"
+          label="Schriftgröße"
           max={MAX_CODE_FONT_SIZE}
           min={MIN_CODE_FONT_SIZE}
           onChange={setCodeFontSize}
@@ -55,7 +55,7 @@ export function CodeAppearanceSection() {
       <SettingsSwitchRow
         disabled={!isReady}
         icon="text.word.spacing"
-        label="Word break"
+        label="Zeilenumbruch"
         onValueChange={setCodeWordBreak}
         value={appearance.codeWordBreak}
       />

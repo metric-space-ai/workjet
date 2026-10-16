@@ -123,41 +123,41 @@ function relayProtectedErrorMessage(error: RelayProtectedErrorType): string {
       switch (error.reason) {
         case "missing_bearer":
         case "invalid_bearer":
-          return "Relay rejected the cloud session token.";
+          return "Relay lehnt die Sitzung ab.";
         case "invalid_dpop":
-          return "Relay rejected the DPoP proof.";
+          return "Relay lehnt den Nachweis ab.";
         case "not_authorized":
-          return "Relay rejected the authenticated request.";
+          return "Relay lehnt die Anfrage ab.";
       }
     case "RelayEnvironmentLinkProofExpiredError":
-      return "Relay rejected an expired environment link proof.";
+      return "Nachweis abgelaufen.";
     case "RelayEnvironmentLinkProofInvalidError":
-      return `Relay rejected the environment link proof (${error.reason}).`;
+      return `Relay lehnt den Nachweis ab (${error.reason}).`;
     case "RelayEnvironmentConnectNotAuthorizedError":
-      // "Not authorized" covers non-auth causes too; surface the reason so a
+      // "Nicht berechtigt" covers non-auth causes too; surface the reason so a
       // missing link doesn't read as a credential problem.
       if (error.reason === "environment_link_not_found") {
-        return "Relay has no active link for this environment. The environment server may not have re-established its link yet.";
+        return "Rechner noch nicht verknüpft.";
       }
       return error.reason
-        ? `Relay rejected the environment connection request (${error.reason}).`
-        : "Relay rejected the environment connection request.";
+        ? `Relay lehnt die Verbindung ab (${error.reason}).`
+        : "Relay lehnt die Verbindung ab.";
     case "RelayEnvironmentEndpointUnavailableError":
-      return `Relay could not reach the environment endpoint (${error.reason}).`;
+      return `Relay erreicht den Rechner nicht (${error.reason}).`;
     case "RelayEnvironmentEndpointTimedOutError":
-      return "Relay timed out while contacting the environment endpoint.";
+      return "Relay: Zeitüberschreitung.";
     case "RelayEnvironmentLinkFailedError":
-      return `Relay could not link the environment (${error.reason}).`;
+      return `Relay verknüpft den Rechner nicht (${error.reason}).`;
     case "RelayEnvironmentLinkUnavailableError":
-      return `Relay cannot provision the managed endpoint (${error.reason}).`;
+      return `Relay richtet den Endpunkt nicht ein (${error.reason}).`;
     case "RelayEnvironmentLinkLimitExceededError":
-      return `Relay refused the link: this account already has its maximum of ${error.maxTunnels} managed tunnels. Unlink an environment to free one up.`;
+      return `Höchstzahl von ${error.maxTunnels} Tunneln erreicht. Einen Rechner trennen.`;
     case "RelayAgentActivityPublishProofExpiredError":
-      return "Relay rejected an expired agent activity publish proof.";
+      return "Nachweis abgelaufen.";
     case "RelayAgentActivityPublishProofInvalidError":
-      return `Relay rejected the agent activity publish proof (${error.reason}).`;
+      return `Relay lehnt den Nachweis ab (${error.reason}).`;
     case "RelayInternalError":
-      return `Relay encountered an internal error (${error.reason}).`;
+      return `Relay-Fehler (${error.reason}).`;
   }
 }
 
@@ -189,7 +189,7 @@ function requireRelayUrl(): Effect.Effect<string, CloudEnvironmentLinkError> {
   const relayUrl = readRelayUrl();
   return relayUrl
     ? Effect.succeed(relayUrl)
-    : Effect.fail(new CloudEnvironmentLinkError({ message: "Relay URL is not configured." }));
+    : Effect.fail(new CloudEnvironmentLinkError({ message: "Relay-URL fehlt." }));
 }
 
 function endpointOrigin(httpBaseUrl: string) {
@@ -207,12 +207,12 @@ function ensureLinkedEnvironmentMatches(input: {
 }): Effect.Effect<void, CloudEnvironmentLinkError> {
   if (input.link.environmentId !== input.expectedEnvironmentId) {
     return new CloudEnvironmentLinkError({
-      message: "Relay returned credentials for a different environment.",
+      message: "Relay lieferte Zugang für anderen Rechner.",
     });
   }
   if (input.link.endpoint.providerKind !== input.expectedProviderKind) {
     return new CloudEnvironmentLinkError({
-      message: "Relay returned credentials for a different endpoint provider.",
+      message: "Relay lieferte Zugang für anderen Anbieter.",
     });
   }
   return Effect.void;
@@ -235,12 +235,12 @@ function ensureStatusMatchesEnvironment(input: {
 }): Effect.Effect<void, CloudEnvironmentLinkError> {
   if (input.status.environmentId !== input.environment.environmentId) {
     return new CloudEnvironmentLinkError({
-      message: "Relay returned status for a different environment.",
+      message: "Relay lieferte Status für anderen Rechner.",
     });
   }
   if (!endpointMatches(input.status.endpoint, input.environment.endpoint)) {
     return new CloudEnvironmentLinkError({
-      message: "Relay returned status for a different endpoint.",
+      message: "Relay lieferte Status für anderen Endpunkt.",
     });
   }
   if (
@@ -248,7 +248,7 @@ function ensureStatusMatchesEnvironment(input: {
     input.status.descriptor.environmentId !== input.environment.environmentId
   ) {
     return new CloudEnvironmentLinkError({
-      message: "Relay returned status descriptor for a different environment.",
+      message: "Relay lieferte Status für anderen Rechner.",
     });
   }
   return Effect.void;
@@ -260,7 +260,7 @@ function ensureConnectEndpointMatchesEnvironment(input: {
 }): Effect.Effect<void, CloudEnvironmentLinkError> {
   if (!endpointMatches(input.connect.endpoint, input.environment.endpoint)) {
     return new CloudEnvironmentLinkError({
-      message: "Relay returned credentials for a different endpoint.",
+      message: "Relay lieferte Zugang für anderen Endpunkt.",
     });
   }
   return Effect.void;
@@ -282,7 +282,7 @@ export function linkEnvironmentToCloudWithPreference(
   return Effect.gen(function* () {
     if (!input.connection.bearerToken) {
       return yield* new CloudEnvironmentLinkError({
-        message: "Only a locally paired bearer connection can be linked to the cloud.",
+        message: "Nur lokal gekoppelte Rechner sind verknüpfbar.",
       });
     }
     const localBearerToken = input.connection.bearerToken;
@@ -290,7 +290,7 @@ export function linkEnvironmentToCloudWithPreference(
     const relayClient = yield* ManagedRelay.ManagedRelayClient;
     const storage = yield* MobileStorage.MobileStorage;
     const deviceId = yield* storage.loadOrCreateAgentAwarenessDeviceId.pipe(
-      Effect.mapError(cloudEnvironmentLinkError("Could not load the mobile device id.")),
+      Effect.mapError(cloudEnvironmentLinkError("Geräte-ID nicht geladen.")),
     );
     const liveActivitiesEnabled = input.liveActivitiesEnabled;
     const challenge = yield* relayClient
@@ -322,7 +322,7 @@ export function linkEnvironmentToCloudWithPreference(
           origin: endpointOrigin(input.connection.httpBaseUrl),
         },
       })
-      .pipe(Effect.mapError(cloudEnvironmentLinkError("Could not obtain environment link proof.")));
+      .pipe(Effect.mapError(cloudEnvironmentLinkError("Nachweis nicht erhalten.")));
     const link = yield* relayClient
       .linkEnvironment({
         clerkToken: input.clerkToken,
@@ -355,9 +355,7 @@ export function linkEnvironmentToCloudWithPreference(
           endpointRuntime: link.endpointRuntime,
         },
       })
-      .pipe(
-        Effect.mapError(cloudEnvironmentLinkError("Could not configure environment relay access.")),
-      );
+      .pipe(Effect.mapError(cloudEnvironmentLinkError("Relay-Zugang nicht eingerichtet.")));
   });
 }
 
@@ -370,7 +368,7 @@ export function linkEnvironmentToCloud(
 > {
   return MobilePreferences.MobilePreferencesStore.pipe(
     Effect.flatMap((preferencesStore) => preferencesStore.load),
-    Effect.mapError(cloudEnvironmentLinkError("Could not load mobile notification preferences.")),
+    Effect.mapError(cloudEnvironmentLinkError("Mitteilungseinstellungen nicht geladen.")),
     Effect.flatMap((preferences) =>
       linkEnvironmentToCloudWithPreference({
         ...input,
@@ -435,7 +433,7 @@ export function cloudEnvironmentsPendingStatus(
   return environments.map((environment) => ({
     environment,
     status: null,
-    statusError: "Checking status...",
+    statusError: "Prüft Status…",
   }));
 }
 
@@ -492,7 +490,7 @@ const loadAgentAwarenessDeviceId = Effect.fn("mobile.cloud.loadAgentAwarenessDev
   function* () {
     const storage = yield* MobileStorage.MobileStorage;
     return yield* storage.loadOrCreateAgentAwarenessDeviceId.pipe(
-      Effect.mapError(cloudEnvironmentLinkError("Could not load the mobile device id.")),
+      Effect.mapError(cloudEnvironmentLinkError("Geräte-ID nicht geladen.")),
     );
   },
 );
@@ -524,7 +522,7 @@ const connectRelayManagedEnvironment = Effect.fn("mobile.cloud.connectRelayManag
       );
     if (connect.environmentId !== input.environmentId) {
       return yield* new CloudEnvironmentLinkError({
-        message: "Relay returned credentials for a different environment.",
+        message: "Relay lieferte Zugang für anderen Rechner.",
       });
     }
     if (input.expectedEnvironment) {
@@ -536,14 +534,10 @@ const connectRelayManagedEnvironment = Effect.fn("mobile.cloud.connectRelayManag
 
     const descriptor = yield* fetchRemoteEnvironmentDescriptor({
       httpBaseUrl: connect.endpoint.httpBaseUrl,
-    }).pipe(
-      Effect.mapError(
-        cloudEnvironmentLinkError("Could not fetch the connected environment descriptor."),
-      ),
-    );
+    }).pipe(Effect.mapError(cloudEnvironmentLinkError("Rechnerdaten nicht geladen.")));
     if (descriptor.environmentId !== connect.environmentId) {
       return yield* new CloudEnvironmentLinkError({
-        message: "Connected endpoint descriptor does not match the selected environment.",
+        message: "Endpunkt passt nicht zum Rechner.",
       });
     }
     const signer = yield* ManagedRelay.ManagedRelayDpopSigner;
@@ -552,17 +546,13 @@ const connectRelayManagedEnvironment = Effect.fn("mobile.cloud.connectRelayManag
         method: "POST",
         url: new URL("/oauth/token", connect.endpoint.httpBaseUrl).toString(),
       })
-      .pipe(Effect.mapError(cloudEnvironmentLinkError("Could not create bootstrap DPoP proof.")));
+      .pipe(Effect.mapError(cloudEnvironmentLinkError("Nachweis nicht erstellt.")));
     const bootstrap = yield* exchangeRemoteDpopAccessToken({
       httpBaseUrl: connect.endpoint.httpBaseUrl,
       credential: connect.credential,
       dpopProof: bootstrapDpop,
       clientMetadata: authClientMetadata(),
-    }).pipe(
-      Effect.mapError(
-        cloudEnvironmentLinkError("Could not exchange a managed endpoint DPoP access token."),
-      ),
-    );
+    }).pipe(Effect.mapError(cloudEnvironmentLinkError("Zugang nicht erhalten.")));
     const pairingUrl = new URL(connect.endpoint.httpBaseUrl);
     pairingUrl.hash = new URLSearchParams([["token", connect.credential]]).toString();
 

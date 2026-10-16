@@ -59,20 +59,12 @@ function environmentSupportsTitleRegeneration(
 
 type ThreadListAction = "archive" | "unarchive" | "delete" | "settle" | "unsettle";
 
-const ACTION_VERBS: Record<ThreadListAction, string> = {
-  archive: "archived",
-  unarchive: "unarchived",
-  delete: "deleted",
-  settle: "settled",
-  unsettle: "un-settled",
-};
-
-function actionFailureMessage(action: ThreadListAction, cause: Cause.Cause<unknown>): string {
+function actionFailureMessage(_action: ThreadListAction, cause: Cause.Cause<unknown>): string {
   const error = Cause.squash(cause);
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
   }
-  return `The thread could not be ${ACTION_VERBS[action]}.`;
+  return "Aktion fehlgeschlagen.";
 }
 
 function selectionHaptic(): void {
@@ -80,11 +72,11 @@ function selectionHaptic(): void {
 }
 
 function actionFailureTitle(action: ThreadListAction): string {
-  if (action === "archive") return "Could not archive thread";
-  if (action === "unarchive") return "Could not unarchive thread";
-  if (action === "settle") return "Could not settle thread";
-  if (action === "unsettle") return "Could not un-settle thread";
-  return "Could not delete thread";
+  if (action === "archive") return "Nicht archiviert";
+  if (action === "unarchive") return "Nicht wiederhergestellt";
+  if (action === "settle") return "Nicht erledigt";
+  if (action === "unsettle") return "Nicht wieder geöffnet";
+  return "Nicht gelöscht";
 }
 
 /** Resolves to true iff the action was dispatched and succeeded. */
@@ -112,20 +104,14 @@ function useThreadActionExecutor(
           (action === "settle" || action === "unsettle") &&
           !environmentSupportsSettlement(thread.environmentId)
         ) {
-          Alert.alert(
-            actionFailureTitle(action),
-            "This environment's server does not support settling yet. Update the server to use Settle.",
-          );
+          Alert.alert(actionFailureTitle(action), "Rechner aktualisieren, um zu erledigen.");
           return false;
         }
         // Settle may only target what effectiveSettled could classify as
         // settled: not starting/running sessions, not threads waiting on
         // approvals or user input. Anything else would hide live work.
         if (action === "settle" && !canSettle(thread, { now: new Date().toISOString() })) {
-          Alert.alert(
-            actionFailureTitle(action),
-            "This thread still needs attention. Resolve or interrupt it first, then try again.",
-          );
+          Alert.alert(actionFailureTitle(action), "Braucht Aufmerksamkeit. Erst klären.");
           return false;
         }
         // Archive keeps its original, narrower guard: never interrupt a
@@ -135,10 +121,7 @@ function useThreadActionExecutor(
           thread.session?.status === "running" &&
           thread.session.activeTurnId != null
         ) {
-          Alert.alert(
-            actionFailureTitle(action),
-            "This thread is working. Interrupt it first, then try again.",
-          );
+          Alert.alert(actionFailureTitle(action), "Arbeitet noch. Erst unterbrechen.");
           return false;
         }
         const result =
@@ -194,13 +177,13 @@ function useConfirmDeleteThread(
 ) {
   return useCallback(
     (thread: EnvironmentThreadShell) => {
-      const title = "Delete thread?";
-      const message = `“${thread.title}” will be permanently deleted, including its terminal history.`;
+      const title = "Unterhaltung löschen?";
+      const message = `„${thread.title}“ wird endgültig gelöscht.`;
       if (process.env.EXPO_OS === "ios") {
         Alert.alert(title, message, [
-          { text: "Cancel", style: "cancel" },
+          { text: "Abbrechen", style: "cancel" },
           {
-            text: "Delete",
+            text: "Löschen",
             style: "destructive",
             onPress: () => {
               void executeAction("delete", thread);
@@ -268,18 +251,15 @@ export function useThreadListActions(): {
       snoozeInFlightThreadKeys.current.add(key);
       try {
         if (!environmentSupportsSnooze(thread.environmentId)) {
-          Alert.alert(
-            "Could not snooze thread",
-            "This environment's server does not support snoozing yet. Update the server to use Snooze.",
-          );
+          Alert.alert("Nicht zurückgestellt", "Rechner aktualisieren, um zurückzustellen.");
           return false;
         }
         if (!canSnooze(thread, { now: new Date().toISOString() })) {
           Alert.alert(
-            "Could not snooze thread",
+            "Nicht zurückgestellt",
             thread.hasPendingApprovals || thread.hasPendingUserInput
-              ? "This thread is waiting on you. Respond to the pending request before snoozing it."
-              : "This thread is still starting a turn. Try again once it's running.",
+              ? "Wartet auf dich. Erst antworten."
+              : "Startet noch. Gleich erneut versuchen.",
           );
           return false;
         }
@@ -295,10 +275,10 @@ export function useThreadListActions(): {
         if (result._tag === "Failure") {
           const error = Cause.squash(result.cause);
           Alert.alert(
-            "Could not snooze thread",
+            "Nicht zurückgestellt",
             error instanceof Error && error.message.trim().length > 0
               ? error.message
-              : "The thread could not be snoozed.",
+              : "Nicht zurückgestellt.",
           );
           return false;
         }
@@ -318,10 +298,7 @@ export function useThreadListActions(): {
       snoozeInFlightThreadKeys.current.add(key);
       try {
         if (!environmentSupportsSnooze(thread.environmentId)) {
-          Alert.alert(
-            "Could not wake thread",
-            "This environment's server does not support snoozing yet. Update the server to wake this thread.",
-          );
+          Alert.alert("Nicht geweckt", "Rechner aktualisieren, um zu wecken.");
           return false;
         }
 
@@ -333,10 +310,10 @@ export function useThreadListActions(): {
         if (result._tag === "Failure") {
           const error = Cause.squash(result.cause);
           Alert.alert(
-            "Could not wake thread",
+            "Nicht geweckt",
             error instanceof Error && error.message.trim().length > 0
               ? error.message
-              : "The thread could not be woken.",
+              : "Nicht geweckt.",
           );
           return false;
         }
@@ -354,10 +331,7 @@ export function useThreadListActions(): {
   const pinThread = useCallback(
     async (thread: EnvironmentThreadShell) => {
       if (!environmentSupportsPinning(thread.environmentId)) {
-        Alert.alert(
-          "Could not pin thread",
-          "This environment's server does not support pinning yet. Update the server to use Pin.",
-        );
+        Alert.alert("Nicht angeheftet", "Rechner aktualisieren, um anzuheften.");
         return false;
       }
       selectionHaptic();
@@ -380,10 +354,10 @@ export function useThreadListActions(): {
       if (result._tag === "Failure") {
         const error = Cause.squash(result.cause);
         Alert.alert(
-          "Could not pin thread",
+          "Nicht angeheftet",
           error instanceof Error && error.message.trim().length > 0
             ? error.message
-            : "The thread could not be pinned.",
+            : "Nicht angeheftet.",
         );
         return false;
       }
@@ -394,10 +368,7 @@ export function useThreadListActions(): {
   const unpinThread = useCallback(
     async (thread: EnvironmentThreadShell) => {
       if (!environmentSupportsPinning(thread.environmentId)) {
-        Alert.alert(
-          "Could not unpin thread",
-          "This environment's server does not support pinning yet. Update the server to use Pin.",
-        );
+        Alert.alert("Nicht gelöst", "Rechner aktualisieren, um anzuheften.");
         return false;
       }
       selectionHaptic();
@@ -408,10 +379,10 @@ export function useThreadListActions(): {
       if (result._tag === "Failure") {
         const error = Cause.squash(result.cause);
         Alert.alert(
-          "Could not unpin thread",
+          "Nicht gelöst",
           error instanceof Error && error.message.trim().length > 0
             ? error.message
-            : "The thread could not be unpinned.",
+            : "Nicht gelöst.",
         );
         return false;
       }
@@ -429,10 +400,7 @@ export function useThreadListActions(): {
         return false;
       }
       if (!environmentSupportsTitleRegeneration(thread.environmentId)) {
-        Alert.alert(
-          "Could not regenerate title",
-          "This environment's server does not support title regeneration yet. Update the server to regenerate thread titles.",
-        );
+        Alert.alert("Titel nicht neu erzeugt", "Rechner aktualisieren, um Titel neu zu erzeugen.");
         return false;
       }
 
@@ -446,10 +414,10 @@ export function useThreadListActions(): {
         if (result._tag === "Failure") {
           const error = Cause.squash(result.cause);
           Alert.alert(
-            "Could not regenerate title",
+            "Titel nicht neu erzeugt",
             error instanceof Error && error.message.trim().length > 0
               ? error.message
-              : "The thread title could not be regenerated.",
+              : "Titel nicht neu erzeugt.",
           );
           return false;
         }
@@ -477,10 +445,7 @@ export function useThreadListActions(): {
     async (thread: EnvironmentThreadShell, direction: "up" | "down") => {
       if (movePinnedInFlightRef.current) return false;
       if (!environmentSupportsPinReorder(thread.environmentId)) {
-        Alert.alert(
-          "Could not move thread",
-          "This environment's server does not support pinned reordering yet. Update the server to reorder pins.",
-        );
+        Alert.alert("Nicht verschoben", "Rechner aktualisieren, um zu sortieren.");
         return false;
       }
       const shells = appAtomRegistry.get(environmentThreadShells.threadShellsAtom);
@@ -521,10 +486,10 @@ export function useThreadListActions(): {
           if (result._tag === "Failure") {
             const error = Cause.squash(result.cause);
             Alert.alert(
-              "Could not move thread",
+              "Nicht verschoben",
               error instanceof Error && error.message.trim().length > 0
                 ? error.message
-                : "The pinned thread could not be moved.",
+                : "Nicht verschoben.",
             );
             // No rollback: keys already written are valid orderings on their
             // own (each write is a complete, consistent placement), so a

@@ -15,7 +15,7 @@ export function SettingsLegalDocumentCloseHeaderButton() {
 
   return (
     <Pressable
-      accessibilityLabel="Close legal document"
+      accessibilityLabel="Rechtstext schließen"
       accessibilityRole="button"
       hitSlop={12}
       onPress={() => navigation.goBack()}
@@ -42,7 +42,7 @@ export function SettingsLegalDocumentExternalHeaderButton({
 
   return (
     <Pressable
-      accessibilityLabel="Open legal documents in external browser"
+      accessibilityLabel="Rechtstexte im Browser öffnen"
       accessibilityRole="button"
       hitSlop={12}
       onPress={() => void Linking.openURL(safeExternalUrl).catch(() => undefined)}
@@ -100,7 +100,7 @@ export function SettingsLegalDocumentRouteScreen({
         />
         <View className="items-center gap-2">
           <Text className="text-center font-workjet-bold text-lg text-foreground">
-            Couldn&apos;t load the {documentName.toLowerCase()}
+            Nicht geladen: {documentName.toLowerCase()}
           </Text>
           <Text selectable className="text-center text-sm leading-normal text-foreground-muted">
             {loadError}
@@ -115,7 +115,7 @@ export function SettingsLegalDocumentRouteScreen({
             }}
             className="items-center rounded-xl bg-foreground px-4 py-3 active:opacity-80"
           >
-            <Text className="font-workjet-bold text-base text-sheet">Try Again</Text>
+            <Text className="font-workjet-bold text-base text-sheet">Erneut versuchen</Text>
           </Pressable>
           <Pressable
             accessibilityRole="link"
@@ -123,7 +123,7 @@ export function SettingsLegalDocumentRouteScreen({
             className="items-center rounded-xl px-4 py-3 active:bg-foreground/5"
           >
             <Text className="font-workjet-medium text-base text-foreground-muted">
-              Open in Browser
+              Im Browser öffnen
             </Text>
           </Pressable>
         </View>
@@ -169,7 +169,7 @@ export function SettingsLegalDocumentRouteScreen({
         }}
         onError={(event) => {
           setLoadProgress(0);
-          setLoadError(event.nativeEvent.description || "The page could not be loaded.");
+          setLoadError(event.nativeEvent.description || "Seite nicht geladen.");
         }}
         onHttpError={(event) => {
           if (!isLegalDocumentUrl(event.nativeEvent.url)) return;

@@ -97,7 +97,7 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
 }
 
 function OpeningThreadLoadingScreen() {
-  return <LoadingScreen message="Opening thread…" messagePlacement="above-spinner" />;
+  return <LoadingScreen message="Öffnet Unterhaltung…" messagePlacement="above-spinner" />;
 }
 
 type ThreadRouteScreenRouteProps = StaticScreenProps<{
@@ -122,10 +122,7 @@ function ThreadUnavailableScreen() {
       }}
       className="bg-screen flex-1"
     >
-      <EmptyState
-        title="Thread unavailable"
-        detail="This thread is not available in the current mobile snapshot."
-      />
+      <EmptyState title="Unterhaltung nicht verfügbar" />
     </ScrollView>
   );
 }
@@ -194,7 +191,7 @@ function ThreadRouteContent(
     useThreadSelection();
   const selectedThreadDetailState = props.selectedThreadDetailState;
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
-  // "Load earlier turns" header state for windowed (paginated) thread loads.
+  // "Frühere Züge laden" header state for windowed (paginated) thread loads.
   const loadEarlierTurns = useMemo(() => {
     if (selectedThread === null || !threadHasOlderTurns(selectedThreadDetailState)) {
       return null;
@@ -617,7 +614,7 @@ function ThreadRouteContent(
     auxiliaryPaneControl:
       !layout.usesSplitView && fileInspector.supported && selectedThreadCwd !== null
         ? {
-            accessibilityLabel: "Toggle inspector",
+            accessibilityLabel: "Inspektor umschalten",
             onPress: handleToggleInspector,
           }
         : undefined,
@@ -651,7 +648,7 @@ function ThreadRouteContent(
       ...(props.onReturnToThread
         ? [
             withNativeGlassHeaderItem({
-              accessibilityLabel: "Return to chat",
+              accessibilityLabel: "Zurück zum Chat",
               icon: { name: "chevron.left", type: "sfSymbol" as const },
               identifier: "thread-left-return",
               onPress: props.onReturnToThread,
@@ -661,8 +658,8 @@ function ThreadRouteContent(
         : []),
       withNativeGlassHeaderItem({
         accessibilityLabel: panes.primarySidebarVisible
-          ? "Maximize content"
-          : "Show thread sidebar",
+          ? "Inhalt maximieren"
+          : "Seitenleiste zeigen",
         icon: {
           name: panes.primarySidebarVisible ? "arrow.up.left.and.arrow.down.right" : "sidebar.left",
           type: "sfSymbol" as const,
@@ -672,7 +669,7 @@ function ThreadRouteContent(
         type: "button" as const,
       }),
       withNativeGlassHeaderItem({
-        accessibilityLabel: "New task",
+        accessibilityLabel: "Neue Aufgabe",
         icon: { name: "square.and.pencil", type: "sfSymbol" as const },
         identifier: "thread-left-new-task",
         onPress: () => navigation.navigate("NewTaskSheet", { screen: "NewTask" }),
@@ -687,33 +684,33 @@ function ThreadRouteContent(
     const actions: AndroidHeaderAction[] = [];
     if (props.onReturnToThread) {
       actions.push({
-        accessibilityLabel: "Return to chat",
+        accessibilityLabel: "Zurück zum Chat",
         icon: "chevron.left",
         onPress: props.onReturnToThread,
       });
     }
     if (selectedThreadCwd !== null) {
       actions.push({
-        accessibilityLabel: "Open files",
+        accessibilityLabel: "Dateien öffnen",
         icon: "folder",
         onPress: handleOpenFilesInspector,
       });
     }
     if (selectedThreadProject?.workspaceRoot) {
       actions.push({
-        accessibilityLabel: "Open terminal",
+        accessibilityLabel: "Terminal öffnen",
         icon: "terminal",
         onPress: () => handleOpenTerminal(null),
       });
     }
     actions.push({
-      accessibilityLabel: "Open git controls",
+      accessibilityLabel: "Git öffnen",
       icon: "point.topleft.down.curvedto.point.bottomright.up",
       onPress: handleOpenGitInspector,
     });
     if (fileInspector.supported && selectedThreadCwd !== null) {
       actions.push({
-        accessibilityLabel: "Toggle inspector",
+        accessibilityLabel: "Inspektor umschalten",
         icon: "sidebar.right",
         onPress: handleToggleInspector,
       });
@@ -737,7 +734,7 @@ function ThreadRouteContent(
   const compactHomeHeaderItems = useMemo<NativeHeaderItems>(
     () => [
       withNativeGlassHeaderItem({
-        accessibilityLabel: "Go to threads list",
+        accessibilityLabel: "Zur Liste",
         icon: { name: "list.bullet", type: "sfSymbol" as const },
         identifier: "thread-left-home",
         onPress: () => navigation.dispatch(StackActions.replace("Home")),

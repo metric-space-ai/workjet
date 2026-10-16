@@ -391,21 +391,21 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           type: "slash-command" as const,
           command: "model",
           label: "/model",
-          description: "Switch model",
+          description: "Modell wechseln",
         },
         {
           id: "cmd:plan",
           type: "slash-command" as const,
           command: "plan",
           label: "/plan",
-          description: "Switch to plan mode",
+          description: "Planmodus",
         },
         {
           id: "cmd:default",
           type: "slash-command" as const,
           command: "default",
           label: "/default",
-          description: "Switch to default mode",
+          description: "Standardmodus",
         },
       ];
       const builtIn = allBuiltIn.filter((item) => item.command.includes(q));
@@ -851,13 +851,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 contentPaddingRight={8}
               >
                 <ComposerToolbarButton
-                  accessibilityLabel="Add attachment"
+                  accessibilityLabel="Anhang hinzufügen"
                   icon="plus"
                   onPress={() => void props.onPickDraftImages()}
                   showChevron={false}
                 />
                 <ComposerInlineControl
-                  accessibilityLabel="Model and reasoning settings"
+                  accessibilityLabel="Modell und Denktiefe"
                   emphasized
                   iconNode={
                     <ProviderIcon provider={currentModelOption?.providerDriver} size={16} />
@@ -868,7 +868,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 />
                 {showStopAction ? (
                   <ComposerToolbarButton
-                    accessibilityLabel="Stop"
+                    accessibilityLabel="Stoppen"
                     icon="stop.fill"
                     variant="danger"
                     onPress={props.onStopThread}
@@ -887,16 +887,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             </ComposerToolbarRow>
           ) : null}
         </ComposerSurface>
-
-        {/* Queue count */}
-        {props.queueCount > 0 ? (
-          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
-            <Text className="pt-2 text-xs text-foreground-muted">
-              {props.queueCount} queued message{props.queueCount === 1 ? "" : "s"} will send
-              automatically.
-            </Text>
-          </Animated.View>
-        ) : null}
       </Animated.View>
 
       <ImageViewing

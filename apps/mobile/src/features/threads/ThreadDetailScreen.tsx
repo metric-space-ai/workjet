@@ -276,7 +276,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const contentPresentationKind = props.contentPresentation.kind;
   // The raw sync status enters "synchronizing" on every full fetch, cached or
   // not. Whether messages are already on screen decides the pill label: no
-  // data yet → "Loading messages", cached data reconciling → "Syncing".
+  // data yet → "Lädt Nachrichten", cached data reconciling → "Syncing".
   const threadSyncPhase = (() => {
     switch (props.threadSyncStatus) {
       case "empty":
@@ -577,15 +577,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     <View className="flex-1">
       {props.selectedThread.workjetConfig.schemaVersion === 2 &&
       props.selectedThread.workjetConfig.team ? (
-        <View accessibilityLabel="Project team" className="border-b px-4 py-2">
+        <View accessibilityLabel="Projektteam" className="border-b px-4 py-2">
           <Text>
             {props.selectedThread.workjetConfig.team.role} ·{" "}
             {props.selectedThread.modelSelection.instanceId} ·{" "}
             {props.selectedThread.modelSelection.model}
           </Text>
-          <Text>Goal: {props.selectedThread.workjetConfig.team.goal}</Text>
+          <Text>Ziel: {props.selectedThread.workjetConfig.team.goal}</Text>
           {props.selectedThread.workjetConfig.team.parentThreadId ? (
-            <Text>Parent: {props.selectedThread.workjetConfig.team.parentThreadId}</Text>
+            <Text>Übergeordnet: {props.selectedThread.workjetConfig.team.parentThreadId}</Text>
           ) : null}
         </View>
       ) : null}
@@ -665,7 +665,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                     }}
                   >
                     <ControlPill
-                      accessibilityLabel="Scroll to end"
+                      accessibilityLabel="Zum Ende"
                       activateOnPressIn
                       className="h-9 w-9 bg-transparent"
                       icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
@@ -674,7 +674,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                   </LiquidGlassView>
                 ) : (
                   <ControlPill
-                    accessibilityLabel="Scroll to end"
+                    accessibilityLabel="Zum Ende"
                     activateOnPressIn
                     className="h-9 w-9 border border-border bg-card shadow-md shadow-black/10"
                     icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
@@ -733,7 +733,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 editorRef={composerEditorRef}
                 draftMessage={props.draftMessage}
                 draftAttachments={props.draftAttachments}
-                placeholder="Ask the Luma, or run a command…"
+                placeholder="Nachricht an den Worker…"
                 contentMaxWidth={contentMaxWidth}
                 connectionState={props.connectionStateLabel}
                 connectionError={props.connectionError}

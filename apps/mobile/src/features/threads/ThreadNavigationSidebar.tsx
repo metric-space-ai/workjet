@@ -89,7 +89,7 @@ import {
 
 /** The sidebar list serves both lists: v1 grouped items or, when the Thread
     List v2 beta is on, flat v2 rows with queued tasks spliced in, and a settled
-    "Show more" pager. */
+    "Mehr zeigen" pager. */
 type SidebarListItem =
   | HomeListItem
   | ThreadListV2ListItem
@@ -692,14 +692,14 @@ function ThreadNavigationSidebarPane(
     () => [
       {
         id: "environment",
-        title: "Machine",
+        title: "Rechner",
         subactions: [
           {
             id: "environment:all",
             title: hasEnvironmentBindings
-              ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "this CTOX instance"}`
-              : "All machines",
-            subtitle: "Show threads from every machine in the active scope",
+              ? `Alle Rechner in ${selectedBusinessOsInstance?.displayName ?? "diese Instanz"}`
+              : "Alle Rechner",
+            subtitle: "Von allen Rechnern",
             state: options.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
           },
           ...environments.map((environment) => ({
@@ -717,12 +717,12 @@ function ThreadNavigationSidebarPane(
         : ([
             {
               id: "project",
-              title: "Project",
+              title: "Projekt",
               subactions: [
                 {
                   id: "project:all",
-                  title: "All projects",
-                  subtitle: "Show threads from every project",
+                  title: "Alle Projekte",
+                  subtitle: "Aus allen Projekten",
                   state: selectedProjectKey === null ? "on" : "off",
                 },
                 ...projectFilterOptions.map((project) => ({
@@ -741,7 +741,7 @@ function ThreadNavigationSidebarPane(
         : ([
             {
               id: "project-sort",
-              title: "Sort projects",
+              title: "Projekte sortieren",
               subactions: PROJECT_SORT_OPTIONS.map((option) => ({
                 id: `project-sort:${option.value}`,
                 title: option.label,
@@ -750,7 +750,7 @@ function ThreadNavigationSidebarPane(
             },
             {
               id: "thread-sort",
-              title: "Sort threads",
+              title: "Unterhaltungen sortieren",
               subactions: THREAD_SORT_OPTIONS.map((option) => ({
                 id: `thread-sort:${option.value}`,
                 title: option.label,
@@ -1072,13 +1072,13 @@ function ThreadNavigationSidebarPane(
           return (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Show ${Math.min(item.hiddenCount, THREAD_LIST_V2_SETTLED_PAGE_COUNT)} more settled threads`}
+              accessibilityLabel={`${Math.min(item.hiddenCount, THREAD_LIST_V2_SETTLED_PAGE_COUNT)} weitere erledigte zeigen`}
               onPress={showMoreSettled}
               className="mx-4 mt-2 items-center rounded-lg border border-dashed border-border py-2.5"
               style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
             >
               <Text className="text-xs font-workjet-medium text-foreground-muted">
-                Show more ({item.hiddenCount} settled hidden)
+                Mehr zeigen ({item.hiddenCount} erledigte ausgeblendet)
               </Text>
             </Pressable>
           );
@@ -1216,9 +1216,9 @@ function ThreadNavigationSidebarPane(
       buildHomeListFilterMenu({
         allowAllEnvironments: true,
         allEnvironmentsLabel: hasEnvironmentBindings
-          ? `All machines in ${selectedBusinessOsInstance?.displayName ?? "this CTOX instance"}`
-          : "All machines",
-        allEnvironmentsSubtitle: "Show threads from every machine in the active scope",
+          ? `Alle Rechner in ${selectedBusinessOsInstance?.displayName ?? "diese Instanz"}`
+          : "Alle Rechner",
+        allEnvironmentsSubtitle: "Von allen Rechnern",
         environmentMenuTitle: "Machine",
         environments,
         projects: projectFilterOptions,
@@ -1259,14 +1259,14 @@ function ThreadNavigationSidebarPane(
   const listEmpty = (
     <Text className="px-2 py-4 text-sm text-foreground-muted">
       {catalogState.isLoadingConnections
-        ? "Loading threads…"
+        ? "Lädt Unterhaltungen…"
         : props.searchQuery.trim().length > 0
           ? threadSearch.isPending
-            ? "Searching thread messages…"
-            : "No matching threads"
+            ? "Durchsucht Nachrichten…"
+            : "Keine Treffer"
           : selectedProjectScope !== null
-            ? `No threads in ${selectedProjectScope.title}`
-            : "No threads yet"}
+            ? `Leer: ${selectedProjectScope.title}`
+            : "Noch keine Unterhaltungen"}
     </Text>
   );
 
@@ -1291,7 +1291,7 @@ function ThreadNavigationSidebarPane(
               // hidesSearchBarWhenScrolling collapses it on scroll.
               hideWhenScrolling: false,
               obscureBackground: false,
-              placeholder: "Search",
+              placeholder: "Suchen",
               placement: "stacked",
               onCancelButtonPress: () => {
                 props.onSearchQueryChange("");
@@ -1435,7 +1435,7 @@ function ThreadNavigationSidebarPane(
                 className="flex-1 text-[34px] font-workjet-bold text-foreground"
                 numberOfLines={1}
               >
-                Threads
+                Unterhaltungen
               </Text>
             }
           />
@@ -1443,7 +1443,7 @@ function ThreadNavigationSidebarPane(
             <ControlPillMenu actions={listMenuActions} onPressAction={handleListMenuAction}>
               <SidebarFilterButton
                 grouped
-                accessibilityLabel="Filter and sort threads"
+                accessibilityLabel="Filtern und sortieren"
                 icon={filterIcon}
               />
             </ControlPillMenu>
@@ -1455,12 +1455,12 @@ function ThreadNavigationSidebarPane(
           <SymbolView name="magnifyingglass" size={15} tintColor={mutedColor} type="monochrome" />
           <TextInput
             ref={searchInputRef}
-            accessibilityLabel="Search threads"
+            accessibilityLabel="Suchen"
             autoCapitalize="none"
             autoCorrect={false}
             clearButtonMode="while-editing"
             onChangeText={props.onSearchQueryChange}
-            placeholder="Search"
+            placeholder="Suchen"
             placeholderTextColor={placeholderColor}
             returnKeyType="search"
             className="h-[34px] flex-1 px-0 py-0 font-sans text-base text-foreground"

@@ -20,7 +20,7 @@ export interface NativeBundledBusinessOsShellPack {
 /** Only the native module resolves resources covered by APK / app-bundle signing. */
 export async function loadNativeBundledBusinessOsShellPack(): Promise<NativeBundledBusinessOsShellPack> {
   const load = module()?.getBundledShellPack;
-  if (!load) throw new Error("The installed app has no bundled Business OS shell.");
+  if (!load) throw new Error("App-Paket unvollständig. Workjet aktualisieren.");
   const pack = await load();
   if (!/^[0-9a-f]{64}$/u.test(pack?.packId) || !pack.rootUri) {
     throw new Error("The bundled Business OS shell descriptor is invalid.");

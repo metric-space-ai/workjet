@@ -52,7 +52,7 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         environmentId,
         label: presentation.entry.target.label,
         isPending: result.waiting,
-        error: result._tag === "Failure" ? "This environment could not report usage." : null,
+        error: result._tag === "Failure" ? "Keine Nutzungsdaten." : null,
         summary: Option.getOrNull(AsyncResult.value(result)),
       });
     }

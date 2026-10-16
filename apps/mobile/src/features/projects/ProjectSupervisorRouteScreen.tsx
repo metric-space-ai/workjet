@@ -43,14 +43,14 @@ export function ProjectSupervisorRouteScreen({
 
   const waiting = target.status === "pending" && !waitExpired;
   const detail = !instanceMatches
-    ? "This project belongs to another instance. Select its instance to open it."
+    ? "Projekt gehört zu anderer Instanz."
     : target.status === "conflict"
-      ? "The project supervisor could not be identified safely. The project has been kept."
+      ? "Supervisor nicht eindeutig. Projekt bleibt erhalten."
       : target.status === "unavailable"
-        ? "The project supervisor is unavailable. The project has been kept."
+        ? "Supervisor nicht verfügbar. Projekt bleibt erhalten."
         : waitExpired
-          ? "The project has been created. Its supervisor is still synchronizing."
-          : "Waiting for the saved project supervisor.";
+          ? "Projekt erstellt. Supervisor synchronisiert noch."
+          : "Wartet auf Supervisor.";
 
   return (
     <ScrollView
@@ -58,13 +58,13 @@ export function ProjectSupervisorRouteScreen({
       contentContainerStyle={{ padding: 24, gap: 16 }}
       className="flex-1 bg-screen"
     >
-      <Text className="text-xl font-workjet-bold">Project supervisor</Text>
-      {waiting ? <ActivityIndicator accessibilityLabel="Opening project supervisor" /> : null}
+      <Text className="text-xl font-workjet-bold">Supervisor</Text>
+      {waiting ? <ActivityIndicator accessibilityLabel="Öffnet Supervisor" /> : null}
       <Text className="text-base text-foreground-muted" accessibilityLiveRegion="polite">
         {detail}
       </Text>
       <Pressable onPress={() => navigation.dispatch(StackActions.replace("Home"))} className="py-3">
-        <Text className="text-base font-workjet-bold">Back to projects</Text>
+        <Text className="text-base font-workjet-bold">Zurück zu Projekten</Text>
       </Pressable>
     </ScrollView>
   );

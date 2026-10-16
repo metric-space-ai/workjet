@@ -506,7 +506,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
     const nowIso = new Date(Date.now()).toISOString();
     const activity = AgentActivity.start({
       title: "Workjet",
-      subtitle: "Luma work in progress",
+      subtitle: "Worker arbeitet",
       activeCount: 1,
       updatedAt: nowIso,
       activities: [

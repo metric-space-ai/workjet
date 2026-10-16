@@ -48,6 +48,6 @@ describe("Business OS launch context", () => {
         { browserToken: "raw-browser-token", capabilityToken: "capability-secret" },
         "android",
       ),
-    ).toThrowError("expired");
+    ).toThrowError("abgelaufen");
   });
 });

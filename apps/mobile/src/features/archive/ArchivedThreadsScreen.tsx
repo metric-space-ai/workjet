@@ -83,13 +83,13 @@ function ArchivedThreadsHeader(props: {
     () => [
       {
         id: "environment",
-        title: "Machine",
+        title: "Rechner",
         subactions: [
           ...(props.allowAllEnvironments
             ? [
                 {
                   id: "environment:all",
-                  title: props.allEnvironmentsLabel ?? "All machines",
+                  title: props.allEnvironmentsLabel ?? "Alle Rechner",
                   state: props.selectedEnvironmentId === null ? ("on" as const) : undefined,
                 },
               ]
@@ -106,16 +106,16 @@ function ArchivedThreadsHeader(props: {
       },
       {
         id: "sort",
-        title: "Sort by archived date",
+        title: "Nach Archivdatum",
         subactions: [
           {
             id: "sort:newest",
-            title: "Newest first",
+            title: "Neueste zuerst",
             state: props.sortOrder === "newest" ? ("on" as const) : undefined,
           },
           {
             id: "sort:oldest",
-            title: "Oldest first",
+            title: "Älteste zuerst",
             state: props.sortOrder === "oldest" ? ("on" as const) : undefined,
           },
         ],
@@ -159,7 +159,7 @@ function ArchivedThreadsHeader(props: {
         >
           <View className="min-h-12 flex-row items-center gap-2">
             <Pressable
-              accessibilityLabel="Navigate up"
+              accessibilityLabel="Zurück"
               accessibilityRole="button"
               hitSlop={8}
               onPress={() => navigation.goBack()}
@@ -180,11 +180,11 @@ function ArchivedThreadsHeader(props: {
                 type="monochrome"
               />
               <TextInput
-                accessibilityLabel="Search archived threads"
+                accessibilityLabel="Archiv durchsuchen"
                 autoCapitalize="none"
                 onChangeText={props.onSearchQueryChange}
                 value={props.searchQuery}
-                placeholder="Search archived threads"
+                placeholder="Archiv durchsuchen"
                 placeholderTextColorClassName="accent-placeholder"
                 className="flex-1 py-2 text-base font-sans text-foreground"
               />
@@ -195,7 +195,7 @@ function ArchivedThreadsHeader(props: {
               onPressAction={handleAndroidFilterAction}
             >
               <Pressable
-                accessibilityLabel="Filter and sort archived threads"
+                accessibilityLabel="Archiv filtern und sortieren"
                 accessibilityRole="button"
                 className="size-11 items-center justify-center rounded-full bg-subtle"
               >
@@ -217,17 +217,17 @@ function ArchivedThreadsHeader(props: {
     );
   }
   const archiveFilterMenu = {
-    title: "Archived thread options",
+    title: "Archiv-Optionen",
     items: [
       {
         type: "submenu" as const,
-        title: "Machine",
+        title: "Rechner",
         items: [
           ...(props.allowAllEnvironments
             ? [
                 {
                   type: "action" as const,
-                  title: props.allEnvironmentsLabel ?? "All machines",
+                  title: props.allEnvironmentsLabel ?? "Alle Rechner",
                   state: props.selectedEnvironmentId === null ? ("on" as const) : ("off" as const),
                   onPress: () => props.onEnvironmentChange(null),
                 },
@@ -246,17 +246,17 @@ function ArchivedThreadsHeader(props: {
       },
       {
         type: "submenu" as const,
-        title: "Sort by archived date",
+        title: "Nach Archivdatum",
         items: [
           {
             type: "action" as const,
-            title: "Newest first",
+            title: "Neueste zuerst",
             state: props.sortOrder === "newest" ? ("on" as const) : ("off" as const),
             onPress: () => props.onSortOrderChange("newest"),
           },
           {
             type: "action" as const,
-            title: "Oldest first",
+            title: "Älteste zuerst",
             state: props.sortOrder === "oldest" ? ("on" as const) : ("off" as const),
             onPress: () => props.onSortOrderChange("oldest"),
           },
@@ -283,7 +283,7 @@ function ArchivedThreadsHeader(props: {
                     : "line.3.horizontal.decrease",
                   onComposePress: props.onRefresh,
                   onSearchTextChange: props.onSearchQueryChange,
-                  placeholder: "Search",
+                  placeholder: "Suchen",
                   searchTextChangeId: "archived-search-text",
                 }),
               ]
@@ -306,7 +306,7 @@ function ArchivedThreadsHeader(props: {
                 autoCapitalize: "none",
                 hideNavigationBar: false,
                 obscureBackground: false,
-                placeholder: "Search archived threads",
+                placeholder: "Archiv durchsuchen",
                 onChangeText: (event) => {
                   props.onSearchQueryChange(event.nativeEvent.text);
                 },
@@ -321,31 +321,31 @@ function ArchivedThreadsHeader(props: {
         <NativeHeaderToolbar placement="right">
           {usesNativeChrome ? (
             <NativeHeaderToolbar.Button
-              accessibilityLabel="Refresh archived threads"
+              accessibilityLabel="Archiv aktualisieren"
               icon="arrow.clockwise"
               onPress={props.onRefresh}
               separateBackground
             />
           ) : null}
           <NativeHeaderToolbar.Menu
-            accessibilityLabel="Filter and sort archived threads"
+            accessibilityLabel="Archiv filtern und sortieren"
             icon={
               hasCustomFilter
                 ? "line.3.horizontal.decrease.circle.fill"
                 : "line.3.horizontal.decrease.circle"
             }
             separateBackground
-            title="Archived thread options"
+            title="Archiv-Optionen"
           >
-            <NativeHeaderToolbar.Menu title="Machine">
-              <NativeHeaderToolbar.Label>Machine</NativeHeaderToolbar.Label>
+            <NativeHeaderToolbar.Menu title="Rechner">
+              <NativeHeaderToolbar.Label>Rechner</NativeHeaderToolbar.Label>
               {props.allowAllEnvironments ? (
                 <NativeHeaderToolbar.MenuAction
                   isOn={props.selectedEnvironmentId === null}
                   onPress={() => props.onEnvironmentChange(null)}
                 >
                   <NativeHeaderToolbar.Label>
-                    {props.allEnvironmentsLabel ?? "All machines"}
+                    {props.allEnvironmentsLabel ?? "Alle Rechner"}
                   </NativeHeaderToolbar.Label>
                 </NativeHeaderToolbar.MenuAction>
               ) : null}
@@ -360,19 +360,19 @@ function ArchivedThreadsHeader(props: {
               ))}
             </NativeHeaderToolbar.Menu>
 
-            <NativeHeaderToolbar.Menu title="Sort by archived date">
-              <NativeHeaderToolbar.Label>Sort by archived date</NativeHeaderToolbar.Label>
+            <NativeHeaderToolbar.Menu title="Nach Archivdatum">
+              <NativeHeaderToolbar.Label>Nach Archivdatum</NativeHeaderToolbar.Label>
               <NativeHeaderToolbar.MenuAction
                 isOn={props.sortOrder === "newest"}
                 onPress={() => props.onSortOrderChange("newest")}
               >
-                <NativeHeaderToolbar.Label>Newest first</NativeHeaderToolbar.Label>
+                <NativeHeaderToolbar.Label>Neueste zuerst</NativeHeaderToolbar.Label>
               </NativeHeaderToolbar.MenuAction>
               <NativeHeaderToolbar.MenuAction
                 isOn={props.sortOrder === "oldest"}
                 onPress={() => props.onSortOrderChange("oldest")}
               >
-                <NativeHeaderToolbar.Label>Oldest first</NativeHeaderToolbar.Label>
+                <NativeHeaderToolbar.Label>Älteste zuerst</NativeHeaderToolbar.Label>
               </NativeHeaderToolbar.MenuAction>
             </NativeHeaderToolbar.Menu>
           </NativeHeaderToolbar.Menu>
@@ -431,7 +431,7 @@ function ArchivedThreadRow(props: {
   const timestamp = relativeTime(props.thread.archivedAt ?? props.thread.updatedAt);
   const isDeletedWorker = props.thread.deletedAt != null;
   const subtitle = [
-    isDeletedWorker ? "Completed worker" : null,
+    isDeletedWorker ? "Beendeter Worker" : null,
     props.environmentLabel,
     props.thread.branch,
   ].filter((part): part is string => Boolean(part));
@@ -488,7 +488,7 @@ function ArchivedThreadRow(props: {
   if (isDeletedWorker) {
     return (
       <Pressable
-        accessibilityLabel={`Open completed worker ${props.thread.title}`}
+        accessibilityLabel={`${props.thread.title} öffnen`}
         accessibilityRole="button"
         onPress={props.onOpenWorker}
         style={containerStyle}
@@ -510,7 +510,7 @@ function ArchivedThreadRow(props: {
       primaryAction={{
         accessibilityLabel: `Unarchive ${props.thread.title}`,
         icon: "arrow.uturn.backward",
-        label: "Unarchive",
+        label: "Wiederherstellen",
         onPress: props.onUnarchive,
       }}
       simultaneousWithExternalGesture={props.simultaneousSwipeGesture}
@@ -525,11 +525,11 @@ function ArchiveError(props: { readonly message: string; readonly onRetry: () =>
   return (
     <View className="rounded-[20px] border border-danger-border bg-danger p-4">
       <Text className="text-base font-workjet-bold text-danger-foreground">
-        Could not load every archive
+        Archiv unvollständig geladen
       </Text>
       <Text className="mt-1 text-sm text-foreground-muted">{props.message}</Text>
       <Pressable className="mt-3 self-start active:opacity-60" onPress={props.onRetry}>
-        <Text className="text-sm font-workjet-bold text-danger-foreground">Try again</Text>
+        <Text className="text-sm font-workjet-bold text-danger-foreground">Erneut versuchen</Text>
       </Pressable>
     </View>
   );
@@ -642,21 +642,12 @@ export function ArchivedThreadsScreen(props: {
       return (
         <View className="items-center py-16">
           <ActivityIndicator color={refreshTint} />
-          <Text className="mt-3 text-sm text-foreground-muted">Loading archive...</Text>
+          <Text className="mt-3 text-sm text-foreground-muted">Lädt Archiv…</Text>
         </View>
       );
     }
 
-    return (
-      <EmptyState
-        detail={
-          isFiltered
-            ? "Try another search or environment."
-            : "Threads you archive will appear here."
-        }
-        title={isFiltered ? "No matching threads" : "No archived threads"}
-      />
-    );
+    return <EmptyState title={isFiltered ? "Keine Treffer" : "Kein Archiv"} />;
   }, [isFiltered, isInitialLoad, refreshTint]);
 
   return (

@@ -20,7 +20,7 @@ export async function deliverDecisionHubNotification(input: {
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: "Decision Hub",
-      description: "Offene Entscheidungen aus Workjet Business OS",
+      description: "Offene Entscheidungen",
       importance: Notifications.AndroidImportance.HIGH,
       sound: "default",
       enableVibrate: true,

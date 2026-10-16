@@ -173,7 +173,7 @@ function BusinessOsHomeDeskFallback(props: BusinessOsHomeDeskProps) {
               {props.instance.displayName}
             </Text>
             <Text className="mt-1 text-sm text-foreground-muted">
-              {editing ? "Apps bewegen oder zu Ordnern zusammenlegen" : "Business OS"}
+              {editing ? "Apps anordnen" : "Business OS"}
             </Text>
           </View>
           <View className="flex-row gap-2">
@@ -188,7 +188,7 @@ function BusinessOsHomeDeskFallback(props: BusinessOsHomeDeskProps) {
                 />
                 {props.showsSettingsAction ? (
                   <ControlPill
-                    accessibilityLabel="Workjet Einstellungen"
+                    accessibilityLabel="Einstellungen"
                     icon="gearshape"
                     onPress={props.onOpenSettings}
                   />
@@ -297,7 +297,7 @@ function BusinessOsHomeDeskFallback(props: BusinessOsHomeDeskProps) {
           }}
           onPress={props.onOpenRecents}
         >
-          <Text className="text-xs font-workjet-bold text-foreground-muted">RECENTS</Text>
+          <Text className="text-xs font-workjet-bold text-foreground-muted">ZULETZT</Text>
         </Pressable>
         <BusinessOsPlatformDock>
           {props.layout.dock.map((appId) => {

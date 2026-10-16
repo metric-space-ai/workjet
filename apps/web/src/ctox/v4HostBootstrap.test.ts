@@ -14,6 +14,12 @@ import { commitActiveWorkjetSelection, readActiveWorkjetScope } from "../activeW
 import { WORKJET_APP_ID, workjetAppManifest } from "./workjetAppManifest";
 import { desktopLaunchContextReader, startWorkjetV4HostBootstrap } from "./v4HostWiring";
 import type { DesktopCtoxBridge } from "@workjet/contracts";
+import { CTOX_MAINTENANCE_RESTART } from "@workjet/shared/ctoxV4AppData";
+import {
+  CTOX_SECRET_REQUEST_FULFILL,
+  ctoxRouteOffered,
+  v4GrantedCapabilities,
+} from "./v4Capabilities";
 
 const APP_VER = "bootstrap-test";
 
@@ -71,7 +77,7 @@ afterEach(async () => {
 });
 
 /** Memory kernel on the vendored fake core; stands in for bootV4's authenticated WebRTC kernel. */
-function memorySessions() {
+function memorySessions(granted: string[] | null = null) {
   const opened: { coreInstanceId: string; closed: boolean }[] = [];
   const openSession = vi.fn(async (_instanceId: string, payload: unknown) => {
     const coreInstanceId = (payload as ReturnType<typeof v4LaunchContext>).v4.instanceId;
@@ -114,6 +120,7 @@ function memorySessions() {
     opened.push(entry);
     const session: WorkjetV4Session = {
       kernel,
+      capabilities: () => granted,
       close: async () => {
         entry.closed = true;
         await kernel.close();
@@ -228,6 +235,24 @@ describe("V4 bootstrap: mount only on a V4 instance", () => {
     await expect(controller.sync(instanceId)).rejects.toThrow("transport_unavailable");
     expect(controller.getState()).toEqual({ instanceId, generation: null });
     expect(getCtoxClient(instanceId)).toBeNull();
+  });
+
+  it("binds the hello_ok grant per mount and drops it on unmount", async () => {
+    const instanceId = `wj-grant-${++sequence}`;
+    let payload: unknown = v4LaunchContext(`core-${sequence}`);
+    const { host: controller } = host(
+      async () => payload,
+      memorySessions([CTOX_SECRET_REQUEST_FULFILL]),
+    );
+    await controller.sync(instanceId);
+    expect(v4GrantedCapabilities(instanceId)).toEqual([CTOX_SECRET_REQUEST_FULFILL]);
+    expect(ctoxRouteOffered(instanceId, CTOX_SECRET_REQUEST_FULFILL)).toBe(true);
+    expect(ctoxRouteOffered(instanceId, CTOX_MAINTENANCE_RESTART)).toBe(false);
+    payload = v3LaunchContext;
+    await controller.sync(instanceId);
+    expect(v4GrantedCapabilities(instanceId)).toBeNull();
+    // V3 again: its existing paths are offered unchanged.
+    expect(ctoxRouteOffered(instanceId, CTOX_SECRET_REQUEST_FULFILL)).toBe(true);
   });
 
   it("dispose unmounts", async () => {

@@ -6,6 +6,7 @@ import { bootV4, parseV4LaunchContext } from "./kernel/boot.mjs";
 import { createKernel } from "./kernel/kernel.mjs";
 import type { Kernel, KernelLoader, LoaderOptions } from "./kernel/index";
 import { mountWorkjetHost, type WorkjetAppModule } from "./hostMount";
+import { bindV4GrantedCapabilities } from "./v4Capabilities";
 
 /**
  * Reads the authenticated launch context of exactly this Workjet instance through the desktop
@@ -69,6 +70,8 @@ export async function createWorkjetKernelLoader(options: LoaderOptions): Promise
 
 export interface WorkjetV4Session {
   readonly kernel: Kernel;
+  /** Live `hello_ok.capabilities` grant (E43.2); `null` before the authenticated hello. */
+  readonly capabilities?: () => ReadonlyArray<string> | null;
   close(): Promise<void>;
 }
 
@@ -89,7 +92,13 @@ export async function bootWorkjetV4Session(
     });
   }) as typeof fetch;
   const result = await bootV4({ fetchImpl, loaderFactory: createWorkjetKernelLoader });
-  return { kernel: result.kernel, close: () => result.loader.close() };
+  // The transport reports the Core's hello_ok grant; the vendored typings do not declare it.
+  const transport = result.transport as unknown as { readonly capabilities?: string[] | null };
+  return {
+    kernel: result.kernel,
+    capabilities: () => transport.capabilities ?? null,
+    close: () => result.loader.close(),
+  };
 }
 
 export interface WorkjetV4HostOptions {
@@ -119,6 +128,7 @@ interface ActiveMount {
   readonly instanceId: string;
   readonly session: WorkjetV4Session;
   readonly handle: { unmount(): Promise<void> };
+  readonly unbindCapabilities: () => void;
 }
 
 /**
@@ -147,6 +157,7 @@ export function createWorkjetV4Host(options: WorkjetV4HostOptions) {
     const current = active;
     if (!current) return;
     active = null;
+    current.unbindCapabilities();
     try {
       await current.handle.unmount();
     } finally {
@@ -197,7 +208,13 @@ export function createWorkjetV4Host(options: WorkjetV4HostOptions) {
         scopeKernelToWorkjetInstance(session.kernel, instanceId),
         { appVersion: options.appVersion, module: bindingOnlyModule },
       );
-      active = { instanceId, session, handle };
+      const readCapabilities = session.capabilities ?? (() => null);
+      active = {
+        instanceId,
+        session,
+        handle,
+        unbindCapabilities: bindV4GrantedCapabilities(instanceId, readCapabilities),
+      };
       publish({ instanceId, generation: "v4" });
     } catch (error) {
       await session.close().catch(() => {});

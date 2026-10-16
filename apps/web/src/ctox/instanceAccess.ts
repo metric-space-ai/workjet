@@ -1,6 +1,10 @@
-import { requestCtoxMaintenanceRestart } from "@workjet/shared/ctoxV4AppData";
+import {
+  CTOX_MAINTENANCE_RESTART,
+  requestCtoxMaintenanceRestart,
+} from "@workjet/shared/ctoxV4AppData";
 import type { V4LaunchContext } from "./kernel/index";
 import { getCtoxClient } from "./ctoxClient";
+import { ctoxRouteOffered, markV4RouteUnavailable, v4GrantedCapabilities } from "./v4Capabilities";
 import {
   redeemV4DeviceInvite,
   type V4DeviceKeySource,
@@ -121,20 +125,36 @@ export type CtoxInstanceRestartOutcome =
   | { readonly ok: false; readonly code: string };
 
 /**
- * Service restart: on a bound V4 client `ctox.maintenance.restart` behind the capability from the
- * launch context; on V3 the existing desktop path (`v3Restart`) stays until the cutover cleanup.
+ * Whether a restart may be offered at all. V3 keeps its desktop path; V4 only when the Core granted
+ * `ctox.maintenance.restart` in hello_ok, the actor is admin and the route did not answer
+ * `unavailable` this session. Otherwise the UI shows no restart action and no hint.
  */
-export function restartCtoxInstance(
+export function ctoxInstanceRestartOffered(instanceId: string): boolean {
+  const api = getCtoxClient(instanceId);
+  if (api === null) return true;
+  return api.actor.role === "admin" && ctoxRouteOffered(instanceId, CTOX_MAINTENANCE_RESTART);
+}
+
+/**
+ * Service restart: on a bound V4 client `ctox.maintenance.restart` behind the hello_ok grant
+ * (or the explicit `capabilities`); on V3 the existing desktop path (`v3Restart`) stays until the
+ * cutover cleanup. An `unavailable` answer hides the action for the rest of the session.
+ */
+export async function restartCtoxInstance(
   instanceId: string,
   options: {
-    readonly capabilities: ReadonlyArray<string>;
+    readonly capabilities?: ReadonlyArray<string>;
     readonly reason: string;
     readonly v3Restart: () => Promise<CtoxInstanceRestartOutcome>;
   },
 ): Promise<CtoxInstanceRestartOutcome> {
   const api = getCtoxClient(instanceId);
   if (api === null) return options.v3Restart();
-  return requestCtoxMaintenanceRestart(api, options.capabilities, options.reason);
+  const capabilities = options.capabilities ?? v4GrantedCapabilities(instanceId) ?? [];
+  const outcome = await requestCtoxMaintenanceRestart(api, capabilities, options.reason);
+  if (!outcome.ok && outcome.code === "unavailable")
+    markV4RouteUnavailable(instanceId, CTOX_MAINTENANCE_RESTART);
+  return outcome;
 }
 
 /** SSH-managed instance paths (add/discover/fleet over SSH) are V3 only; a V4 instance never uses them. */

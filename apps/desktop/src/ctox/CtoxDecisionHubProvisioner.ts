@@ -308,6 +308,13 @@ const make = Effect.gen(function* () {
         if ("commit" in provisionTarget) provisionTarget.commit();
         return { _tag: "completed", connection: result.connection } as const;
       }).pipe(
+        Effect.tapError((cause) =>
+          Effect.logWarning("CTOX decision hub provisioning failed", {
+            purpose: input.purpose,
+            target: input.target._tag,
+            reason: typeof cause === "string" ? cause : "exception",
+          }),
+        ),
         Effect.catch((cause) =>
           Effect.succeed({
             _tag: "failed",

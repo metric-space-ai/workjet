@@ -11,6 +11,12 @@ import type {
 import { projectControlReadKey } from "@workjet/shared/projectControlRead";
 import { readActiveWorkjetScope } from "./activeWorkjetScope";
 import { newCommandId } from "./lib/utils";
+import { getCtoxClient } from "./ctox/ctoxClient";
+import {
+  listV4WorkjetProjects,
+  readV4WorkjetProjectKpis,
+  requestV4ProjectControl,
+} from "./ctox/v4ProjectControl";
 
 export type WorkjetProjectControlPort = NonNullable<DesktopCtoxBridge["requestProjectControl"]>;
 export type WorkjetProjectPoolPort = NonNullable<DesktopCtoxBridge["ensurePooled"]>;
@@ -187,6 +193,14 @@ export function requestWorkjetProjectControl(
   port: WorkjetProjectControlPort | undefined = activeDesktopProjectControl(),
   ensurePooled: WorkjetProjectPoolPort | undefined = activeDesktopProjectPool(),
 ): Promise<CtoxWorkjetProjectControlResult> {
+  // V4 only when the host bound a kernel client for this instance (V4 instance);
+  // a V3 instance keeps the desktop guest path unchanged.
+  const api = getCtoxClient(instanceId);
+  if (api !== null) {
+    const local = requestV4ProjectControl(api, request);
+    if (local !== null) return local;
+    return executeWorkjetProjectControl(instanceId, request, port, ensurePooled);
+  }
   const readKey = projectControlReadKey(request);
   if (!port || readKey === null)
     return executeWorkjetProjectControl(instanceId, request, port, ensurePooled);
@@ -213,6 +227,8 @@ export async function listWorkjetProjects(
   instanceId: string,
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
+  const api = getCtoxClient(instanceId);
+  if (api !== null) return listV4WorkjetProjects(api);
   let configured = await requestWorkjetProjectControl(
     instanceId,
     { action: "project.list", includeConfiguration: true, includeSupervisorLuma: true },
@@ -276,6 +292,9 @@ export function readWorkjetProjectKpis(
   projectId: ProjectId,
   port: WorkjetProjectControlPort | undefined = activeDesktopProjectControl(),
 ): Promise<CtoxWorkjetProjectControlResult> {
+  const api = getCtoxClient(instanceId);
+  if (api !== null)
+    return new Promise((resolve) => resolve(readV4WorkjetProjectKpis(api, projectId)));
   if (!port) return Promise.resolve({ _tag: "failed", code: "not_active" });
   const revision = readActiveWorkjetScope().selectionRevision;
   const key = instanceId;
@@ -415,7 +434,7 @@ export async function readWorkjetProjectFeed(
   | { readonly _tag: "unsupported" }
   | { readonly _tag: "failed"; readonly code: string }
 > {
-  if (!port) return { _tag: "failed", code: "not_active" };
+  if (!port && getCtoxClient(instanceId) === null) return { _tag: "failed", code: "not_active" };
   const commandId = newCommandId();
   const result = await requestWorkjetProjectControl(
     instanceId,
@@ -435,3 +454,6 @@ export async function readWorkjetProjectFeed(
     return { _tag: "failed", code: "guest_failed" };
   return { _tag: "posts", posts: result.response.posts };
 }
+
+/** @deprecated Alias kept for V4 tests from #749/#767; dispatch is gated in requestWorkjetProjectControl. */
+export const requestWorkjetProjectControlFromExplicitHost = requestWorkjetProjectControl;

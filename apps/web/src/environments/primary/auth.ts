@@ -22,6 +22,8 @@ import {
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { runPrimaryHttp } from "../../lib/runtime";
 import { readPrimaryEnvironmentTarget } from "./target";
+import { getWorkjetKernelMount } from "../../ctox/kernelClient";
+import { readActiveWorkjetScope } from "../../activeWorkjetScope";
 
 const PrimaryEnvironmentRequestOperation = Schema.Literals([
   "fetch-session-state",
@@ -539,8 +541,10 @@ export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGat
  * its normal native credential and server authorization.
  */
 export function resolveInitialAppShellGateState(): Promise<
-  ServerAuthGateState | { readonly status: "desktop-local" }
+  ServerAuthGateState | { readonly status: "desktop-local" } | { readonly status: "hosted-static" }
 > {
+  if (getWorkjetKernelMount(readActiveWorkjetScope().selectedInstanceId) !== null)
+    return Promise.resolve({ status: "hosted-static" });
   if (readPrimaryEnvironmentTarget()?.source === "desktop-managed") {
     return Promise.resolve({ status: "desktop-local" });
   }

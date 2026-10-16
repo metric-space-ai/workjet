@@ -598,11 +598,32 @@ async function collectFiles(root, relativeDirectory) {
   return files;
 }
 
+/**
+ * The vendored CTOX kernel is a byte copy of Core code (apps/web/src/ctox/kernel/KERNEL_PIN),
+ * not Workjet copy (E31.4). Exactly the files whose sha256 PROVENANCE.json pins are skipped;
+ * kernelProvenance.test.ts proves they are unmodified, and Workjet maps their error codes only.
+ */
+const VENDORED_KERNEL_DIR = "apps/web/src/ctox/kernel";
+async function vendoredKernelFiles(root) {
+  try {
+    const provenance = JSON.parse(
+      await NodeFSP.readFile(NodePath.join(root, VENDORED_KERNEL_DIR, "PROVENANCE.json"), "utf8"),
+    );
+    return new Set(provenance.files.map(({ path }) => `${VENDORED_KERNEL_DIR}/${path}`));
+  } catch (error) {
+    if (error?.code === "ENOENT") return new Set();
+    throw error;
+  }
+}
+
 /** Audit the bounded Workjet product surfaces from a repository root. */
 export async function auditWorkjetContent(root = repoRoot) {
+  const vendored = await vendoredKernelFiles(root);
   const sourceFiles = (
     await Promise.all(AUDITED_SOURCE_ROOTS.map((directory) => collectFiles(root, directory)))
-  ).flat();
+  )
+    .flat()
+    .filter((relativePath) => !vendored.has(relativePath));
   const files = [...sourceFiles, ...AUDITED_METADATA_FILES];
   for (const relativePath of OPTIONAL_METADATA_FILES) {
     try {

@@ -52,6 +52,15 @@ export default defineConfig({
       "apps/mobile/ios/**",
       "apps/web/public/mockServiceWorker.js",
       "apps/web/public/vendor/excalidraw/**",
+      // Exact controller-owned App API stub; see ctox/stub/PROVENANCE.md.
+      "apps/web/src/ctox/stub/index.d.ts",
+      "apps/web/src/ctox/stub/ctox-app-api-stub.mjs",
+      // Byte-identical CTOX kernel #823; checksum inventory in kernel/PROVENANCE.json.
+      "apps/web/src/ctox/kernel/*.mjs",
+      "apps/web/src/ctox/kernel/vendor/**",
+      // Byte-identical CTOX Workjet bridge contract (E27.6); sha256 in kernel/PROVENANCE.json.
+      "apps/web/src/ctox/contract/wjb-command-types.json",
+      "apps/web/src/ctox/kernel/index.d.ts",
       "apps/web/src/lib/vendor/qrcodegen.ts",
       "apps/mobile/uniwind-types.d.ts",
       "*.icon/**",
@@ -99,6 +108,14 @@ export default defineConfig({
       "apps/mobile/ios/**",
       "apps/mobile/uniwind-types.d.ts",
       "apps/web/public/vendor/excalidraw/**",
+      // Exact controller-owned App API stub; see ctox/stub/PROVENANCE.md.
+      "apps/web/src/ctox/stub/index.d.ts",
+      "apps/web/src/ctox/stub/ctox-app-api-stub.mjs",
+      "apps/web/src/ctox/kernel/*.mjs",
+      "apps/web/src/ctox/kernel/vendor/**",
+      // Byte-identical CTOX Workjet bridge contract (E27.6); sha256 in kernel/PROVENANCE.json.
+      "apps/web/src/ctox/contract/wjb-command-types.json",
+      "apps/web/src/ctox/kernel/index.d.ts",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
     jsPlugins: ["./oxlint-plugin-workjet/index.ts"],

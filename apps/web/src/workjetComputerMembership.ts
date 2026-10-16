@@ -7,6 +7,9 @@ import {
   type WorkjetComputer,
 } from "@workjet/contracts";
 import { randomUUID } from "./lib/utils";
+import { getCtoxClient, subscribeCtoxClients, type CtoxAppApi } from "./ctox/ctoxClient";
+import type { CtoxMachineDocument } from "./ctox/workjetLiveData";
+import { projectCtoxMachine } from "./ctox/machineControl";
 import {
   enrollOperationalComputer,
   type OperationalComputerEnrollment,
@@ -105,8 +108,45 @@ export function createComputerMembershipStore() {
     snapshot = next;
     for (const listener of listeners) listener();
   };
+  // V4 (bound kernel client only): live local query on workjet_computers (E32).
+  let stopV4 = () => {};
+  let stopClients = () => {};
+  let refreshEpoch = 0;
+  const detachV4 = () => {
+    stopV4();
+    stopClients();
+    stopV4 = () => {};
+    stopClients = () => {};
+  };
+  const subscribeV4 = (instanceId: string, api: CtoxAppApi) => {
+    publish({ ...snapshot, phase: "loading", error: null, pendingComputerId: null });
+    const rows = api.query<CtoxMachineDocument>("workjet_computers", {
+      selector: { status: "assigned", is_deleted: { $ne: true } },
+    });
+    stopV4 = rows.subscribe((documents) => {
+      if (snapshot.instanceId !== instanceId || getCtoxClient(instanceId) !== api) return;
+      try {
+        publish({
+          ...snapshot,
+          phase: "ready",
+          computers: documents.map(projectCtoxMachine),
+          error: null,
+          failureVisibleAtMs: null,
+        });
+      } catch {
+        publish({
+          ...snapshot,
+          phase: "failed",
+          computers: [],
+          error: membershipError("response_invalid"),
+          failureVisibleAtMs: Date.now(),
+        });
+      }
+    });
+  };
   const select = (instanceId: string | null) => {
     if (snapshot.instanceId === instanceId) return;
+    detachV4();
     generation++;
     publish({
       instanceId,
@@ -120,6 +160,18 @@ export function createComputerMembershipStore() {
   const refresh = async (instanceId: string, bridge: DesktopCtoxBridge | undefined) => {
     select(instanceId);
     const revision = ++generation;
+    detachV4();
+    const epoch = ++refreshEpoch;
+    const boundApi = getCtoxClient(instanceId);
+    // A host (un)binding the V4 client for this instance switches the data source.
+    stopClients = subscribeCtoxClients(() => {
+      if (epoch === refreshEpoch && getCtoxClient(instanceId) !== boundApi)
+        void refresh(instanceId, bridge);
+    });
+    if (boundApi !== null) {
+      subscribeV4(instanceId, boundApi);
+      return;
+    }
     // A focus refresh must not remove the selected computer while its inventory reloads.
     // Changing instances clears the previous inventory in select(); a failed refresh also clears it.
     publish({ ...snapshot, phase: "loading", error: null, pendingComputerId: null });
@@ -310,6 +362,11 @@ export function createComputerMembershipStore() {
     }
   };
   return {
+    dispose: () => {
+      generation++;
+      refreshEpoch++;
+      detachV4();
+    },
     getSnapshot: () => snapshot,
     subscribe: (listener: () => void) => {
       listeners.add(listener);

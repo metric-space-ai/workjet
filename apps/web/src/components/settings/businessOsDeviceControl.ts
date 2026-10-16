@@ -8,6 +8,8 @@ import {
 import * as Schema from "effect/Schema";
 
 import { encodeWorkjetBusinessOsPairingLink } from "./businessOsPairing";
+import { getCtoxClient } from "../../ctox/ctoxClient";
+import { readCtoxDevices } from "../../ctox/deviceData";
 
 export interface BusinessOsWebRtcDeviceInvite {
   readonly inviteId: string;
@@ -56,6 +58,19 @@ export async function listBusinessOsDevices(
   instanceId: string,
   businessOsInstanceId: string,
 ): Promise<WorkjetDeviceBindingListResult> {
+  // V4 instance: the platform `devices` collection is the local source (§16.43).
+  const api = getCtoxClient(instanceId);
+  if (api !== null)
+    return {
+      devices: readCtoxDevices(api).map((binding) => ({
+        devicePairingId: binding.id,
+        // V4's canonical device identity is device_pairing_id (§16.43).
+        deviceId: binding.id,
+        businessOsInstanceId,
+        pairedAtMillis: binding.created_at_ms,
+        ...(binding.label.trim() ? { displayName: binding.label.trim().slice(0, 256) } : {}),
+      })),
+    };
   const response = record(await request(bridge, instanceId, { action: "binding.list" }));
   if (!Array.isArray(response.bindings) || response.bindings.length > 1_000) {
     throw new Error("invalid_binding_list");

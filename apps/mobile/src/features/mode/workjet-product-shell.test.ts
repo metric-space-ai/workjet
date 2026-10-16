@@ -45,12 +45,15 @@ describe("shared Workjet product shell", () => {
     const app = read("../../App.tsx");
     const pairing = read("../pairing/WorkjetDevicePairingProvider.tsx");
 
-    expect(onboarding).toContain("Ein Pairing für Code und Business OS");
-    expect(onboarding).toContain("Einstellungen → Business OS");
-    expect(onboarding).toContain("Gerät hinzufügen");
-    expect(onboarding).not.toContain("Footer der linken Seitenleiste");
+    expect(onboarding).toContain("Workjet verbinden");
+    expect(onboarding).toContain('label="Code eingeben"');
+    expect(onboarding).toContain('"QR-Code scannen"');
+    expect(onboarding).toContain("QR-Code: Einstellungen › Instanz › Gerät hinzufügen");
+    expect(onboarding).not.toContain("Ein Pairing für Code und Business OS");
+    expect(onboarding).not.toContain("kurzlebigen");
     expect(onboarding).toContain("<CameraView");
-    expect(onboarding).not.toContain("<TextInput");
+    // Genau ein Feld: der Pairing-Code. Kein Server-, Host- oder Passwortfeld.
+    expect(onboarding.match(/<TextInput/gu)?.length ?? 0).toBe(1);
     expect(onboarding).not.toMatch(/placeholder=.*(?:server|host|passwort|password)/iu);
     expect(app).toContain("<WorkjetDevicePairingProvider>");
     expect(pairing).toContain("parseWorkjetDevicePairingLink(payload)");

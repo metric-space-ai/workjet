@@ -20,7 +20,7 @@ function ModeButton(props: {
 }) {
   return (
     <Pressable
-      accessibilityLabel={`${props.label} öffnen`}
+      accessibilityLabel={props.label}
       accessibilityRole="tab"
       accessibilityState={{ selected: props.selected }}
       className={
@@ -36,6 +36,7 @@ function ModeButton(props: {
             ? "text-sm font-workjet-bold text-foreground"
             : "text-sm font-workjet-medium text-foreground-muted"
         }
+        numberOfLines={1}
       >
         {props.label}
       </Text>
@@ -65,7 +66,7 @@ export function WorkjetProductChrome() {
 
   return (
     <View
-      accessibilityLabel="Workjet Produktnavigation"
+      accessibilityLabel="Navigation"
       className="z-50 flex-row items-end gap-2 border-b border-border bg-sidebar px-3 pb-2"
       style={{ paddingTop: Math.max(insets.top, 8) }}
     >
@@ -87,7 +88,10 @@ export function WorkjetProductChrome() {
         />
       </Pressable>
 
-      <View accessibilityRole="tablist" className="flex-row rounded-[13px] bg-subtle-strong p-1">
+      <View
+        accessibilityRole="tablist"
+        className="shrink-0 flex-row rounded-[13px] bg-subtle-strong p-1"
+      >
         <ModeButton label="Code" mode="code" selected={mode === "code"} onSelect={setMode} />
         <ModeButton
           label="Business OS"
@@ -98,26 +102,28 @@ export function WorkjetProductChrome() {
       </View>
 
       {selected ? (
-        <ControlPillMenu
-          actions={instanceActions}
-          onPressAction={(event) => {
-            const id = event.nativeEvent.event;
-            if (!id.startsWith("instance:")) return;
-            void select(id.slice("instance:".length));
-          }}
-        >
-          <Pressable
-            accessibilityLabel={`Aktive CTOX Instanz: ${selected.displayName}`}
-            accessibilityRole="button"
-            className="min-h-10 max-w-[240px] flex-row items-center gap-2 rounded-[11px] bg-subtle px-3 active:bg-subtle-strong"
+        <View className="min-w-0 shrink">
+          <ControlPillMenu
+            actions={instanceActions}
+            onPressAction={(event) => {
+              const id = event.nativeEvent.event;
+              if (!id.startsWith("instance:")) return;
+              void select(id.slice("instance:".length));
+            }}
           >
-            <View className="size-2 rounded-full bg-primary" />
-            <Text className="min-w-0 flex-1 text-sm font-workjet-bold" numberOfLines={1}>
-              {selected.displayName}
-            </Text>
-            <SymbolView name="chevron.down" size={13} tintColor={muted} type="monochrome" />
-          </Pressable>
-        </ControlPillMenu>
+            <Pressable
+              accessibilityLabel={`Instanz: ${selected.displayName}`}
+              accessibilityRole="button"
+              className="min-h-10 min-w-0 max-w-[240px] flex-row items-center gap-2 rounded-[11px] bg-subtle px-3 active:bg-subtle-strong"
+            >
+              <View className="size-2 rounded-full bg-primary" />
+              <Text className="min-w-0 flex-1 text-sm font-workjet-bold" numberOfLines={1}>
+                {selected.displayName}
+              </Text>
+              <SymbolView name="chevron.down" size={13} tintColor={muted} type="monochrome" />
+            </Pressable>
+          </ControlPillMenu>
+        </View>
       ) : null}
 
       <View className="flex-1" />

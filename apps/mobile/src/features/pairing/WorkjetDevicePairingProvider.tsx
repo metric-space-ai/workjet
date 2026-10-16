@@ -35,19 +35,19 @@ const WorkjetDevicePairingContext = createContext<WorkjetDevicePairingContextVal
 function confirmDevicePairing(input: ParsedWorkjetDevicePairingLink) {
   const description =
     input.kind === "reference"
-      ? `Server: ${new URL(input.reference.endpoint).host}\nGültig bis: ${new Date(
+      ? `${new URL(input.reference.endpoint).host}\nGültig bis ${new Date(
           input.reference.expiresAt,
-        ).toLocaleString()}\n\nDer Einmal-Code gibt genau eine Business-OS-Instanz frei.`
-      : `${input.invite.confirmation.displayName}\nSignaling: ${input.invite.confirmation.signalingHosts.join(
-          ", ",
-        )}\nGültig bis: ${new Date(input.invite.confirmation.expiresAt).toLocaleString()}`;
+        ).toLocaleString()}`
+      : `${input.invite.confirmation.displayName}\nGültig bis ${new Date(
+          input.invite.confirmation.expiresAt,
+        ).toLocaleString()}`;
   return new Promise<boolean>((resolve) => {
     Alert.alert(
       "Workjet verbinden?",
       description,
       [
         { text: "Abbrechen", style: "cancel", onPress: () => resolve(false) },
-        { text: "Code und Business OS verbinden", onPress: () => resolve(true) },
+        { text: "Verbinden", onPress: () => resolve(true) },
       ],
       { cancelable: true, onDismiss: () => resolve(false) },
     );
@@ -118,7 +118,7 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
             readManagedBusinessOsDeviceSessionMembership({ authorization }),
           );
           if (membership.businessOsInstanceId !== redeemed.businessOsInstanceId) {
-            throw new Error("Die Code-Rechner gehören zu einer anderen Business OS.");
+            throw new Error("Die Rechner gehören zu einer anderen Instanz.");
           }
           await importManagedBusinessOsInvite(
             redeemed.businessOs,
@@ -134,9 +134,7 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
 
         const codePairing = await connectCodePairingUrl(prepared.environment.pairingUrl);
         if (!AsyncResult.isSuccess(codePairing)) {
-          throw new Error(
-            "Workjet konnte die Code-Verbindung nicht einrichten. Erneuere den QR-Code in Workjet Desktop und versuche es erneut.",
-          );
+          throw new Error("Code-Verbindung fehlgeschlagen. Neuen QR-Code erstellen.");
         }
         const environmentId = codePairing.value;
         const wasAlreadyPaired = Object.hasOwn(savedConnectionsById, environmentId);
@@ -147,22 +145,20 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
           const businessOsInstance = await importBusinessOsInvite(prepared.businessOs, {
             confirm: false,
           });
-          if (!businessOsInstance) throw new Error("Business OS pairing was cancelled.");
+          if (!businessOsInstance) throw new Error("Pairing abgebrochen.");
           try {
             await bindEnvironment(businessOsInstance.id, environmentId);
           } catch {
             if (!businessOsWasAlreadyPaired) {
               await forgetBusinessOsInstance(businessOsInstance).catch(() => undefined);
             }
-            throw new Error("Workjet instance binding could not be stored.");
+            throw new Error("Instanz-Zuordnung nicht gespeichert.");
           }
         } catch {
           if (!wasAlreadyPaired) {
             await removeCodeEnvironment(environmentId).catch(() => undefined);
           }
-          throw new Error(
-            "Workjet konnte Business OS nicht sicher einrichten. Es wurden keine QR-Zugangsdaten gespeichert. Erneuere den QR-Code und versuche es erneut.",
-          );
+          throw new Error("Instanz-Verbindung fehlgeschlagen. Neuen QR-Code erstellen.");
         }
 
         savePreferences({ workjetPairingOnboardingDismissed: true });
@@ -195,7 +191,7 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
       } catch {
         if (handledInvalidIncomingPairing.current) return;
         handledInvalidIncomingPairing.current = true;
-        Alert.alert("Pairing fehlgeschlagen", "Der Workjet-QR-Code ist ungültig oder abgelaufen.");
+        Alert.alert("Pairing fehlgeschlagen", "QR-Code ungültig oder abgelaufen.");
         return;
       }
       if (
@@ -212,9 +208,7 @@ export function WorkjetDevicePairingProvider(props: { readonly children: ReactNo
         .catch((cause) => {
           Alert.alert(
             "Pairing fehlgeschlagen",
-            cause instanceof Error
-              ? cause.message
-              : "Der Workjet-QR-Code ist ungültig oder abgelaufen.",
+            cause instanceof Error ? cause.message : "QR-Code ungültig oder abgelaufen.",
           );
         })
         .finally(() => pendingIncomingDevicePairingIds.current.delete(pairingAttemptId));

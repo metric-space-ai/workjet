@@ -20,14 +20,22 @@ import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { InlineExpand } from "../ui/inline-expand";
 import { Row } from "../ui/row";
 import { CredentialCard } from "../toolhub/ToolhubCards";
-import { INTEGRATIONS, INTEGRATION_CATEGORIES, type IntegrationEntry } from "./integrationsCatalog";
+import {
+  INTEGRATIONS,
+  INTEGRATION_CATEGORIES,
+  isToolhubConnect,
+  type IntegrationEntry,
+} from "./integrationsCatalog";
 import { SettingsAddButton, SettingsLoadingRow, type SettingsAddOption } from "./settingsAdd";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useToolhubIntegrations, type ToolhubIntegrations } from "./useToolhubIntegrations";
 
-/** Nur Einträge mit Anschluss erscheinen; „Bald verfügbar“-Einträge gibt es nicht. */
-export const CONNECTABLE_INTEGRATIONS: ReadonlyArray<IntegrationEntry> = INTEGRATIONS.filter(
-  (e) => e.connect !== null,
+/**
+ * Nur Einträge mit Toolhub-Anschluss erscheinen; „Bald verfügbar“-Einträge gibt
+ * es nicht, native Kalender-Anmeldungen leben unter Instanz › Kalender-Konten.
+ */
+export const CONNECTABLE_INTEGRATIONS: ReadonlyArray<IntegrationEntry> = INTEGRATIONS.filter((e) =>
+  isToolhubConnect(e.connect),
 );
 
 export function IntegrationLogo({ entry }: { readonly entry: IntegrationEntry }) {
@@ -57,7 +65,10 @@ export function integrationAddOptions(
   onSelect: (entry: IntegrationEntry) => void,
 ): SettingsAddOption[] {
   return entries
-    .filter((entry) => entry.connect !== null && !hub.isConnected(entry) && !hub.isExpired(entry))
+    .filter(
+      (entry) =>
+        isToolhubConnect(entry.connect) && !hub.isConnected(entry) && !hub.isExpired(entry),
+    )
     .map((entry) => ({
       key: entry.slug,
       label: (

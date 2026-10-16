@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 /**
  * Authorization origins of the providers whose official MCP server the CTOX
- * Toolhub connects (`connect: "mcp"` in the Schnittstellen catalog).
+ * Toolhub connects (`connect: "mcp"` in the Schnittstellen catalog), plus the
+ * Google login origin of the native calendar sign-in (`connect: "calendar-oauth"`).
  *
  * The in-app login window only ever shows pages of the selected instance's
  * origin or of the origins listed here for the toolkit being connected; every
@@ -12,6 +13,8 @@ export const TOOLHUB_AUTHORIZE_ORIGINS: Readonly<Record<string, ReadonlyArray<st
   cloudflare: ["https://mcp.cloudflare.com", "https://dash.cloudflare.com"],
   "cloudflare-bindings": ["https://bindings.mcp.cloudflare.com", "https://dash.cloudflare.com"],
   vercel: ["https://mcp.vercel.com", "https://vercel.com"],
+  /** Native Google calendar sign-in (ctox #875); the instance never shows here. */
+  "google-calendar": ["https://accounts.google.com"],
 };
 
 export function toolhubAuthorizeOrigins(toolkit: string): ReadonlyArray<string> {

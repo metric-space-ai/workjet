@@ -59,6 +59,11 @@ import {
   WorkjetCalendarNativeResponses,
 } from "./workjetCalendarNative.ts";
 export * from "./workjetCalendarNative.ts";
+import {
+  WorkjetCalendarConnectRequests,
+  WorkjetCalendarConnectResponses,
+} from "./workjetCalendarConnect.ts";
+export * from "./workjetCalendarConnect.ts";
 
 import {
   WorkjetJourFixeReadRequest,
@@ -891,6 +896,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetJourFixeSpeechRequests,
   ...WorkjetPresentationRequests,
   ...WorkjetCalendarNativeRequests,
+  ...WorkjetCalendarConnectRequests,
   ...WorkjetSpeechSettingsRequests,
   ...WorkjetDictationRequests,
   ...WorkjetSecretRequestRequests,
@@ -1105,6 +1111,7 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetJourFixeSpeechResponse,
   ...WorkjetPresentationResponses,
   ...WorkjetCalendarNativeResponses,
+  ...WorkjetCalendarConnectResponses,
   WorkjetSpeechSettingsResponse,
   WorkjetSpeechPlaybackResponse,
   WorkjetDictationResponse,

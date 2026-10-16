@@ -131,9 +131,11 @@ describe("canSubmitCredential", () => {
 describe("store tiles", () => {
   it("shows only entries that can be connected", () => {
     expect(CONNECTABLE_INTEGRATIONS.length).toBeGreaterThan(0);
-    expect(CONNECTABLE_INTEGRATIONS.every((e) => e.connect !== null)).toBe(true);
+    expect(
+      CONNECTABLE_INTEGRATIONS.every((e) => e.connect === "mcp" || e.connect === "token"),
+    ).toBe(true);
     expect(CONNECTABLE_INTEGRATIONS).toHaveLength(
-      INTEGRATIONS.filter((e) => e.connect !== null).length,
+      INTEGRATIONS.filter((e) => e.connect === "mcp" || e.connect === "token").length,
     );
   });
 });

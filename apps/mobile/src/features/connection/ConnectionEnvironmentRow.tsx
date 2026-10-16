@@ -13,6 +13,7 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/App
 import { cn } from "../../lib/cn";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
   return connectionStatusText({
@@ -56,7 +57,7 @@ export function ConnectionEnvironmentRow(props: {
     const error = Cause.squash(result.cause);
     Alert.alert(
       "Rechner nicht aktualisiert",
-      error instanceof Error ? error.message : "Rechner nicht aktualisiert.",
+      userFacingErrorText(error, "ConnectionEnvironmentRow"),
     );
   }, [label, url, props]);
 

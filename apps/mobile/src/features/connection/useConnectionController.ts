@@ -20,6 +20,7 @@ import { useEnvironments } from "../../state/environments";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { projectWorkspaceEnvironment, type WorkspaceEnvironment } from "../../state/workspaceModel";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 export interface RelayEnvironmentView {
   readonly environment: RelayClientEnvironmentRecord;
@@ -62,7 +63,10 @@ export function useConnectionController() {
         environment: entry.environment,
         availability: entry.availability,
         status: Option.getOrNull(entry.status),
-        error: Option.getOrNull(entry.error)?.message ?? null,
+        error: Option.match(entry.error, {
+          onNone: () => null,
+          onSome: (error) => userFacingErrorText(error, "useConnectionController"),
+        }),
         traceId: Option.getOrNull(entry.error)?.traceId ?? null,
       })),
     [discovery.environments],
@@ -120,7 +124,10 @@ export function useConnectionController() {
     relayDiscovery: {
       isRefreshing: discovery.refreshing,
       isOffline: discovery.offline,
-      error: Option.getOrNull(discovery.error)?.message ?? null,
+      error: Option.match(discovery.error, {
+        onNone: () => null,
+        onSome: (error) => userFacingErrorText(error, "useConnectionController"),
+      }),
       errorTraceId: Option.getOrNull(discovery.error)?.traceId ?? null,
     },
     connectPairingUrl,

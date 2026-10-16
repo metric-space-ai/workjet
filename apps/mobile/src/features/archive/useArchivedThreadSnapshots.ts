@@ -9,6 +9,7 @@ import { useCallback, useMemo } from "react";
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import { orchestrationEnvironment } from "../../state/orchestration";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 function archivedSnapshotAtom(environmentId: EnvironmentId) {
   return orchestrationEnvironment.archivedShellSnapshot({
@@ -43,5 +44,9 @@ export function useArchivedThreadSnapshots(environmentIds: ReadonlyArray<Environ
     }
   }, [environmentIds]);
 
-  return { ...result, refresh };
+  return {
+    ...result,
+    error: result.error === null ? null : userFacingErrorText(result.error, "archived-threads"),
+    refresh,
+  };
 }

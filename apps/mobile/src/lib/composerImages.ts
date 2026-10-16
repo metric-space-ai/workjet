@@ -5,6 +5,7 @@ import {
 } from "@workjet/contracts";
 import { estimateBase64ByteSize } from "./base64";
 import { uuidv4 } from "./uuid";
+import { userFacingErrorText } from "./userFacingError";
 
 export interface DraftComposerImageAttachment extends UploadChatImageAttachment {
   readonly id: string;
@@ -60,7 +61,7 @@ export async function pickComposerImages(input: { readonly existingCount: number
   } catch (error) {
     return {
       images: [],
-      error: error instanceof Error ? error.message : "Bildanhänge gerade nicht möglich.",
+      error: userFacingErrorText(error, "composerImages"),
     };
   }
 
@@ -130,7 +131,7 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
     return {
       images: [],
       text: null,
-      error: error instanceof Error ? error.message : "Einfügen gerade nicht möglich.",
+      error: userFacingErrorText(error, "composerImages"),
     };
   }
 

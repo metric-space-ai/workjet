@@ -21,6 +21,7 @@ import { randomHex } from "../../lib/uuid";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { setPendingConnectionError } from "../../state/use-remote-environment-registry";
 import { validateProjectThreadCreation } from "./projectThreadCreationValidation";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 export function useCreateProjectThread() {
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
@@ -52,7 +53,7 @@ export function useCreateProjectThread() {
         initialMessageText,
       });
       if (validationError !== null) {
-        setPendingConnectionError(validationError.message);
+        setPendingConnectionError(userFacingErrorText(validationError, "use-project-actions"));
         return AsyncResult.failure(Cause.fail(validationError));
       }
 
@@ -79,9 +80,7 @@ export function useCreateProjectThread() {
       });
       if (AsyncResult.isFailure(result)) {
         const error = Cause.squash(result.cause);
-        setPendingConnectionError(
-          error instanceof Error ? error.message : "Aufgabe nicht gestartet.",
-        );
+        setPendingConnectionError(userFacingErrorText(error, "use-project-actions"));
         return AsyncResult.failure(result.cause);
       }
       setPendingConnectionError(null);

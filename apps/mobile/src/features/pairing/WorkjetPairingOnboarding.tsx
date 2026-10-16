@@ -6,10 +6,9 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/App
 import { SymbolView } from "../../components/AppSymbol";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { pairingScannerSize } from "./pairing-scanner-layout";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 type Entry = "none" | "scanner" | "code";
-
-const PAIRING_FAILED = "Pairing fehlgeschlagen. Neuen QR-Code erstellen.";
 
 export function WorkjetPairingOnboarding(props: {
   readonly onContinueWithoutPairing: () => void;
@@ -32,13 +31,7 @@ export function WorkjetPairingOnboarding(props: {
       setError(null);
       void props
         .onPairingPayload(payload)
-        .catch((cause: unknown) =>
-          setError(
-            cause instanceof Error && /[äöüß]|QR|Instanz|Pairing/u.test(cause.message)
-              ? cause.message
-              : PAIRING_FAILED,
-          ),
-        )
+        .catch((cause: unknown) => setError(userFacingErrorText(cause, "WorkjetPairingOnboarding")))
         .finally(() => {
           setPairing(false);
           setTimeout(() => setScannerLocked(false), 600);

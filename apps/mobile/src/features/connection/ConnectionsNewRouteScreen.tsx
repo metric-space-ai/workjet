@@ -13,6 +13,7 @@ import { ErrorBanner } from "../../components/ErrorBanner";
 import { ConnectionSheetButton } from "./ConnectionSheetButton";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
@@ -119,10 +120,7 @@ export function ConnectionsNewRouteScreen({
         onChangeConnectionPairingUrl(pairingUrl);
         setShowScanner(false);
       } catch (error) {
-        Alert.alert(
-          "Ungültiger QR-Code",
-          error instanceof Error ? error.message : "QR-Code nicht erkannt.",
-        );
+        Alert.alert("Ungültiger QR-Code", userFacingErrorText(error, "ConnectionsNewRouteScreen"));
       } finally {
         setTimeout(() => {
           setScannerLocked(false);

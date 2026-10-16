@@ -57,6 +57,7 @@ import {
 } from "../../state/use-remote-environment-registry";
 import { resolveAddProjectEnvironment } from "./AddProjectScreen.logic";
 import { useBusinessOs } from "../business-os/BusinessOsProvider";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
@@ -83,7 +84,7 @@ function platformFromOs(os: string | null | undefined): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message.trim().length > 0 ? error.message : "Fehler.";
+  return userFacingErrorText(error, "AddProjectScreen");
 }
 
 function stringParam(value: string | string[] | undefined): string | null {
@@ -741,7 +742,9 @@ function FolderBrowser(props: {
   return (
     <>
       <SectionTitle>Ordner durchsuchen</SectionTitle>
-      {browseState.error ? <ErrorBanner message={browseState.error} /> : null}
+      {browseState.error ? (
+        <ErrorBanner message={userFacingErrorText(browseState.error, "AddProjectScreen")} />
+      ) : null}
       <ListSection>
         {browseState.isPending && browseState.data === null ? (
           <View className="items-center py-5">
@@ -809,7 +812,7 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
       platform: environment.platform,
     });
     if (!resolved.ok) {
-      setError(resolved.error);
+      setError(userFacingErrorText(resolved.error, "AddProjectScreen"));
       return;
     }
 
@@ -915,7 +918,7 @@ export function AddProjectDestinationScreen(props: {
       platform: environment.platform,
     });
     if (!resolved.ok) {
-      setError(resolved.error);
+      setError(userFacingErrorText(resolved.error, "AddProjectScreen"));
       return;
     }
 

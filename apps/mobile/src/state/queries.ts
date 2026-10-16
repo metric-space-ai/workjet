@@ -28,6 +28,7 @@ import {
   normalizeComposerPathSearchQuery,
   type CheckpointDiffTarget,
 } from "./queryTargets";
+import { userFacingErrorText } from "../lib/userFacingError";
 
 const COMPOSER_PATH_SEARCH_DEBOUNCE_MS = 200;
 const COMPOSER_PATH_SEARCH_LIMIT = 20;
@@ -207,9 +208,7 @@ export function usePaginatedBranches(target: VcsRefTarget) {
     failed?._tag === "Failure"
       ? (() => {
           const cause = Cause.squash(failed.cause);
-          return cause instanceof Error && cause.message.trim().length > 0
-            ? cause.message
-            : "Zweige nicht geladen.";
+          return userFacingErrorText(cause, "queries");
         })()
       : null;
   const refresh = useCallback(() => {

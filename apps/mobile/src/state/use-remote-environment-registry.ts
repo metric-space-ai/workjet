@@ -21,6 +21,7 @@ import { appAtomRegistry } from "./atom-registry";
 import type { ConnectedEnvironmentSummary, EnvironmentRuntimeState } from "./remote-runtime-types";
 import { environmentSession, usePreparedConnection } from "./session";
 import { environmentCatalog } from "../connection/catalog";
+import { userFacingErrorText } from "../lib/userFacingError";
 
 const connectionPairingUrlAtom = Atom.make("").pipe(
   Atom.keepAlive,
@@ -168,7 +169,7 @@ export function useRemoteConnections() {
       const result = await controller.connectPairingUrl(nextPairingUrl);
       if (AsyncResult.isFailure(result)) {
         const error = Cause.squash(result.cause);
-        const message = error instanceof Error ? error.message : "Pairing fehlgeschlagen.";
+        const message = userFacingErrorText(error, "use-remote-environment-registry");
         setPendingConnectionError(message);
       } else {
         appAtomRegistry.set(connectionPairingUrlAtom, "");

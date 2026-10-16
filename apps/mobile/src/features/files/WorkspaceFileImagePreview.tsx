@@ -7,6 +7,7 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { workspaceFileImageAtom } from "./workspace-file-image-cache";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 function ResolvedWorkspaceFileImagePreview(props: {
   readonly accessibilityLabel: string;
@@ -36,7 +37,7 @@ function ResolvedWorkspaceFileImagePreview(props: {
           resizeMode="contain"
           onLoadStart={() => setLoadError(null)}
           onError={(event) => {
-            setLoadError(event.nativeEvent.error || "Bild nicht darstellbar.");
+            setLoadError(userFacingErrorText(event.nativeEvent.error, "WorkspaceFileImagePreview"));
           }}
         />
       </Pressable>

@@ -23,6 +23,7 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { getProjectScopeSelectionTarget } from "./new-task-project-selection";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
@@ -113,10 +114,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       try {
         await releaseShareReservation(incomingShare.id, incomingShare.destination);
       } catch (error) {
-        Alert.alert(
-          "Projekt nicht geändert",
-          error instanceof Error ? error.message : "Geteilter Inhalt nicht aktualisiert.",
-        );
+        Alert.alert("Projekt nicht geändert", userFacingErrorText(error, "NewTaskRouteScreen"));
         return;
       }
     }

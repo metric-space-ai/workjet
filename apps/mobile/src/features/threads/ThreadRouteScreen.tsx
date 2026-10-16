@@ -75,6 +75,7 @@ import {
   ThreadInspectorContentStack,
   type ThreadInspectorMode,
 } from "./thread-inspector-content-stack";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 interface ThreadInspectorSelection {
   readonly routeThreadIdentity: string | null;
@@ -754,7 +755,10 @@ function ThreadRouteContent(
 
   const contentPresentation = projectThreadContentPresentation({
     hasDetail: selectedThreadDetail !== null,
-    detailError: Option.getOrNull(selectedThreadDetailState.error),
+    detailError: Option.match(selectedThreadDetailState.error, {
+      onNone: () => null,
+      onSome: (error) => userFacingErrorText(error, "ThreadRouteScreen"),
+    }),
     detailDeleted: selectedThreadDetailState.status === "deleted",
     connectionState: routeConnectionState,
   });

@@ -41,6 +41,7 @@ import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
+import { userFacingErrorText } from "../lib/userFacingError";
 
 export function appendReviewCommentToDraft(input: {
   readonly environmentId: EnvironmentId;
@@ -174,9 +175,7 @@ export function useThreadComposerState() {
       // the user attached new ones while the write was in flight.
       void mergeComposerDraftContent(threadKey, { text, attachments: [] });
       appendComposerDraftAttachments(threadKey, attachments);
-      setPendingConnectionError(
-        error instanceof Error ? error.message : "Nachricht nicht gespeichert.",
-      );
+      setPendingConnectionError(userFacingErrorText(error, "use-thread-composer-state"));
     });
     return messageId;
   }, [selectedThreadDetail, selectedThreadShell]);

@@ -35,6 +35,7 @@ import {
 } from "../layout/native-mail-search-toolbar";
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
 import { shouldCheckoutNewTaskBranch } from "./new-task-context-presentation";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 function SelectionRow(props: {
   readonly icon?: "arrow.triangle.branch" | "desktopcomputer";
@@ -269,7 +270,7 @@ export function NewTaskBranchPickerRouteScreen() {
               const error = squashAtomCommandFailure(result);
               Alert.alert(
                 "Zweig nicht gewechselt",
-                error instanceof Error ? error.message : "Zweig nicht ausgecheckt.",
+                userFacingErrorText(error, "NewTaskContextPickerScreens"),
               );
             }
             return;

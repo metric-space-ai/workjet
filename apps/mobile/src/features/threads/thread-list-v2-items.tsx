@@ -36,6 +36,7 @@ import {
   type ThreadListV2Status,
 } from "./threadListV2";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 /**
  * Thread List v2 renders one flat native list: rich edge-to-edge rows for
@@ -735,7 +736,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             )}
             numberOfLines={1}
           >
-            {thread.session.lastError}
+            {userFacingErrorText(thread.session.lastError, "thread-list-v2-items")}
           </Text>
         ) : thread.branch || props.environmentLabel ? (
           /* "branch · machine" share one truncating line. The machine sits

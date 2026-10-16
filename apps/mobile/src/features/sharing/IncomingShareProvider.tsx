@@ -22,6 +22,7 @@ import {
   removeIncomingShareDraft,
   writeIncomingShareDraft,
 } from "./incoming-share-storage";
+import { userFacingErrorText } from "../../lib/userFacingError";
 
 type IncomingShareContextValue = {
   readonly pendingShare: IncomingShareDraft | null;
@@ -240,16 +241,20 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
     if (!error) {
       return;
     }
-    Alert.alert("Geteilter Inhalt nicht importiert", error.message, [
-      { text: "Schließen", style: "cancel", onPress: () => setError(null) },
-      {
-        text: "Erneut versuchen",
-        onPress: () => {
-          setError(null);
-          void refresh();
+    Alert.alert(
+      "Geteilter Inhalt nicht importiert",
+      userFacingErrorText(error, "IncomingShareProvider"),
+      [
+        { text: "Schließen", style: "cancel", onPress: () => setError(null) },
+        {
+          text: "Erneut versuchen",
+          onPress: () => {
+            setError(null);
+            void refresh();
+          },
         },
-      },
-    ]);
+      ],
+    );
   }, [error, refresh]);
 
   const consumeShare = useCallback(async (shareId: string) => {

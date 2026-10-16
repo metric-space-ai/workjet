@@ -20,4 +20,9 @@ describe("guest preparation diagnostics", () => {
     });
     expect(diagnostic).toEqual({ stage: "session", reason: "unknown", httpStatus: 401 });
   });
+  it("keeps an HTTP status failure of the guest navigation", () => {
+    expect(
+      guestPreparationDiagnostic("navigation_commit", { reason: "http_status", httpStatus: 414 }),
+    ).toEqual({ stage: "navigation_commit", reason: "http_status", httpStatus: 414 });
+  });
 });

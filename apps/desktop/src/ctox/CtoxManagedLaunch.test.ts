@@ -475,3 +475,36 @@ describe("CtoxManagedLaunch", () => {
     }).pipe(Effect.provide(harness(fetchImpl)));
   });
 });
+
+describe("buildCanonicalLaunchUrl (HTTP 414 launch URL)", () => {
+  const target = new URL("https://welsch.ctox.dev/");
+  const ice = [{ urls: ["turn:turn.ctox.dev:3478"], username: "u", credential: "c" }];
+
+  it("drops server diagnostics the guest page never reads", () => {
+    const href = CtoxManagedLaunch.buildCanonicalLaunchUrl(target, {
+      transport: "webrtc",
+      sync_room: "room",
+      ice_servers: ice,
+      iceServers: ice,
+      ice_diagnostics: { state: "ok" },
+      native_rxdb_peer_status: { peers: "x".repeat(21_000) },
+    });
+    assert.isString(href);
+    const config = decodeConfig(href ?? "");
+    assert.deepStrictEqual(Object.keys(config).sort(), ["ice_servers", "sync_room", "transport"]);
+    assert.isAtMost((href ?? "").length, CtoxManagedLaunch.MAX_CTOX_LAUNCH_URL_LENGTH);
+  });
+
+  it("keeps camelCase iceServers when no snake_case list exists", () => {
+    const config = CtoxManagedLaunch.guestLaunchConfig({ iceServers: ice });
+    assert.deepStrictEqual(config.iceServers, ice);
+  });
+
+  it("refuses launch URLs above the length budget instead of hitting HTTP 414", () => {
+    const href = CtoxManagedLaunch.buildCanonicalLaunchUrl(target, {
+      transport: "webrtc",
+      signaling_urls: ["x".repeat(10_000)],
+    });
+    assert.isUndefined(href);
+  });
+});

@@ -1222,6 +1222,20 @@ export interface DesktopBridge {
     readonly callbackUrl?: string;
   }>;
   /**
+   * Google calendar sign-in: open the instance-issued `authorizeUrl` in the
+   * origin-bound login window (only the fixed Google login origin) and capture
+   * the redirect to `redirectUri` before it loads. Only `callbackUrl` returns;
+   * submit it via `project.calendar.account.connect.complete`.
+   */
+  calendarAuthorize?: (input: {
+    readonly instanceId: string;
+    readonly authorizeUrl: string;
+    readonly redirectUri: string;
+  }) => Promise<{
+    readonly _tag: "captured" | "cancelled" | "failed";
+    readonly callbackUrl?: string;
+  }>;
+  /**
    * Drains the OS deep links the main process is holding. Draining is the
    * only way links leave the main process, so a link is delivered exactly
    * once. Optional: older desktop builds have no OS deep-link entry point.

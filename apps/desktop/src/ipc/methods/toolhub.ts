@@ -15,7 +15,10 @@ import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
 import * as DesktopClientSettings from "../../settings/DesktopClientSettings.ts";
 import * as IpcChannels from "../channels.ts";
 import { makeIpcMethod } from "../DesktopIpc.ts";
-import { openToolhubAuthorizeWindow } from "../../toolhub/ToolhubAuthorize.ts";
+import {
+  openCalendarAuthorizeWindow,
+  openToolhubAuthorizeWindow,
+} from "../../toolhub/ToolhubAuthorize.ts";
 
 const developerModeOn = Effect.gen(function* () {
   const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
@@ -73,6 +76,35 @@ export const authorizeToolhub = makeIpcMethod({
       openToolhubAuthorizeWindow(input.authorizeUrl, {
         instanceOrigin,
         providerOrigins: toolhubAuthorizeOrigins(input.toolkit),
+      }),
+    );
+  }),
+});
+
+const CalendarAuthorizeInput = Schema.Struct({
+  instanceId: Schema.String,
+  authorizeUrl: Schema.String,
+  redirectUri: Schema.String,
+});
+
+/**
+ * Native Google calendar sign-in (ctox #875), not developer-mode gated: the
+ * instance issued `authorizeUrl` and `redirectUri`; the window only shows the
+ * fixed Google login origin and captures the redirect before it loads. The
+ * selected instance must still be pooled, so no foreign renderer input opens it.
+ */
+export const authorizeCalendar = makeIpcMethod({
+  channel: IpcChannels.CALENDAR_AUTHORIZE_CHANNEL,
+  payload: CalendarAuthorizeInput,
+  result: ToolhubAuthorizeResult,
+  handler: Effect.fn("desktop.ipc.calendar.authorize")(function* (input) {
+    const manager = yield* CtoxGuestManager.CtoxGuestManager;
+    const instanceOrigin = yield* manager.toolhubInstanceOrigin(input.instanceId);
+    if (instanceOrigin === undefined) return { _tag: "failed" as const };
+    return yield* Effect.promise(() =>
+      openCalendarAuthorizeWindow(input.authorizeUrl, {
+        providerOrigins: toolhubAuthorizeOrigins("google-calendar"),
+        redirectUri: input.redirectUri,
       }),
     );
   }),

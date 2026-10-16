@@ -54,7 +54,24 @@ validates server receipts with Effect Schema. The existing local event
 create/update/delete shapes are a wire contract, not implemented calendar
 editing tools.
 
-This delivery does not add new account sign-in flows, Google/iCloud/CalDAV
-connectors, local event editing or two-way provider writes. Unsupported account
+## Google account sign-in
+
+Settings › Instance › Calendar accounts connects Google through the selected
+instance (ctox #875, `ctox.workjet.calendar.connect.v1`). Workjet sends
+`project.calendar.account.connect.start {provider:"google"}` over project
+control and receives `{attemptId, authorizeUrl, redirectUri, scopes,
+expiresAtMs}`. The desktop opens `authorizeUrl` in the origin-bound login window
+(only `https://accounts.google.com`) and captures the redirect to `redirectUri`
+before it loads. Only that `callbackUrl` goes back through
+`project.calendar.account.connect.complete {attemptId, callbackUrl}`; client,
+state, PKCE verifier and tokens stay in CTOX. Native failure codes arrive as a
+correlated receipt `{action, commandId, error}` and each shows one German line
+with exactly one action. The menu entry appears only after a capability probe
+(`provider:"capability-probe"`, answered natively with `provider_unsupported`
+before any attempt, secret or rate limit) succeeds; an older shell or core
+hides it.
+
+This delivery does not add iCloud/CalDAV connectors, local event editing or
+two-way provider writes. Unsupported account
 providers are labelled. Those capabilities require separate provider and
 persistence work; there is no fallback to another mailbox or instance.

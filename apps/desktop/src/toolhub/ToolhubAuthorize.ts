@@ -12,6 +12,9 @@
  * fixed in the app (`TOOLHUB_AUTHORIZE_ORIGINS`). Top-level navigations,
  * redirects and popups to any other origin are blocked. The callback is only
  * accepted on the instance's own host and port.
+ *
+ * The native Google calendar sign-in (ctox #875) reuses the window with only
+ * the fixed Google login origin and captures the instance-issued redirect URI.
  */
 // @effect-diagnostics globalTimers:off - plain Electron window helper awaited via Effect.promise.
 import { BrowserWindow } from "electron";
@@ -68,11 +71,74 @@ export function isAllowedToolhubAuthorizePage(
   return allowed.has(url.origin);
 }
 
+/**
+ * Pure: is `raw` the redirect to the instance-issued `redirectUri` of a native
+ * calendar sign-in? Same scheme, host, port and path; https, or http only on
+ * loopback (the rule CTOX applies to its configured redirect).
+ */
+export function isCalendarRedirectCallback(raw: string, redirectUri: string): boolean {
+  const url = parse(raw);
+  const redirect = parse(redirectUri);
+  if (url === null || redirect === null || !isAcceptedCalendarRedirect(redirect)) return false;
+  return (
+    url.protocol === redirect.protocol &&
+    url.hostname === redirect.hostname &&
+    url.port === redirect.port &&
+    url.pathname === redirect.pathname &&
+    url.username === "" &&
+    url.password === "" &&
+    url.searchParams.has("state") &&
+    (url.searchParams.has("code") || url.searchParams.has("error"))
+  );
+}
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+function isAcceptedCalendarRedirect(redirect: URL): boolean {
+  if (redirect.username !== "" || redirect.password !== "") return false;
+  if (redirect.protocol === "https:") return redirect.hostname !== "";
+  return redirect.protocol === "http:" && LOOPBACK_HOSTS.has(redirect.hostname);
+}
+
 export function openToolhubAuthorizeWindow(
   url: string,
   binding: ToolhubAuthorizeBinding,
 ): Promise<ToolhubAuthorizeOutcome> {
-  if (!isAllowedToolhubAuthorizePage(url, binding)) {
+  return openAuthorizeWindow(url, {
+    title: "Schnittstelle verbinden",
+    isAllowedPage: (target) => isAllowedToolhubAuthorizePage(target, binding),
+    isCallback: (target) => isToolhubInstanceCallback(target, binding.instanceOrigin),
+  });
+}
+
+/**
+ * Native calendar sign-in: shows only the provider's fixed login origins (never
+ * the instance) and captures the redirect to `redirectUri` before it loads, so
+ * only the callback URL with its one-time code reaches the renderer.
+ */
+export function openCalendarAuthorizeWindow(
+  url: string,
+  binding: { readonly providerOrigins: ReadonlyArray<string>; readonly redirectUri: string },
+): Promise<ToolhubAuthorizeOutcome> {
+  const redirect = parse(binding.redirectUri);
+  if (redirect === null || !isAcceptedCalendarRedirect(redirect))
+    return Promise.resolve({ _tag: "failed" });
+  const pages = { instanceOrigin: "", providerOrigins: binding.providerOrigins };
+  return openAuthorizeWindow(url, {
+    title: "Kalender verbinden",
+    isAllowedPage: (target) => isAllowedToolhubAuthorizePage(target, pages),
+    isCallback: (target) => isCalendarRedirectCallback(target, binding.redirectUri),
+  });
+}
+
+function openAuthorizeWindow(
+  url: string,
+  policy: {
+    readonly title: string;
+    readonly isAllowedPage: (target: string) => boolean;
+    readonly isCallback: (target: string) => boolean;
+  },
+): Promise<ToolhubAuthorizeOutcome> {
+  if (!policy.isAllowedPage(url)) {
     return Promise.resolve({ _tag: "failed" });
   }
   return new Promise((resolve) => {
@@ -81,7 +147,7 @@ export function openToolhubAuthorizeWindow(
       width: 560,
       height: 760,
       ...(parent ? { parent, modal: true } : {}),
-      title: "Schnittstelle verbinden",
+      title: policy.title,
       autoHideMenuBar: true,
       webPreferences: {
         partition: "persist:workjet-toolhub-auth",
@@ -98,19 +164,19 @@ export function openToolhubAuthorizeWindow(
       if (!win.isDestroyed()) win.close();
     };
     const guard = (event: { preventDefault: () => void }, target: string) => {
-      if (isToolhubInstanceCallback(target, binding.instanceOrigin)) {
+      if (policy.isCallback(target)) {
         event.preventDefault();
         finish({ _tag: "captured", callbackUrl: target });
         return;
       }
-      if (!isAllowedToolhubAuthorizePage(target, binding)) event.preventDefault();
+      if (!policy.isAllowedPage(target)) event.preventDefault();
     };
     win.webContents.on("will-redirect", (event, target) => guard(event, target));
     win.webContents.on("will-navigate", (event, target) => guard(event, target));
     win.webContents.setWindowOpenHandler(({ url: popup }) => {
-      if (isToolhubInstanceCallback(popup, binding.instanceOrigin)) {
+      if (policy.isCallback(popup)) {
         finish({ _tag: "captured", callbackUrl: popup });
-      } else if (isAllowedToolhubAuthorizePage(popup, binding)) {
+      } else if (policy.isAllowedPage(popup)) {
         void win.loadURL(popup).catch(() => undefined);
       }
       return { action: "deny" };

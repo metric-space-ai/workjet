@@ -10,8 +10,17 @@ export type IntegrationCategory =
   | "sales"
   | "support"
   | "commerce";
-/** mcp = offizieller MCP-Server des Anbieters, token = CTOX-Adapter mit Token, null = noch nicht verbindbar. */
-export type IntegrationConnect = "mcp" | "token" | null;
+/**
+ * mcp = offizieller MCP-Server des Anbieters, token = CTOX-Adapter mit Token,
+ * calendar-oauth = native Kalender-Anmeldung der Instanz (ctox #875, nur unter
+ * Instanz › Kalender-Konten), null = noch nicht verbindbar.
+ */
+export type IntegrationConnect = "mcp" | "token" | "calendar-oauth" | null;
+
+/** Über den Toolhub verbindbar (Schnittstellen); calendar-oauth läuft nicht darüber. */
+export function isToolhubConnect(connect: IntegrationConnect): connect is "mcp" | "token" {
+  return connect === "mcp" || connect === "token";
+}
 
 export interface IntegrationEntry {
   readonly slug: string;
@@ -355,7 +364,7 @@ export const INTEGRATIONS: ReadonlyArray<IntegrationEntry> = [
     name: "Google Kalender",
     category: "prod",
     logo: "/integrations/google-calendar.png",
-    connect: null,
+    connect: "calendar-oauth",
     description: { de: "Termine suchen und planen.", en: "Search and schedule events." },
   },
   {
@@ -544,3 +553,8 @@ export const INTEGRATIONS: ReadonlyArray<IntegrationEntry> = [
     description: { de: "Formulare und Antworten.", en: "Forms and responses." },
   },
 ];
+
+/** Kalender, die die Instanz selbst anmeldet (start → Anmeldefenster → complete). */
+export const CALENDAR_OAUTH_INTEGRATIONS: ReadonlyArray<IntegrationEntry> = INTEGRATIONS.filter(
+  (entry) => entry.connect === "calendar-oauth",
+);

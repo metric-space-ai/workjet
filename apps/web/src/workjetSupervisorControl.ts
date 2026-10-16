@@ -12,6 +12,7 @@ import {
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
+import { isCommandReceiptUncertain } from "./lib/commandAttempt";
 
 export interface WorkjetSupervisorJournalPort {
   /** Backed by the Code server's persisted thread state, never just localStorage. */
@@ -92,6 +93,8 @@ async function dispatchSavedSupervisorTurn(
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   const { intent } = saved;
+  // A refused send has a final answer under its id; only an explicit retry
+  // (retryWorkjetSupervisorTurn) sends it again, under a new id.
   if (
     saved.submission === "not-submitted" &&
     saved.submissionError !== "not_active" &&
@@ -103,6 +106,8 @@ async function dispatchSavedSupervisorTurn(
   const submission = saved.submission === "not-submitted" ? "prepared" : saved.submission;
   await journal.save({ ...saved, submission });
   if (submission === "prepared") {
+    // Derived from the intent id: a lost bind reply replays the same bind; a
+    // refused one leaves the intent "not-submitted", and its retry renews both.
     const binding = await confirmedControl(
       intent,
       {
@@ -147,6 +152,8 @@ async function dispatchSavedSupervisorTurn(
     }
   }
   // Persist the uncertainty boundary before the first native submit can start.
+  // The intent id is the idempotency key: every resend of an unconfirmed submit
+  // must ask for that same attempt, never start a second turn.
   await journal.save({ intent, turn: null, submission: "awaiting-receipt" });
   const result = await confirmedControl(
     intent,
@@ -164,6 +171,35 @@ async function dispatchSavedSupervisorTurn(
     await journal.save({ intent, turn: result.response.turn, submission: "confirmed" });
   }
   return result;
+}
+
+/**
+ * The explicit „Erneut senden“. A send the core refused for good (bind,
+ * capability) is a new attempt under a new intent id, because the old id would
+ * only replay that refusal. Everything else resumes the saved identity.
+ */
+export function retryWorkjetSupervisorTurn(
+  saved: WorkjetSupervisorJournal,
+  observationId: CommandId,
+  freshIntentId: () => CommandId,
+  journal: WorkjetSupervisorJournalPort,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  decodeJournal(saved);
+  if (
+    saved.turn === null &&
+    saved.submission === "not-submitted" &&
+    !isCommandReceiptUncertain({ _tag: "failed", code: saved.submissionError ?? "unsupported" })
+  ) {
+    const intent = { ...saved.intent, commandId: freshIntentId() };
+    decodeIntent(intent);
+    return dispatchSavedSupervisorTurn(
+      { intent, turn: null, submission: "prepared" },
+      journal,
+      port,
+    );
+  }
+  return resumeWorkjetSupervisorTurn(saved, observationId, journal, port);
 }
 
 /** A watch has a fresh observation ID. It never creates a new execution command. */

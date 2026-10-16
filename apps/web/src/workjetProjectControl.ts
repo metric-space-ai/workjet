@@ -160,6 +160,8 @@ async function executeWorkjetProjectControl(
   if (first._tag !== "failed" || first.code !== "not_active" || ensurePooled === undefined) {
     return first;
   }
+  // Real idempotency: `not_active` means no shell carried the request, so the
+  // prepared shell sends the identical request, command id included.
   const preparation = await ensurePooled(instanceId);
   if (preparation._tag === "revoked") return { _tag: "failed", code: "not_active" };
   if (preparation._tag === "failed") return preparation;

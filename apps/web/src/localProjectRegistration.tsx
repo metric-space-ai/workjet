@@ -14,10 +14,11 @@ import { findProjectSupervisor, projectSupervisorThreadInput } from "./lib/proje
 import { resolveProjectTeamModelSelection } from "./providerInstances";
 import { bindWorkjetSupervisor } from "./workjetSupervisorControl";
 import { pendingProjectInit, requestProjectInit } from "./projectInit";
-import { newThreadId } from "~/lib/utils";
+import { newCommandId, newThreadId } from "~/lib/utils";
 import { projectEnvironment } from "./state/projects";
 import { useAtomCommand } from "./state/use-atom-command";
 import {
+  projectRegistrationAttemptId,
   runWorkjetProjectCreation,
   workjetProjectCreationFailureMessage,
 } from "./workjetProjectCreation";
@@ -89,6 +90,7 @@ export function LocalProjectRegistrationSynchronizer() {
   const { environments } = useEnvironments();
   const environmentsRef = useRef(environments);
   environmentsRef.current = environments;
+  // Keyed by project: a renewed command id must not count as a new attempt.
   const attempted = useRef(new Set<string>());
   const inFlight = useRef(false);
   const mounted = useRef(false);
@@ -128,12 +130,12 @@ export function LocalProjectRegistrationSynchronizer() {
         candidate.environmentId === localEnvironmentId &&
         intent?.instanceId === selectedInstanceId &&
         intent.status === "pending" &&
-        !attempted.current.has(intent.commandId)
+        !attempted.current.has(candidate.id)
       );
     });
     const intent = project?.ctoxRegistration;
     if (!project || !intent) return;
-    attempted.current.add(intent.commandId);
+    attempted.current.add(project.id);
     inFlight.current = true;
     // One-click onboarding: create and bind the Projekt-Supervisor now, exactly
     // as first open does, then re-call project.init so CTOX admits the exit
@@ -166,9 +168,10 @@ export function LocalProjectRegistrationSynchronizer() {
         if (result._tag !== "Success") return;
         threadId = created;
       }
+      // One attempt per onboarding; the open composer owns later bind retries.
       const bound = await bindWorkjetSupervisor(
         { instanceId, projectId: nativeProjectId as never, threadId: threadId as never },
-        CommandId.make(`supervisor-setup:${nativeProjectId}:${threadId}`),
+        CommandId.make(`supervisor-setup-${newCommandId()}`),
       );
       if (bound._tag === "completed")
         await requestProjectInit(instanceId, nativeProjectId, operationId);
@@ -215,11 +218,14 @@ export function LocalProjectRegistrationSynchronizer() {
           });
           return;
         }
+        // The stored id is kept while its receipt is unclear and renewed once
+        // the previous attempt recorded a final failure.
+        const commandId = projectRegistrationAttemptId(intent);
         const outcome = await runWorkjetProjectCreation({
           presentationInstanceId: intent.instanceId,
           request: {
             action: "project.create",
-            commandId: intent.commandId,
+            commandId,
             projectId: project.id,
             title: project.title,
             createdAt: project.createdAt,
@@ -236,8 +242,8 @@ export function LocalProjectRegistrationSynchronizer() {
         // Keep the authoritative registry untouched until the native response is validated.
         const next: CtoxProjectRegistration =
           outcome._tag === "visible"
-            ? { instanceId: intent.instanceId, commandId: intent.commandId, status: "confirmed" }
-            : { ...intent, status: "pending", lastFailure: outcome.code };
+            ? { instanceId: intent.instanceId, commandId, status: "confirmed" }
+            : { ...intent, commandId, status: "pending", lastFailure: outcome.code };
         if (outcome._tag === "visible")
           recordWorkjetProjectProjection(intent.instanceId, outcome.project);
         await updateProject({

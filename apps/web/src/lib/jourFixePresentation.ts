@@ -1,6 +1,7 @@
 import {
   WORKJET_PRESENTATION_RANGE_BYTES,
   isWorkjetPresentationReceiptForRequest,
+  type CommandId,
   type CtoxWorkjetProjectControlRequest,
   type ProjectId,
   type WorkjetPresentationManifest,
@@ -63,18 +64,23 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * One request per attempt: `build` receives a fresh command id each time, so a
+ * retried read is answered anew instead of with an earlier attempt's result.
+ */
 async function confirmed(
   control: Control,
   instanceId: string,
-  request: CtoxWorkjetProjectControlRequest,
+  build: (commandId: CommandId) => CtoxWorkjetProjectControlRequest,
   options?: { readonly signal?: AbortSignal | undefined; readonly deadline?: number },
 ) {
   const invoke = async () => {
+    const request = build(newCommandId());
     const result = await control(instanceId, request);
     if (result._tag !== "completed") throw jourFixeTransportError(result);
-    return result;
+    return { request, result };
   };
-  const result = options ? await retryJourFixeRead(invoke, options) : await invoke();
+  const { request, result } = options ? await retryJourFixeRead(invoke, options) : await invoke();
   if (
     result.response.action !== request.action ||
     !isWorkjetPresentationReceiptForRequest(request, result.response)
@@ -122,12 +128,7 @@ export async function readJourFixePresentation(
   const read = await confirmed(
     control,
     instanceId,
-    {
-      action: "project.presentation.read",
-      commandId: newCommandId(),
-      projectId,
-      meetingId,
-    },
+    (commandId) => ({ action: "project.presentation.read", commandId, projectId, meetingId }),
     options,
   );
   if (read.action !== "project.presentation.read") throw new Error("Unexpected answer.");
@@ -149,16 +150,16 @@ export async function readJourFixePresentation(
     const part = await confirmed(
       control,
       instanceId,
-      {
+      (commandId) => ({
         action: "project.presentation.content.read",
-        commandId: newCommandId(),
+        commandId,
         projectId,
         meetingId,
         presentationId: manifest.presentation_id,
         revision: manifest.revision,
         offset,
         length,
-      },
+      }),
       options,
     );
     if (part.action !== "project.presentation.content.read") throw new Error("Unexpected answer.");
@@ -206,17 +207,20 @@ export async function saveJourFixePresentationCanvas(
   operationId?: string,
 ): Promise<JourFixePresentationSave> {
   const sceneJson = JSON.stringify(scene);
-  const answer = await confirmed(control, instanceId, {
+  const saveOperationId =
+    operationId ?? (await presentationSaveOperationId(manifest, slideId, sceneJson));
+  // A single attempt; the content-derived operationId identifies the edit.
+  const answer = await confirmed(control, instanceId, (commandId) => ({
     action: "project.presentation.canvas.save",
-    commandId: newCommandId(),
+    commandId,
     projectId,
     meetingId: manifest.meeting_id,
-    operationId: operationId ?? (await presentationSaveOperationId(manifest, slideId, sceneJson)),
+    operationId: saveOperationId,
     presentationId: manifest.presentation_id,
     expectedRevision: manifest.revision,
     slideId,
     sceneJson,
-  });
+  }));
   if (answer.action !== "project.presentation.canvas.save") throw new Error("Unexpected answer.");
   return { mutation: answer.mutation, manifest: answer.presentation };
 }

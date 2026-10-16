@@ -398,3 +398,58 @@ it("shares simultaneous meeting loads and cancels retries when the room closes",
     vi.useRealTimers();
   }
 });
+
+describe("command ids per attempt (CTOX v4 idempotency)", () => {
+  it("read: every retry after a timeout carries a new command id", async () => {
+    vi.useFakeTimers();
+    try {
+      const control = vi
+        .fn<typeof requestWorkjetProjectControl>()
+        .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
+        .mockImplementation(async (_, request) => reply(request));
+      const session = new JourFixeNativeSession("instance-1", project, () => true, control);
+      const reading = session.read(native.id);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect((await reading).meeting?.revision).toBe(4);
+      const ids = control.mock.calls.map((call) => "commandId" in call[1] && call[1].commandId);
+      expect(ids).toHaveLength(2);
+      expect(ids[1]).not.toBe(ids[0]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("change: a final refusal releases the lock and a resend carries new ids", async () => {
+    const control = vi
+      .fn<typeof requestWorkjetProjectControl>()
+      .mockResolvedValueOnce({ _tag: "failed", code: "invalid_input" })
+      .mockImplementation(async (_, request) => reply(request));
+    const session = new JourFixeNativeSession("instance-1", project, () => true, control);
+    await expect(session.end(native.id, 3)).rejects.toThrow("nicht übernommen");
+    expect(session.hasPendingChange()).toBe(false);
+    // „Erneut senden“ renews both ids; the lock no longer blocks the room.
+    expect((await session.retryPendingUntilConfirmed()).meeting?.revision).toBe(4);
+    const [first, second] = control.mock.calls.map((call) => call[1]);
+    expect(second).toMatchObject({ action: "project.jour_fixe.meeting.end", expectedRevision: 3 });
+    expect(first && "commandId" in first && first.commandId).not.toBe(
+      second && "commandId" in second && second.commandId,
+    );
+    expect(first && "operationId" in first && first.operationId).not.toBe(
+      second && "operationId" in second && second.operationId,
+    );
+  });
+  it("change: a final refusal during the silent retry stops it instead of resending", async () => {
+    const control = vi
+      .fn<typeof requestWorkjetProjectControl>()
+      .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
+      .mockResolvedValueOnce({ _tag: "failed", code: "unsupported" })
+      .mockImplementation(async (_, request) => reply(request));
+    const session = new JourFixeNativeSession("instance-1", project, () => true, control);
+    await expect(session.end(native.id, 3)).rejects.toThrow("nicht bestätigt");
+    await expect(
+      session.retryPendingUntilConfirmed({ deadline: Date.now() + 60_000 }),
+    ).rejects.toThrow("nicht übernommen");
+    expect(control).toHaveBeenCalledTimes(2);
+    expect(control.mock.calls[1]![1]).toEqual(control.mock.calls[0]![1]);
+    await expect(session.text(snapshot, "Owner message")).resolves.toBeDefined();
+  });
+});

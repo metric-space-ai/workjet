@@ -81,6 +81,7 @@ import { createDebouncedStorage } from "./lib/storage";
 import {
   createWorkjetPrivateChat,
   privateChatIntentRequest,
+  renewedPrivateChatIntent,
   type WorkjetPrivateChatIntent,
 } from "./workjetPrivateChat";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
@@ -620,6 +621,38 @@ describe("composerDraftStore terminal contexts", () => {
         projectId: ProjectId.make("different-project"),
       }),
     ).toThrow("pending private chat");
+  });
+
+  it("renews both saved ids after a final refusal, so the next open is a new attempt", async () => {
+    const candidate: WorkjetPrivateChatIntent = {
+      instanceId: "instance-one",
+      connectionId: WorkjetConnectionId.make("connection-one"),
+      projectId: ProjectId.make("project-one"),
+      workerProfileId: "worker-one",
+      separate: true,
+      membershipCommandId: CommandId.make("membership-final"),
+      chatCommandId: CommandId.make("chat-final"),
+      createdAt: "2026-09-12T10:00:00.000Z",
+    };
+    const store = useComposerDraftStore.getState();
+    const original = store.preparePrivateChatIntent(threadRef, candidate);
+    const refused = await createWorkjetPrivateChat({
+      ...original,
+      request: privateChatIntentRequest(original, "project.worker.add"),
+      isCurrent: () => true,
+      port: async () => ({ _tag: "failed", code: "invalid_input" }),
+    }).catch((error: unknown) => error);
+    const renewed = renewedPrivateChatIntent(refused, original, () =>
+      CommandId.make(`renewed-${Math.random()}`),
+    );
+    expect(renewed).not.toBeNull();
+    store.renewPrivateChatIntent(threadRef, original, renewed!);
+    const next = useComposerDraftStore
+      .getState()
+      .preparePrivateChatIntent(threadRef, { ...candidate, chatCommandId: CommandId.make("x") });
+    expect(next).toEqual(renewed);
+    expect(next.membershipCommandId).not.toBe(original.membershipCommandId);
+    expect(next.chatCommandId).not.toBe(original.chatCommandId);
   });
 
   it("hydrates the selected Workjet worker and its managed instructions", () => {

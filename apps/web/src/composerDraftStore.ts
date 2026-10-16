@@ -506,6 +506,12 @@ interface ComposerDraftStoreState {
     target: ComposerThreadTarget,
     candidate: WorkjetPrivateChatIntent,
   ) => WorkjetPrivateChatIntent;
+  /** Swap a settled intent (final core answer) for `next`, which carries new ids. */
+  renewPrivateChatIntent: (
+    target: ComposerThreadTarget,
+    settled: WorkjetPrivateChatIntent,
+    next: WorkjetPrivateChatIntent,
+  ) => void;
   setRuntimeMode: (
     threadRef: ComposerThreadTarget,
     runtimeMode: RuntimeMode | null | undefined,
@@ -3014,6 +3020,27 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             );
           }
           return intent;
+        },
+        renewPrivateChatIntent: (target, settled, next) => {
+          const threadKey = resolveComposerDraftKey(get(), target);
+          if (!threadKey) return;
+          const base = get().draftsByThreadKey[threadKey];
+          const stored = base?.privateChatIntent;
+          if (
+            !base ||
+            !stored ||
+            stored.membershipCommandId !== settled.membershipCommandId ||
+            stored.chatCommandId !== settled.chatCommandId ||
+            !samePrivateChatIntentScope(stored, next)
+          )
+            return;
+          set((state) => ({
+            draftsByThreadKey: {
+              ...state.draftsByThreadKey,
+              [threadKey]: { ...base, privateChatIntent: next },
+            },
+          }));
+          composerDebouncedStorage.flush();
         },
         setWorkjetConfig: (threadRef, workjetConfig) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";

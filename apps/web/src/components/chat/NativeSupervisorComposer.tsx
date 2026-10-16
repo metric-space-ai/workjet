@@ -40,6 +40,7 @@ import {
   type ScopedSupervisorTurnCapabilities,
 } from "./SupervisorTurnKindPicker";
 import { newCommandId } from "~/lib/utils";
+import { createCommandAttempts } from "~/lib/commandAttempt";
 import {
   persistSupervisorJournal,
   canResumeSupervisorJournal,
@@ -50,6 +51,7 @@ import {
 import {
   bindWorkjetSupervisor,
   resumeWorkjetSupervisorTurn,
+  retryWorkjetSupervisorTurn,
   submitWorkjetSupervisorTurn,
   readWorkjetSupervisorTurnCapabilities,
 } from "../../workjetSupervisorControl";
@@ -130,6 +132,7 @@ export function NativeSupervisorComposer(props: {
     null,
   );
   const [bindingRetry, setBindingRetry] = useState(0);
+  const bindAttempts = useRef(createCommandAttempts());
   const [binding, setBinding] = useState<{
     readonly scope: NativeSupervisorScope;
     readonly pending: boolean;
@@ -210,7 +213,7 @@ export function NativeSupervisorComposer(props: {
   latestProps.current = props;
 
   const run = async (
-    operation: "send" | "input" | "resume" | "cancel" | "events",
+    operation: "send" | "input" | "resume" | "retry" | "cancel" | "events",
     pageRequest?: WorkjetSupervisorExecutionPageRequest,
   ) => {
     const current = latestProps.current;
@@ -297,6 +300,14 @@ export function NativeSupervisorComposer(props: {
         result = await resumeWorkjetSupervisorTurn(
           saved,
           CommandId.make(`observe-${newCommandId()}`),
+          port,
+        );
+      } else if (operation === "retry" && saved !== null) {
+        // „Erneut senden“: a refused send becomes a new attempt with a new id.
+        result = await retryWorkjetSupervisorTurn(
+          saved,
+          CommandId.make(`observe-${newCommandId()}`),
+          () => CommandId.make(`supervisor-${newCommandId()}`),
           port,
         );
       } else if (operation === "cancel" && saved?.turn) {
@@ -438,12 +449,14 @@ export function NativeSupervisorComposer(props: {
     };
     let stale = false;
     setBinding({ scope, pending: true, error: null, authenticationRequired: false });
-    // Stable identity makes remounts and a lost setup reply the same native operation.
-    void bindWorkjetSupervisor(
-      scope,
-      CommandId.make(`supervisor-setup:${bindingProjectId}:${bindingThreadId}`),
-    )
+    // A lost setup reply keeps its id; a final answer gets a new one on the next try.
+    const key = JSON.stringify([bindingInstanceId, bindingProjectId, bindingThreadId]);
+    const commandId = bindAttempts.current.begin(key, () =>
+      CommandId.make(`supervisor-setup-${newCommandId()}`),
+    );
+    void bindWorkjetSupervisor(scope, commandId)
       .then((result) => {
+        bindAttempts.current.settle(key, commandId, result);
         if (stale) return;
         setBinding({
           scope,
@@ -457,6 +470,7 @@ export function NativeSupervisorComposer(props: {
         });
       })
       .catch(() => {
+        bindAttempts.current.settle(key, commandId, "lost");
         if (!stale)
           setBinding({
             scope,
@@ -775,7 +789,7 @@ export function NativeSupervisorComposer(props: {
           if (execution)
             void run("events", nextWorkjetSupervisorExecutionPageRequest(execution.page));
         }}
-        onRetrySend={() => void run("resume")}
+        onRetrySend={() => void run("retry")}
       />
     ) : null;
 
@@ -826,7 +840,7 @@ export function NativeSupervisorComposer(props: {
                 type="button"
                 className="underline underline-offset-2"
                 disabled={disabled || busy}
-                onClick={() => void run("resume")}
+                onClick={() => void run("retry")}
               >
                 Erneut senden
               </button>

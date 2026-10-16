@@ -9,6 +9,7 @@ import {
 import {
   bindWorkjetSupervisor,
   resumeWorkjetSupervisorTurn,
+  retryWorkjetSupervisorTurn,
   submitWorkjetSupervisorTurn,
 } from "./workjetSupervisorControl";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
@@ -425,5 +426,100 @@ describe("durable native supervisor submission", () => {
     );
     expect(result).toEqual({ _tag: "failed", code: "guest_failed" });
     expect(saved).toBeNull();
+  });
+});
+
+describe("„Erneut senden“ after a refused send (CTOX v4 idempotency)", () => {
+  const retryPort =
+    (requests: CtoxWorkjetProjectControlRequest[]): WorkjetProjectControlPort =>
+    async (_instance, request) => {
+      requests.push(request);
+      if (request.action === "project.supervisor.bind")
+        return {
+          _tag: "completed",
+          response: {
+            action: request.action,
+            commandId: request.commandId,
+            projectId: request.projectId,
+            binding,
+          },
+        };
+      if (request.action === "project.supervisor.turn.submit")
+        return {
+          _tag: "completed",
+          response: {
+            action: request.action,
+            commandId: request.commandId,
+            projectId: request.projectId,
+            binding,
+            contract: "ctox.workjet.supervisor_turn.v1",
+            turn,
+            messageId: "native-message-1",
+          },
+        };
+      return { _tag: "failed", code: "unsupported" };
+    };
+
+  it("final failure + retry: sends a new attempt under a new intent id", async () => {
+    const requests: CtoxWorkjetProjectControlRequest[] = [];
+    let state: WorkjetSupervisorJournal | null = null;
+    const journal = {
+      save: async (next: WorkjetSupervisorJournal) => {
+        state = structuredClone(next);
+      },
+    };
+    const refused: WorkjetSupervisorJournal = {
+      intent,
+      turn: null,
+      submission: "not-submitted",
+      submissionError: "unsupported",
+    };
+    // The generic resume (polling, reopen) never resends a refused send.
+    expect(
+      await resumeWorkjetSupervisorTurn(
+        refused,
+        CommandId.make("watch"),
+        journal,
+        retryPort(requests),
+      ),
+    ).toEqual({ _tag: "failed", code: "unsupported" });
+    expect(requests).toEqual([]);
+    const result = await retryWorkjetSupervisorTurn(
+      refused,
+      CommandId.make("watch"),
+      () => CommandId.make("durable-submit-2"),
+      journal,
+      retryPort(requests),
+    );
+    expect(result._tag).toBe("completed");
+    expect(
+      requests.map((request) => [request.action, "commandId" in request && request.commandId]),
+    ).toEqual([
+      ["project.supervisor.bind", "durable-submit-2:bind"],
+      ["project.supervisor.turn.submit", "durable-submit-2"],
+    ]);
+    expect(state!.intent).toEqual({ ...intent, commandId: "durable-submit-2" });
+    expect(state!.submission).toBe("confirmed");
+  });
+
+  it("timeout + retry: resumes the same intent id", async () => {
+    const requests: CtoxWorkjetProjectControlRequest[] = [];
+    const lost: WorkjetSupervisorJournal = {
+      intent,
+      turn: null,
+      submission: "not-submitted",
+      submissionError: "timeout",
+    };
+    await retryWorkjetSupervisorTurn(
+      lost,
+      CommandId.make("watch"),
+      () => CommandId.make("must-not-be-used"),
+      { save: async () => {} },
+      retryPort(requests),
+    );
+    expect(requests.map((request) => "commandId" in request && request.commandId)).toEqual([
+      "durable-submit-1:bind",
+      "durable-submit-1",
+    ]);
   });
 });

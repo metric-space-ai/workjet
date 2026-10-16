@@ -1341,6 +1341,7 @@ export function WorkjetSettings({
     return () => window.clearInterval(timer);
   }, [authenticationRequired, liveConnectionId, refreshConnections, scope.phase]);
   const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
   const provision =
     typeof window === "undefined" ? undefined : window.desktopBridge?.ctox?.provisionDecisionHub;
   const provisionRequest =
@@ -1352,8 +1353,13 @@ export function WorkjetSettings({
       ? () => {
           if (reconnecting) return;
           setReconnecting(true);
+          setReconnectError(null);
           void provision(provisionRequest)
-            .catch(() => undefined)
+            .then((result) => {
+              // Ein fehlgeschlagenes Verbinden war bisher unsichtbar (#799).
+              if (result?._tag === "failed") setReconnectError(result.code);
+            })
+            .catch(() => setReconnectError("provision_failed"))
             .finally(() => {
               setReconnecting(false);
               refreshConnections();
@@ -1377,6 +1383,7 @@ export function WorkjetSettings({
         onRetry={refreshConnections}
         onReconnect={reconnect}
         reconnecting={reconnecting}
+        reconnectError={reconnectError}
       />
     );
   }
@@ -1590,18 +1597,42 @@ export function PresetsLoadingView({
   );
 }
 
+export function presetsReconnectErrorText(code: string): string {
+  switch (code) {
+    case "signed_out":
+      return uiText(
+        "Verbinden fehlgeschlagen: bei ctox.dev nicht angemeldet.",
+        "Connect failed: not signed in to ctox.dev.",
+      );
+    case "grant_unavailable":
+      return uiText(
+        "Verbinden fehlgeschlagen: ctox.dev hat keinen Zugang für diese Instanz ausgestellt.",
+        "Connect failed: ctox.dev issued no access for this instance.",
+      );
+    case "environment_unavailable":
+      return uiText(
+        "Verbinden fehlgeschlagen: lokale Workjet-Umgebung nicht erreichbar.",
+        "Connect failed: local Workjet environment unreachable.",
+      );
+    default:
+      return uiText(`Verbinden fehlgeschlagen (${code}).`, `Connect failed (${code}).`);
+  }
+}
+
 export function WorkjetPresetsUnavailableView({
   title,
   state,
   onRetry,
   onReconnect,
   reconnecting = false,
+  reconnectError = null,
 }: {
   readonly title: string;
   readonly state: "loading" | "authentication" | "unreachable" | "missing" | "no-instance";
   readonly onRetry: () => void;
   readonly onReconnect: (() => void) | null;
   readonly reconnecting?: boolean;
+  readonly reconnectError?: string | null;
 }) {
   const reconnectAction = (label: string) =>
     onReconnect
@@ -1630,6 +1661,15 @@ export function WorkjetPresetsUnavailableView({
       ) : state === "missing" ? (
         <Banner icon={KeyRoundIcon} action={reconnectAction(uiText("Verbinden", "Connect"))}>
           {uiText("Instanz nicht verbunden", "Instance not connected")}
+          {reconnectError ? (
+            <span
+              className="block text-xs text-destructive"
+              role="alert"
+              data-slot="presets-reconnect-error"
+            >
+              {presetsReconnectErrorText(reconnectError)}
+            </span>
+          ) : null}
         </Banner>
       ) : state === "unreachable" ? (
         <Banner

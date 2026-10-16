@@ -247,7 +247,12 @@ function InlineField({
           className={cn(shared.className, "resize-none overflow-hidden")}
         />
       ) : (
-        <input {...shared} size={1} maxLength={160} className={cn(shared.className, "text-ellipsis")} />
+        <input
+          {...shared}
+          size={1}
+          maxLength={160}
+          className={cn(shared.className, "text-ellipsis")}
+        />
       )}
       {failed && (
         <span role="alert" className="text-xs text-destructive">

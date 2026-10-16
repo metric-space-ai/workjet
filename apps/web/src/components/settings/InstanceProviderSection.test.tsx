@@ -106,9 +106,7 @@ describe("instance heading without rows (N5)", () => {
         providers: providers({ accounts: [] }),
       }),
     ).toBe(true);
-    expect(instanceProviderSectionHasRows({ ...none, providers: providers(undefined) })).toBe(
-      true,
-    );
+    expect(instanceProviderSectionHasRows({ ...none, providers: providers(undefined) })).toBe(true);
     expect(
       instanceProviderSectionHasRows({
         ...none,

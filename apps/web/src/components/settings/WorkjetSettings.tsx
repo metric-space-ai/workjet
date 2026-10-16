@@ -1580,10 +1580,7 @@ export function WorkjetPresetsUnavailableView({
           </EmptyContent>
         </Empty>
       ) : state === "authentication" ? (
-        <Banner
-          icon={KeyRoundIcon}
-          action={reconnectAction(uiText("Neu verbinden", "Reconnect"))}
-        >
+        <Banner icon={KeyRoundIcon} action={reconnectAction(uiText("Neu verbinden", "Reconnect"))}>
           {uiText("Anmeldung der Instanz abgelaufen", "Instance sign-in expired")}
         </Banner>
       ) : state === "missing" ? (

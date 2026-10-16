@@ -99,10 +99,7 @@ describe("KPI tile while calculating (N2)", () => {
   it("shows a quiet skeleton instead of a state text", () => {
     const resolving = {
       ...kpis,
-      items: [
-        kpis.items[0]!,
-        { ...kpis.items[1]!, result: { status: "resolving" } },
-      ],
+      items: [kpis.items[0]!, { ...kpis.items[1]!, result: { status: "resolving" } }],
     } as PromptedProjectKpis;
     const markup = renderToStaticMarkup(
       <ProjectKpiTile

@@ -238,8 +238,10 @@ describe("worker source reconnect in place", () => {
     ];
     expect(workerSourceToRenewInPlace(rows, tenant)?.connectionId).toBe(id(tenant, "bbbbbbbb"));
     expect(
-      workerSourceToRenewInPlace(rows.filter((row) => row.status === "ready"), tenant)
-        ?.connectionId,
+      workerSourceToRenewInPlace(
+        rows.filter((row) => row.status === "ready"),
+        tenant,
+      )?.connectionId,
     ).toBe(id(tenant, "aaaaaaaa"));
   });
 

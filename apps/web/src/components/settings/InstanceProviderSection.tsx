@@ -78,7 +78,10 @@ export function instanceProviderSectionHasRows(input: {
   readonly failure: WorkjetProjectControlFailure | undefined;
   readonly unsupportedProviders: WorkjetProjectControlFailure | undefined;
   readonly grok: Pick<InstanceGrokAccountPresentation, "row">;
-  readonly providers: Pick<ReturnType<typeof useInstanceProviders>, "registry" | "connectionFailure">;
+  readonly providers: Pick<
+    ReturnType<typeof useInstanceProviders>,
+    "registry" | "connectionFailure"
+  >;
 }): boolean {
   if (input.failure || input.unsupportedProviders) return true;
   if (input.grok.row !== null && input.grok.row !== undefined && input.grok.row !== false)

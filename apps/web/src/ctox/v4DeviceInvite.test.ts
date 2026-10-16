@@ -1,12 +1,14 @@
 import * as NodeCrypto from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { instanceAddRequestFromSearch } from "../instanceSetup";
 import { redeemWorkjetDeviceInvite } from "./instanceAccess";
 import {
   V4_INVITE_FAILURE_TEXT,
   V4_INVITE_REJECTIONS,
   deriveV4InviteProof,
   encodeV4DeviceInviteLink,
+  isV4DeviceInviteLink,
   normalizeV4DeviceLabel,
   parseV4DeviceInviteLink,
   redeemV4DeviceInvite,
@@ -290,6 +292,16 @@ describe("E54.4 invitation link", () => {
     const v3 = `workjet://pair?payload=${b64(new TextEncoder().encode(JSON.stringify(["w2", "x"])))}`;
     expect(parseV4DeviceInviteLink(v3, NOW)).toBeNull();
     expect(parseV4DeviceInviteLink("https://evil.example/pair?payload=abc", NOW)).toBeNull();
+  });
+
+  it("arrives unchanged through the workjet://pair deep link route", () => {
+    const link = encodeV4DeviceInviteLink(invite());
+    const payload = new URL(link.replace(/^workjet:/u, "https:")).searchParams.get("payload");
+    const request = instanceAddRequestFromSearch({ add: "link", payload });
+    expect(request?.option).toBe("link");
+    expect(request?.invite).toBe(link);
+    expect(isV4DeviceInviteLink(request?.invite ?? "")).toBe(true);
+    expect(isV4DeviceInviteLink(encodeV4DeviceInviteLink(invite({ expiresAtMs: 1 })))).toBe(true);
   });
 
   it("rejects malformed invitations and claims beyond 24 h", () => {

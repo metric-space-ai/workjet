@@ -186,6 +186,7 @@ function IndexDraftLanding() {
   const computers = usePrimarySettings((settings) => settings.workjet.computers);
   const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
   const registry = useWorkjetProjectRegistry(activeCtoxInstanceId);
+  const registryNoticeVisible = useRegistryNoticeVisible(registry);
   const projectStore = useContext(RegistryContext);
   const primaryEnvironment = usePrimaryEnvironment();
   const { environments } = useEnvironments();
@@ -471,7 +472,7 @@ function IndexDraftLanding() {
             : undefined
         }
         lastUpdatedAt={registry.lastUpdatedAt}
-        projectsUnavailable={showsCachedProjectRegistryNotice(registry)}
+        projectsUnavailable={registryNoticeVisible}
         projects={galleryProjects.map((project) => ({
           ...project,
           statistics: resolveGalleryProjectStatistics(project, threads, bootstrapped),
@@ -599,8 +600,31 @@ export function galleryKpiRetryDelayMs(completedFailureRounds: number): number {
  * Ein noch laufender Read und ein einzelner Zeitüberschreitungs-Read zeigen nichts:
  * die Liste ist dann nicht als veralteter Cache bestätigt.
  */
+/** Rendert neu, sobald die stille Frist abläuft, statt erst beim nächsten Ereignis. */
+function useRegistryNoticeVisible(
+  registry: Parameters<typeof showsCachedProjectRegistryNotice>[0],
+): boolean {
+  const [now, setNow] = useState(() => Date.now());
+  const since = registry.refreshFailed === true ? registry.refreshFailingSince : undefined;
+  useEffect(() => {
+    if (since === undefined) return;
+    const wait = since + PROJECT_REGISTRY_NOTICE_GRACE_MS - Date.now();
+    if (wait <= 0) {
+      setNow(Date.now());
+      return;
+    }
+    const timer = window.setTimeout(() => setNow(Date.now()), wait);
+    return () => window.clearTimeout(timer);
+  }, [since]);
+  return showsCachedProjectRegistryNotice(registry, now);
+}
+
+/** Die Zeile „Instanz nicht erreichbar“ bleibt so lange still (wie N7). */
+export const PROJECT_REGISTRY_NOTICE_GRACE_MS = 120_000;
+
 export function showsCachedProjectRegistryNotice(registry: {
   readonly refreshFailed?: boolean | undefined;
+  readonly refreshFailingSince?: number | undefined;
   readonly lastUpdatedAt?: number | undefined;
   readonly projects: readonly unknown[];
   readonly refreshError?:
@@ -610,9 +634,15 @@ export function showsCachedProjectRegistryNotice(registry: {
         readonly preparation?: { readonly reason?: string } | undefined;
       }
     | undefined;
-}): boolean {
+}, now: number = Date.now()): boolean {
   if (registry.refreshFailed !== true) return false;
   if (registry.lastUpdatedAt === undefined || registry.projects.length === 0) return false;
+  // Still wiederholen: erst nach 2 min ununterbrochener Fehler zeigen.
+  if (
+    registry.refreshFailingSince === undefined ||
+    now - registry.refreshFailingSince < PROJECT_REGISTRY_NOTICE_GRACE_MS
+  )
+    return false;
   const error = registry.refreshError;
   if (
     error?.code === "timeout" ||

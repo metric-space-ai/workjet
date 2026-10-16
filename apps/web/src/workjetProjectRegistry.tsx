@@ -30,6 +30,8 @@ export interface WorkjetProjectRegistrySnapshot {
   /** Only a successful source query in this session confirms calendar synchronization. */
   readonly sourceConfirmed?: boolean;
   readonly refreshError?: Extract<CtoxWorkjetProjectControlResult, { _tag: "failed" }>;
+  /** Beginn der ununterbrochenen Fehlerserie (ms); fehlt nach Erfolg. */
+  readonly refreshFailingSince?: number;
 }
 
 const EMPTY_PROJECTS: readonly CtoxWorkjetProjectProjection[] = Object.freeze([]);
@@ -312,6 +314,7 @@ export function applyWorkjetProjectRegistryResult(
       ...current,
       phase: current.projects.length === 0 ? "blocked" : "ready",
       refreshFailed: true,
+      refreshFailingSince: current.refreshFailingSince ?? Date.now(),
       ...(result._tag === "failed" ? { refreshError: result } : {}),
     });
     return;

@@ -86,11 +86,13 @@ describe("Workjet project registry", () => {
       projects: [project],
       refreshFailed: true,
       lastUpdatedAt: confirmedAt,
+      refreshFailingSince: Date.now(),
     });
     online = true;
     await vi.advanceTimersByTimeAsync(1_000);
     expect(readWorkjetProjectRegistry("managed:welsch").projects[0]?.title).toBe("Updated");
     expect(readWorkjetProjectRegistry("managed:welsch").refreshFailed).toBeUndefined();
+    expect(readWorkjetProjectRegistry("managed:welsch").refreshFailingSince).toBeUndefined();
     expect(readWorkjetProjectRegistry("managed:welsch").lastUpdatedAt).toBe(confirmedAt! + 1_000);
     controller.cancel();
     expect(vi.getTimerCount()).toBe(0);

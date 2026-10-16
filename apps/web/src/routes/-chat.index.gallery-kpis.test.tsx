@@ -2,7 +2,11 @@ import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PromptedProjectKpis } from "../projectKpis";
-import { ProjectGallery, showsCachedProjectRegistryNotice } from "./_chat.index";
+import {
+  PROJECT_REGISTRY_NOTICE_GRACE_MS,
+  ProjectGallery,
+  showsCachedProjectRegistryNotice,
+} from "./_chat.index";
 
 const kpiReads: string[] = [];
 let kpiResult: "fail" | "ok" | "hang" = "fail";
@@ -262,9 +266,25 @@ function gallery(extra: { projectsUnavailable?: boolean; lastUpdatedAt?: number 
 describe("cached registry notice", () => {
   const cached = {
     refreshFailed: true,
+    refreshFailingSince: 0,
     lastUpdatedAt: Date.parse("2026-10-13T18:04:00Z"),
     projects: [{ id: "p1" }],
   };
+  it("stays silent for the first two minutes of failed refreshes (Punkt 3)", () => {
+    const since = Date.parse("2026-10-16T09:00:00Z");
+    const failing = { ...cached, refreshFailingSince: since };
+    expect(showsCachedProjectRegistryNotice(failing, since)).toBe(false);
+    expect(
+      showsCachedProjectRegistryNotice(failing, since + PROJECT_REGISTRY_NOTICE_GRACE_MS - 1),
+    ).toBe(false);
+    expect(
+      showsCachedProjectRegistryNotice(failing, since + PROJECT_REGISTRY_NOTICE_GRACE_MS),
+    ).toBe(true);
+    // Without a recorded failure series (fresh app start) nothing shows.
+    expect(
+      showsCachedProjectRegistryNotice({ ...cached, refreshFailingSince: undefined }),
+    ).toBe(false);
+  });
   it("shows the quiet line only for a retained project list", () => {
     expect(showsCachedProjectRegistryNotice(cached)).toBe(true);
     expect(
@@ -385,6 +405,7 @@ describe("gallery KPI failures", () => {
       gallery({
         projectsUnavailable: showsCachedProjectRegistryNotice({
           refreshFailed: true,
+          refreshFailingSince: 0,
           lastUpdatedAt: cachedAt,
           projects: [{ id: "p1" }],
           refreshError: { code: "guest_failed" },

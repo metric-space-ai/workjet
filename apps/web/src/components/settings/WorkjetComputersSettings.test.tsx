@@ -18,6 +18,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  membershipFailureVisible,
   applyAutomaticCurrentComputer,
   changeComputerActive,
   computerConnectionFor,
@@ -1020,5 +1021,20 @@ describe("Audit D: Rechnerliste", () => {
     });
     expect(markup).toContain('data-slot="computer-membership-error"');
     expect(markup.match(/Erneut versuchen/g)).toHaveLength(1);
+  });
+});
+
+describe("membership failure line timing (N7)", () => {
+  it("stays hidden until the store releases it", () => {
+    const failed = { phase: "failed" as const, failureVisibleAtMs: 1_000 };
+    expect(membershipFailureVisible(failed, 999)).toBe(false);
+    expect(membershipFailureVisible(failed, 1_000)).toBe(true);
+    expect(membershipFailureVisible({ phase: "loading", failureVisibleAtMs: 1_000 }, 2_000)).toBe(
+      true,
+    );
+    expect(membershipFailureVisible({ phase: "ready", failureVisibleAtMs: null }, 2_000)).toBe(
+      false,
+    );
+    expect(membershipFailureVisible(null, 2_000)).toBe(false);
   });
 });

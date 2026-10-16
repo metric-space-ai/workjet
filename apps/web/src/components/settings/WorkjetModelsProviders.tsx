@@ -237,7 +237,8 @@ function InlineField({
     ),
   };
   return (
-    <span className="block min-w-0">
+    // flex-1: ein <input> ist sonst nur ~20 Zeichen breit und schneidet E-Mails ab (N5).
+    <span className="block min-w-0 flex-1" title={value}>
       {multiline ? (
         <textarea
           {...shared}
@@ -246,7 +247,7 @@ function InlineField({
           className={cn(shared.className, "resize-none overflow-hidden")}
         />
       ) : (
-        <input {...shared} maxLength={160} />
+        <input {...shared} size={1} maxLength={160} className={cn(shared.className, "text-ellipsis")} />
       )}
       {failed && (
         <span role="alert" className="text-xs text-destructive">
@@ -669,8 +670,9 @@ function AccountRow({
           className="flex flex-wrap items-center gap-2 px-3 pb-2 pl-8 text-xs text-amber-500"
         >
           <span>
-            {problemLine}
-            {health?.retryAtMs != null && ` Neuer Versuch ab ${resetLabel(health.retryAtMs)}.`}
+            {health?.retryAtMs != null
+              ? `${problemLine.replace(/\.$/, "")} · ab ${resetLabel(health.retryAtMs)}`
+              : problemLine}
           </span>
           {authRequired && !isKey ? (
             <Button

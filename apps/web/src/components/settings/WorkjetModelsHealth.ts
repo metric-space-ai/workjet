@@ -44,7 +44,7 @@ export function modelsAccountHealth(
       ? "Anmeldedaten abgelehnt (HTTP 401)."
       : status === "cooldown"
         ? exhausted
-          ? "Kontingent erschöpft. Andere Konten übernehmen."
+          ? "Kontingent erschöpft"
           : generationStatus === 403
             ? "Pausiert nach Zugriffsverweigerung (HTTP 403)."
             : `Pausiert nach Fehler${generationStatus === null ? "" : ` (HTTP ${generationStatus})`}.`

@@ -225,6 +225,8 @@ describe("Models account recovery", () => {
     expect(health.status).toBe("cooldown");
     expect(health.windows[0]?.remainingPercent).toBe(0);
     expect(health.retryAtMs).toBe(1_000_000);
+    // N5: one short line; the row appends „· ab <Zeit>“.
+    expect(health.message).toBe("Kontingent erschöpft");
     expect(modelsAccountHealth(exhausted, 1_000_000).windows[0]?.remainingPercent).toBeNull();
     expect(modelsAccountHealth(exhausted, 1_000_000).status).toBe("unknown");
   });

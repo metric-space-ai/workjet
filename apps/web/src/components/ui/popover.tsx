@@ -26,11 +26,8 @@ function PopoverPopup({
   alignOffset = 0,
   tooltipStyle = false,
   anchor,
-  keepMounted = false,
   ...props
 }: PopoverPrimitive.Popup.Props & {
-  /** Hält den Inhalt auch geschlossen gemountet (z. B. Steuerungen mit eigenem Zustand). */
-  keepMounted?: boolean;
   viewportClassName?: string;
   side?: PopoverPrimitive.Positioner.Props["side"];
   align?: PopoverPrimitive.Positioner.Props["align"];
@@ -40,7 +37,7 @@ function PopoverPopup({
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
 }) {
   return (
-    <PopoverPrimitive.Portal keepMounted={keepMounted}>
+    <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

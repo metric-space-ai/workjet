@@ -85,6 +85,10 @@ describe("shared composer bar", () => {
     expect(html).toContain(">Molecularity<");
     // The chips are not laid out inline next to the collapse chip.
     expect(html).not.toMatch(/data-composer-bar-target="true"[^>]*>\s*<button>Preset</);
+    // Folded inline under the bar (no popover), mounted but hidden until opened.
+    expect(html).toMatch(/data-composer-bar-collapsed-targets="true" hidden=""/);
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("popover");
   });
   it("lays the target chips out inline when the composer is wide", () => {
     const html = render();

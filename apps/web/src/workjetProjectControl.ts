@@ -99,6 +99,7 @@ export function describeGuestPreparationReason(
         load_url: "Die Instanzseite konnte nicht geöffnet werden.",
         navigation_setup: "Das Laden der Instanzseite konnte nicht vorbereitet werden.",
         unexpected_origin: "Die Instanzseite hat eine unerwartete Adresse geöffnet.",
+        http_status: "Die Instanzseite hat mit einem HTTP-Fehler geantwortet.",
       };
       return messages[reason];
     }

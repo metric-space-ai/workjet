@@ -102,12 +102,14 @@ export function InstanceProviderSection({
 }) {
   // Grok has its own admitted control channel. An older instance can support
   // that login while its general account-management channel is unavailable.
-  // The instance answered but cannot serve provider management (older core or a
-  // failed response): show the reason instead of an empty Modelle page (#799).
+  // The instance answered but cannot serve provider management (older core, or a
+  // failed response that carries a diagnostic): show the reason instead of an empty Modelle page (#799).
   // Transport failures (timeout, guest) stay silent and are retried.
   const unsupportedProviders =
     providers.connectionFailure?.code === "unsupported" ||
-    providers.connectionFailure?.code === "response_invalid"
+    (providers.connectionFailure?.code === "guest_failed" &&
+      "diagnostic" in providers.connectionFailure &&
+      providers.connectionFailure.diagnostic !== undefined)
       ? providers.connectionFailure
       : undefined;
   const failure = [

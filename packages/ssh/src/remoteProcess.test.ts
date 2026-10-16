@@ -34,6 +34,23 @@ const child = cp.spawnSync(command[0], command.slice(1), { stdio: "inherit" });
 process.exit(child.status ?? 1);`,
   );
   writeProgram(
+    "loginctl",
+    `const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.TEST_ROOT + "/loginctl", JSON.stringify(args) + "\\n");
+if (args[0] === "show-user") console.log(process.env.TEST_LINGER ?? "yes");
+if (args[0] === "enable-linger") process.exit(process.env.TEST_LINGER_SELF === "1" ? 0 : 1);`,
+  );
+  writeProgram(
+    "sudo",
+    `const fs = require("node:fs");
+const cp = require("node:child_process");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.TEST_ROOT + "/sudo", JSON.stringify(args) + "\\n");
+if (process.env.TEST_SUDO !== "1") process.exit(1);
+process.exit(cp.spawnSync(args[1], args.slice(2), { stdio: "inherit", env: { ...process.env, TEST_LINGER_SELF: "1" } }).status ?? 1);`,
+  );
+  writeProgram(
     "nohup",
     `const fs = require("node:fs");
 const cp = require("node:child_process");
@@ -71,6 +88,8 @@ if [ "\${TEST_NO_MANAGER:-}" = "1" ]; then wait "$REMOTE_PID"; fi
       backend: read("backend.json"),
       stopped: read("stopped.json"),
       nohup: read("nohup"),
+      loginctl: read("loginctl"),
+      sudo: read("sudo"),
       log: read("backend output.log"),
     };
   } finally {
@@ -97,6 +116,33 @@ describe("remote backend process ownership", () => {
     expect(backend.noBrowser).toBe("1");
     expect(backend.path).toBe(`${actual.root}/tools:/usr/bin:/bin`);
     expect(actual.log).toBe("fixture backend output\n");
+  });
+
+  it("keeps an already lingering user manager untouched", () => {
+    const actual = runFixture();
+    expect(actual.loginctl).not.toContain("enable-linger");
+    expect(actual.sudo).toBeNull();
+  });
+
+  it("turns lingering on for the user so the service survives the last logout", () => {
+    const self = runFixture({ TEST_LINGER: "no", TEST_LINGER_SELF: "1" });
+    expect(self.result.status).toBe(0);
+    expect(self.loginctl).toContain('"enable-linger"');
+    expect(self.sudo).toBeNull();
+    expect(self.log).toBe("fixture backend output\n");
+
+    const viaSudo = runFixture({ TEST_LINGER: "no", TEST_SUDO: "1" });
+    expect(viaSudo.result.status).toBe(0);
+    expect(viaSudo.sudo).toContain('"-n","loginctl","enable-linger"');
+    expect(viaSudo.log).toBe("fixture backend output\n");
+  });
+
+  it("still starts the service and leaves a log line when lingering cannot be enabled", () => {
+    const actual = runFixture({ TEST_LINGER: "no" });
+    expect(actual.result.status).toBe(0);
+    expect(actual.result.stdout).toBe("pid=12345\n");
+    expect(actual.log).toContain("lingering is off");
+    expect(actual.log).toContain("fixture backend output");
   });
 
   it("retains the portable launch path when no user manager is available", () => {

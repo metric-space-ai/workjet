@@ -166,6 +166,43 @@ describe("Schritte aus dem heutigen Weg", () => {
     expect(activeSshPasswordClaims()).toBe(0);
   });
 
+  it("shows a stalled server package transfer as „Kopieren“ with a retry, not as unreachable", async () => {
+    // gpu1 am 16.10.: 82 von 97 MB nach 180 s, die Zeile stand nur auf „Verbinden“.
+    const { source, transport } = createLegacyMachineEnrollment({
+      listSshHosts: async () => [],
+      localName: null,
+      isOnline: () => false,
+      add: async (_request, phase) => {
+        phase("transport_connected", "running");
+        return {
+          status: "error",
+          message:
+            "Workjet package transfer stalled at 82 MB of 97 MB. Retry resumes the transfer.",
+        };
+      },
+    });
+    const candidate = {
+      id: "tailscale:gpu1-a6000",
+      transport: "tailscale" as const,
+      name: "gpu1-a6000",
+      user: "deck",
+      host: "100.87.204.48",
+      port: 22,
+      sshAlias: "ts-gpu1",
+    };
+    const id = await startMachineEnrollment(source, transport, candidate, "gpu1-a6000");
+    let latest: MachineEnrollmentSnapshot = { steps: [] };
+    source.watch(id, (snapshot) => (latest = snapshot));
+    await settle();
+    expect(machineEnrollmentProgress(latest.steps).fault).toMatchObject({
+      key: "package_copied",
+      error_code: "copy_failed",
+    });
+    expect(latest.steps).toContainEqual(
+      expect.objectContaining({ key: "transport_connected", state: "done" }),
+    );
+  });
+
   it("classifies raw messages", () => {
     expect(legacyErrorCode("transport_connected", "Permission denied (publickey).")).toBe(
       "auth_rejected",
@@ -174,6 +211,12 @@ describe("Schritte aus dem heutigen Weg", () => {
       "unreachable",
     );
     expect(legacyErrorCode("installed", "boom")).toBe("install_failed");
+    expect(
+      legacyErrorCode(
+        "transport_connected",
+        "Workjet server transfer checksum verification failed.",
+      ),
+    ).toBe("copy_failed");
   });
 });
 

@@ -165,6 +165,9 @@ export function legacyErrorCode(
   if (/abgebrochen|cancel/iu.test(message)) return withPassword ? "password_rejected" : "cancelled";
   if (/host key|identification has changed/iu.test(message)) return "host_key_changed";
   if (/no space|speicherplatz/iu.test(message)) return "disk_full";
+  // Der Server-Paket-Transfer setzt beim nächsten Versuch fort (packages/ssh
+  // portableServer): ein Abriss dort ist „Kopieren“, nicht „nicht erreichbar“.
+  if (/package transfer|server transfer|transfer stalled/iu.test(message)) return "copy_failed";
   if (
     /timed out|unreachable|no route|could not resolve|refused|nicht erreichbar|nicht verbunden/iu.test(
       message,
@@ -214,12 +217,17 @@ export function createLegacyMachineEnrollment(deps: LegacyEnrollmentDeps): {
     for (const listener of entry.listeners) listener(snapshot);
   };
   const fail = (entry: Entry, message: string, withPassword = false) => {
-    const key = entry.current ?? "transport_connected";
+    const current = entry.current ?? "transport_connected";
+    const errorCode = legacyErrorCode(current, message, withPassword);
+    // Verbunden war der Rechner schon, wenn erst das Paket nicht ankam.
+    const key =
+      errorCode === "copy_failed" && current === "transport_connected" ? "package_copied" : current;
+    if (key !== current) put(entry, { key: current, state: "done", at_ms: now() });
     put(entry, {
       key,
       state: "failed",
       at_ms: now(),
-      error_code: legacyErrorCode(key, message, withPassword),
+      error_code: errorCode,
       detail: message,
     });
   };

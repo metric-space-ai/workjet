@@ -18,6 +18,28 @@ export const WORKJET_OWNED_COLLECTIONS = [
   "workjet_gallery_orders",
   ...THREAD_READ_COLLECTIONS,
 ] as const;
+/** Projections behind the gated consumers (state/server, state/threads). */
+export const SCHEIBE_C_READ_COLLECTIONS = [
+  "workjet_connections",
+  "workjet_calendar_accounts",
+  "workjet_calendar_events",
+  "workjet_gateway_state",
+  "workjet_gateway_accounts",
+  "workjet_gateway_pools",
+  "workjet_gateway_routes",
+  "workjet_gateway_models",
+  "workjet_gateway_provider_models",
+  "workjet_gateway_provider_pools",
+  "workjet_gateway_provider_health",
+  "workjet_gateway_account_health",
+  "workjet_gateway_model_checks",
+  "workjet_gateway_pending_checks",
+  "workjet_gateway_model_discovery",
+  "workjet_gateway_account_models",
+  "workjet_luma_state",
+  "workjet_llm_routes",
+  "workjet_model_prompts",
+] as const;
 /** Read-only collections of other owners: app ctox (K-WJ-1) and platform (§16.41/§16.43). */
 export const WORKJET_FOREIGN_COLLECTIONS = [
   "workjet_computers",
@@ -29,6 +51,8 @@ export const WORKJET_FOREIGN_COLLECTIONS = [
   "workjet_calendar_state",
   "devices",
   "machine_enrollments",
+  // Scheibe C consumers read these Core projections locally (gateway, calendar, Luma target).
+  ...SCHEIBE_C_READ_COLLECTIONS,
   ...new Set(
     Object.values(PROJECT_READ_COLLECTIONS).filter(
       (collection) => !(WORKJET_OWNED_COLLECTIONS as readonly string[]).includes(collection),

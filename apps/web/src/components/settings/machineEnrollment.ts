@@ -194,6 +194,20 @@ const ERRORS: Record<string, ErrorEntry> = {
     text: { de: "Rechner nicht erreichbar", en: "Computer unreachable" },
     action: "retry",
   },
+  ssh_missing: {
+    text: {
+      de: "SSH ist auf diesem Rechner nicht installiert",
+      en: "SSH is not installed on this computer",
+    },
+    action: "details",
+  },
+  tailscale_missing: {
+    text: {
+      de: "Tailscale ist auf diesem Rechner nicht installiert",
+      en: "Tailscale is not installed on this computer",
+    },
+    action: "details",
+  },
   host_key_changed: {
     text: { de: "Host-Schlüssel geändert", en: "Host key changed" },
     action: "details",
@@ -235,7 +249,9 @@ export function machineEnrollmentLabels(language: MachineEnrollmentLanguage = "d
         connect: "Connect",
         changePassword: "Change password",
         known: "Added",
-        tailscaleSignIn: "Sign in to Tailscale",
+        tailscaleSignIn: "Install or sign in to Tailscale",
+        tailscaleUnavailable: "Tailscale is not installed or not signed in",
+        sshConfigShow: "Choose from ~/.ssh/config",
         password: "Password",
         address: "Address",
         manual: "Manual",
@@ -262,7 +278,9 @@ export function machineEnrollmentLabels(language: MachineEnrollmentLanguage = "d
         connect: "Verbinden",
         changePassword: "Passwort ändern",
         known: "Vorhanden",
-        tailscaleSignIn: "Bei Tailscale anmelden",
+        tailscaleSignIn: "Tailscale installieren oder anmelden",
+        tailscaleUnavailable: "Tailscale ist nicht installiert oder nicht angemeldet",
+        sshConfigShow: "Aus ~/.ssh/config wählen",
         password: "Passwort",
         address: "Adresse",
         manual: "Manuell",

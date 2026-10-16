@@ -2124,7 +2124,7 @@ export function WorkjetComputersSettings({
       source={machineEnrollment.source}
       transport={machineEnrollment.transport}
       defaultOpen={setupOnly || addOpen}
-      onOpenTailscale={() => void bridge?.openExternal?.("https://login.tailscale.com/start")}
+      onOpenTailscale={() => void bridge?.openExternal?.("https://tailscale.com/download")}
       isKnown={(candidate) => isKnownComputer(configuration.computers, candidate, environmentId)}
       isListedOnline={(candidate) =>
         isListedOnlineComputer(

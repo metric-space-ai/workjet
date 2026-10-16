@@ -11,7 +11,7 @@ describe("CTOX-native project story", () => {
     const end = chatIndexSource.indexOf("export const Route", start);
     const visibleFlow = chatIndexSource.slice(start, end > start ? end : undefined);
 
-    expect(visibleFlow).toContain('triggerLabel="Projekt anlegen"');
+    expect(visibleFlow).toContain('"Projekt anlegen"');
     expect(visibleFlow).toContain('aria-label="Instanz"');
     expect(visibleFlow).not.toContain("addProjectEnvironmentOptions");
     expect(visibleFlow).not.toContain("No Code computer assigned");

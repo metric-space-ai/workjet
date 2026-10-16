@@ -22,7 +22,8 @@ export type ProjectTokenBudgetView = {
  */
 export function ProjectTokenBudgetSummary({ view }: { readonly view: ProjectTokenBudgetView }) {
   const tokens = view.totals === null ? null : projectTokenTotal(view.totals);
-  if (tokens === null) return null;
+  // Ohne gemessenen Verbrauch kein „≥0 Tokens“ auf der Karte (#798).
+  if (tokens === null || tokens === 0) return null;
   const en = workjetUiLanguage() === "en";
   const locale = en ? "en-GB" : "de-DE";
   const unit = en ? "bn" : "Mrd.";

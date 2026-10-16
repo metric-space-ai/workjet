@@ -151,12 +151,23 @@ export function AddMachineEnrollment({
   const segment = segmentChoice ?? preselectSegment(sources.value, isKnown);
 
   const enrolledIds = new Set(entries.map((entry) => entry.candidate.id));
-  const visible = visibleMachineCandidates(
+  // Hosts aus ~/.ssh/config erscheinen erst nach bewusster Wahl, nie vorbelegt (#808).
+  const [sshConfigShown, setSshConfigShown] = useState(false);
+  const allVisible = visibleMachineCandidates(
     sources.value?.candidates ?? [],
     segment,
     enrolledIds,
     isKnown,
   );
+  const sshConfigCount = allVisible.filter(
+    (candidate) => candidate.sshAlias != null && candidate.transport === "ssh",
+  ).length;
+  const visible =
+    segment === "ssh" && !sshConfigShown
+      ? allVisible.filter(
+          (candidate) => !(candidate.sshAlias != null && candidate.transport === "ssh"),
+        )
+      : allVisible;
   const picked =
     pickedId === MANUAL ? null : (visible.find((candidate) => candidate.id === pickedId) ?? null);
   const manual = pickedId === MANUAL && segment !== "local";
@@ -332,16 +343,27 @@ export function AddMachineEnrollment({
             />
             <Button
               type="button"
-              size="icon-xs"
+              size="xs"
               variant="ghost"
-              aria-label={labels.reload}
-              title={labels.reload}
               disabled={sources.loading}
               onClick={sources.reload}
             >
               <RefreshCwIcon />
+              {labels.reload}
             </Button>
           </div>
+          {segment === "ssh" && !sshConfigShown && sshConfigCount > 0 ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="self-start"
+              data-slot="machine-ssh-config-show"
+              onClick={() => setSshConfigShown(true)}
+            >
+              {labels.sshConfigShow}
+            </Button>
+          ) : null}
           <div className="flex flex-col" role="listbox" aria-label={labels.add}>
             {visible.map((candidate) => {
               const known = isKnown(candidate);
@@ -372,12 +394,29 @@ export function AddMachineEnrollment({
                 className="flex items-center gap-2 px-2 py-1.5 text-[13.5px]"
                 data-slot="machine-source-tailscale-off"
               >
-                <span className="text-muted-foreground">{labels.tailscaleSignedOut}</span>
-                {onOpenTailscale ? (
-                  <Button type="button" size="xs" variant="outline" onClick={onOpenTailscale}>
-                    {labels.tailscaleSignIn}
-                  </Button>
-                ) : null}
+                {/* Ohne Tailscale-Programm sah das wie „nicht angemeldet“ aus und der Knopf
+                    tat nichts (#808): beide Fälle stehen da, der Link ist sichtbar. */}
+                <span className="text-muted-foreground">{labels.tailscaleUnavailable}</span>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  render={
+                    <a
+                      href="https://tailscale.com/download"
+                      target="_blank"
+                      rel="noreferrer noopener"
+                    />
+                  }
+                  onClick={(event) => {
+                    if (onOpenTailscale) {
+                      event.preventDefault();
+                      onOpenTailscale();
+                    }
+                  }}
+                >
+                  {labels.tailscaleSignIn} · tailscale.com/download
+                </Button>
               </div>
             ) : null}
             {segment !== "local" ? (

@@ -9,7 +9,8 @@ import { InlineExpand } from "../ui/inline-expand";
 import { Row } from "../ui/row";
 import { SecretInput } from "../ui/secret-input";
 import { toastManager } from "../ui/toast";
-import { deleteCredential, listCredentials, putCredential } from "../../workjetSecretRequests";
+import { deleteCredential, putCredential, readCredentials } from "../../workjetSecretRequests";
+import { InstanceUpdateRequired } from "./InstanceUpdateRequired";
 import { SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { SettingsAddButton, SettingsLoadingRow } from "./settingsAdd";
@@ -103,6 +104,7 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
   const language = useProjectOverviewLanguage();
   const [rows, setRows] = useState<readonly WorkjetCredentialRecord[] | null>(null);
   const [readFailed, setReadFailed] = useState(false);
+  const [unsupported, setUnsupported] = useState(false);
   const [hidden, setHidden] = useState(NO_HIDDEN);
   const [editing, setEditing] = useState<string | null>(null);
   // `true` = eigener Schlüssel, sonst der gewählte bekannte Eintrag (Audit C 32).
@@ -116,10 +118,11 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
   );
   const refresh = useCallback(async () => {
     if (!props.instanceId) return;
-    const list = await listCredentials(props.instanceId).catch(() => null);
+    const read = await readCredentials(props.instanceId).catch(() => ({ kind: "failed" }) as const);
     if (!alive.current) return;
-    setReadFailed(list === null);
-    if (list !== null) setRows(list);
+    setUnsupported(read.kind === "unsupported");
+    setReadFailed(read.kind === "failed");
+    if (read.kind === "ready") setRows(read.rows);
   }, [props.instanceId]);
   useEffect(() => {
     setRows(null);
@@ -193,7 +196,7 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
       {...section}
       data-workjet-secrets-settings=""
       headerAction={
-        rows === null || adding !== false ? null : (
+        rows === null || unsupported || adding !== false ? null : (
           <SettingsAddButton
             action="instance.secrets.add"
             options={[
@@ -230,7 +233,9 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
           </InlineExpand>
         </div>
       ) : null}
-      {rows === null ? (
+      {unsupported ? (
+        <InstanceUpdateRequired feature={t("Zugangsdaten", "credentials")} />
+      ) : rows === null ? (
         <SettingsLoadingRow onRetry={() => void refresh()} />
       ) : set.length === 0 ? null : (
         <ul aria-label={section.title} className="divide-y divide-border/60">

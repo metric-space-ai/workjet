@@ -256,7 +256,9 @@ function AboutVersionSection() {
     "up-to-date": "Aktuell",
   };
   const buttonLabel =
-    actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Updates prüfen";
+    actionLabel[action] ??
+    statusLabel[updateState?.status ?? ""] ??
+    archiveText("Updates prüfen", "Check for updates");
   const status =
     action === "install" && isInstallConfirming
       ? "Workjet startet zum Installieren neu."
@@ -296,7 +298,7 @@ function AboutVersionSection() {
       />
       {hasDesktopBridge ? (
         <SettingsRow
-          title="Update-Kanal"
+          title={archiveText("Update-Kanal", "Update channel")}
           control={
             <Select
               value={selectedUpdateChannel}
@@ -306,7 +308,7 @@ function AboutVersionSection() {
             >
               <SelectTrigger
                 className="w-full sm:w-40"
-                aria-label="Update-Kanal"
+                aria-label={archiveText("Update-Kanal", "Update channel")}
                 disabled={isChangingUpdateChannel}
               >
                 <SelectValue>
@@ -326,7 +328,7 @@ function AboutVersionSection() {
         />
       ) : selectedHostedAppChannel && configuredHostedAppUrl() ? (
         <SettingsRow
-          title="Update-Kanal"
+          title={archiveText("Update-Kanal", "Update channel")}
           control={
             <Select
               value={selectedHostedAppChannel}
@@ -338,7 +340,10 @@ function AboutVersionSection() {
                 if (channelUrl) window.location.assign(channelUrl);
               }}
             >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Update-Kanal">
+              <SelectTrigger
+                className="w-full sm:w-40"
+                aria-label={archiveText("Update-Kanal", "Update channel")}
+              >
                 {/* Ein Begriff auf beiden Wegen: Stabil | Vorabversion (Audit C 19). */}
                 <SelectValue>
                   {selectedHostedAppChannel === "nightly" ? "Vorabversion" : "Stabil"}
@@ -590,7 +595,15 @@ export function useSettingsRestore(onRestored?: () => void) {
   };
 }
 
-const COLOR_SCHEME_LABELS = { light: "Hell", dark: "Dunkel", system: "System" } as const;
+const COLOR_SCHEME_LABELS = {
+  get light() {
+    return archiveText("Hell", "Light");
+  },
+  get dark() {
+    return archiveText("Dunkel", "Dark");
+  },
+  system: "System",
+} as const;
 type ColorSchemeChoice = keyof typeof COLOR_SCHEME_LABELS;
 
 function isColorSchemeChoice(value: unknown): value is ColorSchemeChoice {
@@ -962,9 +975,9 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection title="Allgemein">
+      <SettingsSection title={archiveText("Allgemein", "General")}>
         <SettingsRow
-          title="Sprache"
+          title={archiveText("Sprache", "Language")}
           control={
             <Select
               value={settings.interfaceLanguage === "en" ? "en" : "de"}
@@ -973,7 +986,7 @@ export function GeneralSettingsPanel() {
                   updateClientSettings({ interfaceLanguage: value });
               }}
             >
-              <SelectTrigger aria-label="Sprache" className="w-40">
+              <SelectTrigger aria-label={archiveText("Sprache", "Language")} className="w-40">
                 <SelectValue>
                   {INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage === "en" ? "en" : "de"]}
                 </SelectValue>
@@ -1003,7 +1016,7 @@ export function GeneralSettingsPanel() {
 
       {settings.developerMode ? (
         <>
-          <SettingsSection title="Entwickler">
+          <SettingsSection title={archiveText("Entwickler", "Developer")}>
             <EnvironmentIdentificationRow />
             <WordWrapRow />
             <SettingsRow
@@ -1249,7 +1262,7 @@ export function GeneralSettingsPanel() {
         </>
       ) : null}
 
-      <SettingsSection title="Über Workjet">
+      <SettingsSection title={archiveText("Über Workjet", "About Workjet")}>
         {isElectron || HOSTED_APP_CHANNEL ? (
           <AboutVersionSection />
         ) : (

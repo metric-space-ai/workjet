@@ -46,7 +46,19 @@ import {
   type MachineSources,
 } from "./machineEnrollment";
 
-const labels = machineEnrollmentLabels("de");
+function enrollmentLanguage(): "de" | "en" {
+  return typeof document !== "undefined" &&
+    document.documentElement?.lang?.startsWith("en") === true
+    ? "en"
+    : "de";
+}
+// Sprache zur Renderzeit (#800): der Router wird beim Sprachwechsel neu aufgebaut.
+const labels = new Proxy({} as ReturnType<typeof machineEnrollmentLabels>, {
+  get: (_target, key) =>
+    machineEnrollmentLabels(enrollmentLanguage())[
+      key as keyof ReturnType<typeof machineEnrollmentLabels>
+    ],
+});
 const ROW_DOT: Record<MachineEnrollmentProgress["phase"], RowStatus> = {
   running: "busy",
   failed: "error",
@@ -63,7 +75,13 @@ const SEGMENTS: ReadonlyArray<{
   readonly label: string;
   readonly icon: ReactNode;
 }> = [
-  { value: "local", label: labels.transports.local, icon: <MonitorIcon /> },
+  {
+    value: "local",
+    get label() {
+      return labels.transports.local;
+    },
+    icon: <MonitorIcon />,
+  },
   // D23: Terminal steht für Harness; SSH bekommt den Schlüssel.
   { value: "ssh", label: labels.transports.ssh, icon: <KeyRoundIcon /> },
   { value: "tailscale", label: labels.transports.tailscale, icon: <NetworkIcon /> },
@@ -638,9 +656,11 @@ function EnrollmentRow({
   const [details, setDetails] = useState(false);
   // Inline-Felder bei „Benutzer prüfen“ / „Passwort falsch“; das Passwort lebt nur hier.
   const [userEdit, setUserEdit] = useState<{ user: string; password: string } | null>(null);
-  const failure = progress.fault ? machineEnrollmentError(progress.fault.error_code) : null;
+  const failure = progress.fault
+    ? machineEnrollmentError(progress.fault.error_code, enrollmentLanguage())
+    : null;
   const dot = ROW_DOT[progress.phase];
-  const stepLabel = machineEnrollmentStepLabel(progress.key);
+  const stepLabel = machineEnrollmentStepLabel(progress.key, enrollmentLanguage());
 
   const meta = failure ? (
     <span

@@ -15,6 +15,13 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Skeleton } from "../ui/skeleton";
 import { cn } from "~/lib/utils";
 
+function settingsLang(): "de" | "en" {
+  return typeof document !== "undefined" &&
+    document.documentElement?.lang?.startsWith("en") === true
+    ? "en"
+    : "de";
+}
+
 export interface SettingsAddOption {
   readonly label: ReactNode;
   readonly onSelect: () => void;
@@ -28,7 +35,7 @@ export function SettingsAddButton({
   options,
   onClick,
   disabled = false,
-  label = "Hinzufügen",
+  label = settingsLang() === "en" ? "Add" : "Hinzufügen",
   action,
 }: {
   /** Mehrere Arten: Menü. Fehlt sie oder ist es genau eine: direkter Klick. */
@@ -114,7 +121,7 @@ export function SettingsLoadingRow({
         )}
         data-slot="settings-loading-failed"
       >
-        <span>Nicht erreichbar</span>
+        <span>{settingsLang() === "en" ? "Unreachable" : "Nicht erreichbar"}</span>
         <Button
           size="xs"
           variant="outline"
@@ -123,7 +130,7 @@ export function SettingsLoadingRow({
             onRetry();
           }}
         >
-          Erneut
+          {settingsLang() === "en" ? "Retry" : "Erneut"}
         </Button>
       </div>
     );

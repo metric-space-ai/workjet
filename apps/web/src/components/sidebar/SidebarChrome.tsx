@@ -211,10 +211,18 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={handleSettingsClick}>
             <SettingsIcon />
-            <span>Einstellungen</span>
+            <span>{sidebarSettingsLabel()}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarFooter>
   );
 });
+
+/** Fußzeilen-Eintrag „Einstellungen“ folgt der UI-Sprache (#800). */
+export function sidebarSettingsLabel(): string {
+  return typeof document !== "undefined" &&
+    document.documentElement?.lang?.startsWith("en") === true
+    ? "Settings"
+    : "Einstellungen";
+}

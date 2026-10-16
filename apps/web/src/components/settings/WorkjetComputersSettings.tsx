@@ -89,6 +89,13 @@ import { workjetHarnessDisplayLabel } from "./WorkjetWorkerEditor";
 import { ComputerProvisioningSection } from "./ComputerProvisioningSection";
 import { searchableSetting } from "./settingsSearch";
 
+function T(de: string, en: string): string {
+  return typeof document !== "undefined" &&
+    document.documentElement?.lang?.startsWith("en") === true
+    ? en
+    : de;
+}
+
 export { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 
 interface ComputerHarnessInspection {
@@ -860,7 +867,7 @@ export function WorkjetComputersSettingsView({
       className="flex flex-wrap items-center gap-2 pb-2 text-xs text-destructive"
       data-slot="computer-membership-error"
     >
-      <span>Rechnerliste nicht abrufbar</span>
+      <span>{T("Rechnerliste nicht abrufbar", "Computer list unavailable")}</span>
       {onRetryMembership ? (
         <Button size="xs" variant="outline" onClick={onRetryMembership}>
           Erneut versuchen
@@ -885,7 +892,7 @@ export function WorkjetComputersSettingsView({
           const active = isRowActive(row);
           const label = computer?.label ?? native?.displayName ?? row.key;
           let status: RowStatus = "off";
-          let statusLabel = "Getrennt";
+          let statusLabel = T("Getrennt", "Disconnected");
           let meta: ReactNode = null;
           const toggles = onRolesChange
             ? computerCapabilityToggles(metadata, native).map((toggle) => ({
@@ -958,18 +965,18 @@ export function WorkjetComputersSettingsView({
                     ? "off"
                     : "ok";
             statusLabel = !active
-              ? "Inaktiv"
+              ? T("Inaktiv", "Inactive")
               : checking || busyRow || probing
-                ? "Prüft"
+                ? T("Prüft", "Checking")
                 : connecting
-                  ? "Verbindet"
+                  ? T("Verbindet", "Connecting")
                   : unreachable
-                    ? "Nicht erreichbar"
+                    ? T("Nicht erreichbar", "Unreachable")
                     : toolsFailed || probeTimedOut
-                      ? "Werkzeuge nicht prüfbar"
+                      ? T("Werkzeuge nicht prüfbar", "Tools not checkable")
                       : disconnected
-                        ? "Getrennt"
-                        : "Verbunden";
+                        ? T("Getrennt", "Disconnected")
+                        : T("Verbunden", "Connected");
             // Aktualisierung des Dienstes: nur der Punkt (orange), kein Satz.
             const updating =
               active &&
@@ -996,7 +1003,7 @@ export function WorkjetComputersSettingsView({
                       .filter((part): part is string => !!part)
                       .join(" · ")
                   : computer.presentationKind === "local"
-                    ? "Lokal"
+                    ? T("Lokal", "Local")
                     : null;
             if (snapshot) {
               const tools = computer.harnesses.filter(
@@ -1162,7 +1169,9 @@ export function WorkjetComputersSettingsView({
                   data-slot="computer-update-failed"
                   className="flex flex-wrap items-center gap-2 px-3 pb-2 pl-8 text-xs text-destructive"
                 >
-                  <span className="min-w-0">Aktualisierung fehlgeschlagen</span>
+                  <span className="min-w-0">
+                    {T("Aktualisierung fehlgeschlagen", "Update failed")}
+                  </span>
                   {onRetryRemoteDaemonUpdate ? (
                     <Button
                       size="xs"
@@ -1194,7 +1203,7 @@ export function WorkjetComputersSettingsView({
                   ) : null}
                   <span className="flex items-center gap-1.5">
                     <Button size="xs" variant="outline" onClick={() => setRemoveAsk(null)}>
-                      Abbrechen
+                      {T("Abbrechen", "Cancel")}
                     </Button>
                     <Button
                       size="xs"
@@ -1256,7 +1265,9 @@ export function WorkjetComputersSettingsView({
           environmentsReady ? (
             <Empty className="py-6" data-slot="computers-empty">
               <EmptyHeader>
-                <EmptyTitle className="text-[13.5px]">Noch keine Rechner</EmptyTitle>
+                <EmptyTitle className="text-[13.5px]">
+                  {T("Noch keine Rechner", "No computers yet")}
+                </EmptyTitle>
               </EmptyHeader>
             </Empty>
           ) : (

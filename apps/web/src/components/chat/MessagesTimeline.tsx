@@ -10,6 +10,7 @@ import {
   type WorkjetBusinessOsObjectId,
   type WorkjetBusinessOsObjectKind,
 } from "@workjet/contracts";
+import { internalSystemPromptLabel } from "./internalSystemPrompt";
 import { parseScopedThreadKey } from "@workjet/client-runtime/environment";
 import type { AgentPanelModel } from "@workjet/client-runtime/state/subagentRuntime";
 import { emptyAgentPanelModel } from "@workjet/client-runtime/state/subagentRuntime";
@@ -775,7 +776,8 @@ function deriveTimelineMinimapItems(
     items.push({
       id: row.id,
       rowIndex: index,
-      userText: compactMinimapPreview(row.message.text),
+      userText:
+        internalSystemPromptLabel(row.message.text) ?? compactMinimapPreview(row.message.text),
       assistantText: compactMinimapPreview(resolveFinalAssistantTextForTurn(rows, index)),
     });
   }
@@ -1052,7 +1054,18 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
-      {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
+      {row.kind === "message" && row.message.role === "user" ? (
+        internalSystemPromptLabel(row.message.text) ? (
+          <p
+            className="text-center text-muted-foreground text-xs"
+            data-workjet-internal-prompt="true"
+          >
+            {internalSystemPromptLabel(row.message.text)}
+          </p>
+        ) : (
+          <UserTimelineRow row={row} />
+        )
+      ) : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
       ) : null}

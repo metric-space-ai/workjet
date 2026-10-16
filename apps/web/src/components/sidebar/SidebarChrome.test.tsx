@@ -51,7 +51,9 @@ describe("WorkjetProductModeSwitch", () => {
     const footerSource = sidebarChromeSource.slice(
       sidebarChromeSource.indexOf("export const SidebarChromeFooter"),
     );
-    expect(footerSource).toContain("<span>Einstellungen</span>");
+    expect(footerSource).toContain("<span>{sidebarSettingsLabel()}</span>");
+    expect(footerSource).toContain('"Settings"');
+    expect(footerSource).toContain('"Einstellungen"');
     expect(footerSource.split("<SidebarMenuItem").length - 1).toBe(1);
     expect(footerSource).not.toContain('size="icon"');
     expect(footerSource).not.toContain("openWorkjetDevicePairing");

@@ -1,5 +1,6 @@
 import type {
   DesktopSshEnvironmentBootstrap,
+  DesktopSshEnvironmentProgress,
   DesktopSshEnvironmentTarget,
 } from "@workjet/contracts";
 import {
@@ -138,10 +139,20 @@ interface SshAuthAttemptInput<T> extends SshAuthOperationInput<T> {
   readonly authSecret: string | null;
 }
 
+export type SshEnvironmentProgressListener = (
+  progress: Omit<DesktopSshEnvironmentProgress, "alias" | "hostname">,
+) => Effect.Effect<void>;
+
+export interface SshEnvironmentEnsureOptions {
+  readonly issuePairingToken?: boolean;
+  /** Called at each step; never fails the ensure. */
+  readonly onProgress?: SshEnvironmentProgressListener;
+}
+
 export interface SshEnvironmentManagerShape {
   readonly ensureEnvironment: (
     target: DesktopSshEnvironmentTarget,
-    options?: { readonly issuePairingToken?: boolean },
+    options?: SshEnvironmentEnsureOptions,
   ) => Effect.Effect<
     DesktopSshEnvironmentBootstrap,
     SshEnvironmentEffectError,
@@ -1424,7 +1435,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
 
   const ensureEnvironment = Effect.fn("ssh/tunnel.ensureEnvironment")(function* (
     target: DesktopSshEnvironmentTarget,
-    requestOptions?: { readonly issuePairingToken?: boolean },
+    requestOptions?: SshEnvironmentEnsureOptions,
   ): Effect.fn.Return<
     DesktopSshEnvironmentBootstrap,
     SshEnvironmentEffectError,
@@ -1434,6 +1445,10 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       ...sshTargetLogFields(target),
       issuePairingToken: requestOptions?.issuePairingToken === true,
     });
+    const progress = requestOptions?.onProgress;
+    const report = (step: Parameters<SshEnvironmentProgressListener>[0]) =>
+      progress ? progress(step).pipe(Effect.catchCause(() => Effect.void)) : Effect.void;
+    yield* report({ phase: "connecting" });
     const baseResolved = yield* resolveSshTarget(target.alias || target.hostname);
     const resolvedTarget: DesktopSshEnvironmentTarget = {
       ...baseResolved,
@@ -1462,11 +1477,16 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       const nodeScriptPath = yield* runWithSshAuth({
         key,
         target: resolvedTarget,
-        operation: (auth) => preparePortableServer(resolvedTarget, directory, auth),
+        operation: (auth) =>
+          preparePortableServer(resolvedTarget, directory, auth, (transfer) =>
+            report({ phase: "copying", ...transfer }),
+          ),
       });
       runner = { ...runner, nodeScriptPath };
     }
+    yield* report({ phase: "starting" });
     const entry = yield* ensureTunnelEntry(key, resolvedTarget, runner);
+    if (requestOptions?.issuePairingToken) yield* report({ phase: "pairing" });
 
     const pairingResult = requestOptions?.issuePairingToken
       ? yield* runWithSshAuth({

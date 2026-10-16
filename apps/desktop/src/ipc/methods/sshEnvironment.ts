@@ -16,6 +16,7 @@ import {
   DesktopSshEnvironmentTargetSchema,
   DesktopSshHttpBaseUrlInputSchema,
   DesktopSshPasswordPromptCancelledType,
+  type DesktopSshEnvironmentProgress,
   DesktopSshPasswordPromptResolutionInputSchema,
   ExecutionEnvironmentDescriptor,
   EnvironmentInternalError,
@@ -27,7 +28,10 @@ import {
   AuthWebSocketTicketResult,
 } from "@workjet/contracts";
 import { SshHttpBridgeError } from "@workjet/ssh/errors";
-import { resolveLoopbackSshHttpBaseUrl } from "@workjet/ssh/tunnel";
+import {
+  resolveLoopbackSshHttpBaseUrl,
+  type SshEnvironmentProgressListener,
+} from "@workjet/ssh/tunnel";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -35,6 +39,7 @@ import * as Schema from "effect/Schema";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import * as DesktopSshEnvironment from "../../ssh/DesktopSshEnvironment.ts";
+import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import { DesktopComputers } from "../../computers/DesktopComputers.ts";
 import * as DesktopSshPasswordPrompts from "../../ssh/DesktopSshPasswordPrompts.ts";
 
@@ -127,16 +132,28 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
     options,
   }) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
-    const bootstrap = yield* sshEnvironment.ensureEnvironment(target, options).pipe(
-      Effect.catch((error) =>
-        DesktopSshEnvironment.isDesktopSshPasswordPromptCancellation(error)
-          ? Effect.succeed({
-              type: DesktopSshPasswordPromptCancelledType,
-              message: error.message,
-            })
-          : Effect.fail(error),
-      ),
-    );
+    // Live steps for the add-computer row (Verbinden → Kopieren → Starten).
+    const windows = yield* Effect.serviceOption(ElectronWindow.ElectronWindow);
+    const onProgress: SshEnvironmentProgressListener = (step) =>
+      windows._tag === "Some"
+        ? windows.value.sendAll(IpcChannels.SSH_ENVIRONMENT_PROGRESS_CHANNEL, {
+            alias: target.alias,
+            hostname: target.hostname,
+            ...step,
+          } satisfies DesktopSshEnvironmentProgress)
+        : Effect.void;
+    const bootstrap = yield* sshEnvironment
+      .ensureEnvironment(target, { ...options, onProgress })
+      .pipe(
+        Effect.catch((error) =>
+          DesktopSshEnvironment.isDesktopSshPasswordPromptCancellation(error)
+            ? Effect.succeed({
+                type: DesktopSshPasswordPromptCancelledType,
+                message: error.message,
+              })
+            : Effect.fail(error),
+        ),
+      );
     if ("target" in bootstrap) {
       const computers = yield* Effect.serviceOption(DesktopComputers);
       if (computers._tag === "Some") {

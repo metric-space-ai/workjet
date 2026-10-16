@@ -12,7 +12,9 @@
  */
 import { isNonComputerSshHost } from "../../sshAliasCandidates";
 import type {
+  DesktopBridge,
   DesktopDiscoveredSshHost,
+  DesktopSshEnvironmentProgress,
   DesktopTailscalePeers,
   EnvironmentId,
 } from "@workjet/contracts";
@@ -59,6 +61,51 @@ export interface LegacyEnrollmentDeps {
   readonly onlineTimeoutMs?: number;
 }
 
+/**
+ * Live-Schritte des Desktop-SSH-Wegs (`desktop:ssh-environment-progress`) auf
+ * die Vertragsschritte: sobald das Paket kopiert wird, ist „Verbinden“ fertig;
+ * sobald der Dienst startet, ist „Kopieren“ fertig.
+ */
+export function sshProgressSteps(
+  progress: Pick<DesktopSshEnvironmentProgress, "phase">,
+): ReadonlyArray<readonly [MachineEnrollmentStepKey, "running" | "done"]> {
+  switch (progress.phase) {
+    case "copying":
+      return [
+        ["transport_connected", "done"],
+        ["package_copied", "running"],
+      ];
+    case "starting":
+    case "pairing":
+      return [
+        ["transport_connected", "done"],
+        ["package_copied", "done"],
+        ["installed", "running"],
+      ];
+    default:
+      return [];
+  }
+}
+
+/** Hört nur auf den Fortschritt dieses Ziels; ohne Desktop-Brücke ein No-op. */
+export function watchSshEnvironmentProgress(
+  bridge: Pick<DesktopBridge, "onSshEnvironmentProgress"> | undefined,
+  target: { readonly alias: string; readonly hostname: string },
+  phase: AddComputerPhase,
+): () => void {
+  if (!bridge?.onSshEnvironmentProgress) return () => undefined;
+  const reached = new Set<string>();
+  return bridge.onSshEnvironmentProgress((progress) => {
+    if (progress.alias !== target.alias || progress.hostname !== target.hostname) return;
+    for (const [key, state] of sshProgressSteps(progress)) {
+      const id = `${key}:${state}`;
+      if (reached.has(id)) continue;
+      reached.add(id);
+      phase(key, state);
+    }
+  });
+}
+
 const WILDCARD = /[*?!]/u;
 
 /** Quellenliste: dieser Rechner, SSH-Hosts, tailnet-Geräte (je Gerät einmal). */
@@ -98,8 +145,10 @@ export function legacyMachineCandidates(input: {
         entry.name === short,
     );
     if (match) claimed.add(match.id);
-    // Tailscale = SSH auf die tailnet-Adresse; Benutzer aus dem Host-Eintrag,
-    // sonst fragt die Liste nach (nie der lokale Benutzer).
+    // Tailscale = SSH direkt auf die tailnet-Adresse; Benutzer und Port aus
+    // dem Host-Eintrag, sonst fragt die Liste nach (nie der lokale Benutzer).
+    // Nicht über den Alias: dessen ProxyJump/ProxyCommand umgeht den
+    // tailnet-Weg (ts-gpu1 lief über ts-gpu3, ~250 KB/s statt LAN-direkt).
     tailnet.push({
       id: `tailscale:${short}`,
       transport: "tailscale",
@@ -107,7 +156,7 @@ export function legacyMachineCandidates(input: {
       user: match?.user ?? null,
       host: peer.hostname,
       port: match?.port ?? null,
-      sshAlias: match?.sshAlias ?? null,
+      sshAlias: null,
     });
   }
   return [
@@ -165,6 +214,9 @@ export function legacyErrorCode(
   if (/abgebrochen|cancel/iu.test(message)) return withPassword ? "password_rejected" : "cancelled";
   if (/host key|identification has changed/iu.test(message)) return "host_key_changed";
   if (/no space|speicherplatz/iu.test(message)) return "disk_full";
+  // Der Server-Paket-Transfer setzt beim nächsten Versuch fort (packages/ssh
+  // portableServer): ein Abriss dort ist „Kopieren“, nicht „nicht erreichbar“.
+  if (/package transfer|server transfer|transfer stalled/iu.test(message)) return "copy_failed";
   if (
     /timed out|unreachable|no route|could not resolve|refused|nicht erreichbar|nicht verbunden/iu.test(
       message,
@@ -214,12 +266,17 @@ export function createLegacyMachineEnrollment(deps: LegacyEnrollmentDeps): {
     for (const listener of entry.listeners) listener(snapshot);
   };
   const fail = (entry: Entry, message: string, withPassword = false) => {
-    const key = entry.current ?? "transport_connected";
+    const current = entry.current ?? "transport_connected";
+    const errorCode = legacyErrorCode(current, message, withPassword);
+    // Verbunden war der Rechner schon, wenn erst das Paket nicht ankam.
+    const key =
+      errorCode === "copy_failed" && current === "transport_connected" ? "package_copied" : current;
+    if (key !== current) put(entry, { key: current, state: "done", at_ms: now() });
     put(entry, {
       key,
       state: "failed",
       at_ms: now(),
-      error_code: legacyErrorCode(key, message, withPassword),
+      error_code: errorCode,
       detail: message,
     });
   };

@@ -65,7 +65,7 @@ export class DesktopSshEnvironment extends Context.Service<
     ) => Effect.Effect<void, DesktopSshEnvironmentOperationError>;
     readonly ensureEnvironment: (
       target: DesktopSshEnvironmentTarget,
-      options?: { readonly issuePairingToken?: boolean },
+      options?: SshTunnel.SshEnvironmentEnsureOptions,
     ) => Effect.Effect<DesktopSshEnvironmentBootstrap, DesktopSshEnvironmentOperationError>;
     readonly disconnectEnvironment: (
       target: DesktopSshEnvironmentTarget,

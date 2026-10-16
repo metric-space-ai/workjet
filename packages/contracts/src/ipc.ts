@@ -391,6 +391,20 @@ export const DesktopSshEnvironmentBootstrapSchema = Schema.Struct({
   remoteServerKind: Schema.optionalKey(Schema.Literals(["external", "managed"])),
 });
 
+/**
+ * Live step of one `ensureSshEnvironment` call, pushed while it runs so the
+ * add-computer row moves past „Verbinden“ (copying reports bytes).
+ */
+export type DesktopSshEnvironmentProgressPhase = "connecting" | "copying" | "starting" | "pairing";
+
+export interface DesktopSshEnvironmentProgress {
+  readonly alias: string;
+  readonly hostname: string;
+  readonly phase: DesktopSshEnvironmentProgressPhase;
+  readonly transferredBytes?: number;
+  readonly totalBytes?: number;
+}
+
 export interface DesktopSshPasswordPromptRequest {
   requestId: string;
   destination: string;
@@ -1174,6 +1188,9 @@ export interface DesktopBridge {
     bearerToken: string,
   ) => Promise<AuthWebSocketTicketResult>;
   onSshPasswordPrompt: (listener: (request: DesktopSshPasswordPromptRequest) => void) => () => void;
+  onSshEnvironmentProgress?: (
+    listener: (progress: DesktopSshEnvironmentProgress) => void,
+  ) => () => void;
   resolveSshPasswordPrompt: (requestId: string, password: string | null) => Promise<void>;
   getServerExposureState: () => Promise<DesktopServerExposureState>;
   setServerExposureMode: (mode: DesktopServerExposureMode) => Promise<DesktopServerExposureState>;

@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@workjet/contracts";
+import type { DesktopSshEnvironmentProgress, EnvironmentId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -6,6 +6,7 @@ import {
   legacyErrorCode,
   legacyMachineCandidates,
   requestForCandidate,
+  watchSshEnvironmentProgress,
   type AddComputerPhase,
 } from "./legacyMachineEnrollment";
 import {
@@ -58,9 +59,27 @@ describe("Quellenliste über den heutigen Weg", () => {
     expect(candidates.map((entry) => [entry.id, entry.user, entry.sshAlias])).toEqual([
       ["local", null, null],
       ["ssh:lan-gpu3", "metricspace", "lan-gpu3"],
-      ["tailscale:gpu1-a6000", "deck", "ts-gpu1"],
+      // Direkt auf die tailnet-Adresse, nicht über den Alias (ProxyJump).
+      ["tailscale:gpu1-a6000", "deck", null],
       ["tailscale:nas", null, null],
     ]);
+  });
+
+  it("connects a tailnet device to its tailnet address, keeping user and port from the alias", () => {
+    const [candidate] = legacyMachineCandidates({
+      localName: null,
+      sshHosts: [host("ts-gpu1", "100.87.204.48", "deck")],
+      peers: {
+        status: "available",
+        peers: [{ id: "1", name: "gpu1-a6000", hostname: "100.87.204.48", online: true }],
+      },
+    });
+    expect(requestForCandidate(candidate!, "gpu1-a6000").target).toEqual({
+      alias: "100.87.204.48",
+      hostname: "100.87.204.48",
+      username: "deck",
+      port: 22,
+    });
   });
 
   it("builds an add request without roles; GPU stays auto-detected", () => {
@@ -166,6 +185,43 @@ describe("Schritte aus dem heutigen Weg", () => {
     expect(activeSshPasswordClaims()).toBe(0);
   });
 
+  it("shows a stalled server package transfer as „Kopieren“ with a retry, not as unreachable", async () => {
+    // gpu1 am 16.10.: 82 von 97 MB nach 180 s, die Zeile stand nur auf „Verbinden“.
+    const { source, transport } = createLegacyMachineEnrollment({
+      listSshHosts: async () => [],
+      localName: null,
+      isOnline: () => false,
+      add: async (_request, phase) => {
+        phase("transport_connected", "running");
+        return {
+          status: "error",
+          message:
+            "Workjet package transfer stalled at 82 MB of 97 MB. Retry resumes the transfer.",
+        };
+      },
+    });
+    const candidate = {
+      id: "tailscale:gpu1-a6000",
+      transport: "tailscale" as const,
+      name: "gpu1-a6000",
+      user: "deck",
+      host: "100.87.204.48",
+      port: 22,
+      sshAlias: "ts-gpu1",
+    };
+    const id = await startMachineEnrollment(source, transport, candidate, "gpu1-a6000");
+    let latest: MachineEnrollmentSnapshot = { steps: [] };
+    source.watch(id, (snapshot) => (latest = snapshot));
+    await settle();
+    expect(machineEnrollmentProgress(latest.steps).fault).toMatchObject({
+      key: "package_copied",
+      error_code: "copy_failed",
+    });
+    expect(latest.steps).toContainEqual(
+      expect.objectContaining({ key: "transport_connected", state: "done" }),
+    );
+  });
+
   it("classifies raw messages", () => {
     expect(legacyErrorCode("transport_connected", "Permission denied (publickey).")).toBe(
       "auth_rejected",
@@ -174,6 +230,62 @@ describe("Schritte aus dem heutigen Weg", () => {
       "unreachable",
     );
     expect(legacyErrorCode("installed", "boom")).toBe("install_failed");
+    expect(
+      legacyErrorCode(
+        "transport_connected",
+        "Workjet server transfer checksum verification failed.",
+      ),
+    ).toBe("copy_failed");
+  });
+});
+
+describe("Live-Fortschritt des SSH-Wegs", () => {
+  it("moves past „Verbinden“ while the package copies, only for this target, once per step", () => {
+    let emit: (progress: DesktopSshEnvironmentProgress) => void = () => undefined;
+    let unsubscribed = false;
+    const bridge = {
+      onSshEnvironmentProgress: (listener: typeof emit) => {
+        emit = listener;
+        return () => {
+          unsubscribed = true;
+        };
+      },
+    };
+    const seen: string[] = [];
+    const stop = watchSshEnvironmentProgress(
+      bridge,
+      { alias: "ts-gpu1", hostname: "100.87.204.48" },
+      (key, state) => seen.push(`${key}:${state}`),
+    );
+    emit({ alias: "ts-gpu1", hostname: "100.87.204.48", phase: "connecting" });
+    emit({ alias: "ts-gpu4", hostname: "100.120.16.93", phase: "copying" });
+    expect(seen).toEqual([]);
+    emit({
+      alias: "ts-gpu1",
+      hostname: "100.87.204.48",
+      phase: "copying",
+      transferredBytes: 1,
+      totalBytes: 9,
+    });
+    emit({
+      alias: "ts-gpu1",
+      hostname: "100.87.204.48",
+      phase: "copying",
+      transferredBytes: 5,
+      totalBytes: 9,
+    });
+    emit({ alias: "ts-gpu1", hostname: "100.87.204.48", phase: "starting" });
+    expect(seen).toEqual([
+      "transport_connected:done",
+      "package_copied:running",
+      "package_copied:done",
+      "installed:running",
+    ]);
+    stop();
+    expect(unsubscribed).toBe(true);
+    expect(
+      watchSshEnvironmentProgress(undefined, { alias: "a", hostname: "b" }, () => undefined)(),
+    ).toBeUndefined();
   });
 });
 

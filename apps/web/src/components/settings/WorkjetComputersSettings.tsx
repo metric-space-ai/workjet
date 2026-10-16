@@ -68,7 +68,7 @@ import {
 import { AddMachineEnrollment } from "./AddMachineEnrollment";
 import { useMachineEnrollment } from "./useMachineEnrollment";
 import type { MachineCandidate } from "./machineEnrollment";
-import type { AddComputerPhase } from "./legacyMachineEnrollment";
+import { type AddComputerPhase, watchSshEnvironmentProgress } from "./legacyMachineEnrollment";
 import {
   type WorkjetEnvironmentTargetOption,
   WorkjetComputerEditor,
@@ -1617,7 +1617,12 @@ export function WorkjetComputersSettings({
       connected = environmentId;
     } else {
       if (!request.target) return { status: "error", message: "Adresse fehlt." };
-      const result = await connections.connectSsh(request.target, request.label);
+      const stopProgress = phase
+        ? watchSshEnvironmentProgress(bridge, request.target, phase)
+        : () => undefined;
+      const result = await connections
+        .connectSsh(request.target, request.label)
+        .finally(stopProgress);
       if (!result.ok) return { status: "error", message: result.message ?? "Abgebrochen." };
       connected = result.environmentId;
     }

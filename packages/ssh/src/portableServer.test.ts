@@ -9,7 +9,12 @@ import * as Result from "effect/Result";
 import * as FileSystem from "effect/FileSystem";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { SshCommandError } from "./errors.ts";
-import { portableServerPlatform, preparePortableServer } from "./portableServer.ts";
+import {
+  PORTABLE_SERVER_CHUNK_BYTES,
+  PORTABLE_SERVER_STALLED_ATTEMPTS,
+  portableServerPlatform,
+  preparePortableServer,
+} from "./portableServer.ts";
 
 const host = vi.hoisted(() => ({
   root: "",
@@ -17,6 +22,12 @@ const host = vi.hoisted(() => ({
   transfers: 0,
   archiveBytes: 0,
   commandBytes: 0,
+  /** Cut the next N binary chunks after half their bytes (a timed-out chunk). */
+  cutChunks: 0,
+  /** Fail the next N non-binary probes like a dropped link. */
+  failProbes: 0,
+  /** Every binary chunk arrives with zero bytes and times out. */
+  dropChunks: false,
 }));
 vi.mock("./command.ts", () => ({
   runSshCommand: (
@@ -27,16 +38,37 @@ vi.mock("./command.ts", () => ({
       try: () => {
         if (typeof input.stdin === "string" && input.stdin.startsWith("printf"))
           return { stdout: "Linux:x86_64\n", stderr: "" };
+        if (
+          typeof input.stdin === "string" &&
+          input.stdin.includes("offset:%s") &&
+          host.failProbes > 0
+        ) {
+          host.failProbes--;
+          throw new Error("Connection timed out during banner exchange");
+        }
         const binary = input.stdin instanceof Uint8Array;
         let content = input.stdin;
         const command = input.remoteCommandArgs?.join(" ") ?? "";
+        let cut = false;
         if (input.stdin instanceof Uint8Array) {
           host.transfers++;
-          host.archiveBytes = input.stdin.byteLength;
-          host.commandBytes = new TextEncoder().encode(command).byteLength;
+          host.archiveBytes += input.stdin.byteLength;
+          host.commandBytes = Math.max(
+            host.commandBytes,
+            new TextEncoder().encode(command).byteLength,
+          );
           if (host.corrupt) {
             content = Uint8Array.from(input.stdin);
             content[content.length - 1] = (content[content.length - 1] ?? 0) ^ 1;
+          }
+          if (host.cutChunks > 0) {
+            host.cutChunks--;
+            cut = true;
+            content = input.stdin.subarray(0, Math.floor(input.stdin.byteLength / 2));
+          }
+          if (host.dropChunks) {
+            cut = true;
+            content = new Uint8Array();
           }
         }
         const result = NodeChildProcess.spawnSync("/bin/sh", binary ? ["-c", command] : ["-s"], {
@@ -46,6 +78,7 @@ vi.mock("./command.ts", () => ({
           timeout: 30_000,
         });
         if (result.error) throw result.error;
+        if (cut) throw new Error("SSH command timed out after 120000ms.");
         if (result.status !== 0) throw new Error(result.stderr);
         return { stdout: result.stdout, stderr: result.stderr };
       },
@@ -66,6 +99,11 @@ const fixture = Effect.gen(function* () {
   const root = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-portable-server-" });
   host.root = NodePath.join(root, "remote with spaces and 'quotes'");
   host.transfers = 0;
+  host.archiveBytes = 0;
+  host.commandBytes = 0;
+  host.cutChunks = 0;
+  host.dropChunks = false;
+  host.failProbes = 0;
   host.corrupt = false;
   yield* fs.makeDirectory(host.root);
   yield* fs.makeDirectory(NodePath.join(root, "package/dist"), { recursive: true });
@@ -132,6 +170,8 @@ it.effect(
         NodeCrypto.createHash("sha256").update(payload).digest("hex"),
       );
       expect(host.archiveBytes).toBeGreaterThanOrEqual(payload.byteLength);
+      // Bounded chunks, each with its own timeout, instead of one 100 MB command.
+      expect(host.transfers).toBeGreaterThan(payload.byteLength / PORTABLE_SERVER_CHUNK_BYTES);
       expect(host.commandBytes).toBeLessThan(4096);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   { timeout: 120_000 },
@@ -148,6 +188,94 @@ it.effect("rejects a transfer with a mismatched checksum and leaves no installed
 
     const fs = yield* FileSystem.FileSystem;
     expect(yield* fs.readDirectory(NodePath.join(host.root, ".workjet/ssh-server"))).toEqual([]);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+const writeArchive = (directory: string, bytes: number) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.writeFile(
+      NodePath.join(directory, "package/payload.bin"),
+      NodeCrypto.randomBytes(bytes),
+    );
+    yield* Effect.sync(() =>
+      NodeChildProcess.execFileSync("tar", [
+        "-czf",
+        NodePath.join(directory, "workjet-server-linux-x64.tgz"),
+        "-C",
+        directory,
+        "package",
+      ]),
+    );
+    return yield* fs.readFile(NodePath.join(directory, "workjet-server-linux-x64.tgz"));
+  });
+
+it.effect("resumes a cut chunk at the size the host reports and reports progress", () =>
+  Effect.gen(function* () {
+    const directory = yield* fixture;
+    const archive = yield* writeArchive(directory, 3 * PORTABLE_SERVER_CHUNK_BYTES);
+    host.cutChunks = 2;
+    const progress: number[] = [];
+    const installed = yield* preparePortableServer(target, directory, {}, (step) =>
+      Effect.sync(() => progress.push(step.transferredBytes)),
+    );
+    expect(installed).toMatch(/package\/dist\/bin\.mjs$/);
+    // Cut chunks are not resent from zero: only the missing halves travel again.
+    expect(host.archiveBytes).toBeLessThan(archive.byteLength + PORTABLE_SERVER_CHUNK_BYTES * 1.5);
+    expect(progress.at(-1)).toBe(archive.byteLength);
+    expect(progress).toEqual([...progress].sort((a, b) => a - b));
+    const fs = yield* FileSystem.FileSystem;
+    const leftovers = (yield* fs.readDirectory(
+      NodePath.join(host.root, ".workjet/ssh-server"),
+    )).filter((name) => name.startsWith("."));
+    expect(leftovers).toEqual([]);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("rides out a failed resume probe after a cut chunk", () =>
+  Effect.gen(function* () {
+    const directory = yield* fixture;
+    yield* writeArchive(directory, 2 * PORTABLE_SERVER_CHUNK_BYTES);
+    // Arm after the first probe: cut one chunk, then fail the next probe.
+    const first = preparePortableServer(target, directory, {}, (step) =>
+      Effect.sync(() => {
+        if (step.transferredBytes === 0) {
+          host.cutChunks = 1;
+          host.failProbes = 1;
+        }
+      }),
+    );
+    const installed = yield* first;
+    expect(installed).toMatch(/package\/dist\/bin\.mjs$/);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("continues an earlier interrupted transfer instead of starting over", () =>
+  Effect.gen(function* () {
+    const directory = yield* fixture;
+    const archive = yield* writeArchive(directory, 2 * PORTABLE_SERVER_CHUNK_BYTES);
+    const digest = NodeCrypto.createHash("sha256").update(archive).digest("hex");
+    const fs = yield* FileSystem.FileSystem;
+    const dir = NodePath.join(host.root, ".workjet/ssh-server");
+    yield* fs.makeDirectory(dir, { recursive: true });
+    const already = PORTABLE_SERVER_CHUNK_BYTES + 12_345;
+    yield* fs.writeFile(NodePath.join(dir, `.partial-${digest}.tgz`), archive.subarray(0, already));
+    yield* preparePortableServer(target, directory, {});
+    expect(host.archiveBytes).toBe(archive.byteLength - already);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("fails with a resumable stall message after bounded attempts without progress", () =>
+  Effect.gen(function* () {
+    const directory = yield* fixture;
+    host.dropChunks = true;
+    const result = yield* preparePortableServer(target, directory, {}).pipe(Effect.result);
+    expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result)) {
+      expect(result.failure.message).toMatch(/transfer stalled at \d+ MB of \d+ MB/u);
+      expect(result.failure.message).toContain("Retry resumes");
+    }
+    expect(host.transfers).toBe(PORTABLE_SERVER_STALLED_ATTEMPTS);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 

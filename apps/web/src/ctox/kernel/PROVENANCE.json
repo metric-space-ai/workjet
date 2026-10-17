@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/metric-space-ai/ctox",
-  "commit": "085b3cd904dbf566699251a3227a84d9e6deb116",
+  "commit": "e7ed10dd6a8c743a6ae7dae5c67269b97f9a5e1f",
   "sourceDirectory": "src/apps/business-os/kernel",
   "files": [
     {
@@ -90,8 +90,8 @@
     },
     {
       "path": "kernel.mjs",
-      "sha256": "dbfb8c333f64759bfef7eeee1751bc068fe79bf73e74e679658532fda7b78e49",
-      "gitBlob": "58a1f0ec0257ca34bdd4aae31bb719290719d906"
+      "sha256": "0026332764b0ce9fae5bb3d16b17f457f7f8d27d49fc7456c8a6dc78bc31b203",
+      "gitBlob": "9e8703193101ee571e46f24a0fe7799ea023c53a"
     },
     {
       "path": "leader.mjs",
@@ -115,8 +115,8 @@
     },
     {
       "path": "platform-manifest.generated.mjs",
-      "sha256": "797e5c84887a28e7e5274c41a1938501665c97b338848dea3f94f27d5ddac5c1",
-      "gitBlob": "a25e21ea34882c7637ccb37b3647006414dbe8da"
+      "sha256": "f3a49c13636d3bd95ac44f43c9eeb029637d52cce5202de47a7a74137cc59ed9",
+      "gitBlob": "b177ba3f3a3264628233cd82792a1de105b8b8dc"
     },
     {
       "path": "platform.mjs",

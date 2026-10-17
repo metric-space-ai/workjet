@@ -23,7 +23,8 @@ export interface CtoxV4WriteHandle {
 export interface CtoxV4CommandState {
   readonly status: string;
   readonly result?: unknown;
-  readonly error?: string;
+  /** Legacy `code: detail` text, or the typed `{ code, reason }` of current kernels. */
+  readonly error?: string | { readonly code: string; readonly reason: string };
 }
 export interface CtoxV4CommandHandle {
   readonly id: string;
@@ -63,6 +64,10 @@ const errorCode = (state: CtoxV4CommandState | CtoxV4WriteResult): string => {
   const typed = (state as { code?: unknown }).code;
   if (typeof typed === "string" && typed) return typed;
   const error = (state as { error?: unknown }).error;
+  if (typeof error === "object" && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" && code ? code : "command_failed";
+  }
   if (typeof error !== "string" || !error) return "command_failed";
   return /^([a-z][a-z0-9_]*):/.exec(error)?.[1] ?? error;
 };
@@ -226,12 +231,14 @@ type LumaRow = {
   [field: string]: unknown;
 };
 const LUMA_META = new Set(["id", "revision", "configured", "updatedAtMs"]);
+/** E47: kernel view metadata on every read row, never part of the stored configuration. */
+const VIEW_META = new Set(["_rev", "_pending"]);
 
 export function readWorkjetLumaConfiguration(api: CtoxV4AppPort): WorkjetLumaConfigurationDocument {
   const row = api.get<LumaRow>(WORKJET_LUMA_STATE, WORKJET_LUMA_STATE_ID).get();
   if (row === null) return { revision: 0, configuration: null, updatedAtMs: null };
   const configuration = Object.fromEntries(
-    Object.entries(row).filter(([key]) => !LUMA_META.has(key)),
+    Object.entries(row).filter(([key]) => !LUMA_META.has(key) && !VIEW_META.has(key)),
   );
   return {
     revision: row.revision ?? 0,

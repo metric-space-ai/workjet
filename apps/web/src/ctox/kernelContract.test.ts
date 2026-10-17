@@ -1,4 +1,4 @@
-import { seedKernelTestShell } from "./kernelTestHost";
+import { platformView, seedKernelTestShell } from "./kernelTestHost";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { createKernel } from "./kernel/kernel.mjs";
 import { KernelTransport } from "./kernel/transport.mjs";
@@ -55,7 +55,9 @@ describe("real kernel command and scope contract", () => {
       { record_id: "t" },
     );
     await handle.local;
-    const stored = api.get<Record<string, unknown>>("business_commands", handle.id).get();
+    const stored = platformView(kernel)
+      .get<Record<string, unknown>>("business_commands", handle.id)
+      .get();
     expect(stored?.record_id).toBe("t");
     let completions = 0;
     let result: unknown;
@@ -106,8 +108,8 @@ describe("real kernel command and scope contract", () => {
     abort.abort();
     await expect(waiting).rejects.toMatchObject({ code: "aborted" });
     await Promise.resolve();
-    expect(a.api.query("business_commands", {}).get()).toHaveLength(1);
-    expect(b.api.query("business_commands", {}).get()).toEqual([]);
+    expect(platformView(a.kernel).query("business_commands", {}).get()).toHaveLength(1);
+    expect(platformView(b.kernel).query("business_commands", {}).get()).toEqual([]);
     const detached = executeCtoxCommand(a.api, "threads.message.create", {
       body: "pending on unmount",
     });
@@ -116,7 +118,9 @@ describe("real kernel command and scope contract", () => {
     const cancelled = b.api.command("threads.message.create", { body: "cancel via Core" });
     await cancelled.local;
     await cancelled.result;
-    const intent = b.api.get<Record<string, unknown>>("business_commands", cancelled.id).get();
+    const intent = platformView(b.kernel)
+      .get<Record<string, unknown>>("business_commands", cancelled.id)
+      .get();
     const failures: string[] = [];
     releases.push(
       observeCtoxCommand(cancelled, {

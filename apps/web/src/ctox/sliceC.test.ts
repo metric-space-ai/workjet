@@ -168,7 +168,7 @@ async function openV4(role: "admin" | "chef" | "user" = "admin") {
     transport,
   });
   await kernel.ready;
-  const apps = kernel.appApi("fixture-probe", "0").query<{ id: string }>("business_apps", {});
+  const apps = kernel.appApi("ctox-platform", "0").query<{ id: string }>("business_apps", {});
   const off = apps.subscribe(() => {});
   try {
     await vi.waitFor(() => {
@@ -889,7 +889,8 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
     expect(v3Restart).not.toHaveBeenCalled();
   });
 
-  it("6 restart is admin only and a core without the route reads as capability missing", async () => {
+  it("6 restart is admin only", async () => {
+    // Since Zug 16 the pinned kernel carries ctox.maintenance.restart as a Core platform route.
     const user = await openV4("user");
     const v3Restart = vi.fn(async () => ({ ok: true as const }));
     expect(
@@ -899,15 +900,7 @@ describe("slice C on a V4 instance (fake core, published manifest)", () => {
         v3Restart,
       }),
     ).toEqual({ ok: false, code: "forbidden" });
-    const admin = await openV4();
-    admin.transport.handlers.delete(CTOX_MAINTENANCE_RESTART);
-    expect(
-      await restartCtoxInstance(admin.instanceId, {
-        capabilities: [CTOX_MAINTENANCE_RESTART],
-        reason: "r",
-        v3Restart,
-      }),
-    ).toEqual({ ok: false, code: "capability_missing" });
+    expect(v3Restart).not.toHaveBeenCalled();
   });
 
   it("6 first pairing redeems the shell invitation over signaling into a V4LaunchContext", async () => {

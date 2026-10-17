@@ -14,8 +14,7 @@ import { MemoryCoreTransport } from "./kernelTestkit";
 import type { CtoxAppApi, Kernel } from "./kernel/index";
 import { bindKernelCtoxClient } from "./kernelClient";
 import { bindCtoxClient, getCtoxClient } from "./ctoxClient";
-import { withStubAppPrefs } from "./appPrefsStub.fixture";
-import { writeAppPref } from "./appPrefs";
+import { type CtoxAppPrefs, writeAppPref } from "./appPrefs";
 import { CtoxCommandError, executeCtoxCommand } from "./commands";
 import {
   WORKJET_APP_ID,
@@ -94,7 +93,7 @@ async function openGate(options: { routes?: Iterable<string>; publishManifest?: 
   await kernel.ready;
   if (options.publishManifest !== false) {
     // The published app/shell facts replicate from the core; the kernel never assumes them.
-    const apps = kernel.appApi("fixture-probe", "0").query<{ id: string }>("business_apps", {});
+    const apps = kernel.appApi("ctox-platform", "0").query<{ id: string }>("business_apps", {});
     const off = apps.subscribe(() => {});
     try {
       await vi.waitFor(
@@ -479,13 +478,14 @@ describe("V4 gate: a V3 instance keeps the desktop guest path (no bound client)"
 
 describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", () => {
   it("V4: gallery order is user UI state in api.prefs (E56.2), never a collection or command", async () => {
-    const { instanceId, api } = await openGate({ routes: [] });
-    const { api: prefsApi, prefsOf, close } = await withStubAppPrefs(api);
-    open.push({ kernel: { close } as unknown as Kernel, release: () => {} });
+    const { instanceId, api, kernel } = await openGate({ routes: [] });
+    // The pinned kernel ships E51 api.prefs itself (ctox #912): per app, for the signed-in user.
+    const prefsOf = (appId: string) =>
+      (kernel.appApi(appId, APP_VER) as CtoxAppApi & { prefs: CtoxAppPrefs }).prefs;
     const command = vi.fn(() => {
       throw new Error("gallery order must not send a command");
     });
-    const guarded = Object.create(prefsApi, { command: { value: command } }) as CtoxAppApi;
+    const guarded = Object.create(api, { command: { value: command } }) as CtoxAppApi;
     open.push({
       kernel: { close: async () => {} } as unknown as Kernel,
       release: bindCtoxClient(instanceId, guarded),
@@ -533,22 +533,28 @@ describe("V4 gate: E49.4 gallery order and project feed are Workjet app data", (
         order: { revision: 2, projectIds: ["p-1", "p-2"] },
       },
     });
-    // Stored through the real E51 api.prefs: for the app workjet and this user only.
+    // Stored through the kernel's E51 api.prefs: for the app workjet and this user only.
     expect(prefsOf("workjet").get("gallery.order")).toEqual({
       revision: 2,
       projectIds: ["p-1", "p-2"],
     });
     expect(prefsOf("other-app").get("gallery.order")).toBeNull();
-    // E51 bounds come from the stub: an oversized value is refused as quota before any write.
+    // E51 bounds come from the kernel: an oversized value is refused as quota before any write.
     await expect(
-      writeAppPref(prefsApi, "gallery.order", { blob: "x".repeat(20_000) }),
+      writeAppPref(api, "gallery.order", { blob: "x".repeat(20_000) }),
     ).rejects.toMatchObject({ code: "quota", reason: "pref_write_rejected" });
     expect(command).not.toHaveBeenCalled();
     expect(JSON.stringify(workjetAppManifest(APP_VER))).not.toContain("gallery");
   });
 
   it("V4: without api.prefs the gallery order is unavailable, with no collection fallback", async () => {
-    const { instanceId } = await openGate({ routes: [] });
+    const { instanceId, api } = await openGate({ routes: [] });
+    // A kernel before ctox #912 hands out no prefs; this one does, so hide it explicitly.
+    const withoutPrefs = Object.create(api, { prefs: { value: undefined } }) as CtoxAppApi;
+    open.push({
+      kernel: { close: async () => {} } as unknown as Kernel,
+      release: bindCtoxClient(instanceId, withoutPrefs),
+    });
     expect(
       await requestWorkjetProjectControl(
         instanceId,

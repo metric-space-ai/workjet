@@ -42,7 +42,6 @@ it.each([
     "contract/workjet-dispatch",
     ["dispatch.js", "outcome-contract.js", "sha256.js", "workjet.worker.dispatch.js"],
   ],
-  ["stub-e51", ["ctox-app-api-stub.mjs", "index.d.ts"]],
 ])("keeps the pinned copy in %s byte-identical", (dir, files) => {
   const rows = pinned(dir);
   expect(rows.map((row) => row.file).sort()).toEqual([...files].sort());

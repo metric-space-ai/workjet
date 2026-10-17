@@ -1,14 +1,14 @@
 import type { CtoxAppApi } from "./ctoxClient";
-import type { PreferencesApi } from "./stub-e51/index";
+import type { PreferencesApi } from "./kernel/index";
 import { CtoxLocalReadError } from "./projectReadData";
 
 /**
- * Per-user UI state of the calling app (E51), shape as in the CTOX Sync v4 stub at 93a322c8
- * (`stub-e51/index.d.ts`): `get(key)` answers the JSON value or `null` synchronously, `set` and
+ * Per-user UI state of the calling app (E51), as the pinned kernel ships it (ctox #912,
+ * `kernel/index.d.ts`): `get(key)` answers the JSON value or `null` synchronously, `set` and
  * `delete` answer a write handle (`local`, `result`), and an invalid key or an oversized value
  * throws a `CtoxError` (`invalid` | `quota`) before anything is written. Always for the signed-in
  * user and the calling app; stored by the platform in `app_user_preferences`, never as app data.
- * The pinned kernel does not carry `prefs` yet (ctox #912), so a kernel without it has none.
+ * A kernel without `prefs` (before #912) has no V4 gallery order and gets no collection fallback.
  */
 export type CtoxAppPrefs = PreferencesApi;
 type WithPrefs = CtoxAppApi & { readonly prefs?: CtoxAppPrefs };

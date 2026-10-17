@@ -7,26 +7,11 @@ import {
 } from "./workjetAppManifest";
 
 export const TEST_PLATFORM_VER = "test-platform-1";
-/**
- * Same wire fixture as ctox `kernel/tests/native-platform-catalog.mjs` at the KERNEL_PIN: the real
- * platform manifest with loose schemas for the wire collections, independent of bundled schemas.
- */
-const TEST_PLATFORM_MANIFEST = {
-  ...PLATFORM_MANIFEST,
-  collections: {
-    ...(PLATFORM_MANIFEST.collections as Record<string, unknown>),
-    ...Object.fromEntries(
-      ["business_commands", "files", "ctox_queue_tasks"].map((name) => [
-        name,
-        { schema: { version: 3, type: "object" } },
-      ]),
-    ),
-  },
-};
 
 /**
  * Explicit fixture Core fact, not a production Shell/version fallback: the Shell row and the
- * published platform catalog, which the real kernel needs before it writes platform collections.
+ * real published platform catalog (E61: business_commands is the V4 command document v3), which
+ * the real kernel needs before it writes platform collections.
  * With `workjetAppVer` it also publishes the Workjet manifest and its ctox-owned export owner, so
  * the Workjet app API reads exactly what the manifest declares (§16.13).
  */
@@ -44,7 +29,7 @@ export async function seedKernelTestShell(
       id: `ctox-platform@${TEST_PLATFORM_VER}`,
       app_id: "ctox-platform",
       app_ver: TEST_PLATFORM_VER,
-      manifest: TEST_PLATFORM_MANIFEST,
+      manifest: PLATFORM_MANIFEST,
     },
   ];
   if (appVer !== undefined) {

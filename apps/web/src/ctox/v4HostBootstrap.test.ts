@@ -104,7 +104,7 @@ function memorySessions(granted: string[] | null = null) {
       transport,
     });
     await kernel.ready;
-    const apps = kernel.appApi("fixture-probe", "0").query<{ id: string }>("business_apps", {});
+    const apps = kernel.appApi("ctox-platform", "0").query<{ id: string }>("business_apps", {});
     const off = apps.subscribe(() => {});
     try {
       await vi.waitFor(

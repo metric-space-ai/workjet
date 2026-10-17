@@ -53,7 +53,7 @@ export async function openV4(select = true) {
     transport,
   });
   await kernel.ready;
-  const apps = kernel.appApi("fixture-probe", "0").query<{ id: string }>("business_apps", {});
+  const apps = kernel.appApi("ctox-platform", "0").query<{ id: string }>("business_apps", {});
   const offApps = apps.subscribe(() => {});
   await vi
     .waitFor(

@@ -53,7 +53,7 @@ export const SCHEIBE_C_READ_COLLECTIONS = [
   "workjet_model_prompts",
 ] as const;
 const OWNED = new Set<string>(WORKJET_OWNED_COLLECTIONS);
-/** Read-only collections of other owners: app ctox (K-WJ-1) and platform (§16.41/§16.43). */
+/** Read-only collections of other owners: app ctox (K-WJ-1) and platform (§16.41/§16.43, files). */
 export const WORKJET_FOREIGN_COLLECTIONS = [
   ...new Set(
     [
@@ -68,15 +68,17 @@ export const WORKJET_FOREIGN_COLLECTIONS = [
       "workjet_calendar_state",
       "devices",
       "machine_enrollments",
+      // Presentation documents and other project files (projectFileData.ts), platform-owned.
+      "files",
       ...SCHEIBE_C_READ_COLLECTIONS,
       ...Object.values(PROJECT_READ_COLLECTIONS),
     ].filter((collection) => !OWNED.has(collection)),
   ),
 ];
-export const PLATFORM_OWNED = new Set(["devices", "machine_enrollments"]);
+export const PLATFORM_OWNED = new Set(["devices", "machine_enrollments", "files"]);
 /**
- * E54.3b: empty for now. `threads.ctox_approval.request` is a Core platform route and needs no
- * entry; `ctox.maintenance.restart` joins once its Core route exists.
+ * E54.3b: empty. `threads.ctox_approval.request` and, since Zug 16, `ctox.maintenance.restart` are
+ * Core platform routes and need no entry.
  */
 export const WORKJET_COMMANDS_OUT: readonly string[] = [];
 

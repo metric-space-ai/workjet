@@ -22,8 +22,13 @@ export async function openStubCtoxClient(
   const legacy = kernel.appApi("workjet", appVersion);
   const api: CtoxAppApi = {
     ...legacy,
-    // Kernel pin eca39cf84 adds the read-only navigation probe; the dev stub knows no targets.
-    shell: { ...legacy.shell, canNavigate: () => false },
+    // Kernel pin eca39cf84 adds the read-only navigation probe; the dev stub knows no targets, and
+    // its navigate lacks the kernel's ref overload (Promise<boolean>), which the stub never resolves.
+    shell: {
+      ...legacy.shell,
+      canNavigate: () => false,
+      navigate: legacy.shell.navigate as CtoxAppApi["shell"]["navigate"],
+    },
     put: (collection, doc) => {
       const handle = legacy.put(collection, doc);
       return { ...handle, result: handle.result.then(normalizeResult) };
@@ -41,6 +46,18 @@ export async function openStubCtoxClient(
         throw new Error("legacy_stub_record_id_not_supported");
       const handle = legacy.command(type, payload);
       return { ...handle, result: handle.result.then(normalizeResult) };
+    },
+    // The legacy dev stub predates E51 api.prefs (ctox #912) and refuses it like record_id.
+    prefs: {
+      get: () => {
+        throw new Error("legacy_stub_prefs_not_supported");
+      },
+      set: () => {
+        throw new Error("legacy_stub_prefs_not_supported");
+      },
+      delete: () => {
+        throw new Error("legacy_stub_prefs_not_supported");
+      },
     },
     metrics: {
       get: () => {

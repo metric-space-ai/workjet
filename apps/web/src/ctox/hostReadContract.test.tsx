@@ -7,7 +7,7 @@ import {
   setJourFixeCacheBackend,
 } from "../lib/jourFixeCache";
 import { CommandId, ProjectId } from "@workjet/contracts";
-import { seedKernelTestShell } from "./kernelTestHost";
+import { platformView, seedKernelTestShell } from "./kernelTestHost";
 import { readLocalProjectFile } from "./projectFileData";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -256,7 +256,7 @@ it("reads and updates a scoped projection without a guest and drops it on unmoun
       }),
     ).rejects.toMatchObject({ code: "invalid" });
     expect(injectedReads).toBe(0);
-    expect(host.context.api.query("business_commands", {}).get()).toEqual([]);
+    expect(platformView(kernel).query("business_commands", {}).get()).toEqual([]);
     await act(async () => host.unmount());
     await expect(liveness!.reconnect()).rejects.toThrow("ctox_client_unavailable");
   } finally {
@@ -296,7 +296,7 @@ it("rejects a file generation changed while the actual kernel CAS transfer is in
     transport: new FileTransport(),
   });
   await kernel.ready;
-  await seedKernelTestShell(kernel);
+  await seedKernelTestShell(kernel, { workjetAppVer: "file" });
   const host = await mountWorkjetHost(document.createElement("div"), kernel, {
     appVersion: "file",
     module: { mount: () => ({ unmount() {} }) },

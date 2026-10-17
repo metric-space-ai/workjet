@@ -18,7 +18,11 @@ export class CtoxCommandError extends Error {
 function rejectionCode(state: CommandState): string | undefined {
   const typed = (state as { code?: unknown }).code;
   if (typeof typed === "string" && typed) return typed;
-  const error = state.error;
+  const error: unknown = state.error;
+  if (typeof error === "object" && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" && code ? code : undefined;
+  }
   if (typeof error !== "string") return undefined;
   const match = /^([a-z][a-z0-9_]*):/.exec(error);
   return match ? match[1] : error;
